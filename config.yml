@@ -1,0 +1,19 @@
+storage:
+  # paths are relative to src code root unless prefixed with "/"
+  tags: data/tags
+  cache: data/cache
+  parts: data/parts
+  tmp: data/tmp
+fabric:
+  # for all fabric interaction
+  config_url: http://192.168.96.203/config?self&qspace=main
+services:
+  asr: 
+    image: "localhost/asr:latest"
+    type: "audio"
+  caption:
+    image: "localhost/caption:latest"
+    type: "video"
+    frame_level: true
+devices: 
+  - nvidia.com/gpu=0
