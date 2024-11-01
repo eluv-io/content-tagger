@@ -17,7 +17,6 @@ from src.fetch import fetch_stream, StreamNotFoundError
 
 @dataclass
 class TagArgs:
-    qid: str
     features: List[str]
     start_time: Optional[int]=None
     end_time: Optional[int]=None
@@ -32,8 +31,8 @@ def get_flask_app():
         res = _list_services()    
         return Response(response=json.dumps(res), status=200, mimetype='application/json')
     
-    @app.route('/tag', methods=['POST'])
-    def tag() -> Response:
+    @app.route('/<qid>/tag', methods=['POST'])
+    def tag(qid: str) -> Response:
         logger.debug(f"Request: {request.json}")
         data = request.json
         try:
@@ -44,36 +43,57 @@ def get_flask_app():
         for feature in args.features:
             if feature not in services:
                 return Response(response=json.dumps({'error': f"Service {feature} not found"}), status=404, mimetype='application/json')
-            auth = _get_authorization(request)
+            
+        auth = _get_authorization(request)
+        elv_client = ElvClient.from_configuration_url(config_url=config["fabric"]["parts_url"], static_token=auth)
+        for feature in args.features:
             if not args.stream:
                 stream_name = config["services"][feature]["type"]
             else:
                 stream_name = args.stream
-            save_path = os.path.join(config["storage"]["parts"], args.qid)
-            elv_client = ElvClient.from_configuration_url(config_url=config["fabric"]["config_url"], static_token=auth)
-            logger.info(f"Fetching parts to run {feature} on {args.qid}")
+            save_path = os.path.join(config["storage"]["parts"], qid)
+            logger.info(f"Fetching parts to run {feature} on {qid}")
             try:
-                part_paths = fetch_stream(args.qid, stream_name, os.path.join(save_path, stream_name), elv_client, args.start_time, args.end_time)
+                part_paths = fetch_stream(qid, stream_name, os.path.join(save_path, stream_name), elv_client, args.start_time, args.end_time)
             except StreamNotFoundError:
                 if not args.stream:
-                    return Response(response=json.dumps({'error': f"Default stream {stream_name} not found for {args.qid}. Please use the `stream` argument to specify a valid stream."}), status=404, mimetype='application/json')
+                    return Response(response=json.dumps({'error': f"Default stream {stream_name} not found for {qid}. Please use the `stream` argument to specify a valid stream."}), status=404, mimetype='application/json')
                 else:
-                    return Response(response=json.dumps({'error': f"Stream {args.stream} not found for {args.qid}"}), status=404, mimetype='application/json')
+                    return Response(response=json.dumps({'error': f"Stream {args.stream} not found for {qid}"}), status=404, mimetype='application/json')
             except HTTPError as e:
                 return Response(response=json.dumps({'error': str(e)}), status=403, mimetype='application/json')
-            logger.info(f"Tagging {args.qid} with {feature}")
+            logger.info(f"Tagging {qid} with {feature}")
             with PodmanClient() as podman_client:
                 try:
                     tag_files = run_container(podman_client, feature, part_paths)
                 except Exception as e:
                     return Response(response=json.dumps({'error': str(e)}), status=500, mimetype='application/json')
-            out_path = os.path.join(config["storage"]["tags"], args.qid, feature)
+            out_path = os.path.join(config["storage"]["tags"], qid, feature)
             if not os.path.exists(out_path):
                 os.makedirs(out_path)
             for f in tag_files:
-                shutil.move(f, os.path.join(config["storage"]["tags"], args.qid, feature, os.path.basename(f)))
+                shutil.move(f, os.path.join(config["storage"]["tags"], qid, feature, os.path.basename(f)))
             
         return Response(response=json.dumps({'success': True}), status=200, mimetype='application/json')
+    
+    @app.route('/<qid>/finalize', methods=['POST'])
+    def finalize(qid: str) -> Response:
+        auth = _get_authorization(request)
+        elv_client = ElvClient.from_configuration_url(config_url=config["fabric"]["config_url"], static_token=auth)
+        qwt = request.args.get('write_token')
+        qlib = elv_client.content_object_library_id(qid)
+        jobs = []
+        for feature in os.listdir(os.path.join(config["storage"]["tags"], qid)):
+            for tag in os.listdir(os.path.join(config["storage"]["tags"], qid, feature)):
+                jobs.append(ElvClient.FileJob(local_path=os.path.join(config["storage"]["tags"], qid, feature, tag), 
+                                              out_path=f"video_tags/{feature}/{tag}",
+                                              mime_type="application/json"))
+        try:
+            elv_client.upload_files(qwt, qlib, jobs)
+        except HTTPError as e:
+            return Response(response=json.dumps({'error': str(e)}), status=403, mimetype='application/json')
+        
+        return Response(response=json.dumps({'message': 'Succesfully uploaded tag files. Please finalize the write token.', 'write token': qwt}), status=200, mimetype='application/json')
     
     def _list_services() -> List[str]:
         with PodmanClient() as podman_client:

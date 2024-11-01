@@ -12,9 +12,6 @@ def load_config() -> Any:
             config["storage"][p] = os.path.join(root_path, config["storage"][p])
         if not os.path.exists(config["storage"][p]):
             os.makedirs(config["storage"][p])
-
-    for service in config["services"]:
-        os.makedirs(os.path.join(config["storage"]["tags"], service), exist_ok=True)
         
     return config
 
