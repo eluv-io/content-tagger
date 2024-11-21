@@ -1,4 +1,4 @@
-from podman import PodmanClient
+from podman import PodmanClient, Container
 from typing import List
 import os
 import sys
@@ -7,7 +7,7 @@ from config import config
 
 # Run a container with the given feature and files
 # Outputs list of tag files
-def run_container(client: PodmanClient, feature: str, files: List[str]) -> List[str]:
+def create_container(client: PodmanClient, feature: str, files: List[str], out: str="/dev/null") -> Container:
     out_path = os.path.join(config["storage"]["tmp"], feature)
     if not os.path.exists(out_path):
         os.makedirs(out_path)
@@ -47,11 +47,4 @@ def run_container(client: PodmanClient, feature: str, files: List[str]) -> List[
                                 network_mode="host",  
                                 devices=config["devices"], 
     )
-    container.start()
-    for log in container.logs(stream=True, stderr=True, stdout=True):
-        sys.stderr.write(log.decode("utf-8"))
-    tags = [os.path.join(config["storage"]["tmp"], feature, f"{os.path.basename(f)}_tags.json") for f in files]
-    if config["services"][feature].get("frame_level", False):
-        frame_tags = [os.path.join(config["storage"]["tmp"], feature, f"{os.path.basename(f)}_frametags.json") for f in files]
-        tags += frame_tags
-    return tags
+    return container

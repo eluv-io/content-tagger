@@ -4,6 +4,7 @@ storage:
   cache: data/cache
   parts: data/parts
   tmp: data/tmp
+  logs: logs
 fabric:
   # used for downloading parts (requires special build)
   parts_url: http://192.168.96.203/config?self&qspace=main
@@ -17,5 +18,9 @@ services:
     image: "localhost/caption:latest"
     type: "video"
     frame_level: true
+  shot:
+    image: "localhost/shot:latest"
+    type: "video"
+    frame_level: false
 devices: 
   - nvidia.com/gpu=0

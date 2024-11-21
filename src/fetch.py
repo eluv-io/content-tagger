@@ -4,6 +4,9 @@ import os
 from loguru import logger
 from typing import Optional, List
 
+from common_ml.video_processing import unfrag_video
+from config import config
+
 class StreamNotFoundError(Exception):
     """Custom exception for specific error conditions."""
     pass
@@ -24,6 +27,7 @@ def fetch_stream(content_id: str, stream_name: str, output_path: str, client: El
         end_time = float("inf")
     if not os.path.exists(output_path):
         os.makedirs(output_path)
+    codec = streams[stream_name].get("codec_type", None)
     res = []
     for idx, part in enumerate(sorted(stream, key=lambda x: x["timeline_start"]["float"])):
         idx = str(idx).zfill(4)
@@ -36,8 +40,11 @@ def fetch_stream(content_id: str, stream_name: str, output_path: str, client: El
         else:
             logger.info(f"Downloading part {part_hash} for content_id {content_id}")
         try:
-            save_path = os.path.join(output_path, f"{idx}_{part_hash}")
-            client.download_part(object_id=content_id, save_path=save_path, part_hash=part_hash)
+            tmp_path = os.path.join(config["storage"]["tmp"], f"{idx}_{part_hash}")
+            save_path = os.path.join(output_path, f"{idx}_{part_hash}.mp4")
+            client.download_part(object_id=content_id, save_path=tmp_path, part_hash=part_hash)
+            if codec == "video":
+                unfrag_video(tmp_path, save_path)
             res.append(save_path)
         except HTTPError as e:
             raise Exception(f"Failed to download {part} for content_id {content_id}: {e}")

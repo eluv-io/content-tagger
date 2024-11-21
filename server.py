@@ -8,12 +8,14 @@ from loguru import logger
 from dataclasses import dataclass
 import os
 from elv_client_py import ElvClient
-import shutil
+from collections import defaultdict
+import threading
 from requests.exceptions import HTTPError
 
 from config import config
 from src.containers import run_container
 from src.fetch import fetch_stream, StreamNotFoundError
+from src.manager import ResourceManager
 
 @dataclass
 class TagArgs:
@@ -25,6 +27,9 @@ class TagArgs:
 
 def get_flask_app():
     app = Flask(__name__)
+    manager = ResourceManager()
+    jobs_by_qid = defaultdict(dict)
+    lock = threading.Lock()
 
     @app.route('/list', methods=['GET'])
     def list_services() -> Response:
@@ -46,6 +51,8 @@ def get_flask_app():
             
         auth = _get_authorization(request)
         elv_client = ElvClient.from_configuration_url(config_url=config["fabric"]["parts_url"], static_token=auth)
+        failed = []
+        jobs_started = 0
         for feature in args.features:
             if not args.stream:
                 stream_name = config["services"][feature]["type"]
@@ -63,31 +70,48 @@ def get_flask_app():
             except HTTPError as e:
                 return Response(response=json.dumps({'error': str(e)}), status=403, mimetype='application/json')
             logger.info(f"Tagging {qid} with {feature}")
-            with PodmanClient() as podman_client:
-                try:
-                    tag_files = run_container(podman_client, feature, part_paths)
-                except Exception as e:
-                    return Response(response=json.dumps({'error': str(e)}), status=500, mimetype='application/json')
-            out_path = os.path.join(config["storage"]["tags"], qid, feature)
-            if not os.path.exists(out_path):
-                os.makedirs(out_path)
-            for f in tag_files:
-                shutil.move(f, os.path.join(config["storage"]["tags"], qid, feature, os.path.basename(f)))
-            
-        return Response(response=json.dumps({'success': True}), status=200, mimetype='application/json')
+            try:
+                with lock:
+                    if jobs_by_qid[qid].get(feature):
+                        failed.append({"feature": feature, "message": "Tagging already in progress"})
+                        logger.error(f"Tagging {feature} already in progress for {qid}")
+                        continue
+                    else:
+                        job_id = manager.run(feature, part_paths)
+                        jobs_by_qid[qid][feature] = job_id
+                        jobs_started += 1
+            except Exception as e:
+                failed.append({"feature": feature, "message": str(e)})
+                logger.error(f"Failed to run {feature} on {qid}: {e}")
+
+        if len(jobs_started) == 0:
+            return Response(response=json.dumps({'error': 'No new jobs started', 'failed': failed}), status=400, mimetype='application/json')   
+        elif len(failed) > 0:
+            # raise 207
+            return Response(response=json.dumps({'message':'Some jobs failed to start', 'jobs running': jobs_by_qid[qid], 'failed to start': failed}), status=207, mimetype='application/json')
+        return Response(response=json.dumps({'message':'All new jobs succesfully started', 'jobs running': jobs_by_qid[qid]}), status=200, mimetype='application/json')
     
     @app.route('/<qid>/finalize', methods=['POST'])
     def finalize(qid: str) -> Response:
         auth = _get_authorization(request)
+        force = request.args.get('force', False)
         elv_client = ElvClient.from_configuration_url(config_url=config["fabric"]["config_url"], static_token=auth)
-        qwt = request.args.get('write_token')
+        qwt = request.args.get('write_token', None)
+        if not qwt:
+            return Response(response=json.dumps({'error': 'No write token provided'}), status=400, mimetype='application/json')
         qlib = elv_client.content_object_library_id(qid)
-        jobs = []
-        for feature in os.listdir(os.path.join(config["storage"]["tags"], qid)):
-            for tag in os.listdir(os.path.join(config["storage"]["tags"], qid, feature)):
-                jobs.append(ElvClient.FileJob(local_path=os.path.join(config["storage"]["tags"], qid, feature, tag), 
-                                              out_path=f"video_tags/{feature}/{tag}",
-                                              mime_type="application/json"))
+        jobs_running = sum(len(jobs_by_qid[qid][feature]) for feature in jobs_by_qid[qid])
+        if jobs_running > 0 and not force:
+            return Response(response=json.dumps({'error': 'Some jobs are still running. Use the `force` parameter to finalize anyway.'}), status=400, mimetype='application/json')
+
+        with lock():
+            jobs = []
+            for stream in os.listdir(os.path.join(config["storage"]["tags"], qid)):
+                for feature in os.listdir(os.path.join(config["storage"]["tags"], qid, stream)):
+                    for tag in os.listdir(os.path.join(config["storage"]["tags"], qid, stream, feature)):
+                        jobs.append(ElvClient.FileJob(local_path=os.path.join(config["storage"]["tags"], qid, stream, feature, tag), 
+                                                    out_path=f"video_tags/{stream}/{feature}/{tag}",
+                                                    mime_type="application/json"))
         try:
             elv_client.upload_files(qwt, qlib, jobs)
         except HTTPError as e:

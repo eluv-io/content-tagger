@@ -1,0 +1,7 @@
+data
+*.egg-info
+src/__pycache__
+test/test_audio
+test/test_video
+__pycache__
+.vscode
