@@ -35,8 +35,10 @@ def fetch_stream(content_id: str, stream_name: str, output_path: str, client: El
         pstart, pend = part["timeline_start"]["float"], part["timeline_end"]["float"]
         if not(start_time <= pstart < end_time) and not(start_time <= pend < end_time):
             continue
-        elif not replace and os.path.exists(os.path.join(output_path, f"{idx}_{part_hash}")):
+        elif not replace and os.path.exists(os.path.join(output_path, f"{idx}_{part_hash}.mp4")):
+            res.append(os.path.join(output_path, f"{idx}_{part_hash}.mp4"))
             logger.info(f"Part hash:{part_hash} for content_id {content_id} already retrieved.")
+            continue
         else:
             logger.info(f"Downloading part {part_hash} for content_id {content_id}")
         try:

@@ -23,4 +23,5 @@ services:
     type: "video"
     frame_level: false
 devices: 
-  - nvidia.com/gpu=0
+  # if true, then tagger will run on gpus even if they are used by a foreign process
+  allow_in_use_gpus: true

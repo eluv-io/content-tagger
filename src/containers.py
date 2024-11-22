@@ -1,16 +1,18 @@
-from podman import PodmanClient, Container
+from podman import PodmanClient
+from podman.domain.containers import Container
 from typing import List
 import os
-import sys
 
 from config import config
 
 # Run a container with the given feature and files
 # Outputs list of tag files
-def create_container(client: PodmanClient, feature: str, files: List[str], out: str="/dev/null") -> Container:
+def create_container(client: PodmanClient, feature: str, files: List[str], device_idx: int, out: str="/dev/null") -> Container:
     out_path = os.path.join(config["storage"]["tmp"], feature)
     if not os.path.exists(out_path):
         os.makedirs(out_path)
+    if len(files) == 0:
+        raise ValueError("No files provided")
     volumes = [
         {
             "source": os.path.join(config["storage"]["tmp"], feature),
@@ -45,6 +47,6 @@ def create_container(client: PodmanClient, feature: str, files: List[str], out: 
                                 mounts=volumes,  
                                 remove=True,  
                                 network_mode="host",  
-                                devices=config["devices"], 
+                                devices=[f"nvidia.com/gpu={device_idx}"], 
     )
     return container
