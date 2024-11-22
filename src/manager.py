@@ -89,6 +89,12 @@ class ResourceManager:
                 self._cleanup_job(jobid, "stopped")
             return
         job.container.wait()
+        exit_code = job.container.attrs["State"]["ExitCode"]
+        if exit_code != 0:
+            logger.error(f"Job {jobid} failed to complete")
+            with self.lock:
+                self._cleanup_job(jobid, "error")
+            return
         tags = []
         with self.lock:
             for f in job.media_files:
@@ -120,24 +126,25 @@ class ResourceManager:
         job = self.jobs[jobid]
         job.time_ended = time.time()
         job.status = status
-        job.container.stop()
-        job.container.remove()
+        if job.container.status == "running":
+            job.container.stop()
         for f in job.media_files:
             self.files_tagging.remove((f, job.feature))
         self.device_status[job.device] = False
 
     @dataclass
     class TagJobStatus:
-        status: Literal["running", "completed", "stopped"]
+        status: Literal["running", "completed", "stopped", "error"]
+        tags: List[str]
         time_elapsed: Optional[float]
 
     def status(self, jobid: str) -> TagJobStatus:
         job = self.jobs[jobid]
         if job.status != "running":
             # TODO: check race condition, time_ended might be None if in process of finalizing
-            return ResourceManager.TagJobStatus(job.status, job.time_ended - job.time_started)
+            return ResourceManager.TagJobStatus(job.status, tags=job.tags, time_elapsed=(job.time_ended - job.time_started))
         else:
-            return ResourceManager.TagJobStatus(job.status, time.time() - job.time_started)
+            return ResourceManager.TagJobStatus(job.status, tags=job.tags, time_elapsed=(time.time() - job.time_started))
         
     def shutdown(self):
         for jobid in self.jobs:

@@ -47,6 +47,8 @@ def fetch_stream(content_id: str, stream_name: str, output_path: str, client: El
             client.download_part(object_id=content_id, save_path=tmp_path, part_hash=part_hash)
             if codec == "video":
                 unfrag_video(tmp_path, save_path)
+            else:
+                os.rename(tmp_path, save_path)
             res.append(save_path)
         except HTTPError as e:
             raise Exception(f"Failed to download {part} for content_id {content_id}: {e}")

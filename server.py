@@ -13,6 +13,7 @@ import threading
 from requests.exceptions import HTTPError
 import traceback
 import time
+import shutil
 
 from config import config
 from src.fetch import fetch_stream, StreamNotFoundError
@@ -88,12 +89,13 @@ def get_flask_app():
                 with lock:
                     job = active_jobs[qid][feature]
                     job.status = "failed"
-                    if not args.stream:
+                    if not stream:
                         job.error = f"Stream {stream_name} not found for {qid}. Please specify a stream."
                     else:
                         job.error = f"Stream {stream_name} not found for {qid}"
                     inactive_jobs[qid][feature] = job
                     del active_jobs[qid][feature]
+                    return
             except HTTPError as e:
                 with lock:
                     job = active_jobs[qid][feature]
@@ -101,6 +103,7 @@ def get_flask_app():
                     job.error = f"Failed to fetch stream {stream_name} for {qid}: {str(e)}"
                     inactive_jobs[qid][feature] = job
                     del active_jobs[qid][feature]
+                    return
             feature_to_parts[feature] = part_paths
         
         for feature, part_paths in feature_to_parts.items():
@@ -121,11 +124,17 @@ def get_flask_app():
         running_features = list(active_jobs[qid].keys())
         # watch jobs
         while len(running_features) > 0:
-            for feature in running_features:
+            for feature in running_features[:]:
+                if feature not in active_jobs[qid]:
+                    # job was stopped
+                    running_features.remove(feature)
+                    continue
                 job = active_jobs[qid][feature]
                 status = manager.status(job.tag_job_id)
                 if status.status == "running":
                     continue
+                if status.status == "completed":
+                    _move_files(qid, feature, status.tags)
                 job.status = status.status # "completed" or "failed"
                 inactive_jobs[qid][feature] = job
                 del active_jobs[qid][feature]
@@ -133,15 +142,21 @@ def get_flask_app():
             time.sleep(5)
         # done tagging
 
+    def _move_files(qid: str, feature: str, tags: List[str]) -> None:
+        for tag in tags:
+            os.makedirs(os.path.join(config["storage"]["tags"], qid, feature), exist_ok=True)
+            shutil.move(tag, os.path.join(config["storage"]["tags"], qid, feature, os.path.basename(tag)))
+
     @dataclass
     class FinalizeArgs:
         write_token: str
+        authorization: str
         force: bool=False
     
     @app.route('/<qid>/finalize', methods=['POST'])
     def finalize(qid: str) -> Response:
         try:
-            args = FinalizeArgs(**request.json)
+            args = FinalizeArgs(**request.args)
         except TypeError as e:
             return Response(response=json.dumps({'message': 'invalid request', 'error': str(e)}), status=400, mimetype='application/json')
         auth = _get_authorization(request)
@@ -157,7 +172,7 @@ def get_flask_app():
         if jobs_running > 0 and not args.force:
             return Response(response=json.dumps({'error': 'Some jobs are still running. Use the `force` parameter to finalize anyway.'}), status=400, mimetype='application/json')
 
-        with lock():
+        with lock:
             jobs = []
             for stream in os.listdir(os.path.join(config["storage"]["tags"], qid)):
                 for feature in os.listdir(os.path.join(config["storage"]["tags"], qid, stream)):
