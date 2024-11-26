@@ -134,7 +134,7 @@ def get_flask_app():
                 if status.status == "running":
                     continue
                 if status.status == "completed":
-                    _move_files(qid, feature, status.tags)
+                    _move_files(qid, stream_name, feature, status.tags)
                 job.status = status.status # "completed" or "failed"
                 inactive_jobs[qid][feature] = job
                 del active_jobs[qid][feature]
@@ -142,16 +142,16 @@ def get_flask_app():
             time.sleep(5)
         # done tagging
 
-    def _move_files(qid: str, feature: str, tags: List[str]) -> None:
+    def _move_files(qid: str, stream: str, feature: str, tags: List[str]) -> None:
         for tag in tags:
-            os.makedirs(os.path.join(config["storage"]["tags"], qid, feature), exist_ok=True)
-            shutil.move(tag, os.path.join(config["storage"]["tags"], qid, feature, os.path.basename(tag)))
+            os.makedirs(os.path.join(config["storage"]["tags"], qid, stream, feature), exist_ok=True)
+            shutil.move(tag, os.path.join(config["storage"]["tags"], qid, stream, feature, os.path.basename(tag)))
 
     @dataclass
     class FinalizeArgs:
         write_token: str
-        authorization: str
         force: bool=False
+        authorization: Optional[str]=None
     
     @app.route('/<qid>/finalize', methods=['POST'])
     def finalize(qid: str) -> Response:
@@ -163,11 +163,10 @@ def get_flask_app():
         if not auth:
             return Response(response=json.dumps({'error': 'No authorization provided'}), status=400, mimetype='application/json')
         elv_client = ElvClient.from_configuration_url(config_url=config["fabric"]["config_url"], static_token=auth)
+        if not _authenticate(elv_client, qid):
+            return Response(response=json.dumps({'error': 'Unauthorized'}), status=403, mimetype='application/json')
         qwt = args.write_token
-        try:
-            qlib = elv_client.content_object_library_id(qid)
-        except HTTPError as e:
-            return Response(response=json.dumps({'error': str(e)}), status=403, mimetype='application/json')
+        qlib = elv_client.content_object_library_id(qid)
         jobs_running = sum(len(active_jobs[qid][feature]) for feature in active_jobs[qid])
         if jobs_running > 0 and not args.force:
             return Response(response=json.dumps({'error': 'Some jobs are still running. Use the `force` parameter to finalize anyway.'}), status=400, mimetype='application/json')
@@ -183,7 +182,7 @@ def get_flask_app():
         try:
             elv_client.upload_files(qwt, qlib, jobs)
         except HTTPError as e:
-            return Response(response=json.dumps({'error': str(e)}), status=403, mimetype='application/json')
+            return Response(response=json.dumps({'error': str(e), 'message': 'Please verify you\'re authorization token has write access'}), status=403, mimetype='application/json')
         
         return Response(response=json.dumps({'message': 'Succesfully uploaded tag files. Please finalize the write token.', 'write token': qwt}), status=200, mimetype='application/json')
     
