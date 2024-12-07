@@ -102,7 +102,6 @@ class ResourceManager:
                 logs = job.container.logs(stream=False, stderr=True, stdout=True, since=ts)
                 for log in logs:
                     fout.write(log.decode("utf-8"))
-                job.container.wait()
 
         if job.stop_event.is_set():
             with self.lock:

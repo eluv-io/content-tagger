@@ -256,6 +256,7 @@ def get_flask_app():
         return True
     
     def _shutdown() -> None:
+        logger.warning("Shutting down")
         manager.shutdown()
         sys.exit(0)
     
