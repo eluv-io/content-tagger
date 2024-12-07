@@ -14,6 +14,8 @@ from requests.exceptions import HTTPError
 import traceback
 import time
 import shutil
+import signal
+import sys
 
 from config import config
 from src.fetch import fetch_stream, StreamNotFoundError
@@ -55,13 +57,17 @@ def get_flask_app():
             args = TagArgs(**data)
         except TypeError as e:
             return Response(response=json.dumps({'error': str(e)}), status=400, mimetype='application/json')
+        auth = _get_authorization(request)
+        if not auth:
+            return Response(response=json.dumps({'error': 'No authorization provided'}), status=400, mimetype='application/json')
+        elv_client = ElvClient.from_configuration_url(config_url=config["fabric"]["config_url"], static_token=auth)
+        if not _authenticate(elv_client, qid):
+            return Response(response=json.dumps({'error': 'Unauthorized'}), status=403, mimetype='application/json')
         services = _list_services()
         for feature in args.features:
             if feature not in services:
                 return Response(response=json.dumps({'error': f"Service {feature} not found"}), status=404, mimetype='application/json')
             
-        auth = _get_authorization(request)
-        elv_client = ElvClient.from_configuration_url(config_url=config["fabric"]["parts_url"], static_token=auth)
         with lock:
             for feature in args.features:
                 if active_jobs[qid].get(feature, None):
@@ -189,7 +195,10 @@ def get_flask_app():
     # get status of all jobs for a qid
     @app.route('/<qid>/status', methods=['GET'])
     def status(qid: str) -> Response:
-        client = ElvClient.from_configuration_url(config_url=config["fabric"]["config_url"], static_token=_get_authorization(request))
+        auth = _get_authorization(request)
+        if not auth:
+            return Response(response=json.dumps({'error': 'No authorization provided'}), status=400, mimetype='application/json')
+        client = ElvClient.from_configuration_url(config_url=config["fabric"]["config_url"], static_token=auth)
         if not _authenticate(client, qid):
             return Response(response=json.dumps({'error': 'Unauthorized'}), status=403, mimetype='application/json')
 
@@ -201,7 +210,10 @@ def get_flask_app():
     
     @app.route('/<qid>/stop/<feature>', methods=['DELETE'])
     def stop(qid: str, feature: str) -> Response:
-        client = ElvClient.from_configuration_url(config_url=config["fabric"]["config_url"], static_token=_get_authorization(request))
+        auth = _get_authorization(request)
+        if not auth:
+            return Response(response=json.dumps({'error': 'No authorization provided'}), status=400, mimetype='application/json')
+        client = ElvClient.from_configuration_url(config_url=config["fabric"]["config_url"], static_token=auth)
         if not _authenticate(client, qid):
             return Response(response=json.dumps({'error': 'Unauthorized'}), status=403, mimetype='application/json')
         with lock:
@@ -242,6 +254,14 @@ def get_flask_app():
         except HTTPError as e:
             return False
         return True
+    
+    def _shutdown() -> None:
+        manager.shutdown()
+        sys.exit(0)
+    
+    # graceful shutdown
+    signal.signal(signal.SIGINT, lambda sig, frame: _shutdown())
+    signal.signal(signal.SIGTERM, lambda sig, frame: _shutdown())
             
     CORS(app)
     return app

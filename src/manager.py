@@ -76,19 +76,40 @@ class ResourceManager:
     # main function for watching and finalizing the job which is running in a container
     def _watch_job(self, jobid: str) -> None:
         job = self.jobs[jobid]
+        logger.info(f"Watching job {jobid}")
         with open(job.logs_out, "w") as fout:
-            # redirect logs and check for stop event
-            logs = job.container.logs(stream=True, stderr=True, stdout=True)
-            for log in logs:
-                if job.stop_event.is_set():
-                    break
-                fout.write(log.decode("utf-8"))
-                time.sleep(1)
+            try:
+                ts = 0
+                while not job.stop_event.is_set() and not job.container.status == "exited":
+                    # refresh status
+                    job.container.reload()
+
+                    # redirect logs
+                    logs = job.container.logs(stream=False, stderr=True, stdout=True, since=ts)
+                    ts = int(time.time())
+                    for log in logs:
+                        fout.write(log.decode("utf-8"))
+                    
+                    time.sleep(1)
+            except Exception as e:
+                logger.error(f"Error while watching job {jobid}: {e}")
+                logger.warning(f"Killing container for job {jobid}")
+                job.container.kill()
+                self._cleanup_job(jobid, "error")
+                return
+            finally:
+                # capture remaining logs
+                logs = job.container.logs(stream=False, stderr=True, stdout=True, since=ts)
+                for log in logs:
+                    fout.write(log.decode("utf-8"))
+                job.container.wait()
+
         if job.stop_event.is_set():
             with self.lock:
                 self._cleanup_job(jobid, "stopped")
             return
-        job.container.wait()
+        
+        logger.info(f"Job {jobid} completed")
         exit_code = job.container.attrs["State"]["ExitCode"]
         if exit_code != 0:
             logger.error(f"Job {jobid} failed to complete")
@@ -114,13 +135,12 @@ class ResourceManager:
 
     def stop(self, jobid: str) -> None:
         job = self.jobs[jobid]
+        if job.status != "running":
+            return
         job.stop_event.set()
         while job.status == "running":
             time.sleep(1)
-        if job.status != "stopped":
-            logger.warning(f"Job {jobid} finished before stop request could be processed.")
-        else:
-            logger.info(f"Job {jobid} stopped")
+        logger.info(f"Job {jobid} stopped")
 
     def _cleanup_job(self, jobid: str, status: str) -> None:
         job = self.jobs[jobid]
@@ -148,7 +168,8 @@ class ResourceManager:
         
     def shutdown(self):
         for jobid in self.jobs:
-            self.stop(jobid)
+            if self.jobs[jobid].status == "running":
+                self.stop(jobid)
         self.client.close()
         pynvml.nvmlShutdown()
 
