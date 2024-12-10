@@ -48,7 +48,7 @@ class ResourceManager:
     # Returns:
     #     uuid.UUID: The job ID.
     # NOTE: this function creates a new thread to watch the job
-    def run(self, feature: str, files: List[str]) -> str:
+    def run(self, feature: str, run_config: dict, files: List[str]) -> str:
         with self.lock:
             device_idx = None
             for i, status in enumerate(self.device_status):
@@ -63,7 +63,7 @@ class ResourceManager:
                 raise NoGPUAvailable("No available GPUs") # TODO: implement queueing
             jobid = str(uuid.uuid4())
             logs_out = os.path.join(config["storage"]["logs"], f"{jobid}.log")
-            container = create_container(self.client, feature, files, device_idx, logs_out)
+            container = create_container(self.client, feature, files, run_config, device_idx, logs_out)
             for f in files:
                 if (f, feature) in self.files_tagging:
                     raise ValueError(f"File {f} is already being tagged with {feature}")

@@ -1,11 +1,11 @@
 import argparse
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Dict
 from flask import Flask, request, Response, Request
 from flask_cors import CORS
 from podman import PodmanClient
 import json
 from loguru import logger
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 import os
 from elv_client_py import ElvClient
 from collections import defaultdict
@@ -16,6 +16,7 @@ import time
 import shutil
 import signal
 import sys
+from common_ml.types import Data
 
 from config import config
 from src.fetch import fetch_stream, StreamNotFoundError
@@ -42,19 +43,28 @@ def get_flask_app():
         return Response(response=json.dumps(res), status=200, mimetype='application/json')
     
     @dataclass
-    class TagArgs:
-        features: List[str]
+    class RunConfig():
+        model: dict=field(default_factory=dict) # model config, used to overwrite the model level config
+        stream: Optional[str]=None # stream name to run the model on, None to use the default stream
+    
+    @dataclass
+    class TagArgs(Data):
+        features: Dict[str, RunConfig] # maps feature to config, {} to take defaults
         start_time: Optional[int]=None
         end_time: Optional[int]=None
-        stream: Optional[str]=None
         authorization: Optional[str]=None
+
+        @staticmethod
+        def from_dict(data: dict) -> 'TagArgs':
+            features = {feature: RunConfig(**cfg) for feature, cfg in data['features'].items()}
+            return TagArgs(features=features, start_time=data.get('start_time', None), end_time=data.get('end_time', None), authorization=data.get('authorization', None))
 
     @app.route('/<qid>/tag', methods=['POST'])
     def tag(qid: str) -> Response:
         logger.debug(f"Request: {request.json}")
         data = request.json
         try:
-            args = TagArgs(**data)
+            args = TagArgs.from_dict(data)
         except TypeError as e:
             return Response(response=json.dumps({'error': str(e)}), status=400, mimetype='application/json')
         auth = _get_authorization(request)
@@ -64,23 +74,24 @@ def get_flask_app():
         if not _authenticate(elv_client, qid):
             return Response(response=json.dumps({'error': 'Unauthorized'}), status=403, mimetype='application/json')
         services = _list_services()
-        for feature in args.features:
+        for feature in args.features.keys():
             if feature not in services:
                 return Response(response=json.dumps({'error': f"Service {feature} not found"}), status=404, mimetype='application/json')
             
         with lock:
-            for feature in args.features:
+            for feature in args.features.keys():
                 if active_jobs[qid].get(feature, None):
                     return Response(response=json.dumps({'error': f"Tagging {feature} already in progress for {qid}"}), status=400, mimetype='application/json')
             for feature in args.features:
                 active_jobs[qid][feature] = JobStatus(status="Starting")
-            threading.Thread(target=_tag, args=(args.features, qid, elv_client, args.stream, args.start_time, args.end_time)).start()
+            threading.Thread(target=_tag, args=(args.features, qid, elv_client, args.start_time, args.end_time)).start()
         return Response(response=json.dumps({'message': f'Tagging started on {qid}'}), status=200, mimetype='application/json')
     
     # Download parts and then tag them
-    def _tag(features: List[str], qid: str, elv_client: ElvClient, stream: Optional[str]=None, start_time: Optional[int]=None, end_time: Optional[int]=None) -> None:
+    def _tag(features: Dict[str, RunConfig], qid: str, elv_client: ElvClient, start_time: Optional[int]=None, end_time: Optional[int]=None) -> None:
         feature_to_parts = {}
-        for feature in features:
+        for feature, cfg in features.items():
+            stream = cfg.stream
             job = active_jobs[qid][feature]
             job.status = "Fetching parts"
             if not stream:
@@ -117,7 +128,7 @@ def get_flask_app():
             with lock:
                 job = active_jobs[qid][feature]
                 try:
-                    job_id = manager.run(feature, part_paths)
+                    job_id = manager.run(feature, features[feature].model, part_paths)
                     job.tag_job_id = job_id
                     job.status = "Tagging parts"
                 except Exception as e:
@@ -139,6 +150,11 @@ def get_flask_app():
                 status = manager.status(job.tag_job_id)
                 if status.status == "running":
                     continue
+                stream = features[feature].stream
+                if not stream:
+                    stream_name = config["services"][feature]["type"]
+                else:
+                    stream_name = stream
                 if status.status == "completed":
                     _move_files(qid, stream_name, feature, status.tags)
                 job.status = status.status # "completed" or "failed"
