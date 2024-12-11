@@ -15,12 +15,12 @@ def fetch_stream(content_id: str, stream_name: str, output_path: str, client: El
     try:
         streams = client.content_object_metadata(object_id=content_id, metadata_subtree='offerings/default/media_struct/streams')
     except HTTPError as e:
-        raise Exception(f"Failed to fetch streams for content_id {content_id}: {e}")
+        raise HTTPError(f"Failed to retrieve streams for content_id {content_id}") from e
     if stream_name not in streams:
         raise StreamNotFoundError(f"Stream {stream_name} not found in content_id {content_id}")
     stream = streams[stream_name].get("sources", [])   
     if len(stream) == 0:
-        raise Exception(f"Stream {stream_name} is empty")
+        raise StreamNotFoundError(f"Stream {stream_name} is empty")
     if start_time is None:
         start_time = 0
     if end_time is None:
@@ -51,5 +51,5 @@ def fetch_stream(content_id: str, stream_name: str, output_path: str, client: El
                 os.rename(tmp_path, save_path)
             res.append(save_path)
         except HTTPError as e:
-            raise Exception(f"Failed to download {part} for content_id {content_id}: {e}")
+            raise HTTPError(f"Failed to download part {part_hash} for content_id {content_id}") from e
     return res

@@ -20,11 +20,11 @@ from common_ml.types import Data
 
 from config import config
 from src.fetch import fetch_stream, StreamNotFoundError
-from src.manager import ResourceManager
+from src.manager import ResourceManager, NoGPUAvailable
 
 @dataclass
 class JobStatus:
-    status: Literal["Starting", "Running", "Completed", "Failed", "Stopped by user"]
+    status: Literal["Starting", "Running", "Completed", "Failed", "Waiting for GPU", "Stopped by user"]
     tag_job_id: Optional[str]=None
     error: Optional[str]=None
     message: Optional[str]=None
@@ -70,7 +70,7 @@ def get_flask_app():
         auth = _get_authorization(request)
         if not auth:
             return Response(response=json.dumps({'error': 'No authorization provided'}), status=400, mimetype='application/json')
-        elv_client = ElvClient.from_configuration_url(config_url=config["fabric"]["config_url"], static_token=auth)
+        elv_client = ElvClient.from_configuration_url(config_url=config["fabric"]["parts_url"], static_token=auth)
         if not _authenticate(elv_client, qid):
             return Response(response=json.dumps({'error': 'Unauthorized'}), status=403, mimetype='application/json')
         services = _list_services()
@@ -112,7 +112,9 @@ def get_flask_app():
                         job.error = f"Stream {stream_name} not found for {qid}"
                     inactive_jobs[qid][feature] = job
                     del active_jobs[qid][feature]
-                    return
+                    logger.error(job.error)
+                    # continue and skip this feature
+                    continue
             except HTTPError as e:
                 with lock:
                     job = active_jobs[qid][feature]
@@ -120,25 +122,38 @@ def get_flask_app():
                     job.error = f"Failed to fetch stream {stream_name} for {qid}: {str(e)}"
                     inactive_jobs[qid][feature] = job
                     del active_jobs[qid][feature]
-                    return
+                    logger.error(job.error)
+                    # continue and skip this feature
+                    continue
             feature_to_parts[feature] = part_paths
+
+        running_features = []
         
         for feature, part_paths in feature_to_parts.items():
-            logger.info(f"Tagging {qid} with {feature}")
-            with lock:
-                job = active_jobs[qid][feature]
+            job = active_jobs[qid][feature]
+            while True:
                 try:
                     job_id = manager.run(feature, features[feature].model, part_paths)
+                except NoGPUAvailable:
+                    with lock:
+                        job.status = "Waiting for GPU"
+                    time.sleep(config["devices"]["wait_for_gpu_sleep"])
+                    continue
+                except Exception as e:
+                    with lock:
+                        logger.error(f"Failed to run {feature} on {qid}: {traceback.format_exc()})")
+                        job.status = "failed"
+                        job.error = str(e)
+                        inactive_jobs[qid][feature] = job
+                        del active_jobs[qid][feature]
+                        break
+                with lock:
+                    logger.info(f"Tagging {qid} with {feature}")
                     job.tag_job_id = job_id
                     job.status = "Tagging parts"
-                except Exception as e:
-                    logger.error(f"Failed to run {feature} on {qid}: {traceback.format_exc()})")
-                    job.status = "failed"
-                    job.error = str(e)
-                    inactive_jobs[qid][feature] = job
-                    del active_jobs[qid][feature]
+                    running_features.append(feature)
+                    break
 
-        running_features = list(active_jobs[qid].keys())
         # watch jobs
         while len(running_features) > 0:
             for feature in running_features[:]:
