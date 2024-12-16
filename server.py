@@ -48,6 +48,10 @@ def get_flask_app():
     active_jobs = defaultdict(dict)
     inactive_jobs = defaultdict(dict)
 
+    # make sure no two streams are being downloaded at the same time. 
+    # maps (qid, stream) -> lock
+    download_lock = defaultdict(threading.Lock)
+
     @app.route('/list', methods=['GET'])
     def list_services() -> Response:
         res = _list_services()    
@@ -100,7 +104,7 @@ def get_flask_app():
         with lock:
             for feature in args.features.keys():
                 if active_jobs[qid].get(feature, None):
-                    return Response(response=json.dumps({'error': f"Tagging {feature} already in progress for {qid}"}), status=400, mimetype='application/json')
+                    return Response(response=json.dumps({'error': f"At least one of the requested features, {feature}, is already in progress for {qid}"}), status=400, mimetype='application/json')
             for feature in args.features.keys():
                 active_jobs[qid][feature] = Job(status="Starting", stop_event=threading.Event(), time_started=time.time())
             threading.Thread(target=_tag, args=(args.features, qid, elv_client, args.start_time, args.end_time)).start()
@@ -112,7 +116,6 @@ def get_flask_app():
         for feature, cfg in features.items():
             with lock:
                 job = active_jobs[qid][feature]
-            job.status = "Fetching parts"
             if job.stop_event.is_set():
                 with lock:
                     _set_stop_status(qid, feature)
@@ -124,7 +127,10 @@ def get_flask_app():
             save_path = os.path.join(config["storage"]["parts"], qid)
             logger.info(f"Fetching parts to run {feature} on {qid}")
             try:
-                part_paths = fetch_stream(qid, stream, os.path.join(save_path, stream), elv_client, start_time, end_time, exit_event=job.stop_event)
+                with download_lock[(qid, stream)]:
+                    job.status = "Fetching parts"
+                    # if fetching finished while waiting for lock, fetch_stream will return immediately
+                    part_paths = fetch_stream(qid, stream, os.path.join(save_path, stream), elv_client, start_time, end_time, exit_event=job.stop_event)
                 if job.stop_event.is_set():
                     with lock:
                         _set_stop_status(qid, feature)
@@ -147,7 +153,7 @@ def get_flask_app():
                 with lock:
                     job = active_jobs[qid][feature]
                     job.status = "Failed"
-                    job.error = f"Failed to fetch stream {stream} for {qid}: {str(e)}"
+                    job.error = f"Failed to fetch stream {stream} for {qid}: {str(e)}. Make sure authorization token hasn't expired."
                     job.time_ended = time.time()
                     inactive_jobs[qid][feature] = job
                     del active_jobs[qid][feature]
