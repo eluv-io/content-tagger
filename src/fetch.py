@@ -3,6 +3,7 @@ from requests.exceptions import HTTPError
 import os
 from loguru import logger
 from typing import Optional, List
+import threading
 
 from common_ml.video_processing import unfrag_video
 from config import config
@@ -11,11 +12,11 @@ class StreamNotFoundError(Exception):
     """Custom exception for specific error conditions."""
     pass
 
-def fetch_stream(content_id: str, stream_name: str, output_path: str, client: ElvClient, start_time: Optional[int]=None, end_time: Optional[int]=None, replace: bool=False) -> List[str]:
+def fetch_stream(content_id: str, stream_name: str, output_path: str, client: ElvClient, start_time: Optional[int]=None, end_time: Optional[int]=None, replace: bool=False, exit_event: Optional[threading.Event]=None) -> List[str]:
     try:
         streams = client.content_object_metadata(object_id=content_id, metadata_subtree='offerings/default/media_struct/streams')
     except HTTPError as e:
-        raise HTTPError(f"Failed to retrieve streams for content_id {content_id}") from e
+        raise HTTPError(f"Failed to retrieve streams for content_id {content_id}") from e   
     if stream_name not in streams:
         raise StreamNotFoundError(f"Stream {stream_name} not found in content_id {content_id}")
     stream = streams[stream_name].get("sources", [])   
@@ -30,6 +31,9 @@ def fetch_stream(content_id: str, stream_name: str, output_path: str, client: El
     codec = streams[stream_name].get("codec_type", None)
     res = []
     for idx, part in enumerate(sorted(stream, key=lambda x: x["timeline_start"]["float"])):
+        if exit_event is not None and exit_event.is_set():
+            logger.warning(f"Downloading of stream {stream_name} for content_id {content_id} stopped.")
+            break
         idx = str(idx).zfill(4)
         part_hash = part["source"]
         pstart, pend = part["timeline_start"]["float"], part["timeline_end"]["float"]

@@ -1,7 +1,7 @@
 storage:
   # paths are relative to src code root unless prefixed with "/"
   tags: data/tags
-  cache: data/cache
+  container_cache: data/cache
   parts: data/parts
   tmp: data/tmp
   logs: logs

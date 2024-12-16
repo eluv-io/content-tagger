@@ -22,7 +22,7 @@ def create_container(client: PodmanClient, feature: str, files: List[str], run_c
             "type": "bind",
         },
         {
-            "source": config["storage"]["cache"],
+            "source": config["storage"]["container_cache"],
             # convention for python modules to store cache in /root/.cache
             "target": "/root/.cache",
             "type": "bind",
