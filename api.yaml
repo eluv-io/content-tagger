@@ -1,0 +1,178 @@
+
+openapi: 3.0.0
+info:
+  title: Content Tagger API
+  version: 1.0.0
+  description: |
+    This API helps users generate tags for a given content object based on a given time-range and set of models to run. It can also upload the tags to the content object.
+servers:
+  - url: https://ai.contentfabric.io/tagger
+paths:
+  /{qid}/tag:
+    post:
+      summary: |
+        Starts a tagging job for the given content object based on a given time-range and set of models to run. The job will run asynchronously, and
+        the status can be checked with /status
+      parameters:
+        - in: path
+          name: qid
+          required: true
+          schema:
+            type: string
+          description: Content object id to tag
+        - in: query
+          name: authorization
+          required: false
+          schema:
+            type: string
+          description: Fabric authorization token. This can also be passed in the header.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                start_time:
+                  type: integer
+                  description: Start time in seconds to tag
+                  default: 0
+                end_time:
+                  type: integer
+                  description: End time in milliseconds to tag. If not specified, it will use the full duration. 
+                  example: 10
+                features:
+                  type: object
+                  properties:
+                    feature_name:
+                      type: object
+                      properties:
+                        stream:
+                          type: string
+                          description: Stream name to Tag. If not provided, will tag the default stream ("video" for video-level models or "audio" for audio-level models)
+                          example: "audio"
+                        model:
+                          type: object
+                          description: Model configuration information to override any defaults. Consult the individual model documentation for the required fields. Leave empty to use the default configuration.
+                          example: {"fps": 2, "threshold": 0.5}
+                      required: 
+                        - model_config
+              required:
+                - features
+      responses:
+        '200':
+          description: Summary of the given tags
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Tagging started on iq__3C58dDYxsn5KKSWGYrfYr44ykJRm
+  /{qid}/status:
+    get:
+      summary: |
+        Get the status of all the tagging jobs for the given content object. 
+      parameters:
+        - in: path
+          name: qid
+          required: true
+          schema:
+            type: string
+          description: Content object id to tag
+        - in: query
+          name: authorization
+          required: false
+          schema:
+            type: string
+          description: Fabric authorization token. This can also be passed in the header.
+      responses:
+        '200':
+          description: Summary of the given tags
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: The status of the tagging job
+                    example: "Fetching parts"
+                  time_running:
+                    type: integer
+                    description: The time the job has been running
+                    example: 30.30
+                  tag_job_id:
+                    type: string
+                    description: The tag job id, once tagging has begun. Not useful for the user. 
+                    example: null
+                  error:
+                    type: string
+                    description: Error message if the job has failed
+                    example: null
+                  message:
+                    type: string
+                    description: Other information
+                    example: null
+  /{qid}/stop/{feature}:
+    delete:
+      summary: |
+        Stops the tagging job for the given content object based on the given feature.
+      parameters:
+        - in: path
+          name: qid
+          required: true
+          schema:
+            type: string
+          description: Content object id that is beging tagged
+        - in: path
+          name: feature
+          required: true
+          schema:
+            type: string
+          description: Feature to stop tagging
+        - in: query
+          name: authorization
+          required: false
+          schema:
+            type: string
+          description: Fabric authorization token. This can also be passed in the header.
+      responses:
+        '200':
+          description: Summary of the given tags
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Stopping asr on iq__3C58dDYxsn5KKSWGYrfYr44ykJRm. Check with /status for completion.
+  /list:
+    get:
+      summary: |
+        Get a list of all available models.
+      parameters:
+        - in: query
+          name: authorization
+          required: false
+          schema:
+            type: string
+          description: Fabric authorization token. This can also be passed in the header.
+      responses:
+        '200':
+          description: Summary of the given tags
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                description: List of all the content objects that have been tagged
+                example: [
+                          "asr",
+                          "caption",
+                          "shot",
+                          "celeb"
+                        ]

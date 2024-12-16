@@ -68,8 +68,6 @@ def get_flask_app():
     # TagArgs represents the request body for the /tag endpoint
     @dataclass
     class TagArgs(Data):
-        # TODO: allow authorization in headers as well
-        authorization: str
         # maps feature name to RunConfig
         features: Dict[str, RunConfig]
         # start_time in milliseconds (defaults to 0)
@@ -80,7 +78,7 @@ def get_flask_app():
         @staticmethod
         def from_dict(data: dict) -> 'TagArgs':
             features = {feature: RunConfig(**cfg) for feature, cfg in data['features'].items()}
-            return TagArgs(features=features, start_time=data.get('start_time', None), end_time=data.get('end_time', None), authorization=data.get('authorization', None))
+            return TagArgs(features=features, start_time=data.get('start_time', None), end_time=data.get('end_time', None))
 
     @app.route('/<qid>/tag', methods=['POST'])
     def tag(qid: str) -> Response:
