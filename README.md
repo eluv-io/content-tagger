@@ -7,13 +7,15 @@ A server for running individual containerized tagger models and publishing tags.
 2. Python
 3. A podman image for each model you want to run. See the individual model repos for more information. 
 4. A gpu, cpu inference is not yet supported. 
+5. ssh key with github access to qluvio
 
 ## Setup w/ conda
 
 1. Start podman API socket `systemctl --user start podman.socket`
-2. Create new conda environment `conda create -n tagger-services python=3.10`
-3. Activate the environment `conda activate tagger-services`
-4. Install dependencies `pip install .`
+2. Add private keys to ssh agent (if you are on remote server): `ssh-add` 
+3. Create new conda environment `conda create -n tagger-services python=3.10`
+4. Activate the environment `conda activate tagger-services`
+5. Install dependencies `pip install .`
 
 ## Usage
 

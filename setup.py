@@ -9,8 +9,9 @@ setup(
         'flask_cors',
         'loguru',
         'podman',
-        'elv-client-py @ git+https://github.com/eluv-io/elv-client-py.git@nick#egg=elv-client-py',
+        'pynvml',
+        'elv-client-py @ git+https://github.com/eluv-io/elv-client-py.git#egg=elv-client-py',
         'quick_test_py @ git+https://github.com/elv-nickB/quick_test_py.git#egg=quick_test_py',
-        'common-ml @ git+https://github.com/elv-nickB/common-ml.git#egg=common-ml'
+        'common_ml @ git+ssh://git@github.com/qluvio/common-ml.git#egg=common_ml',
     ]
 )
