@@ -1,6 +1,13 @@
 # Content-Tagger
 A server for running individual containerized tagger models and publishing tags.
 
+## Features
+
+1. Server for orchestrating tagging jobs across multiple containerized models. 
+2. Supports concurrent tagging across multiple tenants. 
+3. Splits jobs across all available GPUs and implements simple queing when there are more jobs than GPUs. 
+4. Offers an endpoint for finalizing tags by publishing to the Fabric. 
+
 ## Prerequisites
 
 1. Podman with nvidia-toolkit enabled
