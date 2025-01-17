@@ -1,5 +1,5 @@
 import argparse
-from typing import List, Optional, Literal, Dict
+from typing import List, Optional, Literal, Dict, Iterable
 from flask import Flask, request, Response, Request
 from flask_cors import CORS
 from podman import PodmanClient
@@ -8,7 +8,7 @@ from loguru import logger
 from dataclasses import dataclass, asdict, field
 import os
 from elv_client_py import ElvClient
-from collections import defaultdict
+from collections import defaultdict, deque
 import threading
 from requests.exceptions import HTTPError
 import traceback
@@ -19,14 +19,14 @@ import atexit
 from common_ml.types import Data
 
 from config import config
-from src.fetch import fetch_stream, StreamNotFoundError
+from src.fetch import fetch_stream, StreamNotFoundError, fetch_assets, AssetsNotFoundException
 from src.manager import ResourceManager, NoGPUAvailable
 
 @dataclass
 class Job:
     status: Literal["Starting", 
-                    "Fetching parts",
-                    "Waiting for GPU", 
+                    "Fetching content",
+                    "Waiting to be assigned GPU", 
                     "Completed", 
                     "Failed", 
                     "Stopped"]
@@ -43,8 +43,11 @@ def get_flask_app():
     # manages the gpu and inference jobs, is thread safe
     manager = ResourceManager()
 
-    # locks active and inactive jobs dictionaries
+    # locks job_queue, active, and inactive jobs dictionaries
     lock = threading.Lock()
+    job_queue = deque([])
+    # maps qid -> (feature, stream) -> job
+    # if job is waiting to be assigned a GPU it will still go in active_jobs
     active_jobs = defaultdict(dict)
     inactive_jobs = defaultdict(dict)
 
@@ -62,7 +65,7 @@ def get_flask_app():
     class RunConfig():
         # model config, used to overwrite the model level config
         model: dict=field(default_factory=dict) 
-        # stream name to run the model on, None to use the default stream
+        # stream name to run the model on, None to use the default stream. "image" is a special case which will tag image assets
         stream: Optional[str]=None 
     
     # TagArgs represents the request body for the /tag endpoint
@@ -94,91 +97,164 @@ def get_flask_app():
         elv_client = ElvClient.from_configuration_url(config_url=config["fabric"]["parts_url"], static_token=auth)
         if not _authenticate(elv_client, qid):
             return Response(response=json.dumps({'error': 'Unauthorized'}), status=403, mimetype='application/json')
-        services = _list_services()
-        for feature in args.features.keys():
-            if feature not in services:
-                return Response(response=json.dumps({'error': f"Service {feature} not found"}), status=404, mimetype='application/json')
+        
+        invalid_services = _get_invalid_features(args.features.keys())
+        if invalid_services:
+            return Response(response=json.dumps({'error': f"Services {invalid_services} not found"}), status=404, mimetype='application/json')
+            
+        with lock:
+            for feature, run_config in args.features.items():
+                if run_config.stream is None:
+                    # if stream name is not provided, we pick stream based on whether the model is audio/video based
+                    run_config.stream = config["services"][feature]["type"]
+                if (run_config.stream, feature) in active_jobs[qid]:
+                    return Response(response=json.dumps({'error': f"{feature} tagging is already in progress for {qid} on {run_config.stream}"}), status=400, mimetype='application/json')
+            for feature, run_config in args.features.items():
+                logger.debug(f"Starting {feature} on {qid}: {run_config.stream}")
+                active_jobs[qid][(run_config.stream, feature)] = Job(status="Starting", stop_event=threading.Event(), time_started=time.time())
+            threading.Thread(target=_video_tag, args=(args.features, qid, elv_client, args.start_time, args.end_time)).start()
+        return Response(response=json.dumps({'message': f'Tagging started on {qid}'}), status=200, mimetype='application/json')
+    
+    def _video_tag(feature: str, run_config: RunConfig, qid: str, elv_client: ElvClient, start_time: Optional[int], end_time: Optional[int]) -> None:
+        feature_to_media_files = _download_content(features, qid, elv_client, start_time=start_time, end_time=end_time)
+        _tag(features, feature_to_media_files, qid)
+
+     # TagArgs represents the request body for the /tag endpoint
+    @dataclass
+    class ImageTagArgs(Data):
+        # maps feature name to RunConfig
+        features: Dict[str, RunConfig]
+
+        # asset file paths to tag relative to the content object e.g. /assets/image.jpg, if empty then we will look in /meta/assets and tag all the image assets located there. 
+        assets: Optional[List[str]]
+
+        # if true, will overwrite existing tags. 
+        replace: bool
+
+        @staticmethod
+        def from_dict(data: dict) -> 'ImageTagArgs':
+            features = {feature: RunConfig(stream='image', **cfg) for feature, cfg in data['features'].items()}
+            return ImageTagArgs(features=features, assets=data.get('assets', None), replace=data.get('replace', False))
+        
+    @app.route('/<qid>/image_tag', methods=['POST'])
+    def image_tag(qid: str) -> Response:
+        data = request.json
+        try:
+            args = ImageTagArgs.from_dict(data)
+        except TypeError as e:
+            return Response(response=json.dumps({'error': str(e)}), status=400, mimetype='application/json')
+        auth = _get_authorization(request)
+        if not auth:
+            return Response(response=json.dumps({'error': 'No authorization provided'}), status=400, mimetype='application/json')
+        # elv_client should point to a url which offers the parts_download service
+        elv_client = ElvClient.from_configuration_url(config_url=config["fabric"]["parts_url"], static_token=auth)
+        if not _authenticate(elv_client, qid):
+            return Response(response=json.dumps({'error': 'Unauthorized'}), status=403, mimetype='application/json')
+        
+        invalid_services = _get_invalid_features(args.features.keys())
+        if invalid_services:
+            return Response(response=json.dumps({'error': f"Services {invalid_services} not found"}), status=404, mimetype='application/json')
             
         with lock:
             for feature in args.features.keys():
-                if active_jobs[qid].get(feature, None):
-                    return Response(response=json.dumps({'error': f"At least one of the requested features, {feature}, is already in progress for {qid}"}), status=400, mimetype='application/json')
+                if active_jobs[qid].get(('image', feature), None):
+                    return Response(response=json.dumps({'error': f"Image tagging for at least one of the requested features, {feature}, is already in progress for {qid}"}), status=400, mimetype='application/json')
             for feature in args.features.keys():
-                active_jobs[qid][feature] = Job(status="Starting", stop_event=threading.Event(), time_started=time.time())
-            threading.Thread(target=_tag, args=(args.features, qid, elv_client, args.start_time, args.end_time)).start()
-        return Response(response=json.dumps({'message': f'Tagging started on {qid}'}), status=200, mimetype='application/json')
+                active_jobs[qid][('image', feature)] = Job(status="Starting", stop_event=threading.Event(), time_started=time.time())
+            threading.Thread(target=_image_tag, args=(args.features, qid, elv_client, args.assets, args.replace)).start()
+        return Response(response=json.dumps({'message': f'Image asset tagging started on {qid}'}), status=200, mimetype='application/json')
     
-    # Download parts and then tag them
-    def _tag(features: Dict[str, RunConfig], qid: str, elv_client: ElvClient, start_time: Optional[int]=None, end_time: Optional[int]=None) -> None:
-        feature_to_parts = {}
+    def _image_tag(features: Dict[str, RunConfig], qid: str, elv_client: ElvClient, assets: Optional[List[str]], replace: bool) -> None:
+        feature_to_images = _download_content(features, qid, elv_client, assets=assets)
+        _tag(features, feature_to_images, qid)
+    
+    # Download content and tag
+    def _download_content(features: Dict[str, RunConfig], qid: str, elv_client: ElvClient, **kwargs) -> Dict[str, List[str]]:
+        feature_to_media_files = {}
         for feature, cfg in features.items():
+            stream = cfg.stream
             with lock:
-                job = active_jobs[qid][feature]
+                job = active_jobs[qid][(stream, feature)]
             if job.stop_event.is_set():
                 with lock:
-                    _set_stop_status(qid, feature)
+                    _set_stop_status(qid, stream, feature)
                 continue
-            stream = cfg.stream
-            if not stream:
-                stream = config["services"][feature]["type"]
             # parts storage path
-            save_path = os.path.join(config["storage"]["parts"], qid)
-            logger.info(f"Fetching parts to run {feature} on {qid}")
+            if stream == "image":
+                save_path = os.path.join(config["storage"]["images"], qid, stream)
+            else:
+                save_path = os.path.join(config["storage"]["parts"], qid, stream)
             try:
                 with download_lock[(qid, stream)]:
-                    job.status = "Fetching parts"
-                    # if fetching finished while waiting for lock, fetch_stream will return immediately
-                    part_paths = fetch_stream(qid, stream, os.path.join(save_path, stream), elv_client, start_time, end_time, exit_event=job.stop_event)
+                    job.status = "Fetching content"
+
+                    # if fetching finished while waiting for lock, this will return immediately
+                    if stream == "image":
+                        downloaded_files = fetch_assets(qid, save_path, elv_client, **kwargs, exit_event=job.stop_event)
+                    else:
+                        downloaded_files =  fetch_stream(qid, stream, save_path, elv_client, **kwargs, exit_event=job.stop_event)
                 if job.stop_event.is_set():
                     with lock:
-                        _set_stop_status(qid, feature)
+                        _set_stop_status(qid, stream, feature)
                     continue
-            except StreamNotFoundError:
+            except (StreamNotFoundError, AssetsNotFoundException):
                 with lock:
-                    job = active_jobs[qid][feature]
+                    job = active_jobs[qid][(stream, feature)]
                     job.status = "Failed"
                     job.time_ended = time.time()
-                    if not stream:
-                        job.error = f"Stream {stream} not found for {qid}. Please specify a stream in the arguments to /tag."
-                    else:
-                        job.error = f"The specified stream, {stream}, was not found for {qid}"
-                    inactive_jobs[qid][feature] = job
-                    del active_jobs[qid][feature]
+                    job.error = f"Content for stream {stream}, was not found for {qid}"
+                    inactive_jobs[qid][(stream, feature)] = job
+                    del active_jobs[qid][(stream, feature)]
                     logger.error(job.error)
                     # continue and skip this feature
                     continue
             except HTTPError as e:
                 with lock:
-                    job = active_jobs[qid][feature]
+                    job = active_jobs[qid][(stream, feature)]
                     job.status = "Failed"
                     job.error = f"Failed to fetch stream {stream} for {qid}: {str(e)}. Make sure authorization token hasn't expired."
                     job.time_ended = time.time()
-                    inactive_jobs[qid][feature] = job
-                    del active_jobs[qid][feature]
+                    inactive_jobs[qid][(stream, feature)] = job
+                    del active_jobs[qid][(stream, feature)]
                     logger.error(job.error)
                     # continue and skip this feature
                     continue
-            feature_to_parts[feature] = part_paths
+            feature_to_media_files[feature] = downloaded_files
+        return feature_to_media_files        
 
-        # TODO: we require all features to retrieve their parts before starting the tagging process, can be optimized later. 
-
-        running_features = []        
-        for feature, part_paths in feature_to_parts.items():
+    # The main tagging function for audio/video/image content. 
+    # This manages a set of tag jobs for a single content object.
+    # Args:
+    #   features: maps feature name to RunConfig
+    #   feature_to_media_files: maps feature name to list of media files to tag
+    #   qid: content object id
+    # Effects:
+    #   1. Loops through features to tag and runs tagging container once a GPU is available
+    #   2. Waits for tagging to complete
+    #   3. Updates the job status appropriately for monitoring progress
+    #   4. Moves the outputted tags to the correct location
+    # TODO: we need to support an option to avoid tagging when the tags already exist
+    def _tag(features: Dict[str, RunConfig], feature_to_media_files: Dict[str, List[str]], qid: str) -> None:
+        running_features = []
+        for feature in features.keys():
+            job = active_jobs[qid][(features[feature].stream, feature)]
+            job.status = "Waiting to be assigned GPU"
+        for feature, files in feature_to_media_files.items():
+            stream = features[feature].stream
             with lock:
-                job = active_jobs[qid][feature]
+                job = active_jobs[qid][(stream, feature)]
 
-            # wait for a gpu to be available to start the tagging process for the job
+            # wait for a GPU to be available to start the tagging process for the job
             while True:
                 # check if the job was stopped
                 if job.stop_event.is_set():
                     logger.warning(f"Stopping {feature} on {qid}")
                     with lock:
-                        _set_stop_status(qid, feature)
+                        _set_stop_status(qid, stream, feature)
                     break
                 try:
-                    job_id = manager.run(feature, features[feature].model, part_paths)
+                    job_id = manager.run(feature, features[feature].model, files)
                 except NoGPUAvailable:
-                    job.status = "Waiting for GPU"
                     time.sleep(config["devices"]["wait_for_gpu_sleep"])
                     continue
                 except Exception as e:
@@ -187,13 +263,13 @@ def get_flask_app():
                         job.status = "Failed"
                         job.time_ended = time.time()
                         job.error = str(e)
-                        inactive_jobs[qid][feature] = job
-                        del active_jobs[qid][feature]
+                        inactive_jobs[qid][(stream, feature)] = job
+                        del active_jobs[qid][(stream, feature)]
                         break
 
                 logger.success(f"Started running {feature} on {qid}")
                 job.tag_job_id = job_id
-                job.status = "Tagging parts"
+                job.status = "Tagging content"
 
                 running_features.append(feature)
                 break
@@ -201,29 +277,26 @@ def get_flask_app():
         # watch jobs
         while len(running_features) > 0:
             for feature in running_features[:]:
+                stream = features[feature].stream
                 with lock:
-                    job = active_jobs[qid][feature]
+                    job = active_jobs[qid][(stream, feature)]
                 if job.stop_event.is_set():
                     _stop_container(job)
                     with lock:
-                        _set_stop_status(qid, feature)
+                        _set_stop_status(qid, stream, feature)
                     running_features.remove(feature)
                     continue
                 status = manager.status(job.tag_job_id)
                 if status.status == "Running":
                     continue
-                # Else the job is completed or failed
-                stream = features[feature].stream
-                if not stream:
-                    stream = config["services"][feature]["type"]
                 if status.status == "Completed":
                     # move outputted tags to their correct place
                     _move_files(qid, stream, feature, status.tags)
                 job.status = status.status 
                 job.time_ended = time.time()
                 with lock:
-                    inactive_jobs[qid][feature] = job
-                    del active_jobs[qid][feature]
+                    inactive_jobs[qid][(stream, feature)] = job
+                    del active_jobs[qid][(stream, feature)]
                 running_features.remove(feature)
             time.sleep(5)
         logger.success(f"Finished tagging {qid}")
@@ -277,7 +350,7 @@ def get_flask_app():
     class JobStatus():
         status: Literal["Starting", 
                         "Fetching parts",
-                        "Waiting for GPU", 
+                        "Waiting to be assigned GPU", 
                         "Completed", 
                         "Failed", 
                         "Stopped"]
@@ -305,12 +378,19 @@ def get_flask_app():
             return Response(response=json.dumps({'error': 'Unauthorized'}), status=403, mimetype='application/json')
 
         with lock:
-            features = set(active_jobs[qid].keys()) | set(inactive_jobs[qid].keys())
-            if len(features) == 0:
+            jobs = set(active_jobs[qid].keys()) | set(inactive_jobs[qid].keys())
+            if len(jobs) == 0:
                 return Response(response=json.dumps({'error': f"No jobs started for {qid}"}), status=404, mimetype='application/json')
-            res = {feature: _get_job_status(active_jobs[qid][feature]) if feature in active_jobs[qid] else _get_job_status(inactive_jobs[qid][feature]) for feature in features}
-        for feature in list(res.keys()):
-            res[feature] = asdict(res[feature])
+            res = defaultdict(dict)
+            for job in jobs:
+                stream, feature = job
+                if job in active_jobs[qid]:
+                    res[stream][feature] = _get_job_status(active_jobs[qid][job])
+                else:
+                    res[stream][feature] = _get_job_status(inactive_jobs[qid][job])
+        for stream in list(res.keys()):
+            for feature in list(res[stream].keys()):
+                res[stream][feature] = asdict(res[stream][feature])
         return Response(response=json.dumps(res), status=200, mimetype='application/json')
     
     @app.route('/<qid>/stop/<feature>', methods=['DELETE'])
@@ -322,10 +402,13 @@ def get_flask_app():
         if not _authenticate(client, qid):
             return Response(response=json.dumps({'error': 'Unauthorized'}), status=403, mimetype='application/json')
         with lock:
-            if feature not in active_jobs[qid]:
+            job_keys = active_jobs[qid].keys()
+            feature_job_keys = [job_key for job_key in job_keys if job_key[1] == feature]
+            if len(feature_job_keys) == 0:
                 return Response(response=json.dumps({'error': f"No job running for {feature} on {qid}"}), status=404, mimetype='application/json')
-            job = active_jobs[qid][feature]
-        job.stop_event.set()
+            jobs = [active_jobs[qid][job_key] for job_key in feature_job_keys]
+        for job in jobs:
+            job.stop_event.set()
         return Response(response=json.dumps({'message': f"Stopping {feature} on {qid}. Check with /status for completion."}), status=200, mimetype='application/json')
     
     def _list_services() -> List[str]:
@@ -341,13 +424,13 @@ def get_flask_app():
     
     # Not thread safe
     # Should be called with lock
-    def _set_stop_status(qid: str, feature: str) -> None:
-        job = active_jobs[qid][feature]
+    def _set_stop_status(qid: str, stream: str, feature: str) -> None:
+        job = active_jobs[qid][(stream, feature)]
         job.status = "Stopped"
         job.time_ended = time.time()
         job.message = "Job was stopped"
-        inactive_jobs[qid][feature] = job
-        del active_jobs[qid][feature]
+        inactive_jobs[qid][(stream, feature)] = job
+        del active_jobs[qid][(stream, feature)]
 
     def _stop_container(job: Job) -> None:
         manager.stop(job.tag_job_id)
@@ -367,6 +450,10 @@ def get_flask_app():
         except HTTPError:
             return False
         return True
+    
+    def _get_invalid_features(features: Iterable[str]) -> List[str]:
+        services = _list_services()
+        return [feature for feature in features if feature not in services]
     
     def _shutdown() -> None:
         logger.warning("Shutting down")

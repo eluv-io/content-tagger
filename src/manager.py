@@ -150,15 +150,16 @@ class ResourceManager:
         for f in job.media_files:
             video_tags = os.path.join(config["storage"]["tmp"], job.feature, f"{os.path.basename(f).split('.')[0]}_tags.json")
             frame_tags = os.path.join(config["storage"]["tmp"], job.feature, f"{os.path.basename(f).split('.')[0]}_frametags.json")
+            image_tags = os.path.join(config["storage"]["tmp"], job.feature, f"{os.path.basename(f).split('.')[0]}_imagetags.json")
             if os.path.exists(video_tags):
                 tags.append(video_tags)
-            else:
-                job.warnings.append(f"File {f} failed to tag")
-            if os.path.exists(frame_tags) and config["services"][job.feature].get("frame_level", False):
-                tags.append(frame_tags)
-            elif config["services"][job.feature].get("frame_level", False):
-                job.warnings.append(f"File {f} failed to tag frames")
-        
+            if config["services"][job.feature].get("frame_level", False):
+                if os.path.exists(frame_tags):
+                    tags.append(frame_tags)
+                if os.path.exists(image_tags):
+                    tags.append(image_tags)
+            # TODO: should add warning if nothing is generated
+            
         with self.lock:
             self.jobs[jobid].tags = tags
             self._cleanup_job(jobid, "Completed")
@@ -186,12 +187,12 @@ class ResourceManager:
     def _stop_container(self, container: Container) -> None:
         logger.info(f"Stopping container: status={container.status}")
         if container.status == "running":
+            # podman client will kill if it doesn't stop within the timeout limit
             container.stop(timeout=2)
         container.reload()
         if container.status == "running":
             logger.error(f"Container status is still \"running\" after stop. Please check the container and stop it manually.")
 
-    # Concise status of a job for the client
     @dataclass
     class TagJobStatus:
         status: str # from TagJob.status

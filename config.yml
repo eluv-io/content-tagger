@@ -3,6 +3,7 @@ storage:
   tags: data/tags
   container_cache: data/cache
   parts: data/parts
+  images: data/images
   tmp: data/tmp
   logs: logs
 fabric:
