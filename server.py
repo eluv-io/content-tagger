@@ -163,6 +163,10 @@ def get_flask_app():
         invalid_services = _get_invalid_features(args.features.keys())
         if invalid_services:
             return Response(response=json.dumps({'error': f"Services {invalid_services} not found"}), status=404, mimetype='application/json')
+
+        for feature, run_config in args.features.items():
+            if not config["services"][feature].get("frame_level", False):
+                return Response(response=json.dumps({'error': f"Image tagging for {feature} is not supported"}), status=400, mimetype='application/json')
             
         with lock:
             for feature in args.features.keys():
@@ -274,6 +278,8 @@ def get_flask_app():
                         # move outputted tags to their correct place
                         _move_files(qid, job.run_config.stream, job.feature, status.tags)
                     job.status = status.status 
+                    if status.status == "Failed":
+                        job.error = "An error occurred while running model container"
                     job.time_ended = time.time()
                     with lock:
                         # move job to inactive_jobs
@@ -301,8 +307,8 @@ def get_flask_app():
         return False
 
     def _move_files(qid: str, stream: str, feature: str, tags: List[str]) -> None:
+        os.makedirs(os.path.join(config["storage"]["tags"], qid, stream, feature), exist_ok=True)
         for tag in tags:
-            os.makedirs(os.path.join(config["storage"]["tags"], qid, stream, feature), exist_ok=True)
             shutil.move(tag, os.path.join(config["storage"]["tags"], qid, stream, feature, os.path.basename(tag)))
 
     @dataclass
@@ -331,9 +337,14 @@ def get_flask_app():
         for stream in os.listdir(os.path.join(config["storage"]["tags"], qid)):
             for feature in os.listdir(os.path.join(config["storage"]["tags"], qid, stream)):
                 for tag in os.listdir(os.path.join(config["storage"]["tags"], qid, stream, feature)):
-                    file_jobs.append(ElvClient.FileJob(local_path=os.path.join(config["storage"]["tags"], qid, stream, feature, tag), 
-                                                out_path=f"video_tags/{stream}/{feature}/{tag}",
-                                                mime_type="application/json"))
+                    if stream == "image":
+                        file_jobs.append(ElvClient.FileJob(local_path=os.path.join(config["storage"]["tags"], qid, stream, feature, tag), 
+                                                            out_path=f"image_tags/{feature}/{tag}",
+                                                            mime_type="application/json"))
+                    else:
+                        file_jobs.append(ElvClient.FileJob(local_path=os.path.join(config["storage"]["tags"], qid, stream, feature, tag), 
+                                                    out_path=f"video_tags/{stream}/{feature}/{tag}",
+                                                    mime_type="application/json"))
         try:
             client.upload_files(qwt, qlib, file_jobs)
         except HTTPError as e:

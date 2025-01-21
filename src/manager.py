@@ -159,9 +159,9 @@ class ResourceManager:
 
         tags = []
         for f in job.media_files:
-            video_tags = os.path.join(config["storage"]["tmp"], job.feature, f"{os.path.basename(f).split('.')[0]}_tags.json")
-            frame_tags = os.path.join(config["storage"]["tmp"], job.feature, f"{os.path.basename(f).split('.')[0]}_frametags.json")
-            image_tags = os.path.join(config["storage"]["tmp"], job.feature, f"{os.path.basename(f).split('.')[0]}_imagetags.json")
+            video_tags = os.path.join(config["storage"]["tmp"], job.feature, f"{os.path.basename(f)}_tags.json")
+            frame_tags = os.path.join(config["storage"]["tmp"], job.feature, f"{os.path.basename(f)}_frametags.json")
+            image_tags = os.path.join(config["storage"]["tmp"], job.feature, f"{os.path.basename(f)}_imagetags.json")
             if os.path.exists(video_tags):
                 tags.append(video_tags)
             if config["services"][job.feature].get("frame_level", False):
