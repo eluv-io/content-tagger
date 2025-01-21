@@ -51,6 +51,11 @@ class ResourceManager:
         self.jobs: Dict[str, TagJob] = {}
         # (media file, model) pairs, cannot have two jobs going on the same file with the same model
         self.files_tagging = set()
+        
+        # check if GPUs are available
+        self.gpu_available = threading.Event()
+        if self.num_devices > 0:
+            self.gpu_available.set()
 
     # Args:
     #     feature (str): The feature to tag the files with.
@@ -84,13 +89,19 @@ class ResourceManager:
                         raise ValueError(f"File {f} is already being tagged with {feature}")
                     self.files_tagging.add((f, feature))
                     files_added.append((f, feature))
+                if all(self.device_status[i] for i in range(self.num_devices)):
+                    self.gpu_available.clear()
                 container = create_container(self.client, feature, files, run_config, device_idx, logs_out)
                 container.start()
                 self.jobs[jobid] = TagJob(container, feature, logs_out, device_idx, "Running", threading.Event(), time.time(), None, files, [], [])
             except Exception as e:
                 # cleanup resources if job fails to start
                 if container:
-                    self._stop_container(container)
+                    try:
+                        self._stop_container(container)
+                    except Exception as e2:
+                        logger.error(f"Error while stopping container: feature={feature}: {e2}")
+                        raise e2
                 for f, feature in files_added:
                     self.files_tagging.remove((f, feature))
                 if device_idx is not None:
@@ -173,6 +184,9 @@ class ResourceManager:
             time.sleep(1)
         logger.info(f"Job {jobid} stopped")
 
+    def await_gpu(self, timeout: Optional[int]=None) -> bool:
+        return self.gpu_available.wait(timeout=timeout)
+
     # cleanup job resources
     # NOTE: NOT THREAD SAFE, must be called with lock
     def _cleanup_job(self, jobid: str, status: str) -> None:
@@ -183,6 +197,7 @@ class ResourceManager:
         for f in job.media_files:
             self.files_tagging.remove((f, job.feature))
         self.device_status[job.device] = False
+        self.gpu_available.set()
 
     def _stop_container(self, container: Container) -> None:
         logger.info(f"Stopping container: status={container.status}")
@@ -205,11 +220,15 @@ class ResourceManager:
             if job.status != "Running":
                 return ResourceManager.TagJobStatus(job.status, tags=job.tags, time_elapsed=(job.time_ended - job.time_started))
             else:
-                return ResourceManager.TagJobStatus(job.status, tags=job.tags, time_elapsed=(time.time() - job.time_started))
-        
+                return ResourceManager.TagJobStatus(job.status, tags=job.tags, \
+                        time_elapsed=time.time() - job.time_started) 
+                
     def shutdown(self):
-        for jobid in self.jobs:
-            if self.jobs[jobid].status == "Running":
+        """
+        Stop all running jobs and close the podman client.
+        """
+        for jobid, job in self.jobs.items():
+            if job.status == "Running":
                 self.stop(jobid)
         self.client.close()
         pynvml.nvmlShutdown()

@@ -30,4 +30,6 @@ services:
 devices: 
   # if true, then tagger will run on gpus even if they are used by a foreign process
   allow_in_use_gpus: true
-  wait_for_gpu_sleep: 20
+  wait_for_gpu_sleep: 5
+watcher:
+  sleep: 5

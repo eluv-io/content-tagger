@@ -56,7 +56,7 @@ def fetch_stream(content_id: str, stream_name: str, output_path: str, client: El
                 os.rename(tmp_path, save_path)
             res.append(save_path)
         except HTTPError as e:
-            raise HTTPError(f"Failed to download part {part_hash} for content_id {content_id}") from e
+            raise HTTPError(f"Failed to download part {part_hash} for content_id {content_id}: {str(e)}") 
     return res
 
 class AssetsNotFoundException(Exception):
