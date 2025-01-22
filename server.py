@@ -247,7 +247,8 @@ def get_flask_app():
                 if active_jobs[qid].get(('image', feature), None):
                     return Response(response=json.dumps({'error': f"Image tagging for at least one of the requested features, {feature}, is already in progress for {qid}"}), status=400, mimetype='application/json')
             for feature, run_config in args.features.items():
-                job = Job(qid=qid, feature=feature, run_config=run_config, media_files=[], replace=args.replace, status="Starting", stop_event=threading.Event(), time_started=time.time())
+                requires_gpu = config["services"][feature].get("requires_gpu", True)
+                job = Job(qid=qid, feature=feature, run_config=run_config, media_files=[], replace=args.replace, requires_gpu=requires_gpu, status="Starting", stop_event=threading.Event(), time_started=time.time())
                 active_jobs[qid][('image', feature)] = job
                 threading.Thread(target=_image_tag, args=(job, client, args.assets, args.replace)).start()
         return Response(response=json.dumps({'message': f'Image asset tagging started on {qid}'}), status=200, mimetype='application/json')
