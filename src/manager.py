@@ -24,8 +24,8 @@ class TagJob:
     feature: str
     # path to logs
     logs_out: str
-    # device index
-    device: int
+    # device index, None if no GPU
+    device: Optional[int]
     # status of the job
     status: Literal["Running", "Completed", "Stopped", "Failed"]
     stop_event: threading.Event
@@ -47,14 +47,20 @@ class ResourceManager:
         # ensures thread safety of device_status, jobs, and files_tagging
         self.lock = threading.Lock()
 
-        self.device_status = [False for i in range(self.num_devices)]
+        if config["devices"]["allow_in_use_gpus"]:
+            self.foreign_gpus = []
+        else:
+            self.foreign_gpus = [i for i in range(self.num_devices) if is_gpu_in_use(i)]
+
+        self.device_status = [i in self.foreign_gpus for i in range(self.num_devices)]
+
         self.jobs: Dict[str, TagJob] = {}
         # (media file, model) pairs, cannot have two jobs going on the same file with the same model
         self.files_tagging = set()
         
         # check if GPUs are available
         self.gpu_available = threading.Event()
-        if self.num_devices > 0:
+        if any(not status for status in self.device_status):
             self.gpu_available.set()
 
     # Args:
@@ -64,22 +70,29 @@ class ResourceManager:
     # Returns:
     #     str: The job ID.
     # NOTE: this function creates a new thread to watch the job
-    def run(self, feature: str, run_config: dict, files: List[str]) -> str:
+    def run(self, feature: str, run_config: dict, files: List[str], needs_gpu: bool) -> str:
+        self.update_gpu_state()
+        print(self.device_status)
         with self.lock:
             device_idx = None
             container = None
             files_added = []
             try:
-                for i, status in enumerate(self.device_status):
-                    if not status:
-                        if not config["devices"]["allow_in_use_gpus"] and is_gpu_in_use(i):
-                            logger.error(f"GPU {i} is in use by a non-tagger process")
-                            continue
-                        device_idx = i
-                        self.device_status[i] = True
-                        break
-                if device_idx is None:
-                    raise NoGPUAvailable("No available GPUs") 
+                if needs_gpu:
+                    for i, status in enumerate(self.device_status):
+                        if not status:
+                            if not config["devices"]["allow_in_use_gpus"] and is_gpu_in_use(i):
+                                logger.error(f"GPU {i} is in use by a non-tagger process")
+                                self.foreign_gpus.append(i)
+                                self.device_status[i] = True
+                                if all(self.device_status[i] for i in range(self.num_devices)):
+                                    self.gpu_available.clear()
+                                continue
+                            device_idx = i
+                            self.device_status[i] = True
+                            break
+                    if device_idx is None:
+                        raise NoGPUAvailable("No available GPUs")
                 jobid = str(uuid.uuid4())
                 if not os.path.exists(os.path.join(config["storage"]["logs"], feature)):
                     os.makedirs(os.path.join(config["storage"]["logs"], feature))
@@ -109,6 +122,16 @@ class ResourceManager:
                 raise e
         threading.Thread(target=self._watch_job, args=(jobid, )).start()
         return jobid
+    
+    def update_gpu_state(self):
+        """
+        Checks all GPUs that are not in use by the tagger and updates the device status if they are now available.
+        """
+        with self.lock:
+            for gpu_idx in self.foreign_gpus:
+                if not is_gpu_in_use(gpu_idx):
+                    self.device_status[gpu_idx] = True
+                    self.gpu_available.set()
     
     def _is_container_active(self, status: str) -> bool:
         return status == "running" or status == "created"
@@ -148,7 +171,6 @@ class ResourceManager:
                 self._cleanup_job(jobid, "Stopped")
             return
         
-        # TODO: Usually even if the container fails, exit code is 0. Need to fix. 
         exit_code = job.container.attrs["State"]["ExitCode"]
         if exit_code != 0:
             logger.error(f"Job {jobid} failed to complete")
@@ -196,8 +218,9 @@ class ResourceManager:
         self._stop_container(job.container)
         for f in job.media_files:
             self.files_tagging.remove((f, job.feature))
-        self.device_status[job.device] = False
-        self.gpu_available.set()
+        if job.device is not None:
+            self.device_status[job.device] = False
+            self.gpu_available.set()
 
     def _stop_container(self, container: Container) -> None:
         logger.info(f"Stopping container: status={container.status}")
@@ -241,9 +264,10 @@ def is_gpu_in_use(gpu_idx: int) -> bool:
     Returns:
         bool: True if the GPU is in use, False otherwise.
     """
-    if not pynvml.is_initialized():
-        raise RuntimeError("pynvml is not initialized. Call pynvml.nvmlInit() before calling this function.")
-    handle = pynvml.nvmlDeviceGetHandleByIndex(gpu_idx)
-    compute_procs = pynvml.nvmlDeviceGetComputeRunningProcesses(handle)
-    graphics_procs = pynvml.nvmlDeviceGetGraphicsRunningProcesses(handle)
-    return bool(compute_procs or graphics_procs)
+    try:
+        handle = pynvml.nvmlDeviceGetHandleByIndex(gpu_idx)
+        compute_procs = pynvml.nvmlDeviceGetComputeRunningProcesses(handle)
+        graphics_procs = pynvml.nvmlDeviceGetGraphicsRunningProcesses(handle)
+        return bool(compute_procs or graphics_procs)
+    except pynvml.NVMLError_Uninitialized as e:
+        raise e

@@ -2,13 +2,13 @@ from podman import PodmanClient
 from podman.domain.containers import Container
 import json
 import os
-from typing import List
+from typing import List, Optional
 
 from config import config
 
 # Run a container with the given feature and files
 # Outputs list of tag files
-def create_container(client: PodmanClient, feature: str, files: List[str], run_config: dict, device_idx: int, out: str="/dev/null") -> Container:
+def create_container(client: PodmanClient, feature: str, files: List[str], run_config: dict, device_idx: Optional[int], out: str="/dev/null") -> Container:
     out_path = os.path.join(config["storage"]["tmp"], feature)
     if not os.path.exists(out_path):
         os.makedirs(out_path)
@@ -43,11 +43,13 @@ def create_container(client: PodmanClient, feature: str, files: List[str], run_c
             "type": "bind",
             "read_only": True
         })
-    container = client.containers.create(image=feature,
-                                command=[f"{os.path.basename(p)}" for p in files] + ["--config", f"{json.dumps(run_config)}"],  
-                                mounts=volumes,  
-                                remove=True,  
-                                network_mode="host",  
-                                devices=[f"nvidia.com/gpu={device_idx}"], 
-    )
+    kwargs = {"image": feature, 
+            "command": [f"{os.path.basename(p)}" for p in files] + ["--config", f"{json.dumps(run_config)}"], 
+            "mounts": volumes, 
+            "remove": True, 
+            "network_mode": "host", 
+        }
+    if device_idx is not None:
+        kwargs["devices"] = [f"nvidia.com/gpu={device_idx}"]
+    container = client.containers.create(**kwargs)
     return container

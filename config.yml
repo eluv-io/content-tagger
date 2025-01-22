@@ -12,6 +12,11 @@ fabric:
   # for all other fabric interaction
   config_url: https://host-154-14-185-100.contentfabric.io/config?self&qspace=main
 services:
+  llava:
+    image: "localhost/llava:latest"
+    type: "video"
+    frame_level: true
+    requires_gpu: false
   asr: 
     image: "localhost/asr:latest"
     type: "audio"
@@ -29,7 +34,7 @@ services:
     frame_level: true
 devices: 
   # if true, then tagger will run on gpus even if they are used by a foreign process
-  allow_in_use_gpus: true
+  allow_in_use_gpus: false
   wait_for_gpu_sleep: 5
 watcher:
   sleep: 5
