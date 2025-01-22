@@ -17,6 +17,7 @@ import shutil
 import signal
 import atexit
 from common_ml.types import Data
+from common_ml.tag_formatting import format_video_tags, format_asset_tags
 
 from config import config
 from src.fetch import fetch_stream, StreamNotFoundError, fetch_assets, AssetsNotFoundException
@@ -415,18 +416,30 @@ def get_flask_app():
                                                 out_path=f"video_tags/{stream}/{feature}/{os.path.basename(source)}_frametags.json",
                                                 mime_type="application/json"))
 
-        if len(file_jobs) == 0:
-            return Response(response=json.dumps({'error': 'No new tag files to upload'}), status=400, mimetype='application/json')
+        if len(file_jobs) > 0:
+            try:
+                logger.debug(f"Uploading {len(file_jobs)} tag files")
+                client.upload_files(qwt, qlib, file_jobs, finalize=False)
+            except HTTPError as e:
+                return Response(response=json.dumps({'error': str(e), 'message': 'Please verify you\'re authorization token has write access and the write token has not already been committed. \
+                                                    This error can also arise if the write token has already been used to finalize tags.'}), status=403, mimetype='application/json')
+            except ValueError as e:
+                return Response(response=json.dumps({'error': str(e), 'message': 'Please verify the provided write token has not already been used to finalize tags.'}), status=400, mimetype='application/json')
+        # if no file jobs, then we just do the aggregation
 
         try:
-            logger.debug(f"Uploading {len(file_jobs)} tag files")
-            client.upload_files(qwt, qlib, file_jobs)
-        except HTTPError as e:
-            return Response(response=json.dumps({'error': str(e), 'message': 'Please verify you\'re authorization token has write access and the write token has not already been committed. \
-                                                 This error can also arise if the write token has already been used to finalize tags.'}), status=403, mimetype='application/json')
-        except ValueError as e:
-            return Response(response=json.dumps({'error': str(e), 'message': 'Please verify the provided write token has not already been used to finalize tags.'}), status=400, mimetype='application/json')
-        
+            video_streams = client.list_files(qlib, write_token=qwt, path="/video_tags")
+        except HTTPError:
+            video_streams = []
+        video_streams = [path.split("/")[0] for path in video_streams if path.endswith("/") and path[:-1] != "image"]
+
+        logger.debug(f"Found video streams: {video_streams}")
+
+        if video_streams:
+            format_video_tags(client, qwt, video_streams, config["agg"]["interval"])
+            
+        format_asset_tags(client, qwt)
+
         return Response(response=json.dumps({'message': 'Succesfully uploaded tag files. Please finalize the write token.', 'write token': qwt}), status=200, mimetype='application/json')
     
     # JobStatus represents the status of a job returned by the /status endpoint

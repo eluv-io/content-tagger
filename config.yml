@@ -33,3 +33,5 @@ devices:
   wait_for_gpu_sleep: 5
 watcher:
   sleep: 5
+agg:
+  interval: 10
