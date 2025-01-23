@@ -72,7 +72,6 @@ class ResourceManager:
     # NOTE: this function creates a new thread to watch the job
     def run(self, feature: str, run_config: dict, files: List[str], needs_gpu: bool) -> str:
         self.update_gpu_state()
-        print(self.device_status)
         with self.lock:
             device_idx = None
             container = None
@@ -128,11 +127,19 @@ class ResourceManager:
         Checks all GPUs that are not in use by the tagger and updates the device status if they are now available.
         """
         with self.lock:
-            for gpu_idx in self.foreign_gpus:
+            for i in range(len(self.foreign_gpus)-1, -1, -1):
+                gpu_idx = self.foreign_gpus[i]
                 if not is_gpu_in_use(gpu_idx):
-                    self.device_status[gpu_idx] = True
+                    self.foreign_gpus.pop(i)
+                    self.device_status[gpu_idx] = False
                     self.gpu_available.set()
-    
+            for i in range(self.num_devices):
+                if not self.device_status[i] and is_gpu_in_use(i):
+                    self.foreign_gpus.append(i)
+                    self.device_status[i] = True
+            if all(self.device_status[i] for i in range(self.num_devices)):
+                self.gpu_available.clear()
+            
     def _is_container_active(self, status: str) -> bool:
         return status == "running" or status == "created"
     
