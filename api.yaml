@@ -4,15 +4,14 @@ info:
   title: Content Tagger API
   version: 1.0.0
   description: |
-    This API helps users generate tags for a given content object based on a given time-range and set of models to run. It can also upload the tags to the content object.
+    This service is used for generating ml-tags on content objects and publishing them. Depending on the model, it can generate tags for video/audio streams as well as static image assets. 
 servers:
   - url: https://ai.contentfabric.io/tagger
 paths:
   /{qid}/tag:
     post:
       summary: |
-        Starts a tagging job for the given content object based on a given time-range and set of models to run. The job will run asynchronously, and
-        the status can be checked with /status
+        Starts a tagging job for the given content object based on a given time-range and set of models to run. The job will run asynchronously, and the status can be checked with /status
       parameters:
         - in: path
           name: qid
@@ -57,6 +56,75 @@ paths:
                           example: {"fps": 2, "threshold": 0.5}
                       required: 
                         - model_config
+                  example:
+                    {"celeb":{"allow_single_frame":false, "fps": 2}}
+                replace:
+                  type: boolean
+                  description: If this is set to true, we will regenerate previously uploaded tag files. Note this will not affect the content until finalization.
+              required:
+                - features
+      responses:
+        '200':
+          description: Summary of the given tags
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Tagging started on iq__3C58dDYxsn5KKSWGYrfYr44ykJRm
+  /{qid}/image_tag:
+    post:
+      summary: |
+        Starts an image tagging job for the given content object based on the provided file paths and set of models to run. The status can be checked with /status
+      parameters:
+        - in: path
+          name: qid
+          required: true
+          schema:
+            type: string
+          description: Content object id to tag
+        - in: query
+          name: authorization
+          required: false
+          schema:
+            type: string
+          description: Fabric authorization token. This can also be passed in the header.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                assets:
+                  type: array
+                  items: 
+                    type: string
+                  example: ["/assets/abc.jpg", "/assets/bar.jpg"]
+                  description: Set of file paths which point to image files to tag. If this is not set, then we will tag all images under /meta/assets 
+                features:
+                  type: object
+                  properties:
+                    feature_name:
+                      type: object
+                      properties:
+                        stream:
+                          type: string
+                          description: Stream name to Tag. If not provided, will tag the default stream ("video" for video-level models or "audio" for audio-level models)
+                          example: "audio"
+                        model:
+                          type: object
+                          description: Model configuration information to override any defaults. Consult the individual model documentation for the required fields. Leave empty to use the default configuration.
+                          example: {"fps": 2, "threshold": 0.5}
+                      required: 
+                        - model_config
+                  example:
+                    {"celeb":{"allow_single_frame":false, "fps": 2}}
+                replace:
+                  type: boolean
+                  description: If this is set to true, we will regenerate previously uploaded tag files. Note this will not affect the content until finalization.
               required:
                 - features
       responses:
@@ -110,10 +178,6 @@ paths:
                   error:
                     type: string
                     description: Error message if the job has failed
-                    example: null
-                  message:
-                    type: string
-                    description: Other information
                     example: null
   /{qid}/stop/{feature}:
     delete:
