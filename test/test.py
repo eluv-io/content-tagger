@@ -4,7 +4,7 @@ import os
 import shutil
 from elv_client_py import ElvClient
 
-from src.fetch_stream import fetch_stream
+from src.fetch import fetch_stream
 
 test_config = {
     'config_url': 'http://192.168.96.203/config?self&qspace=main',

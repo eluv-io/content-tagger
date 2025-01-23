@@ -32,6 +32,17 @@ services:
     image: "localhost/celeb:latest"
     type: "video"
     frame_level: true
+  # Used for testing
+  dummy_gpu:
+    image: "localhost/dummy_gpu:latest"
+    type: "video"
+    frame_level: true
+    requires_gpu: true
+  dummy_cpu:
+    image: "localhost/dummy_cpu:latest"
+    type: "video"
+    frame_level: true
+    requires_gpu: false
 devices: 
   # if true, then tagger will run on gpus even if they are used by a foreign process
   allow_in_use_gpus: false

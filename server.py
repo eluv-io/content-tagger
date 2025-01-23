@@ -18,6 +18,7 @@ import signal
 import atexit
 from common_ml.types import Data
 from common_ml.tag_formatting import format_video_tags, format_asset_tags
+from common_ml.utils.metrics import timeit
 
 from config import config
 from src.fetch import fetch_stream, StreamNotFoundError, fetch_assets, AssetsNotFoundException
@@ -409,8 +410,11 @@ def get_flask_app():
                 for tag in os.listdir(os.path.join(config["storage"]["tags"], qid, stream, feature)):
                     tagfile = os.path.join(config["storage"]["tags"], qid, stream, feature, tag)
                     tagged_media_files.append(_source_from_tag_file(tagfile))
+                num_files = len(tagged_media_files)
                 if not args.replace:
-                    tagged_media_files = _filter_tagged_files(tagged_media_files, client, qid, stream, feature)
+                    with timeit("Filtering tagged files for {qid}, {feature}, {stream}"):
+                        tagged_media_files = _filter_tagged_files(tagged_media_files, client, qid, stream, feature)
+                logger.debug(f"Upload status for {qid}: {feature} on {stream}\nTotal media files: {num_files}, Media files to upload: {len(tagged_media_files)}, Media files already uploaded: {num_files - len(tagged_media_files)}")
                 if not tagged_media_files:
                     continue
                 if stream == "image":
@@ -433,7 +437,8 @@ def get_flask_app():
         if len(file_jobs) > 0:
             try:
                 logger.debug(f"Uploading {len(file_jobs)} tag files")
-                client.upload_files(qwt, qlib, file_jobs, finalize=False)
+                with timeit("Uploading tag files"):
+                    client.upload_files(qwt, qlib, file_jobs, finalize=False)
             except HTTPError as e:
                 return Response(response=json.dumps({'error': str(e), 'message': 'Please verify you\'re authorization token has write access and the write token has not already been committed. \
                                                     This error can also arise if the write token has already been used to finalize tags.'}), status=403, mimetype='application/json')
@@ -449,10 +454,11 @@ def get_flask_app():
 
         logger.debug(f"Found video streams: {video_streams}")
 
-        if video_streams:
-            format_video_tags(client, qwt, video_streams, config["agg"]["interval"])
-            
-        format_asset_tags(client, qwt)
+        with timeit("Aggregating tags"):
+            if video_streams:
+                format_video_tags(client, qwt, video_streams, config["agg"]["interval"])
+                
+            format_asset_tags(client, qwt)
 
         return Response(response=json.dumps({'message': 'Succesfully uploaded tag files. Please finalize the write token.', 'write token': qwt}), status=200, mimetype='application/json')
     
