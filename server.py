@@ -464,6 +464,8 @@ def get_flask_app():
                 
             format_asset_tags(client, qwt)
 
+        client.set_commit_message(qwt, "Uploaded ML Tags", qlib)
+
         return Response(response=json.dumps({'message': 'Succesfully uploaded tag files. Please finalize the write token.', 'write token': qwt}), status=200, mimetype='application/json')
     
     # JobStatus represents the status of a job returned by the /status endpoint
