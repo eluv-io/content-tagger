@@ -410,9 +410,10 @@ def get_flask_app():
                 for tag in os.listdir(os.path.join(config["storage"]["tags"], qid, stream, feature)):
                     tagfile = os.path.join(config["storage"]["tags"], qid, stream, feature, tag)
                     tagged_media_files.append(_source_from_tag_file(tagfile))
+                tagged_media_files = list(set(tagged_media_files))
                 num_files = len(tagged_media_files)
                 if not args.replace:
-                    with timeit("Filtering tagged files for {qid}, {feature}, {stream}"):
+                    with timeit(f"Filtering tagged files for {qid}, {feature}, {stream}"):
                         tagged_media_files = _filter_tagged_files(tagged_media_files, client, qid, stream, feature)
                 logger.debug(f"Upload status for {qid}: {feature} on {stream}\nTotal media files: {num_files}, Media files to upload: {len(tagged_media_files)}, Media files already uploaded: {num_files - len(tagged_media_files)}")
                 if not tagged_media_files:
