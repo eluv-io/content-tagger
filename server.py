@@ -402,6 +402,9 @@ def get_flask_app():
             jobs_running = sum(len(active_jobs[qid][feature]) for feature in active_jobs[qid])
         if jobs_running > 0 and not args.force:
             return Response(response=json.dumps({'error': 'Some jobs are still running. Use `force=true` to finalize anyway.'}), status=400, mimetype='application/json')
+        
+        if not os.path.exists(os.path.join(config["storage"]["tags"], qid)):
+            return Response(response=json.dumps({'error': 'No tags found for this content object'}), status=404, mimetype='application/json')
 
         file_jobs = []
         for stream in os.listdir(os.path.join(config["storage"]["tags"], qid)):
