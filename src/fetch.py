@@ -4,6 +4,8 @@ import os
 from loguru import logger
 from typing import Optional, List
 import threading
+import tempfile
+import shutil
 
 from common_ml.video_processing import unfrag_video
 from common_ml.utils import get_file_type
@@ -31,6 +33,7 @@ def fetch_stream(content_id: str, stream_name: str, output_path: str, client: El
         os.makedirs(output_path)
     codec = streams[stream_name].get("codec_type", None)
     res = []
+    tmp_path = tempfile.mkdtemp(dir=config["storage"]["tmp"])
     for idx, part in enumerate(sorted(stream, key=lambda x: x["timeline_start"]["float"])):
         if exit_event is not None and exit_event.is_set():
             logger.warning(f"Downloading of stream {stream_name} for content_id {content_id} stopped.")
@@ -47,16 +50,17 @@ def fetch_stream(content_id: str, stream_name: str, output_path: str, client: El
         else:
             logger.info(f"Downloading part {part_hash} for content_id {content_id}")
         try:
-            tmp_path = os.path.join(config["storage"]["tmp"], f"{idx}_{part_hash}")
+            tmpfile = os.path.join(tmp_path, f"{idx}_{part_hash}")
             save_path = os.path.join(output_path, f"{idx}_{part_hash}.mp4")
-            client.download_part(object_id=content_id, save_path=tmp_path, part_hash=part_hash)
+            client.download_part(object_id=content_id, save_path=tmpfile, part_hash=part_hash)
             if codec == "video":
-                unfrag_video(tmp_path, save_path)
+                unfrag_video(tmpfile, save_path)
             else:
-                os.rename(tmp_path, save_path)
+                os.rename(tmpfile, save_path)
             res.append(save_path)
         except HTTPError as e:
             raise HTTPError(f"Failed to download part {part_hash} for content_id {content_id}: {str(e)}") 
+    shutil.rmtree(tmp_path, ignore_errors=True)
     return res
 
 class AssetsNotFoundException(Exception):
