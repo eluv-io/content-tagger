@@ -73,6 +73,8 @@ def get_flask_app():
     # make sure no two streams are being downloaded at the same time. 
     # maps (qid, stream) -> lock
     download_lock = defaultdict(threading.Lock)
+    
+    shutdown_signal = threading.Event()
 
     @app.route('/list', methods=['GET'])
     def list_services() -> Response:
@@ -112,6 +114,8 @@ def get_flask_app():
             return Response(response=json.dumps({'error': f"Services {invalid_services} not found"}), status=404, mimetype='application/json')
             
         with lock:
+            if shutdown_signal.is_set():
+                return Response(response=json.dumps({'error': 'Server is shutting down'}), status=503, mimetype='application/json')
             for feature, run_config in args.features.items():
                 if run_config.stream is None:
                     # if stream name is not provided, we pick stream based on whether the model is audio/video based
@@ -244,6 +248,8 @@ def get_flask_app():
                 return Response(response=json.dumps({'error': f"Image tagging for {feature} is not supported"}), status=400, mimetype='application/json')
             
         with lock:
+            if shutdown_signal.is_set():
+                return Response(response=json.dumps({'error': 'Server is shutting down'}), status=503, mimetype='application/json')
             for feature in args.features.keys():
                 if active_jobs[qid].get(('image', feature), None):
                     return Response(response=json.dumps({'error': f"Image tagging for at least one of the requested features, {feature}, is already in progress for {qid}"}), status=400, mimetype='application/json')
@@ -286,6 +292,9 @@ def get_flask_app():
         except HTTPError as e:
             with lock:
                 _set_stop_status(job, "Failed", f"Failed to fetch stream {stream} for {qid}: {str(e)}. Make sure authorization token hasn't expired.")
+        except Exception as e:
+            with lock:
+                _set_stop_status(job, "Failed", f"Unknown error occurred while fetching stream {stream} for {qid}: {str(e)}")
         if _check_exit(job):
             return []
         return media_files
@@ -580,6 +589,7 @@ def get_flask_app():
     def _shutdown() -> None:
         logger.warning("Shutting down")
         to_stop = []
+        shutdown_signal.set()
         with lock:
             for qid in active_jobs:
                 for job in active_jobs[qid].values():
