@@ -10,6 +10,7 @@ import time
 import atexit
 import subprocess
 import json
+import shutil
 
 from common_ml.utils.metrics import timeit
 
@@ -24,6 +25,13 @@ test_config = {
     'assets_write_token': 'ASSETS_WRITE',
     'available_gpus': 5
 }
+
+def postprocess_response(res: dict):
+    for stream in res:
+        for model in res[stream]:
+            del res[stream][model]['tag_job_id']
+            del res[stream][model]['time_running']
+    return res
 
 def test_server(port: int) -> List[Callable]:
     filedir = os.path.dirname(os.path.abspath(__file__))
@@ -42,6 +50,12 @@ def test_server(port: int) -> List[Callable]:
     video_auth = os.getenv(test_config['video_auth'])
     assert assets_auth is not None, "Please set the ASSETS_AUTH environment variable"
     assert video_auth is not None, "Please set the VIDEO_AUTH environment variable"
+    
+    parts_path = os.path.join(config["storage"]["parts"], test_config['test_video'])
+    image_path = os.path.join(config["storage"]["images"], test_config['test_assets'])
+    
+    shutil.rmtree(parts_path, ignore_errors=True)
+    shutil.rmtree(image_path, ignore_errors=True)
 
     # test cases
     def test_tag():
@@ -55,15 +69,18 @@ def test_server(port: int) -> List[Callable]:
         response = requests.post(tag_url, json={"features": {"dummy_gpu": {"model":{"tags":["hello1", "hello2"]}}}, "replace": True})
         assert response.status_code == 200, response.text
         res.append(response.json())
+        time.sleep(1)
         response = requests.get(video_status_url)
-        res.append(response.json())
+        res.append(postprocess_response(response.json()))
 
         tag_url = f"http://localhost:{port}/{test_config['test_video']}/tag?authorization={video_auth}"
         response = requests.post(tag_url, json={"features": {"dummy_cpu": {"model":{"tags":["a", "b", "a"], "allow_single_frame":False}}}, "replace": True})
         assert response.status_code == 200, response.text
         res.append(response.json())
+        time.sleep(10)
+
         response = requests.get(video_status_url)
-        res.append(response.json())
+        res.append(postprocess_response(response.json()))
 
         image_status_url = f"http://localhost:{port}/{test_config['test_assets']}/status?authorization={assets_auth}"
 
@@ -71,31 +88,33 @@ def test_server(port: int) -> List[Callable]:
         response = requests.post(tag_url, json={"features": {"dummy_gpu": {"model":{"tags":["hello1"]}}}, "replace": True})
         assert response.status_code == 200, response.text
         res.append(response.json())
+        time.sleep(1)
         response = requests.get(image_status_url)
-        res.append(response.json())
+        res.append(postprocess_response(response.json()))
 
         tag_url = f"http://localhost:{port}/{test_config['test_assets']}/image_tag?authorization={assets_auth}"
         response = requests.post(tag_url, json={"features": {"dummy_cpu": {"model":{"tags":["hello2"]}}}, "replace": True})
         assert response.status_code == 200, response.text
         res.append(response.json())
+        time.sleep(10)
         response = requests.get(image_status_url)
-        res.append(response.json())
+        res.append(postprocess_response(response.json()))
 
         logger.debug("Waiting for server to finish tagging")
-        time.sleep(60)
+        time.sleep(75)
 
         response = requests.get(video_status_url).json()
         for stream in response:
             for model in response[stream]:
                 assert response[stream][model]['status'] == 'Completed', response
 
-        res.append(response)
+        res.append(postprocess_response(response))
 
         response = requests.get(image_status_url).json()
         for stream in response:
             for model in response[stream]:
                 assert response[stream][model]['status'] == 'Completed', response
-        res.append(response)
+        res.append(postprocess_response(response))
 
         video_tags_path = os.path.join(config["storage"]["tags"], test_config['test_video'], "video")
         for tag in sorted(os.listdir(os.path.join(video_tags_path, "dummy_gpu"))):

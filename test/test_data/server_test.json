@@ -9,9 +9,7 @@
         {
             "video": {
                 "dummy_gpu": {
-                    "status": "Tagging content",
-                    "time_running": 1.1020708084106445,
-                    "tag_job_id": "3f714f58-836b-4cb2-ad24-0567060e5dd7",
+                    "status": "Fetching content",
                     "error": null
                 }
             }
@@ -21,16 +19,23 @@
         },
         {
             "video": {
-                "dummy_cpu": {
-                    "status": "Tagging content",
-                    "time_running": 1.154003381729126,
-                    "tag_job_id": "beb11bd5-c0ba-45ea-8542-473b5ab91620",
-                    "error": null
-                },
                 "dummy_gpu": {
                     "status": "Tagging content",
-                    "time_running": 2.5198352336883545,
-                    "tag_job_id": "3f714f58-836b-4cb2-ad24-0567060e5dd7",
+                    "error": null
+                },
+                "dummy_cpu": {
+                    "status": "Tagging content",
+                    "error": null
+                }
+            }
+        },
+        {
+            "message": "Image asset tagging started on iq__4BT8BBNEEDvysXqjZgj4BRA5jVo2"
+        },
+        {
+            "image": {
+                "dummy_gpu": {
+                    "status": "Fetching content",
                     "error": null
                 }
             }
@@ -42,59 +47,34 @@
             "image": {
                 "dummy_gpu": {
                     "status": "Tagging content",
-                    "time_running": 1.101898193359375,
-                    "tag_job_id": "f1bd5613-c4bb-41d1-b6a3-8c9721969300",
-                    "error": null
-                }
-            }
-        },
-        {
-            "message": "Image asset tagging started on iq__4BT8BBNEEDvysXqjZgj4BRA5jVo2"
-        },
-        {
-            "image": {
-                "dummy_cpu": {
-                    "status": "Tagging content",
-                    "time_running": 1.1005170345306396,
-                    "tag_job_id": "29019ed5-fa1a-448e-bccc-3abd35f9500e",
                     "error": null
                 },
-                "dummy_gpu": {
+                "dummy_cpu": {
                     "status": "Tagging content",
-                    "time_running": 2.4504477977752686,
-                    "tag_job_id": "f1bd5613-c4bb-41d1-b6a3-8c9721969300",
                     "error": null
                 }
             }
         },
         {
             "video": {
-                "dummy_cpu": {
-                    "status": "Completed",
-                    "time_running": 45.67744255065918,
-                    "tag_job_id": "beb11bd5-c0ba-45ea-8542-473b5ab91620",
-                    "error": null
-                },
                 "dummy_gpu": {
                     "status": "Completed",
-                    "time_running": 47.04272413253784,
-                    "tag_job_id": "3f714f58-836b-4cb2-ad24-0567060e5dd7",
+                    "error": null
+                },
+                "dummy_cpu": {
+                    "status": "Completed",
                     "error": null
                 }
             }
         },
         {
             "image": {
-                "dummy_cpu": {
-                    "status": "Completed",
-                    "time_running": 7.850179433822632,
-                    "tag_job_id": "29019ed5-fa1a-448e-bccc-3abd35f9500e",
-                    "error": null
-                },
                 "dummy_gpu": {
                     "status": "Completed",
-                    "time_running": 9.19610333442688,
-                    "tag_job_id": "f1bd5613-c4bb-41d1-b6a3-8c9721969300",
+                    "error": null
+                },
+                "dummy_cpu": {
+                    "status": "Completed",
                     "error": null
                 }
             }

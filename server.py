@@ -345,7 +345,7 @@ def get_flask_app():
                     if status.status == "Completed":
                         logger.success(f"Finished running {job.feature} on {job.qid}")
                         # move outputted tags to their correct place
-                        _move_files(qid, job.run_config.stream, job.feature, status.tags)
+                        _move_files(job, status.tags)
                     job.status = status.status 
                     if status.status == "Failed":
                         job.error = "An error occurred while running model container"
@@ -375,10 +375,12 @@ def get_flask_app():
             return True
         return False
 
-    def _move_files(qid: str, stream: str, feature: str, tags: List[str]) -> None:
-        os.makedirs(os.path.join(config["storage"]["tags"], qid, stream, feature), exist_ok=True)
+    def _move_files(job: Job, tags: List[str]) -> None:
+        qid, stream, feature = job.qid, job.run_config.stream, job.feature
+        tags_path = os.path.join(config["storage"]["tags"], qid, stream, feature)
+        os.makedirs(tags_path, exist_ok=True)
         for tag in tags:
-            shutil.move(tag, os.path.join(config["storage"]["tags"], qid, stream, feature, os.path.basename(tag)))
+            shutil.move(tag, os.path.join(tags_path, os.path.basename(tag)))
 
     @dataclass
     class FinalizeArgs:
@@ -399,7 +401,7 @@ def get_flask_app():
         qwt = args.write_token
         qlib = client.content_object_library_id(qid)
         with lock:
-            jobs_running = sum(len(active_jobs[qid][feature]) for feature in active_jobs[qid])
+            jobs_running = len(active_jobs[qid].values())
         if jobs_running > 0 and not args.force:
             return Response(response=json.dumps({'error': 'Some jobs are still running. Use `force=true` to finalize anyway.'}), status=400, mimetype='application/json')
         

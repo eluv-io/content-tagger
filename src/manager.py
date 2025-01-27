@@ -36,6 +36,7 @@ class TagJob:
     # list of output tag files
     tags: List[str]
     warnings: List[str]
+    save_path: str
 
 class ResourceManager:
     def __init__(self):
@@ -47,10 +48,7 @@ class ResourceManager:
         # ensures thread safety of device_status, jobs, and files_tagging
         self.lock = threading.Lock()
 
-        if config["devices"]["allow_in_use_gpus"]:
-            self.foreign_gpus = []
-        else:
-            self.foreign_gpus = [i for i in range(self.num_devices) if is_gpu_in_use(i)]
+        self.foreign_gpus = [i for i in range(self.num_devices) if is_gpu_in_use(i)]
 
         self.device_status = [i in self.foreign_gpus for i in range(self.num_devices)]
 
@@ -60,7 +58,7 @@ class ResourceManager:
         
         # check if GPUs are available
         self.gpu_available = threading.Event()
-        if any(not status for status in self.device_status):
+        if any(status is False for status in self.device_status):
             self.gpu_available.set()
 
     # Args:
@@ -71,25 +69,21 @@ class ResourceManager:
     #     str: The job ID.
     # NOTE: this function creates a new thread to watch the job
     def run(self, feature: str, run_config: dict, files: List[str], needs_gpu: bool) -> str:
-        self.update_gpu_state()
         with self.lock:
+            self.update_gpu_state()
             device_idx = None
             container = None
             files_added = []
             try:
                 if needs_gpu:
                     for i, status in enumerate(self.device_status):
-                        if not status:
-                            if not config["devices"]["allow_in_use_gpus"] and is_gpu_in_use(i):
-                                logger.error(f"GPU {i} is in use by a non-tagger process")
-                                self.foreign_gpus.append(i)
-                                self.device_status[i] = True
-                                if all(self.device_status[i] for i in range(self.num_devices)):
-                                    self.gpu_available.clear()
-                                continue
-                            device_idx = i
-                            self.device_status[i] = True
-                            break
+                        if status:
+                            continue
+                        device_idx = i
+                        self.device_status[i] = True
+                        if all(self.device_status[i] for i in range(self.num_devices)):
+                            self.gpu_available.clear()
+                        break
                     if device_idx is None:
                         raise NoGPUAvailable("No available GPUs")
                 jobid = str(uuid.uuid4())
@@ -101,11 +95,10 @@ class ResourceManager:
                         raise ValueError(f"File {f} is already being tagged with {feature}")
                     self.files_tagging.add((f, feature))
                     files_added.append((f, feature))
-                if all(self.device_status[i] for i in range(self.num_devices)):
-                    self.gpu_available.clear()
-                container = create_container(self.client, feature, files, run_config, device_idx, logs_out)
+                save_path = os.path.join(config["storage"]["tmp"], feature, jobid)
+                container = create_container(self.client, feature, save_path, files, run_config, device_idx, logs_out)
                 container.start()
-                self.jobs[jobid] = TagJob(container, feature, logs_out, device_idx, "Running", threading.Event(), time.time(), None, files, [], [])
+                self.jobs[jobid] = TagJob(container, feature, logs_out, device_idx, "Running", threading.Event(), time.time(), None, files, [], [], save_path=save_path)
             except Exception as e:
                 # cleanup resources if job fails to start
                 if container:
@@ -116,29 +109,37 @@ class ResourceManager:
                         raise e2
                 for f, feature in files_added:
                     self.files_tagging.remove((f, feature))
-                if device_idx is not None:
+                if device_idx is not None and device_idx not in self.foreign_gpus:
                     self.device_status[device_idx] = False
+                    self.gpu_available.set()
                 raise e
         threading.Thread(target=self._watch_job, args=(jobid, )).start()
         return jobid
     
+    # Not thread safe, must be called with lock
     def update_gpu_state(self):
         """
         Checks all GPUs that are not in use by the tagger and updates the device status if they are now available.
         """
-        with self.lock:
-            for i in range(len(self.foreign_gpus)-1, -1, -1):
-                gpu_idx = self.foreign_gpus[i]
-                if not is_gpu_in_use(gpu_idx):
-                    self.foreign_gpus.pop(i)
-                    self.device_status[gpu_idx] = False
-                    self.gpu_available.set()
-            for i in range(self.num_devices):
-                if not self.device_status[i] and is_gpu_in_use(i):
-                    self.foreign_gpus.append(i)
-                    self.device_status[i] = True
-            if all(self.device_status[i] for i in range(self.num_devices)):
-                self.gpu_available.clear()
+        
+        # check if any GPUs are freed by foreign processes ending
+        for i in range(len(self.foreign_gpus)-1, -1, -1):
+            gpu_idx = self.foreign_gpus[i]
+            if not is_gpu_in_use(gpu_idx):
+                self.foreign_gpus.pop(i)
+                self.device_status[gpu_idx] = False
+                self.gpu_available.set()
+                
+        # check if any GPUs are now in use by foreign processes
+        # NOTE: if a foreign GPU starts on a GPU that is being used by a tagger, the tagger will continue to use the GPU and
+        #                                                               this will not be detected until the tagger finishes.
+        for i in range(self.num_devices):
+            if not self.device_status[i] and is_gpu_in_use(i):
+                self.foreign_gpus.append(i)
+                self.device_status[i] = True
+                
+        if all(self.device_status[i] for i in range(self.num_devices)):
+            self.gpu_available.clear()
             
     def _is_container_active(self, status: str) -> bool:
         return status == "running" or status == "created"
@@ -188,9 +189,9 @@ class ResourceManager:
 
         tags = []
         for f in job.media_files:
-            video_tags = os.path.join(config["storage"]["tmp"], job.feature, f"{os.path.basename(f)}_tags.json")
-            frame_tags = os.path.join(config["storage"]["tmp"], job.feature, f"{os.path.basename(f)}_frametags.json")
-            image_tags = os.path.join(config["storage"]["tmp"], job.feature, f"{os.path.basename(f)}_imagetags.json")
+            video_tags = os.path.join(job.save_path, f"{os.path.basename(f)}_tags.json")
+            frame_tags = os.path.join(job.save_path, f"{os.path.basename(f)}_frametags.json")
+            image_tags = os.path.join(job.save_path, f"{os.path.basename(f)}_imagetags.json")
             if os.path.exists(video_tags):
                 tags.append(video_tags)
             if config["services"][job.feature].get("frame_level", False):
@@ -198,7 +199,6 @@ class ResourceManager:
                     tags.append(frame_tags)
                 if os.path.exists(image_tags):
                     tags.append(image_tags)
-            # TODO: should add warning if nothing is generated
             
         with self.lock:
             self.jobs[jobid].tags = tags
@@ -225,7 +225,15 @@ class ResourceManager:
         self._stop_container(job.container)
         for f in job.media_files:
             self.files_tagging.remove((f, job.feature))
-        if job.device is not None:
+            
+        if job.device is None:
+            return
+            
+        # this implies a foreign process started while the job was running 
+        if is_gpu_in_use(job.device):
+            if job.device not in self.foreign_gpus:
+                self.foreign_gpus.append(job.device)
+        else:
             self.device_status[job.device] = False
             self.gpu_available.set()
 

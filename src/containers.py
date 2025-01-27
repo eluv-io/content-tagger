@@ -8,15 +8,13 @@ from config import config
 
 # Run a container with the given feature and files
 # Outputs list of tag files
-def create_container(client: PodmanClient, feature: str, files: List[str], run_config: dict, device_idx: Optional[int], out: str="/dev/null") -> Container:
-    out_path = os.path.join(config["storage"]["tmp"], feature)
-    if not os.path.exists(out_path):
-        os.makedirs(out_path)
+def create_container(client: PodmanClient, feature: str, save_path: str, files: List[str], run_config: dict, device_idx: Optional[int], out: str="/dev/null") -> Container:
+    os.makedirs(save_path, exist_ok=True)
     if len(files) == 0:
         raise ValueError("No files provided")
     volumes = [
         {
-            "source": os.path.join(config["storage"]["tmp"], feature),
+            "source": save_path,
             # convention for containers to store tags in /elv/tags
             "target": "/elv/tags",
             "type": "bind",
