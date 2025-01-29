@@ -472,7 +472,10 @@ def get_flask_app():
         with timeit("Aggregating tags"):
             if video_streams:
                 format_video_tags(client, qwt, video_streams, config["agg"]["interval"])
-                
+            else:
+                # slightly weird logic, but the format_video_tags finalizes files by default whereas format_asset_tags does not,
+                # so, we need to finalize here
+                client.finalize_files(qwt, qlib)
             format_asset_tags(client, qwt)
 
         client.set_commit_message(qwt, "Uploaded ML Tags", qlib)
