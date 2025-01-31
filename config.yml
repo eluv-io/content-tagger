@@ -10,7 +10,7 @@ fabric:
   # used for downloading parts (requires special build)
   parts_url: http://192.168.96.203/config?self&qspace=main
   # for all other fabric interaction
-  config_url: https://host-76-74-91-9.contentfabric.io/config?self&qspace=main 
+  config_url: https://host-76-74-28-229.contentfabric.io/config?self&qspace=main 
 services:
   llava:
     image: "localhost/llava:latest"
@@ -34,6 +34,10 @@ services:
     frame_level: true
   ocr:
     image: "localhost/ocr:latest"
+    type: "video"
+    frame_level: true
+  logo:
+    image: "localhost/logo:latest"
     type: "video"
     frame_level: true
   # Used for testing
