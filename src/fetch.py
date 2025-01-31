@@ -8,7 +8,7 @@ import tempfile
 import shutil
 
 from common_ml.video_processing import unfrag_video
-from common_ml.utils import get_file_type
+from common_ml.utils.files import get_file_type, encode_path
 from config import config
 
 class StreamNotFoundError(Exception):
@@ -90,7 +90,7 @@ def fetch_assets(content_id: str, output_path: str, client: ElvClient, assets: O
         os.makedirs(output_path)
     to_download = []
     for asset in assets:
-        asset_id = os.path.basename(asset)
+        asset_id = encode_path(asset)
         if replace or not os.path.exists(os.path.join(output_path, asset_id)):
             to_download.append(asset)
     if len(to_download) != len(set(to_download)):
@@ -99,7 +99,7 @@ def fetch_assets(content_id: str, output_path: str, client: ElvClient, assets: O
         logger.info(f"{len(assets) - len(to_download)} assets already retrieved for {content_id}")
     logger.info(f"{len(to_download)} assets need to be downloaded for {content_id}")
     for asset in to_download:
-        asset_id = os.path.basename(asset)
+        asset_id = encode_path(asset)
         if exit_event is not None and exit_event.is_set():
             logger.warning(f"Downloading of asset {asset} for content_id {content_id} stopped.")
             break
@@ -108,4 +108,4 @@ def fetch_assets(content_id: str, output_path: str, client: ElvClient, assets: O
             client.download_file(object_id=content_id, dest_path=save_path, file_path=asset)
         except HTTPError as e:
             raise HTTPError(f"Failed to download asset {asset} for content_id {content_id}") from e
-    return [os.path.join(output_path, os.path.basename(asset)) for asset in assets]
+    return [os.path.join(output_path, encode_path(asset)) for asset in assets]

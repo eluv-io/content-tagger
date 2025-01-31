@@ -262,7 +262,10 @@ def get_flask_app():
     
     def _image_tag(job: Job, elv_client: ElvClient, assets: Optional[List[str]], replace: bool) -> None:
         images = _download_content(job, elv_client, assets=assets)
-        job.media_files = images
+        deduped = list(set(images))
+        if len(deduped) > 0:
+            logger.warning(f"Found {len(images) - len(deduped)} duplicate images.")
+        job.media_files = deduped
         _submit_tag_job(job, elv_client)
     
     # Download content
