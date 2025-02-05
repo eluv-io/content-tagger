@@ -40,6 +40,10 @@ services:
     image: "localhost/logo:latest"
     type: "video"
     frame_level: true
+  player:
+    image: "localhost/player:latest"
+    type: "video"
+    frame_level: true
   # Used for testing
   dummy_gpu:
     image: "localhost/dummy_gpu:latest"

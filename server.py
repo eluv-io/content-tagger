@@ -498,7 +498,7 @@ def get_flask_app():
     @dataclass
     class JobStatus():
         status: Literal["Starting", 
-                        "Fetching parts",
+                        "Fetching content",
                         "Waiting to be assigned GPU", 
                         "Tagging content",
                         "Completed", 
@@ -506,7 +506,7 @@ def get_flask_app():
                         "Stopped"]
         # time running (in seconds)
         time_running: float
-        tagging_progress: Optional[str]=None
+        tagging_progress: Literal["Not started", "Not running", str]
         tag_job_id: Optional[str]=None
         error: Optional[str]=None
 
@@ -526,9 +526,13 @@ def get_flask_app():
                     tagged_files = len(os.listdir(tag_dir))    
             to_tag = len(job.media_files)
             progress = f"{tagged_files}/{to_tag}"
-        else:
+        elif job.status in ["Waiting to be assigned GPU", "Starting", "Fetching content"]:
+            progress = "Not started"
+        elif job.status == "Completed":
             tagged_files = len(job.media_files)
             progress = f"{tagged_files}/{tagged_files}"
+        else:
+            progress = "Not running"
             
         return JobStatus(status=job.status, time_running=time_running, tagging_progress=progress, tag_job_id=job.tag_job_id, error=job.error)
     
