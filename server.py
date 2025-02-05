@@ -47,7 +47,7 @@ class Job:
     media_files: List[str]
     replace: bool
     time_started: float
-    requires_gpu: bool
+    allowed_gpus: List[str]
     time_ended: Optional[float]=None
     # tag_job_id is the job id returned by the manager, will be None until the tagging starts (status is "Running")
     tag_job_id: Optional[str]=None
@@ -126,9 +126,10 @@ def get_flask_app():
                 if (run_config.stream, feature) in active_jobs[qid]:
                     return Response(response=json.dumps({'error': f"{feature} tagging is already in progress for {qid} on {run_config.stream}"}), status=400, mimetype='application/json')
             for feature, run_config in args.features.items():
-                requires_gpu = config["services"][feature].get("requires_gpu", True)
+                # get the subset of GPUs that the model can run on, default to all of them
+                allowed_gpus = config["services"][feature].get("allowed_gpus", list(range(manager.num_devices)))
                 logger.debug(f"Starting {feature} on {qid}: {run_config.stream}")
-                job = Job(qid=qid, run_config=run_config, feature=feature, media_files=[], replace=args.replace, status="Starting", stop_event=threading.Event(), time_started=time.time(), requires_gpu=requires_gpu)
+                job = Job(qid=qid, run_config=run_config, feature=feature, media_files=[], replace=args.replace, status="Starting", stop_event=threading.Event(), time_started=time.time(), allowed_gpus=allowed_gpus)
                 active_jobs[qid][(run_config.stream, feature)] = job
                 threading.Thread(target=_video_tag, args=(job, client, args.start_time, args.end_time)).start()
         return Response(response=json.dumps({'message': f'Tagging started on {qid}'}), status=200, mimetype='application/json')
@@ -159,8 +160,10 @@ def get_flask_app():
                     return
                 _set_stop_status(job, "Completed", f"Tagging already complete for {job.feature} on {job.qid}")
             return
-        if job.requires_gpu:
+        if len(job.allowed_gpus) > 0:
+            # model will run on a gpu
             with lock:
+                # TODO: Probably don't need lock
                 job.media_files = media_files
                 job.status = "Waiting to be assigned GPU"
             gpu_queue.put(job)
@@ -257,8 +260,9 @@ def get_flask_app():
                 if active_jobs[qid].get(('image', feature), None):
                     return Response(response=json.dumps({'error': f"Image tagging for at least one of the requested features, {feature}, is already in progress for {qid}"}), status=400, mimetype='application/json')
             for feature, run_config in args.features.items():
-                requires_gpu = config["services"][feature].get("requires_gpu", True)
-                job = Job(qid=qid, feature=feature, run_config=run_config, media_files=[], replace=args.replace, requires_gpu=requires_gpu, status="Starting", stop_event=threading.Event(), time_started=time.time())
+                # get the subset of GPUs that the model can run on, default to all of them
+                allowed_gpus = config["services"][feature].get("allowed_gpus", list(range(manager.num_devices)))
+                job = Job(qid=qid, feature=feature, run_config=run_config, media_files=[], replace=args.replace, allowed_gpus=allowed_gpus, status="Starting", stop_event=threading.Event(), time_started=time.time())
                 active_jobs[qid][('image', feature)] = job
                 threading.Thread(target=_image_tag, args=(job, client, args.assets, args.replace)).start()
         return Response(response=json.dumps({'message': f'Image asset tagging started on {qid}'}), status=200, mimetype='application/json')
@@ -316,6 +320,12 @@ def get_flask_app():
             job = tag_queue.get()
             if _check_exit(job):
                 continue
+            
+            if 0 < len(job.allowed_gpus) < manager.num_devices:
+                # This means the job can only run on a subset of GPUs
+                # The sleep prevents the situation where this type of job is added back to queue over and over while it waits for a GPU.
+                time.sleep(config["devices"]["wait_for_gpu_sleep"])
+
             if wait_for_gpu:
                 stopped = False
                 while not manager.await_gpu(timeout=config["devices"]["wait_for_gpu_sleep"]):
@@ -326,7 +336,7 @@ def get_flask_app():
                 if stopped:
                     continue
             try:
-                job_id = manager.run(job.feature, job.run_config.model, job.media_files, job.requires_gpu)
+                job_id = manager.run(job.feature, job.run_config.model, job.media_files, job.allowed_gpus)
                 with lock:
                     if _is_job_stopped(job):
                         # if the job has been stopped while the container was starting
@@ -336,9 +346,11 @@ def get_flask_app():
                     job.status = "Tagging content"
                 logger.success(f"Started running {job.feature} on {job.qid}")
             except NoGPUAvailable:
-                with lock:
-                    _set_stop_status(job, "Failed", "Unexpected error when trying to run the model. No GPU available.")
+                # This error can happen if the model can only run on a subset of GPUs. 
+                job.error = "Tried to assign GPU but no suitable one was found. The job was placed back on the queue."
+                tag_queue.put(job)
             except Exception as e:
+                # handle the unexpected
                 with lock:
                     _set_stop_status(job, "Failed", str(e))
                     
@@ -506,7 +518,7 @@ def get_flask_app():
                         "Stopped"]
         # time running (in seconds)
         time_running: float
-        tagging_progress: Literal["Not started", "Not running", str]
+        tagging_progress: str
         tag_job_id: Optional[str]=None
         error: Optional[str]=None
 
@@ -526,13 +538,11 @@ def get_flask_app():
                     tagged_files = len(os.listdir(tag_dir))    
             to_tag = len(job.media_files)
             progress = f"{tagged_files}/{to_tag}"
-        elif job.status in ["Waiting to be assigned GPU", "Starting", "Fetching content"]:
-            progress = "Not started"
         elif job.status == "Completed":
             tagged_files = len(job.media_files)
             progress = f"{tagged_files}/{tagged_files}"
         else:
-            progress = "Not running"
+            progress = ""
             
         return JobStatus(status=job.status, time_running=time_running, tagging_progress=progress, tag_job_id=job.tag_job_id, error=job.error)
     
