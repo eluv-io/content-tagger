@@ -69,6 +69,9 @@ def get_flask_app():
     # maps qid -> (feature, stream) -> job
     active_jobs = defaultdict(dict)
     inactive_jobs = defaultdict(dict)
+    
+    # need for some filesytem operations
+    filesystem_lock = threading.Lock()
 
     # make sure no two streams are being downloaded at the same time. 
     # maps (qid, stream) -> lock
@@ -356,8 +359,10 @@ def get_flask_app():
                     # otherwise the job has finished: either successfully or with an error
                     if status.status == "Completed":
                         logger.success(f"Finished running {job.feature} on {job.qid}")
-                        # move outputted tags to their correct place
-                        _move_files(job, status.tags)
+                        with filesystem_lock:
+                            # move outputted tags to their correct place
+                            # lock in case of race condition with status or finalize calls
+                            _move_files(job, status.tags)
                     job.status = status.status 
                     if status.status == "Failed":
                         job.error = "An error occurred while running model container"
@@ -388,11 +393,15 @@ def get_flask_app():
         return False
 
     def _move_files(job: Job, tags: List[str]) -> None:
+        if len(tags) == 0:
+            return
+        tag_dir = os.path.dirname(tags[0])
         qid, stream, feature = job.qid, job.run_config.stream, job.feature
         tags_path = os.path.join(config["storage"]["tags"], qid, stream, feature)
         os.makedirs(tags_path, exist_ok=True)
         for tag in tags:
             shutil.move(tag, os.path.join(tags_path, os.path.basename(tag)))
+        shutil.rmtree(tag_dir, ignore_errors=True)
 
     @dataclass
     class FinalizeArgs:
@@ -491,11 +500,13 @@ def get_flask_app():
         status: Literal["Starting", 
                         "Fetching parts",
                         "Waiting to be assigned GPU", 
+                        "Tagging content",
                         "Completed", 
                         "Failed", 
                         "Stopped"]
         # time running (in seconds)
         time_running: float
+        tagging_progress: Optional[str]=None
         tag_job_id: Optional[str]=None
         error: Optional[str]=None
 
@@ -504,7 +515,22 @@ def get_flask_app():
             time_running = time.time() - job.time_started
         else:
             time_running = job.time_ended - job.time_started
-        return JobStatus(status=job.status, time_running=time_running, tag_job_id=job.tag_job_id, error=job.error)
+        
+        if job.status == "Tagging content":
+            with filesystem_lock:
+                # read how many files have been tagged
+                tag_dir = os.path.join(config["storage"]["tmp"], job.feature, job.tag_job_id)
+                if not os.path.exists(tag_dir):
+                    tagged_files = 0
+                else:
+                    tagged_files = len(os.listdir(tag_dir))    
+            to_tag = len(job.media_files)
+            progress = f"{tagged_files}/{to_tag}"
+        else:
+            tagged_files = len(job.media_files)
+            progress = f"{tagged_files}/{tagged_files}"
+            
+        return JobStatus(status=job.status, time_running=time_running, tagging_progress=progress, tag_job_id=job.tag_job_id, error=job.error)
     
     # get status of all jobs for a qid
     @app.route('/<qid>/status', methods=['GET'])
