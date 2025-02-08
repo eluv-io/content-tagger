@@ -16,6 +16,7 @@ import time
 import shutil
 import signal
 import atexit
+from marshmallow import ValidationError, fields, Schema
 from common_ml.types import Data
 from common_ml.tag_formatting import format_video_tags, format_asset_tags
 from common_ml.utils.metrics import timeit
@@ -419,11 +420,20 @@ def get_flask_app():
         shutil.rmtree(tag_dir, ignore_errors=True)
 
     @dataclass
-    class FinalizeArgs:
+    class FinalizeArgs(Data):
         write_token: str
         replace: bool=False
         force: bool=False
         authorization: Optional[str]=None
+
+        @staticmethod
+        def from_dict(data: dict) -> 'FinalizeArgs':
+            class FinalizeSchema(Schema):
+                write_token = fields.Str(required=True)
+                replace = fields.Bool(required=False, missing=False)
+                force = fields.Bool(required=False, missing=False)
+                authorization = fields.Str(required=False, missing=None)
+            return FinalizeArgs(**FinalizeSchema().load(data))
     
     @app.route('/<qid>/finalize', methods=['POST'])
     def finalize(qid: str) -> Response:
@@ -431,8 +441,8 @@ def get_flask_app():
         if error_response:
             return error_response
         try:
-            args = FinalizeArgs(**request.args)
-        except TypeError as e:
+            args = FinalizeArgs.from_dict(request.args)
+        except (TypeError, ValidationError) as e:
             return Response(response=json.dumps({'message': 'invalid request', 'error': str(e)}), status=400, mimetype='application/json')
         qwt = args.write_token
         qlib = client.content_object_library_id(qid)
