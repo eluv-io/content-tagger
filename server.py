@@ -229,10 +229,13 @@ def get_flask_app():
         # replace tag files if they already exist
         replace: bool=False
 
+        # download the assets concurrently, may put more pressure on the fabric server
+        optimize: bool=False
+
         @staticmethod
         def from_dict(data: dict) -> 'ImageTagArgs':
             features = {feature: RunConfig(stream='image', **cfg) for feature, cfg in data['features'].items()}
-            return ImageTagArgs(features=features, assets=data.get('assets', None), replace=data.get('replace', False))
+            return ImageTagArgs(features=features, assets=data.get('assets', None), replace=data.get('replace', False), optimize=data.get('optimize', False))
         
     @app.route('/<qid>/image_tag', methods=['POST'])
     def image_tag(qid: str) -> Response:
@@ -264,11 +267,11 @@ def get_flask_app():
                 allowed_gpus = config["services"][feature].get("allowed_gpus", list(range(manager.num_devices)))
                 job = Job(qid=qid, feature=feature, run_config=run_config, media_files=[], replace=args.replace, allowed_gpus=allowed_gpus, status="Starting", stop_event=threading.Event(), time_started=time.time())
                 active_jobs[qid][('image', feature)] = job
-                threading.Thread(target=_image_tag, args=(job, client, args.assets, args.replace)).start()
+                threading.Thread(target=_image_tag, args=(job, client, args.assets, args.optimize)).start()
         return Response(response=json.dumps({'message': f'Image asset tagging started on {qid}'}), status=200, mimetype='application/json')
     
-    def _image_tag(job: Job, elv_client: ElvClient, assets: Optional[List[str]], replace: bool) -> None:
-        images = _download_content(job, elv_client, assets=assets)
+    def _image_tag(job: Job, elv_client: ElvClient, assets: Optional[List[str]], concurrent: bool) -> None:
+        images = _download_content(job, elv_client, assets=assets, concurrent=concurrent)
         deduped = list(set(images))
         if len(deduped) > 0:
             logger.warning(f"Found {len(images) - len(deduped)} duplicate images.")
