@@ -16,9 +16,11 @@ import time
 import shutil
 import signal
 import atexit
+from marshmallow import Schema, fields, ValidationError
 from common_ml.types import Data
 from common_ml.tag_formatting import format_video_tags, format_asset_tags
 from common_ml.utils.metrics import timeit
+from common_ml.utils.files import decode_path
 
 from config import config
 from src.fetch import fetch_stream, StreamNotFoundError, fetch_assets, AssetsNotFoundException
@@ -26,11 +28,18 @@ from src.manager import ResourceManager, NoGPUAvailable
 
 # RunConfig gives model level tagging params
 @dataclass
-class RunConfig():
+class RunConfig(Data):
     # model config, used to overwrite the model level config
     model: dict=field(default_factory=dict) 
     # stream name to run the model on, None to use the default stream. "image" is a special case which will tag image assets
     stream: Optional[str]=None
+
+    @staticmethod
+    def from_dict(data: dict) -> 'RunConfig':
+        class ReqSchema(Schema):
+            model = fields.Dict(missing={})
+            stream = fields.Str(missing=None)
+        return RunConfig(**ReqSchema().load(data))
 
 @dataclass
 class Job:
@@ -98,14 +107,22 @@ def get_flask_app():
 
         @staticmethod
         def from_dict(data: dict) -> 'TagArgs':
-            features = {feature: RunConfig(**cfg) for feature, cfg in data['features'].items()}
-            return TagArgs(features=features, start_time=data.get('start_time', None), end_time=data.get('end_time', None), replace=data.get('replace', False))
+            data = data.copy()
+            if 'features' not in data:
+                raise ValueError("Must include 'features' in request body")
+            features = {feature: RunConfig.from_dict(cfg) for feature, cfg in data['features'].items()}
+            data.pop('features')
+            class ReqSchema(Schema):
+                start_time = fields.Int(missing=None)
+                end_time = fields.Int(missing=None)
+                replace = fields.Bool(missing=False, default=False)
+            return TagArgs(features=features, **ReqSchema().load(data))
 
     @app.route('/<qid>/tag', methods=['POST'])
     def tag(qid: str) -> Response:
         try:
             args = TagArgs.from_dict(request.json)
-        except TypeError as e:
+        except (ValidationError, ValueError) as e:
             return Response(response=json.dumps({'error': str(e)}), status=400, mimetype='application/json')
         
         client, error_response = _get_client(request, qid, config["fabric"]["parts_url"])
@@ -234,14 +251,23 @@ def get_flask_app():
 
         @staticmethod
         def from_dict(data: dict) -> 'ImageTagArgs':
+            data = data.copy()
+            if 'features' not in data:
+                raise ValueError("Must include 'features' in request body")
             features = {feature: RunConfig(stream='image', **cfg) for feature, cfg in data['features'].items()}
-            return ImageTagArgs(features=features, assets=data.get('assets', None), replace=data.get('replace', False), optimize=data.get('optimize', False))
+            data.pop('features')
+            class ReqSchema(Schema):
+                assets = fields.List(fields.Str, missing=None)
+                replace = fields.Bool(missing=False, default=False)
+                optimize = fields.Bool(missing=False, default=False)
+            
+            return ImageTagArgs(features=features, **ReqSchema().load(data))
         
     @app.route('/<qid>/image_tag', methods=['POST'])
     def image_tag(qid: str) -> Response:
         try:
             args = ImageTagArgs.from_dict(request.json)
-        except TypeError as e:
+        except (ValidationError, TypeError) as e:
             return Response(response=json.dumps({'error': str(e)}), status=400, mimetype='application/json')
         
         client, error_response = _get_client(request, qid, config["fabric"]["parts_url"])
@@ -419,11 +445,20 @@ def get_flask_app():
         shutil.rmtree(tag_dir, ignore_errors=True)
 
     @dataclass
-    class FinalizeArgs:
+    class FinalizeArgs(Data):
         write_token: str
         replace: bool=False
         force: bool=False
         authorization: Optional[str]=None
+
+        @staticmethod
+        def from_dict(data: dict) -> 'FinalizeArgs':
+            class ReqSchema(Schema):
+                write_token = fields.Str()
+                replace = fields.Bool(missing=False, default=False)
+                force = fields.Bool(missing=False, default=False)
+                authorization = fields.Str(missing=None)
+            return FinalizeArgs(**ReqSchema().load(data))
     
     @app.route('/<qid>/finalize', methods=['POST'])
     def finalize(qid: str) -> Response:
@@ -432,7 +467,7 @@ def get_flask_app():
             return error_response
         try:
             args = FinalizeArgs(**request.args)
-        except TypeError as e:
+        except (ValidationError, TypeError) as e:
             return Response(response=json.dumps({'message': 'invalid request', 'error': str(e)}), status=400, mimetype='application/json')
         qwt = args.write_token
         qlib = client.content_object_library_id(qid)
@@ -524,30 +559,57 @@ def get_flask_app():
         tagging_progress: str
         tag_job_id: Optional[str]=None
         error: Optional[str]=None
+        content_tagged: Optional[List[str]]=None
 
-    def _get_job_status(job: Job) -> JobStatus:
+    def _get_job_status(job: Job, list_content: str) -> JobStatus:
         if job.time_ended is None:
             time_running = time.time() - job.time_started
         else:
             time_running = job.time_ended - job.time_started
         
+        contents = None
         if job.status == "Tagging content":
             with filesystem_lock:
                 # read how many files have been tagged
                 tag_dir = os.path.join(config["storage"]["tmp"], job.feature, job.tag_job_id)
                 if not os.path.exists(tag_dir):
                     tagged_files = 0
+                    if list_content:
+                        contents = []
                 else:
-                    tagged_files = len(os.listdir(tag_dir))    
+                    all_files = os.listdir(tag_dir)
+                    tagged_files = len(all_files)    
+                    if list_content:
+                        contents = [_source_from_tag_file(tag) for tag in all_files]
+                    
             to_tag = len(job.media_files)
             progress = f"{tagged_files}/{to_tag}"
         elif job.status == "Completed":
             tagged_files = len(job.media_files)
+            if list_content:
+                contents = job.media_files
             progress = f"{tagged_files}/{tagged_files}"
         else:
             progress = ""
+
+        if contents is not None and list_content and job.run_config.stream == "image":
+            # images are stored with base64 encoding
+            contents = [decode_path(content) for content in contents]
             
-        return JobStatus(status=job.status, time_running=time_running, tagging_progress=progress, tag_job_id=job.tag_job_id, error=job.error)
+        return JobStatus(status=job.status, time_running=time_running, tagging_progress=progress, tag_job_id=job.tag_job_id, error=job.error, content_tagged=contents)
+    
+    @dataclass
+    class StatusArgs(Data):
+        authorization: str
+        list_content: bool=False
+        
+        @staticmethod
+        def from_dict(data: dict) -> 'StatusArgs':
+            class ReqSchema(Schema):
+                list_content = fields.Bool(missing=False, default=False)
+                authorization = fields.Str()
+
+            return StatusArgs(**ReqSchema().load(data))
     
     # get status of all jobs for a qid
     @app.route('/<qid>/status', methods=['GET'])
@@ -555,6 +617,10 @@ def get_flask_app():
         _, error_response = _get_client(request, qid, config["fabric"]["config_url"])
         if error_response:
             return error_response
+        try:
+            args = StatusArgs.from_dict(request.args)
+        except (ValidationError, TypeError) as e:
+            return Response(response=json.dumps({'error': str(e)}), status=400, mimetype='application/json')
         with lock:
             jobs = set(active_jobs[qid].keys()) | set(inactive_jobs[qid].keys())
             if len(jobs) == 0:
@@ -563,12 +629,14 @@ def get_flask_app():
             for job in jobs:
                 stream, feature = job
                 if job in active_jobs[qid]:
-                    res[stream][feature] = _get_job_status(active_jobs[qid][job])
+                    res[stream][feature] = _get_job_status(active_jobs[qid][job], args.list_content)
                 else:
-                    res[stream][feature] = _get_job_status(inactive_jobs[qid][job])
+                    res[stream][feature] = _get_job_status(inactive_jobs[qid][job], args.list_content)
         for stream in list(res.keys()):
             for feature in list(res[stream].keys()):
                 res[stream][feature] = asdict(res[stream][feature])
+                if not args.list_content:
+                    res[stream][feature].pop('content_tagged')
         return Response(response=json.dumps(res), status=200, mimetype='application/json')
     
     @app.route('/<qid>/stop/<feature>', methods=['POST'])
