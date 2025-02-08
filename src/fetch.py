@@ -9,6 +9,7 @@ import shutil
 
 from common_ml.video_processing import unfrag_video
 from common_ml.utils.files import get_file_type, encode_path
+from common_ml.utils.metrics import timeit
 from config import config
 
 class StreamNotFoundError(Exception):
@@ -67,7 +68,7 @@ class AssetsNotFoundException(Exception):
     """Custom exception for specific error conditions."""
     pass
 
-def fetch_assets(content_id: str, output_path: str, client: ElvClient, assets: Optional[List[str]], replace: bool=False, exit_event: Optional[threading.Event]=None) -> List[str]:
+def fetch_assets(content_id: str, output_path: str, client: ElvClient, assets: Optional[List[str]], replace: bool=False, concurrent: bool=False, exit_event: Optional[threading.Event]=None) -> List[str]:
     if assets is None:
         try:
             assets_meta = client.content_object_metadata(object_id=content_id, metadata_subtree='assets')
@@ -98,7 +99,14 @@ def fetch_assets(content_id: str, output_path: str, client: ElvClient, assets: O
     if len(to_download) < len(assets):
         logger.info(f"{len(assets) - len(to_download)} assets already retrieved for {content_id}")
     logger.info(f"{len(to_download)} assets need to be downloaded for {content_id}")
-    for asset in to_download:
+    if concurrent:
+        _download_concurrent(client, to_download, exit_event, content_id, output_path)
+    else:
+        _download_sequential(client, to_download, exit_event, content_id, output_path)
+    return [os.path.join(output_path, encode_path(asset)) for asset in assets]
+
+def _download_sequential(client: ElvClient, files: List[str], exit_event: Optional[threading.Event], content_id: str, output_path: str) -> List[str]:
+    for asset in files:
         asset_id = encode_path(asset)
         if exit_event is not None and exit_event.is_set():
             logger.warning(f"Downloading of asset {asset} for content_id {content_id} stopped.")
@@ -108,4 +116,8 @@ def fetch_assets(content_id: str, output_path: str, client: ElvClient, assets: O
             client.download_file(object_id=content_id, dest_path=save_path, file_path=asset)
         except HTTPError as e:
             raise HTTPError(f"Failed to download asset {asset} for content_id {content_id}") from e
-    return [os.path.join(output_path, encode_path(asset)) for asset in assets]
+        
+def _download_concurrent(client: ElvClient, files: List[str], exit_event: Optional[threading.Event], content_id: str, output_path: str) -> List[str]:
+    file_jobs = [(asset, encode_path(asset)) for asset in files]
+    with timeit("Downloading assets"):
+        client.download_files(object_id=content_id, dest_path=output_path, file_jobs=file_jobs)
