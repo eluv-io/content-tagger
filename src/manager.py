@@ -68,16 +68,20 @@ class ResourceManager:
     # Returns:
     #     str: The job ID.
     # NOTE: this function creates a new thread to watch the job
-    def run(self, feature: str, run_config: dict, files: List[str], needs_gpu: bool) -> str:
+    def run(self, feature: str, run_config: dict, files: List[str], allowed_gpus: List[str]) -> str:
         with self.lock:
             self.update_gpu_state()
             device_idx = None
             container = None
             files_added = []
             try:
-                if needs_gpu:
+                if len(allowed_gpus) > 0:
+                    # check for an available GPU and set device statuses according
                     for i, status in enumerate(self.device_status):
                         if status:
+                            # gpu already in use
+                            continue
+                        if i not in allowed_gpus:
                             continue
                         device_idx = i
                         self.device_status[i] = True
@@ -86,6 +90,7 @@ class ResourceManager:
                         break
                     if device_idx is None:
                         raise NoGPUAvailable("No available GPUs")
+                # start the container
                 jobid = str(uuid.uuid4())
                 if not os.path.exists(os.path.join(config["storage"]["logs"], feature)):
                     os.makedirs(os.path.join(config["storage"]["logs"], feature))

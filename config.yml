@@ -16,7 +16,8 @@ services:
     image: "localhost/llava:latest"
     type: "video"
     frame_level: true
-    requires_gpu: false
+    # force to run on cpu
+    allowed_gpus: []
   asr: 
     image: "localhost/asr:latest"
     type: "audio"
@@ -40,17 +41,23 @@ services:
     image: "localhost/logo:latest"
     type: "video"
     frame_level: true
+  player:
+    image: "localhost/player:latest"
+    type: "video"
+    frame_level: true
+    # NOTE: this depends on the host machine
+    # device ids which don't exist on the host will be ignored when scheduling jobs
+    allowed_gpus: [0, 2, 3, 4]
   # Used for testing
   dummy_gpu:
     image: "localhost/dummy_gpu:latest"
     type: "video"
     frame_level: true
-    requires_gpu: true
   dummy_cpu:
     image: "localhost/dummy_cpu:latest"
     type: "video"
     frame_level: true
-    requires_gpu: false
+    allowed_gpus: []
 devices: 
   # if true, then tagger will run on gpus even if they are used by a foreign process
   # TODO: implement this, it is currently disabled to make life easier
