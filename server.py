@@ -506,14 +506,18 @@ def get_flask_app():
 
         logger.debug(f"Found video streams: {video_streams}")
 
-        with timeit("Aggregating tags"):
-            if video_streams:
-                format_video_tags(client, qwt, video_streams, config["agg"]["interval"])
-            else:
-                # slightly weird logic, but the format_video_tags finalizes files by default whereas format_asset_tags does not,
-                # so, we need to finalize here
-                client.finalize_files(qwt, qlib)
-            format_asset_tags(client, qwt)
+        try:
+            with timeit("Aggregating tags"):
+                if video_streams:
+                    format_video_tags(client, qwt, video_streams, config["agg"]["interval"])
+                else:
+                    # slightly weird logic, but the format_video_tags finalizes files by default whereas format_asset_tags does not,
+                    # so, we need to finalize here
+                    client.finalize_files(qwt, qlib)
+                format_asset_tags(client, qwt)
+        except HTTPError as e:
+            return Response(response=json.dumps({'error': str(e), 'message': 'Please verify you\'re authorization token has write access and the write token has not already been committed. \
+                                                This error can also arise if the write token has already been used to finalize tags.'}), status=403, mimetype='application/json')
 
         client.set_commit_message(qwt, "Uploaded ML Tags", qlib)
 
