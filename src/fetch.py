@@ -123,4 +123,4 @@ def _download_concurrent(client: ElvClient, files: List[str], exit_event: Option
     file_jobs = [(asset, encode_path(asset)) for asset in files]
     with timeit("Downloading assets"):
         status = client.download_files(object_id=content_id, dest_path=output_path, file_jobs=file_jobs)
-    return [asset for asset, ok in status if ok]
+    return [asset for (asset, _), error in zip(file_jobs, status) if error is None]
