@@ -99,13 +99,13 @@ def fetch_assets(content_id: str, output_path: str, client: ElvClient, assets: O
     if len(to_download) < len(assets):
         logger.info(f"{len(assets) - len(to_download)} assets already retrieved for {content_id}")
     logger.info(f"{len(to_download)} assets need to be downloaded for {content_id}")
-    if concurrent:
-        _download_concurrent(client, to_download, exit_event, content_id, output_path)
-    else:
-        _download_sequential(client, to_download, exit_event, content_id, output_path)
+    new_assets = _download_concurrent(client, to_download, exit_event, content_id, output_path)
+    bad_assets = set(to_download) - set(new_assets)
+    assets = [asset for asset in assets if asset not in bad_assets]
     return [os.path.join(output_path, encode_path(asset)) for asset in assets]
 
 def _download_sequential(client: ElvClient, files: List[str], exit_event: Optional[threading.Event], content_id: str, output_path: str) -> List[str]:
+    res = []
     for asset in files:
         asset_id = encode_path(asset)
         if exit_event is not None and exit_event.is_set():
@@ -114,10 +114,13 @@ def _download_sequential(client: ElvClient, files: List[str], exit_event: Option
         try:
             save_path = os.path.join(output_path, asset_id)
             client.download_file(object_id=content_id, dest_path=save_path, file_path=asset)
+            res.append(asset)
         except HTTPError as e:
-            raise HTTPError(f"Failed to download asset {asset} for content_id {content_id}") from e
+            continue
+    return res
         
 def _download_concurrent(client: ElvClient, files: List[str], exit_event: Optional[threading.Event], content_id: str, output_path: str) -> List[str]:
     file_jobs = [(asset, encode_path(asset)) for asset in files]
     with timeit("Downloading assets"):
-        client.download_files(object_id=content_id, dest_path=output_path, file_jobs=file_jobs)
+        status = client.download_files(object_id=content_id, dest_path=output_path, file_jobs=file_jobs)
+    return [asset for asset, ok in status if ok]
