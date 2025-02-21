@@ -6,6 +6,7 @@ from typing import Optional, List
 import threading
 import tempfile
 import shutil
+import subprocess
 
 from common_ml.video_processing import unfrag_video
 from common_ml.utils.files import get_file_type, encode_path
@@ -17,6 +18,11 @@ class StreamNotFoundError(Exception):
     pass
 
 def fetch_stream(content_id: str, stream_name: str, output_path: str, client: ElvClient, start_time: Optional[int]=None, end_time: Optional[int]=None, replace: bool=False, exit_event: Optional[threading.Event]=None) -> List[str]:
+    if start_time is None:
+        start_time = 0
+    if end_time is None:
+        end_time = float("inf")
+    
     try:
         transcodes = client.content_object_metadata(object_id=content_id, metadata_subtree='transcodes', resolve_links=False)
     except HTTPError:
@@ -26,7 +32,7 @@ def fetch_stream(content_id: str, stream_name: str, output_path: str, client: El
     try:
         streams = client.content_object_metadata(object_id=content_id, metadata_subtree='offerings/default/playout/streams')
     except HTTPError as e:
-        raise HTTPError(f"Failed to retrieve streams for content_id {content_id}") from e   
+        raise HTTPError(f"Failed to retrieve streams for content_id {content_id}") from e
     
     if stream_name not in streams:
         raise StreamNotFoundError(f"Stream {stream_name} not found in content_id {content_id}")
@@ -58,13 +64,9 @@ def fetch_stream_legacy(content_id: str, stream_name: str, output_path: str, cli
         raise HTTPError(f"Failed to retrieve streams for content_id {content_id}") from e
     if stream_name not in streams:
         raise StreamNotFoundError(f"Stream {stream_name} not found in content_id {content_id}")
-    stream = streams[stream_name].get("sources", [])   
+    stream = streams[stream_name].get("sources", [])
     if len(stream) == 0:
         raise StreamNotFoundError(f"Stream {stream_name} is empty")
-    if start_time is None:
-        start_time = 0
-    if end_time is None:
-        end_time = float("inf")
     
     codec = streams[stream_name].get("codec_type", None)
     
@@ -86,7 +88,6 @@ def _download_stream(content_id: str, stream_name: str, output_path: str, client
             continue
         elif not replace and os.path.exists(os.path.join(output_path, f"{idx}_{part_hash}.mp4")):
             res.append(os.path.join(output_path, f"{idx}_{part_hash}.mp4"))
-            logger.info(f"Part hash:{part_hash} for content_id {content_id} already retrieved.")
             continue
         else:
             logger.info(f"Downloading part {part_hash} for content_id {content_id}")
@@ -99,9 +100,12 @@ def _download_stream(content_id: str, stream_name: str, output_path: str, client
             else:
                 os.rename(tmpfile, save_path)
             res.append(save_path)
-        except HTTPError as e:
-            shutil.rmtree(tmp_path, ignore_errors=True) # TODO: handle download failures gracefully
-            raise HTTPError(f"Failed to download part {part_hash} for content_id {content_id}: {str(e)}") 
+        except (HTTPError, RuntimeError) as e:
+            if os.path.exists(save_path):
+                # remove the corrupt file if it exists
+                os.remove(save_path)
+            logger.error(f"Failed to download part {part_hash} for content_id {content_id}: {str(e)}")
+            continue
     shutil.rmtree(tmp_path, ignore_errors=True)
     return res
 
