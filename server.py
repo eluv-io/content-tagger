@@ -18,12 +18,12 @@ import signal
 import atexit
 from marshmallow import ValidationError, fields, Schema
 from common_ml.types import Data
-from common_ml.tag_formatting import format_video_tags, format_asset_tags
 from common_ml.utils.metrics import timeit
 
 from config import config
 from src.fabric.utils import parse_qhit
-from src.fabric.video import fetch_stream, StreamNotFoundError
+from src.fabric.agg import format_video_tags, format_asset_tags
+from src.fabric.video import download_stream, StreamNotFoundError
 from src.fabric.assets import fetch_assets, AssetsNotFoundException
 
 from src.manager import ResourceManager, NoGPUAvailable
@@ -303,7 +303,7 @@ def get_flask_app():
                 if stream == "image":
                     media_files = fetch_assets(qhit, save_path, elv_client, **kwargs)
                 else:
-                    media_files =  fetch_stream(qhit, stream, save_path, elv_client, **kwargs, exit_event=job.stop_event)
+                    media_files =  download_stream(qhit, stream, save_path, elv_client, **kwargs, exit_event=job.stop_event)
         except (StreamNotFoundError, AssetsNotFoundException):
             with lock:
                 _set_stop_status(job, "Failed", f"Content for stream {stream} was not found for {qhit}")

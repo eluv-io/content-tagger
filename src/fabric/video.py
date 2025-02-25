@@ -17,24 +17,24 @@ class StreamNotFoundError(RuntimeError):
     """Custom exception for specific error conditions."""
     pass
 
-def fetch_stream(qhit: str, stream_name: str, output_path: str, client: ElvClient, start_time: Optional[int]=None, end_time: Optional[int]=None, replace: bool=False, exit_event: Optional[threading.Event]=None) -> List[str]:
+def download_stream(qhit: str, stream_name: str, output_path: str, client: ElvClient, start_time: Optional[int]=None, end_time: Optional[int]=None, replace: bool=False, exit_event: Optional[threading.Event]=None) -> List[str]:
     if start_time is None:
         start_time = 0
     if end_time is None:
         end_time = float("inf")
 
+    parts, part_duration, _, codec_type = fetch_stream_metadata(qhit, stream_name, client)
+    return _download_parts(qhit, output_path, client, codec_type, parts, part_duration, start_time, end_time, replace, exit_event)
+
+def fetch_stream_metadata(qhit: str, stream_name: str, client: ElvClient) -> Tuple[List[tuple], float, float, str]:
     if _is_live(qhit, client):
-        parts, codec_type = _fetch_livestream_parts(qhit, stream_name, client)
+        return _fetch_livestream_metadata(qhit, stream_name, client)
     elif _is_legacy_vod(qhit, client):
-        parts, codec_type = _fetch_parts_vod_legacy(qhit, stream_name, client)
+        return _fetch_legacy_vod_metadata(qhit, stream_name, client)
     else:
-        parts, codec_type = _fetch_parts_vod(qhit, stream_name, client)
-    
-    return _download_parts(qhit, output_path, client, codec_type, parts, start_time, end_time, replace, exit_event)
+        return _fetch_vod_metadata(qhit, stream_name, client)
 
-def _fetch_parts_vod(qhit: str, stream_name: str, client: ElvClient) -> Tuple[List[tuple], str]:
-    """Returns the parts with start/end time & the codec for the stream."""
-
+def _fetch_vod_metadata(qhit: str, stream_name: str, client: ElvClient) -> Tuple[List[str], float, float, str]:
     try:
         transcodes = client.content_object_metadata(metadata_subtree='transcodes', resolve_links=False, **parse_qhit(qhit))
     except HTTPError as e:
@@ -66,11 +66,20 @@ def _fetch_parts_vod(qhit: str, stream_name: str, client: ElvClient) -> Tuple[Li
     codec_type = transcode_meta["codec_type"]
     stream = transcode_meta["sources"]
 
-    parts = [(part["source"], part["timeline_start"]["float"], part["timeline_end"]["float"]) for part in stream]
+    if len(stream) == 0:
+        raise StreamNotFoundError(f"Stream {stream_name} is empty")
+    
+    part_duration = stream[0]["duration"]["float"]
 
-    return parts, codec_type
+    fps = None
+    if codec_type == "video":
+        fps = _parse_fps(transcode_meta["rate"])
 
-def _fetch_parts_vod_legacy(qhit: str, stream_name: str, client: ElvClient) -> Tuple[List[tuple], str]:
+    parts = [part["source"] for part in stream]
+
+    return parts, part_duration, fps, codec_type
+
+def _fetch_legacy_vod_metadata(qhit: str, stream_name: str, client: ElvClient) -> Tuple[List[tuple], str]:
     """Returns the parts with start/end time & the codec for the stream."""
 
     try:
@@ -83,16 +92,21 @@ def _fetch_parts_vod_legacy(qhit: str, stream_name: str, client: ElvClient) -> T
     if len(stream) == 0:
         raise StreamNotFoundError(f"Stream {stream_name} is empty")
     
-    parts = [(part["source"], part["timeline_start"]["float"], part["timeline_end"]["float"]) for part in stream]
+    parts = [part["source"] for part in stream]
     
     codec = streams[stream_name].get("codec_type", None)
+    part_duration = stream[0]["duration"]["float"]
 
     if codec is None:
         raise ValueError(f"Codec type not found for stream {stream_name} in {qhit}")
     
-    return parts, codec
+    fps = None
+    if codec == "video":
+        fps = _parse_fps(streams[stream_name]["rate"])
+    
+    return parts, part_duration, fps, codec
 
-def _fetch_livestream_parts(qhit: str, stream_name: str, client: ElvClient) -> Tuple[List[tuple], str]:
+def _fetch_livestream_metadata(qhit: str, stream_name: str, client: ElvClient) -> Tuple[List[tuple], str]:
     """Returns the livestream parts with start/end time & the codec for the stream."""
 
     try:
@@ -121,32 +135,31 @@ def _fetch_livestream_parts(qhit: str, stream_name: str, client: ElvClient) -> T
         part_duration = live_stream_info.get("seg_duration", None)
         assert part_duration is not None, "Part duration not found in live stream metadata"
         part_duration = float(part_duration)
+        fps = live_stream_info["video_time_base"] / 1001 # TODO: check if this is correct
     else:
         sr = live_stream_info.get("sample_rate", None)
         ts = live_stream_info.get("audio_seg_duration_ts", None)
         assert sr is not None and ts is not None, "Sample rate or audio segment duration not found in live stream metadata"
         part_duration = int(ts) / int(sr)
+        fps = None
 
     # filter out parts with close_time = 0, meaning the part is still live
-    stream = [(part["part"], idx * part_duration, (idx+1)*part_duration) for idx, part in enumerate(stream) if part["close_time"] != 0]
+    stream = [part["hash"] for part in stream if part["close_time"] != 0]
 
-    return stream, codec
+    return stream, part_duration, fps, codec
 
-def _download_parts(qhit: str, output_path: str, client: ElvClient, codec_type: str, parts: List[tuple], start_time: Optional[int]=None, end_time: Optional[int]=None, replace: bool=False, exit_event: Optional[threading.Event]=None) -> List[str]:
-    """Downloads the parts from the stream.
-
-    Args:
-        parts (List[tuple]): List of tuples containing the part hash and the start and end times of the part: (part_hash, start_time, end_time)
-        ...
-    """
+def _download_parts(qhit: str, output_path: str, client: ElvClient, codec_type: str, parts: List[str], part_duration: float, start_time: Optional[int]=None, end_time: Optional[int]=None, replace: bool=False, exit_event: Optional[threading.Event]=None) -> List[str]:
+    """Downloads the parts from the stream."""
     
     tmp_path = tempfile.mkdtemp(dir=config["storage"]["tmp"])
     if not os.path.exists(output_path):
         os.makedirs(output_path)
     res = []
-    for idx, (part_hash, pstart, pend) in enumerate(sorted(parts, key=lambda x: x[1])):
+    for idx, part_hash in enumerate(parts):
         if exit_event is not None and exit_event.is_set():
             break
+        pstart = idx * part_duration
+        pend = (idx + 1) * part_duration
         idx = str(idx).zfill(4)
         if not(start_time <= pstart < end_time) and not(start_time <= pend < end_time):
             continue
@@ -188,3 +201,9 @@ def _is_legacy_vod(qhit: str, client: ElvClient) -> bool:
     except HTTPError:
         return True
     return False
+
+def _parse_fps(rat: str) -> float:
+    if "/" in rat:
+        num, den = rat.split("/")
+        return float(num) / float(den)
+    return float(rat)
