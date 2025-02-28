@@ -1,6 +1,6 @@
 import os
 from loguru import logger
-from typing import Optional, List
+from typing import Optional, List, Tuple
 import threading
 from requests.exceptions import HTTPError
 
@@ -15,7 +15,7 @@ class AssetsNotFoundException(RuntimeError):
     """Custom exception for specific error conditions."""
     pass
 
-def fetch_assets(qhit: str, output_path: str, client: ElvClient, assets: Optional[List[str]], replace: bool=False) -> List[str]:
+def fetch_assets(qhit: str, output_path: str, client: ElvClient, assets: Optional[List[str]], replace: bool=False) -> Tuple[List[str], List[str]]:
     if assets is None:
         try:
             assets_meta = client.content_object_metadata(metadata_subtree='assets', **parse_qhit(qhit))
@@ -49,7 +49,7 @@ def fetch_assets(qhit: str, output_path: str, client: ElvClient, assets: Optiona
     new_assets = _download_concurrent(client, to_download, qhit, output_path)
     bad_assets = set(to_download) - set(new_assets)
     assets = [asset for asset in assets if asset not in bad_assets]
-    return [os.path.join(output_path, encode_path(asset)) for asset in assets]
+    return [os.path.join(output_path, encode_path(asset)) for asset in assets], list(bad_assets)
 
 def _download_sequential(client: ElvClient, files: List[str], exit_event: Optional[threading.Event], qhit: str, output_path: str) -> List[str]:
     res = []

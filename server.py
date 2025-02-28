@@ -51,6 +51,7 @@ class Job:
     media_files: List[str]
     replace: bool
     time_started: float
+    failed: List[str]
     allowed_gpus: List[str]
     time_ended: Optional[float]=None
     # tag_job_id is the job id returned by the manager, will be None until the tagging starts (status is "Running")
@@ -112,7 +113,7 @@ def get_flask_app():
         except TypeError as e:
             return Response(response=json.dumps({'error': str(e)}), status=400, mimetype='application/json')
         
-        client, error_response = _get_client(request, qhit, config["fabric"]["parts_url"])
+        _, error_response = _get_client(request, qhit, config["fabric"]["parts_url"])
         if error_response:
             return error_response
         
@@ -133,16 +134,17 @@ def get_flask_app():
                 # get the subset of GPUs that the model can run on, default to all of them
                 allowed_gpus = config["services"][feature].get("allowed_gpus", list(range(manager.num_devices)))
                 logger.debug(f"Starting {feature} on {qhit}: {run_config.stream}")
-                job = Job(qhit=qhit, run_config=run_config, feature=feature, media_files=[], replace=args.replace, status="Starting", stop_event=threading.Event(), time_started=time.time(), allowed_gpus=allowed_gpus)
+                job = Job(qhit=qhit, run_config=run_config, feature=feature, media_files=[], failed=[], replace=args.replace, status="Starting", stop_event=threading.Event(), time_started=time.time(), allowed_gpus=allowed_gpus)
                 active_jobs[qhit][(run_config.stream, feature)] = job
                 threading.Thread(target=_video_tag, args=(job, _get_authorization(request), args.start_time, args.end_time)).start()
         return Response(response=json.dumps({'message': f'Tagging started on {qhit}'}), status=200, mimetype='application/json')
     
     def _video_tag(job: Job, authorization: str, start_time: Optional[int], end_time: Optional[int]) -> None:
-        elv_client = ElvClient.from_configuration_url(config_url=config["fabric"]["parts_url"], static_token=authorization)
-        media_files = _download_content(job, elv_client, start_time=start_time, end_time=end_time)
+        part_download_client = ElvClient.from_configuration_url(config_url=config["fabric"]["parts_url"], static_token=authorization)
+        media_files, failed = _download_content(job, part_download_client, start_time=start_time, end_time=end_time)
         job.media_files = media_files
-        _submit_tag_job(job, elv_client)
+        job.failed = failed
+        _submit_tag_job(job, ElvClient.from_configuration_url(config_url=config["fabric"]["config_url"], static_token=authorization))
 
     def _submit_tag_job(job: Job, client: ElvClient) -> None:
         if _check_exit(job):
@@ -247,7 +249,7 @@ def get_flask_app():
         except TypeError as e:
             return Response(response=json.dumps({'error': str(e)}), status=400, mimetype='application/json')
         
-        client, error_response = _get_client(request, qhit, config["fabric"]["parts_url"])
+        _, error_response = _get_client(request, qhit, config["fabric"]["config_url"])
         if error_response:
             return error_response
         
@@ -268,22 +270,21 @@ def get_flask_app():
             for feature, run_config in args.features.items():
                 # get the subset of GPUs that the model can run on, default to all of them
                 allowed_gpus = config["services"][feature].get("allowed_gpus", list(range(manager.num_devices)))
-                job = Job(qhit=qhit, feature=feature, run_config=run_config, media_files=[], replace=args.replace, allowed_gpus=allowed_gpus, status="Starting", stop_event=threading.Event(), time_started=time.time())
+                job = Job(qhit=qhit, feature=feature, run_config=run_config, media_files=[], failed=[], replace=args.replace, allowed_gpus=allowed_gpus, status="Starting", stop_event=threading.Event(), time_started=time.time())
                 active_jobs[qhit][('image', feature)] = job
                 threading.Thread(target=_image_tag, args=(job, _get_authorization(request), args.assets)).start()
         return Response(response=json.dumps({'message': f'Image asset tagging started on {qhit}'}), status=200, mimetype='application/json')
     
     def _image_tag(job: Job, authorization: str, assets: Optional[List[str]]) -> None:
         elv_client = ElvClient.from_configuration_url(config_url=config["fabric"]["config_url"], static_token=authorization)
-
-        images = _download_content(job, elv_client, assets=assets)
+        images, failed = _download_content(job, elv_client, assets=assets)
         deduped = list(set(images))
         if len(deduped) > 0:
             logger.warning(f"Found {len(images) - len(deduped)} duplicate images.")
         job.media_files = deduped
+        job.failed = failed
         _submit_tag_job(job, elv_client)
     
-    # Download content
     def _download_content(job: Job, elv_client: ElvClient, **kwargs) -> List[str]:
         media_files = []
         stream = job.run_config.stream
@@ -301,21 +302,21 @@ def get_flask_app():
 
                 # if fetching finished while waiting for lock, this will return immediately
                 if stream == "image":
-                    media_files = fetch_assets(qhit, save_path, elv_client, **kwargs)
+                    media_files, failed = fetch_assets(qhit, save_path, elv_client, **kwargs)
                 else:
-                    media_files =  download_stream(qhit, stream, save_path, elv_client, **kwargs, exit_event=job.stop_event)
+                    media_files, failed =  download_stream(qhit, stream, save_path, elv_client, **kwargs, exit_event=job.stop_event)
         except (StreamNotFoundError, AssetsNotFoundException):
             with lock:
                 _set_stop_status(job, "Failed", f"Content for stream {stream} was not found for {qhit}")
         except HTTPError as e:
             with lock:
                 _set_stop_status(job, "Failed", f"Failed to fetch stream {stream} for {qhit}: {str(e)}. Make sure authorization token hasn't expired.")
-        except Exception as e:
+        except RuntimeError as e:
             with lock:
                 _set_stop_status(job, "Failed", f"Unknown error occurred while fetching stream {stream} for {qhit}: {str(e)}")
         if _check_exit(job):
-            return []
-        return media_files
+            return [], []
+        return media_files, failed
 
     def _job_starter(wait_for_gpu: bool, tag_queue: Queue) -> None:
         """
@@ -357,7 +358,7 @@ def get_flask_app():
                 # This error can happen if the model can only run on a subset of GPUs. 
                 job.error = "Tried to assign GPU but no suitable one was found. The job was placed back on the queue."
                 tag_queue.put(job)
-            except Exception as e:
+            except RuntimeError as e:
                 # handle the unexpected
                 with lock:
                     _set_stop_status(job, "Failed", str(e))
@@ -561,7 +562,10 @@ def get_flask_app():
                 if not os.path.exists(tag_dir):
                     tagged_files = 0
                 else:
-                    tagged_files = len(os.listdir(tag_dir))    
+                    tagged_files = len(os.listdir(tag_dir))
+            if job.run_config.stream != "image" and config["services"][job.feature].get("frame_level", False):
+                # for frame level tagging on video we have two tag files per part, so we need to divide by two.
+                tagged_files = tagged_files // 2
             to_tag = len(job.media_files)
             progress = f"{tagged_files}/{to_tag}"
         elif job.status == "Completed":
@@ -572,9 +576,9 @@ def get_flask_app():
             
         return JobStatus(status=job.status, time_running=time_running, tagging_progress=progress, tag_job_id=job.tag_job_id, error=job.error)
     
-    # get status of all jobs for a qhit
     @app.route('/<qhit>/status', methods=['GET'])
     def status(qhit: str) -> Response:
+        """Get the status of all tag jobs for a given qhit"""
         _, error_response = _get_client(request, qhit, config["fabric"]["config_url"])
         if error_response:
             return error_response
@@ -702,7 +706,7 @@ def get_flask_app():
     CORS(app)
     return app
 
-def main(): 
+def main():
     app = get_flask_app()
     app.run(port=args.port)
 

@@ -115,8 +115,8 @@ def _fetch_livestream_metadata(qhit: str, stream_name: str, client: ElvClient) -
         raise HTTPError(f"Failed to retrieve periods for live recording {qhit}") from e
     if len(periods) == 0:
         raise StreamNotFoundError(f"Live recording {qhit} is empty")
-    period = periods[-1]
-    stream = period.get("sources", {}).get(stream_name, {}).get("parts", [])
+    period_parts = [p.get("sources", {}).get(stream_name, {}).get("parts", []) for p in periods]
+    stream = sum(period_parts, [])
     if len(stream) == 0:
         raise StreamNotFoundError(f"Stream {stream_name} not found in live recording {qhit}")
     if stream_name == "video":
@@ -127,18 +127,28 @@ def _fetch_livestream_metadata(qhit: str, stream_name: str, client: ElvClient) -
         raise ValueError(f"Invalid stream name for live: {stream_name}. Must be 'video' or start with prefix 'audio'.")
     
     try:
-        live_stream_info = client.content_object_metadata(metadata_subtree='live_recording/recording_config/recording_params/xc_params', resolve_links=False, **parse_qhit(qhit))
+        xc_params = client.content_object_metadata(metadata_subtree='live_recording/recording_config/recording_params/xc_params', resolve_links=False, **parse_qhit(qhit))
     except HTTPError as e:
         raise HTTPError(f"Failed to retrieve live stream metadata from {qhit}") from e
-
+    
     if codec == "video":
-        part_duration = live_stream_info.get("seg_duration", None)
+        try:
+            live_stream_info = client.content_object_metadata(metadata_subtree='live_recording_config/probe_info/streams', resolve_links=False, **parse_qhit(qhit))
+        except HTTPError as e:
+            raise HTTPError(f"Failed to retrieve live stream metadata from {qhit}") from e
+        video_stream_info = None
+        for stream_info in live_stream_info:
+            if stream_info["codec_type"] == "video":
+                video_stream_info = stream_info
+                break
+        assert video_stream_info is not None, "Video stream not found in live stream metadata"
+        fps = _parse_fps(video_stream_info["frame_rate"])
+        part_duration = xc_params.get("seg_duration", None)
         assert part_duration is not None, "Part duration not found in live stream metadata"
         part_duration = float(part_duration)
-        fps = live_stream_info["video_time_base"] / 1001 # TODO: check if this is correct
     else:
-        sr = live_stream_info.get("sample_rate", None)
-        ts = live_stream_info.get("audio_seg_duration_ts", None)
+        sr = xc_params.get("sample_rate", None)
+        ts = xc_params.get("audio_seg_duration_ts", None)
         assert sr is not None and ts is not None, "Sample rate or audio segment duration not found in live stream metadata"
         part_duration = int(ts) / int(sr)
         fps = None
@@ -154,7 +164,7 @@ def _download_parts(qhit: str, output_path: str, client: ElvClient, codec_type: 
     tmp_path = tempfile.mkdtemp(dir=config["storage"]["tmp"])
     if not os.path.exists(output_path):
         os.makedirs(output_path)
-    res = []
+    res, failed = [], []
     for idx, part_hash in enumerate(parts):
         if exit_event is not None and exit_event.is_set():
             break
@@ -181,10 +191,11 @@ def _download_parts(qhit: str, output_path: str, client: ElvClient, codec_type: 
             if os.path.exists(save_path):
                 # remove the corrupt file if it exists
                 os.remove(save_path)
+            failed.append(part_hash)
             logger.error(f"Failed to download part {part_hash} for {qhit}: {str(e)}")
             continue
     shutil.rmtree(tmp_path, ignore_errors=True)
-    return res
+    return res, failed
 
 def _is_live(qhit: str, client: ElvClient) -> bool:
     if not qhit.startswith("tqw__"):
