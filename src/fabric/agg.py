@@ -267,7 +267,7 @@ def feature_to_label(feature: str) -> str:
         return "Shot Detection"
     if feature == "llava":
         return "LLAVA Caption"
-    return feature.title()
+    return feature.replace("_", " ").title()
 
 # e.g. "Shot Tags" -> "shot_tags"
 def label_to_track(label: str) -> str:

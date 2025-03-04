@@ -548,6 +548,7 @@ def get_flask_app():
         tagging_progress: str
         tag_job_id: Optional[str]=None
         error: Optional[str]=None
+        failed: List[str]=field(default_factory=list)
 
     def _get_job_status(job: Job) -> JobStatus:
         if job.time_ended is None:
@@ -574,7 +575,7 @@ def get_flask_app():
         else:
             progress = ""
             
-        return JobStatus(status=job.status, time_running=time_running, tagging_progress=progress, tag_job_id=job.tag_job_id, error=job.error)
+        return JobStatus(status=job.status, time_running=time_running, tagging_progress=progress, tag_job_id=job.tag_job_id, error=job.error, failed=job.failed)
     
     @app.route('/<qhit>/status', methods=['GET'])
     def status(qhit: str) -> Response:
