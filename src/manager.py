@@ -246,7 +246,7 @@ class ResourceManager:
         logger.info(f"Stopping container: status={container.status}")
         if container.status == "running":
             # podman client will kill if it doesn't stop within the timeout limit
-            container.stop(timeout=2)
+            container.stop(timeout=5)
         container.reload()
         if container.status == "running":
             logger.error(f"Container status is still \"running\" after stop. Please check the container and stop it manually.")

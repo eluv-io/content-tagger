@@ -16,7 +16,7 @@ llava_prompt = "This is an image from a rugby match broadcast. Focus on the acti
 llava_models = ["elv-llamavision:1", "elv-llamavision:2"]
 
 assets_params = {"features": {"logo":{}, "ocr": {}}, "replace": False}
-video_params = {"features": {"ocr": {}, "shot": {}, "asr": {"stream": "audio"}, "llava": {"model": {"fps": 0.33, "prompt": llava_prompt}}}, "replace": False}
+video_params = {"features": {"asr": {"stream": "audio"}, "ocr": {}, "shot": {}, "llava": {"model": {"fps": 0.33, "prompt": llava_prompt}}}, "replace": False}
 
 def get_auth(config: str, qhit: str) -> str:
     cmd = f"qfab_cli content token create {qhit} --update --config {config}"
@@ -87,7 +87,6 @@ def main():
             elif user_input == "finalize":
                 for qhit in contents:
                     finalize(qhit, args.config)
-                    print(f'FINALIZE URL for {qhit}\n', f"{server}/{qhit}/finalize?authorization={auth}")
             else:
                 print("Invalid command.")
         except KeyboardInterrupt:

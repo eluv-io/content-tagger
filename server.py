@@ -286,7 +286,7 @@ def get_flask_app():
         _submit_tag_job(job, elv_client)
     
     def _download_content(job: Job, elv_client: ElvClient, **kwargs) -> List[str]:
-        media_files = []
+        media_files, failed = [], []
         stream = job.run_config.stream
         qhit = job.qhit
 
@@ -311,7 +311,7 @@ def get_flask_app():
         except HTTPError as e:
             with lock:
                 _set_stop_status(job, "Failed", f"Failed to fetch stream {stream} for {qhit}: {str(e)}. Make sure authorization token hasn't expired.")
-        except RuntimeError as e:
+        except Exception as e:
             with lock:
                 _set_stop_status(job, "Failed", f"Unknown error occurred while fetching stream {stream} for {qhit}: {str(e)}")
         if _check_exit(job):
@@ -358,7 +358,7 @@ def get_flask_app():
                 # This error can happen if the model can only run on a subset of GPUs. 
                 job.error = "Tried to assign GPU but no suitable one was found. The job was placed back on the queue."
                 tag_queue.put(job)
-            except RuntimeError as e:
+            except Exception as e:
                 # handle the unexpected
                 with lock:
                     _set_stop_status(job, "Failed", str(e))

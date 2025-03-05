@@ -1,4 +1,4 @@
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 import json
 from copy import deepcopy
 from collections import defaultdict
@@ -65,9 +65,11 @@ def format_video_tags(client: ElvClient, write_token: str, streams: List[str], i
         streams: a list of tagged streams which we want to include in formatted results
         interval: the interval in minutes to bucket the formatted results (in minutes). (10 minutes is convention)
     """
+
     tmpdir = tempfile.TemporaryDirectory()
     save_path = tmpdir.name
     all_frame_tags, all_video_tags = {}, {}
+    custom_labels = {}
     fps = None
     for stream in streams:
         try:
@@ -75,6 +77,14 @@ def format_video_tags(client: ElvClient, write_token: str, streams: List[str], i
         except HTTPError as e:
             logger.error(f"Error downloading video tags: {e}")
             return
+        if stream == "source_tags":
+            # special logic here for parsing external tags
+            logger.info("Parsing external tags")
+            external_tags, labels = _parse_external_tags(os.path.join(save_path, write_token, stream))
+            custom_labels.update(labels)
+            all_video_tags.update(external_tags)
+            logger.info(f"Finished parsing external tags: {list(all_video_tags.keys())}")
+            continue
         _, part_duration, fps, codec = fetch_stream_metadata(write_token, stream, client)
         for feature in os.listdir(os.path.join(save_path, write_token, stream)):
             if feature not in os.listdir(os.path.join(save_path, write_token, stream)):
@@ -99,7 +109,7 @@ def format_video_tags(client: ElvClient, write_token: str, streams: List[str], i
     assert "shot" in all_video_tags, "No shot tags found"
     intervals = [(tag.start_time, tag.end_time) for tag in all_video_tags["shot"]]
     agg_tags = aggregate_video_tags({f: tags for f, tags in all_video_tags.items() if f != "shot"}, intervals)
-    formatted_tracks = format_tracks({"shot_tags": agg_tags}, all_video_tags, interval)
+    formatted_tracks = format_tracks({"shot_tags": agg_tags}, all_video_tags, interval, custom_labels=custom_labels)
     overlays = format_overlay(all_frame_tags, fps, interval)
 
     to_upload = []
@@ -126,6 +136,25 @@ def format_video_tags(client: ElvClient, write_token: str, streams: List[str], i
 
     tmpdir.cleanup()
 
+def _parse_external_tags(tags_path: str) -> Dict[str, List[VideoTag]]:
+    external_tags, labels = {}, {}
+    for tag_type in os.listdir(tags_path):
+        for tag_file in os.listdir(os.path.join(tags_path, tag_type)):
+            with open(os.path.join(tags_path, tag_type, tag_file), 'r') as f:
+                data = json.load(f)["metadata_tags"]
+            for feature in data:
+                labels[feature] = data[feature]["label"]
+                external_tags[feature] = _parse_external_track(data[feature])
+                logger.info(f"Finished parsing external tags for {feature}")
+                logger.debug(external_tags[feature])
+    return external_tags, labels
+
+def _parse_external_track(data: List[Dict[str, object]]) -> List[VideoTag]:
+    track = []
+    for tag in data["tags"]:
+        track.append(VideoTag(start_time=tag["start_time"], end_time=tag["end_time"], text="; ".join(tag["text"])))
+    return track
+
 def add_link(client: ElvClient, filename: str, qwt: str, libid: str) -> None:
     if 'video-tags-tracks' in filename:
         tag_type = 'metadata_tags'
@@ -139,6 +168,7 @@ def add_link(client: ElvClient, filename: str, qwt: str, libid: str) -> None:
     client.merge_metadata(qwt, data, library_id=libid, metadata_subtree=f'video_tags/{tag_type}/{idx}')
 
 def merge_video_tag_files(tags: List[str], tag_duration: float, offset: float) -> List[VideoTag]:
+    """Merges all the VideoTags from the given list of files into a single list of VideoTags with global timestamps."""
     tag_duration = tag_duration*1000
     offset = offset*1000
     merged = []
@@ -205,7 +235,7 @@ def format_overlay(all_frame_tags: Dict[str, Dict[int, List[FrameTag]]], fps: fl
 #   
 # Returns:
 #    A tracks tag following the usual format for the video-tags-tracks files. Each element in the output list corresponds to one of the "video-tags-tracks-XXXX.json" files
-def format_tracks(agg_tags: Dict[str, List[AggTag]], tracks: Dict[str, List[VideoTag]], interval: int) -> List[Dict[str, object]]:
+def format_tracks(agg_tags: Dict[str, List[AggTag]], tracks: Dict[str, List[VideoTag]], interval: int, custom_labels: Optional[Dict[str, str]]=None) -> List[Dict[str, object]]:
     result = defaultdict(lambda: {"version": 1, "metadata_tags": {}})
     # convert to milliseconds
     interval = interval*1000*60 
@@ -223,7 +253,10 @@ def format_tracks(agg_tags: Dict[str, List[AggTag]], tracks: Dict[str, List[Vide
                 result[bucket_idx]["metadata_tags"][key] = {"label": label, "tags": []}
             
             for track, video_tags in agg_tag.tags.items():
-                track_label = feature_to_label(track)
+                if track in custom_labels:
+                    track_label = custom_labels[track]
+                else:
+                    track_label = feature_to_label(track)
                 for vtag in video_tags:
                     as_dict = asdict(vtag)
                     if vtag.text is not None:
@@ -234,7 +267,10 @@ def format_tracks(agg_tags: Dict[str, List[AggTag]], tracks: Dict[str, List[Vide
 
     # add standalone tracks
     for key, video_tags in tracks.items():
-        label = feature_to_label(key)
+        if key in custom_labels:
+            label = custom_labels[key]
+        else:
+            label = feature_to_label(key)
         for vtag in video_tags:
             entry = {
                 "start_time": vtag.start_time,

@@ -185,9 +185,9 @@ def _download_parts(qhit: str, output_path: str, client: ElvClient, codec_type: 
             if codec_type == "video":
                 unfrag_video(tmpfile, save_path)
             else:
-                os.rename(tmpfile, save_path)
+                shutil.move(tmpfile, save_path)
             res.append(save_path)
-        except RuntimeError as e:
+        except Exception as e:
             if os.path.exists(save_path):
                 # remove the corrupt file if it exists
                 os.remove(save_path)
