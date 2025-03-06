@@ -83,7 +83,6 @@ def format_video_tags(client: ElvClient, write_token: str, streams: List[str], i
             external_tags, labels = _parse_external_tags(os.path.join(save_path, write_token, stream))
             custom_labels.update(labels)
             all_video_tags.update(external_tags)
-            logger.info(f"Finished parsing external tags: {list(all_video_tags.keys())}")
             continue
         _, part_duration, fps, codec = fetch_stream_metadata(write_token, stream, client)
         for feature in os.listdir(os.path.join(save_path, write_token, stream)):
@@ -145,8 +144,6 @@ def _parse_external_tags(tags_path: str) -> Dict[str, List[VideoTag]]:
             for feature in data:
                 labels[feature] = data[feature]["label"]
                 external_tags[feature] = _parse_external_track(data[feature])
-                logger.info(f"Finished parsing external tags for {feature}")
-                logger.debug(external_tags[feature])
     return external_tags, labels
 
 def _parse_external_track(data: List[Dict[str, object]]) -> List[VideoTag]:

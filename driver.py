@@ -62,12 +62,19 @@ def is_running(qhit: str, auth: str):
                 return True
     return False
 
-def finalize(qhit: str, config: str):
+def commit(write_token: str, config: str):
+    cmd = f"qfab_cli content finalize {write_token} --config {config}"
+    out = subprocess.run(cmd, shell=True, check=True, capture_output=True).stdout.decode("utf-8")
+    print(out)
+
+def finalize(qhit: str, config: str, do_commit: bool):
     auth_token = get_auth(config, qhit)
     write_token = get_write_token(qhit, config)
     finalize_url = f"{server}/{qhit}/finalize?authorization={auth_token}"
     resp = requests.post(finalize_url, params={"write_token": write_token, "replace": "true"})
     print(resp.json())
+    if do_commit and "error" not in resp.json():
+        commit(write_token, config)
 
 def main():
     print("Enter a command (tag, status, finalize):")
@@ -86,7 +93,7 @@ def main():
                     print(qhit, json.dumps(get_status(qhit, auth), indent=2))
             elif user_input == "finalize":
                 for qhit in contents:
-                    finalize(qhit, args.config)
+                    finalize(qhit, args.config, args.commit)
             else:
                 print("Invalid command.")
         except KeyboardInterrupt:
@@ -100,5 +107,6 @@ if __name__ == "__main__":
     parser.add_argument("--config")
     parser.add_argument("--tag_config", default="{}")
     parser.add_argument("--audio_stream", default="audio")
+    parser.add_argument("--commit", action="store_true")
     args = parser.parse_args()
     main()
