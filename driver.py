@@ -134,12 +134,24 @@ def main():
     while True:
         try:
             user_input = input("> ")  # Wait for user input
-            if user_input == "tag":
-                tag(contents, auth, args.assets)
-            elif user_input == "status":
+            if user_input == "tag" or user_input == "t":
+                tag(contents, auth, args.assets) ## end_time=20.5)
+            elif user_input == "qs":
                 for qhit in contents:
-                    print(qhit, json.dumps(get_status(qhit, auth), indent=2))
-            elif user_input == "finalize":
+                    status = get_status(qhit, auth)
+                    for imgorvid, models in status.items():
+                        for model, stat in models.items():
+                            print("[%9s] %-32s / %s: %s" % (stat.get("tagging_progress", ""), qhit, f"({imgorvid}) {model}", stat.get("status", "??") ) )
+            elif user_input == "status" or user_input == "s":
+                statuses = {}
+                for qhit in contents:
+                    status = get_status(qhit, auth)
+                    statuses[qhit] = status
+                    print(qhit, json.dumps(status, indent=2))
+                os.makedirs("driver", exist_ok=True)
+                with open("driver/status.json", "w") as statfile:
+                    statfile.write(json.dumps(statuses, indent = 2))
+            elif user_input == "finalize" or user_input == "f":
                 for qhit in contents:
                     finalize(qhit, args.config, args.commit)
             else:
