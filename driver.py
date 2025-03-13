@@ -13,7 +13,7 @@ from common_ml.utils.dictionary import nested_update
 
 server = "http://localhost:8086"
 
-llava_prompt = "This is an image from a rugby match broadcast. Focus on the action and play depicted in the image. Do not describe what people are wearing. Describe the image using only 3 sentences."
+llava_prompt = "This is an image from a rugby match broadcast. Do not describe what people are wearing. Focus on the action and play depicted in the image. Describe the image in 2 sentences."
 # will round robin between these models
 llava_models = ["elv-llamavision:1", "elv-llamavision:2"]
 
