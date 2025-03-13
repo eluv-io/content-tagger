@@ -18,7 +18,36 @@ llava_prompt = "This is an image from a rugby match broadcast. Do not describe w
 llava_models = ["elv-llamavision:1", "elv-llamavision:2"]
 
 assets_params = {"features": {"logo":{}, "ocr": {}}, "replace": False}
-video_params = {"features": {"asr": {"stream": "audio"}, "ocr": {}, "shot": {}, "llava": {"model": {"fps": 0.33, "prompt": llava_prompt}}}, "replace": False}
+
+video_params = {
+    "replace": False,
+    "features": {
+        "llava_brief": { 
+            "model": {
+                "fps": 0.1, "prompt": llava_prompt, 
+                      "llama_endpoint": "http://localhost:11434",
+                      "models": [ "elv-llamavision:1", "llama3.2-vision:latest"]  
+            }
+        }
+    }
+}
+
+video_params = {
+    "replace": False,
+    "features": {
+        "asr": {"stream": "audio" },
+        "ocr": {},
+        "shot": {},
+        "llava": {"model": {"fps": 0.33, "prompt": llava_prompt} }
+    }
+}
+    
+video_params = {
+    "replace": True,
+    "features": {
+        "ocr": { "model": { "fps": 5, "l_thres": 0.65 } }
+    }
+}
 
 def get_auth(config: str, qhit: str) -> str:
     cmd = f"qfab_cli content token create {qhit} --update --config {config}"
