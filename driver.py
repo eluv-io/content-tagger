@@ -65,7 +65,7 @@ def get_status(qhit: str, auth: str):
     res = requests.get(f"{server}/{qhit}/status", params={"authorization": auth})
     return res.json()
 
-def tag(contents: list, auth: str, assets: bool):
+def tag(contents: list, auth: str, assets: bool, start_time: float = None, end_time: float = None):
     if assets:
         params = deepcopy(assets_params)
     else:
@@ -79,6 +79,13 @@ def tag(contents: list, auth: str, assets: bool):
             url = f"{server}/{qhit}/tag"
         if "llava" in params["features"]:
             params["features"]["llava"]["model"]["model"] = llama_models[i % len(llama_models)]
+        
+        if start_time is not None:
+            params["start_time"] = start_time
+
+        if end_time is not None:
+            params["end_time"] = end_time
+                    
         res = requests.post(url, params={"authorization": auth}, json=params)
         print(res.json())
 
