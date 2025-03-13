@@ -305,6 +305,7 @@ def get_flask_app():
                     media_files, failed = fetch_assets(qhit, save_path, elv_client, **kwargs)
                 else:
                     media_files, failed =  download_stream(qhit, stream, save_path, elv_client, **kwargs, exit_event=job.stop_event)
+            logger.debug(f"got list of media files {media_files}")
         except (StreamNotFoundError, AssetsNotFoundException):
             with lock:
                 _set_stop_status(job, "Failed", f"Content for stream {stream} was not found for {qhit}")
