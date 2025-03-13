@@ -118,12 +118,19 @@ def finalize(qhit: str, config: str, do_commit: bool):
         
 
 def main():
-    print("Enter a command (tag, status, finalize):")
-    with open(args.contents, 'r') as f:
-        contents = [line.strip() for line in f.readlines()]
-    if len(contents) == 0:
-        raise ValueError("No contents found in file.")
+    if args.contents:
+        print("reading contents...")
+        with open(args.contents, 'r') as f:
+            contents = [line.strip() for line in f.readlines()]
+            if len(contents) == 0:
+                raise ValueError("No contents found in file.")
+    else:
+        contents = [args.iq]
+
+    print("getting auth...")
     auth = get_auth(args.config, contents[0])
+    
+    print("Enter a command (tag, status, finalize):")
     while True:
         try:
             user_input = input("> ")  # Wait for user input
@@ -136,14 +143,16 @@ def main():
                 for qhit in contents:
                     finalize(qhit, args.config, args.commit)
             else:
-                print("Invalid command.")
+                print(f"Invalid command: {user_input}")
         except KeyboardInterrupt:
             print("\nExiting.")
             exit(0)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test tag")
-    parser.add_argument("--contents", required=True)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("-c", "--contents")
+    group.add_argument("-q", "--iq")    
     parser.add_argument("--assets", action="store_true")
     parser.add_argument("--config")
     parser.add_argument("--tag_config", default="{}")
