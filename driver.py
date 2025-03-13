@@ -114,6 +114,9 @@ def finalize(qhit: str, config: str, do_commit: bool):
     if do_commit and "error" not in resp.json():
         commit(write_token, config)
 
+    return write_token
+        
+
 def main():
     print("Enter a command (tag, status, finalize):")
     with open(args.contents, 'r') as f:
