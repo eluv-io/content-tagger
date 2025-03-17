@@ -128,6 +128,18 @@ def finalize(qhit: str, config: str, do_commit: bool):
 
     return write_token
 
+def aggregate(qhit: str, config: str, do_commit: bool):
+    auth_token = get_auth(config, qhit)
+    write_token = get_write_token(qhit, config)
+    finalize_url = f"{server}/{qhit}/aggregate?authorization={auth_token}"
+    resp = requests.post(finalize_url, params={"write_token": write_token, "replace": "true"})
+    respdict = response_force_dict(resp)
+    print(respdict)
+    if do_commit and "error" not in respdict:
+        commit(write_token, config)
+
+    return write_token
+
 def main():
     if args.contents:
         print("reading contents...")
@@ -141,7 +153,7 @@ def main():
     print("getting auth...")
     auth = get_auth(args.config, contents[0])
     
-    print("Enter a command (tag, status, finalize):")
+    print("Command (t)ag, (s)tatus, (qs)quickstatus, (f)inalize, (a)ggregate? ")
     while True:
         try:
             user_input = input("> ")  # Wait for user input
@@ -153,23 +165,34 @@ def main():
                     for imgorvid, models in status.items():
                         for model, stat in models.items():
                             print("[%9s] %-32s / %s: %s" % (stat.get("tagging_progress", ""), qhit, f"({imgorvid}) {model}", stat.get("status", "??") ) )
-            elif user_input == "status" or user_input == "s":
+            elif user_input in [ "status", "s" ]:
                 statuses = {}
                 for qhit in contents:
                     status = get_status(qhit, auth)
                     statuses[qhit] = status
                     print(qhit, json.dumps(status, indent=2))
-                os.makedirs("driver", exist_ok=True)
-                with open("driver/status.json", "w") as statfile:
+                os.makedirs("driver_workdir", exist_ok=True)
+                with open("driver_workdir/status.json", "w") as statfile:
                     statfile.write(json.dumps(statuses, indent = 2))
-            elif user_input == "finalize" or user_input == "f":
+            elif user_input in [ "finalize", "f"]:
                 for qhit in contents:
                     finalize(qhit, args.config, args.commit)
+            elif user_input in [ "agg", "aggregate"]:
+                for qhit in contents:
+                    aggregate(qhit, args.config, args.commit)
+            elif user_input in [ "quit", "exit"]:
+                break
             else:
                 print(f"Invalid command: {user_input}")
         except KeyboardInterrupt:
-            print("\nExiting.")
-            exit(0)
+            print("")
+            break
+        except EOFError:
+            print("")
+            break
+
+    print("Exiting")
+    exit(0)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test tag")
