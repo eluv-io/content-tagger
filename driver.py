@@ -63,7 +63,7 @@ def get_write_token(qhit: str, config: str) -> str:
 
 def get_status(qhit: str, auth: str):
     res = requests.get(f"{server}/{qhit}/status", params={"authorization": auth})
-    return res.json()
+    return response_force_dict(res)
 
 def tag(contents: list, auth: str, assets: bool, start_time: float = None, end_time: float = None):
     if assets:
@@ -87,14 +87,15 @@ def tag(contents: list, auth: str, assets: bool, start_time: float = None, end_t
             params["end_time"] = end_time
                     
         res = requests.post(url, params={"authorization": auth}, json=params)
-        print(res.json())
+        print(response_force_dict(res))
 
 def is_running(qhit: str, auth: str):
     res = requests.get(f"{server}/{qhit}/status", params={"authorization": auth})
-    if "error" in res.json():
+    resdict = response_force_dict(res)
+    if "error" in resdict:
         # No jobs started
         return False
-    for stream, features in res.json().items():
+    for stream, features in resdict.items():
         for feature, status in features.items():
             if status != "Completed":
                 return True
@@ -105,17 +106,27 @@ def commit(write_token: str, config: str):
     out = subprocess.run(cmd, shell=True, check=True, capture_output=True).stdout.decode("utf-8")
     print(out)
 
+def response_force_dict(resp):
+    try:
+        return resp.json()
+    except requests.exceptions.JSONDecodeError as e:
+        return {
+            "error": "could not parse json",
+            "status": resp.status_code,
+            "content": resp.content
+        }
+
 def finalize(qhit: str, config: str, do_commit: bool):
     auth_token = get_auth(config, qhit)
     write_token = get_write_token(qhit, config)
     finalize_url = f"{server}/{qhit}/finalize?authorization={auth_token}"
     resp = requests.post(finalize_url, params={"write_token": write_token, "replace": "true"})
-    print(resp.json())
-    if do_commit and "error" not in resp.json():
+    respdict = response_force_dict(resp)
+    print(respdict)
+    if do_commit and "error" not in respdict:
         commit(write_token, config)
 
     return write_token
-        
 
 def main():
     if args.contents:
