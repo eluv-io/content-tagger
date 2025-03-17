@@ -9,6 +9,8 @@ import tempfile
 from loguru import logger
 from requests.exceptions import HTTPError
 
+from src.fabric.utils import parse_qhit
+
 from common_ml.tags import AggTag
 from common_ml.tags import VideoTag, FrameTag
 from common_ml.utils import nested_update
@@ -20,11 +22,10 @@ def format_asset_tags(client: ElvClient, write_token: str) -> None:
     tmpdir = tempfile.TemporaryDirectory()
     save_path = tmpdir.name
     qlib = client.content_object_library_id(write_token=write_token)
-    try:
-        client.download_directory(dest_path=save_path, fabric_path=f"image_tags", write_token=write_token)
-    except HTTPError as e:
-        logger.error(f"Error downloading image tags: {e}")
-        return
+    res = client.download_directory(dest_path=save_path, fabric_path=f"image_tags", write_token=write_token)
+    for r in res:
+        if r is not None:
+            raise r
     file_to_tags = defaultdict(dict)
     for model in os.listdir(save_path):
         for tag in os.listdir(os.path.join(save_path, model)):
@@ -66,17 +67,27 @@ def format_video_tags(client: ElvClient, write_token: str, streams: List[str], i
         interval: the interval in minutes to bucket the formatted results (in minutes). (10 minutes is convention)
     """
 
-    tmpdir = tempfile.TemporaryDirectory()
+    tmpdir = tempfile.TemporaryDirectory() ## delete=False)
+    
+    logger.debug(f"temporary directory for agg: {tmpdir}")
+
+    content_args = parse_qhit(write_token)
+    qlib = client.content_object_library_id(**content_args)
+
     save_path = tmpdir.name
+
     all_frame_tags, all_video_tags = {}, {}
     custom_labels = {}
     fps = None
+
     for stream in streams:
-        try:
-            client.download_directory(dest_path=os.path.join(save_path, write_token, stream), fabric_path=f"video_tags/{stream}", write_token=write_token)
-        except HTTPError as e:
-            logger.error(f"Error downloading video tags: {e}")
-            return
+        stream_tracks = client.list_files(qlib, path=f"/video_tags/{stream}", **content_args)
+        logger.debug(f"stream_tracks for {stream}: {stream_tracks}")
+        for stream_track in stream_tracks:
+            res = client.download_directory(dest_path=os.path.join(save_path, write_token, stream, stream_track), fabric_path=f"video_tags/{stream}/{stream_track}", write_token=write_token)
+            for r in res:
+                if r is not None:
+                    raise r
         if stream == "source_tags":
             # special logic here for parsing external tags
             logger.info("Parsing external tags")
@@ -124,14 +135,18 @@ def format_video_tags(client: ElvClient, write_token: str, streams: List[str], i
         with open(fpath, 'w') as f:
             json.dump(overlay, f)
         
+    logger.debug(f"upload files {to_upload}")
     jobs = [ElvClient.FileJob(local_path=path, out_path=f"video_tags/{os.path.basename(path)}", mime_type="application/json") for path in to_upload]
-    qlib = client.content_object_library_id(write_token=write_token)
     client.upload_files(write_token=write_token, library_id=qlib, file_jobs=jobs)
+
+    logger.debug("done uploading files")
 
     libid = client.content_object_library_id(write_token=write_token)
     for file in to_upload:
         basename = os.path.basename(file)
         add_link(client, basename, write_token, libid)
+
+    logger.debug("done linking files")
 
     tmpdir.cleanup()
 
