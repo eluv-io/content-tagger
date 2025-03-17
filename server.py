@@ -719,10 +719,11 @@ def get_flask_app():
 
 def main():
     app = get_flask_app()
-    app.run(port=args.port)
+    app.run(port=args.port, host=args.host)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=8086)
+    parser.add_argument('--host', type=str, default="127.0.0.1")
     args = parser.parse_args()
     main()
