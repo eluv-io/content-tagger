@@ -142,10 +142,13 @@ def main():
     else:
         contents = [args.iq]
 
+    print("getting model list:")
+    print(requests.get(f"{server}/list").json())
+
     print("getting auth...")
     auth = get_auth(args.config, contents[0])
     
-    print("Command (t)ag, (s)tatus, (qs)quickstatus, (f)inalize, (a)ggregate? ")
+    print("Command (t)ag, (s)tatus, (qs)quickstatus, (f)inalize, (agg)regate? ")
     while True:
         try:
             user_input = input("> ")  # Wait for user input
@@ -153,11 +156,8 @@ def main():
                 tag(contents, auth, args.assets, tag_config) ## end_time=20.5)
             elif user_input == "qs":
                 for qhit in contents:
-                    status = get_status(qhit, auth)
-                    for imgorvid, models in status.items():
-                        for model, stat in models.items():
-                            print("[%9s] %-32s / %s: %s" % (stat.get("tagging_progress", ""), qhit, f"({imgorvid}) {model}", stat.get("status", "??") ) )
-            elif user_input in [ "status", "s" ]:
+                    quick_status(auth, qhit)
+            elif user_input in [ "status", "s"]:
                 statuses = {}
                 for qhit in contents:
                     status = get_status(qhit, auth)
@@ -166,7 +166,7 @@ def main():
                 os.makedirs("driver_workdir", exist_ok=True)
                 with open("driver_workdir/status.json", "w") as statfile:
                     statfile.write(json.dumps(statuses, indent = 2))
-            elif user_input in [ "finalize", "f"]:
+            elif user_input in [ "finalize", "f" ]:
                 for qhit in contents:
                     finalize(qhit, args.config, args.commit)
             elif user_input in [ "agg", "aggregate"]:
@@ -185,8 +185,18 @@ def main():
         except:
             print(traceback.format_exc())
 
+    
     print("Exiting")
     exit(0)
+
+def quick_status(auth, qhit):
+    status = get_status(qhit, auth)
+    if status.get("error", None):
+        print("[%9s] %-32s / %s: %s" % ("", qhit, "err", status['error']) )
+        return
+    for imgorvid, models in status.items():
+        for model, stat in models.items():
+            print("[%9s] %-32s / %s: %s" % (stat.get("tagging_progress", ""), qhit, f"({imgorvid}) {model}", stat.get("status", "??") ) )
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Basic tag driver")
