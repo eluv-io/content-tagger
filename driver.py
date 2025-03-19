@@ -33,7 +33,6 @@ video_params = {
     }
 }
     
-
 def get_auth(config: str, qhit: str) -> str:
     cmd = f"qfab_cli content token create {qhit} --update --config {config}"
     out = subprocess.run(cmd, shell=True, check=True, capture_output=True).stdout.decode("utf-8")
@@ -50,11 +49,7 @@ def get_status(qhit: str, auth: str):
     res = requests.get(f"{server}/{qhit}/status", params={"authorization": auth})
     return response_force_dict(res)
 
-def tag(contents: list, auth: str, assets: bool, start_time: float = None, end_time: float = None):
-    if assets:
-        params = deepcopy(assets_params)
-    else:
-        params = deepcopy(video_params)
+def tag(contents: list, auth: str, assets: bool, params: dict, start_time: float = None, end_time: float = None):
     
     llama_models = ["elv-llamavision:1", "elv-llamavision:2"]
     for i, qhit in enumerate(contents):
@@ -126,6 +121,18 @@ def aggregate(qhit: str, config: str, do_commit: bool):
     return write_token
 
 def main():
+    if args.tag_config != "":
+            tag_config = args.tag_config
+    else:
+        if args.assets:
+            tag_config = assets_params
+        else:
+            tag_config = video_params
+    if args.tag_config.startswith('@'):
+        conffile = args.tag_config[1:]
+        print("reading tag config...")
+        with open(conffile, "r") as conf:
+           tag_config = json.load(conf)
     if args.contents:
         print("reading contents...")
         with open(args.contents, 'r') as f:
@@ -142,8 +149,8 @@ def main():
     while True:
         try:
             user_input = input("> ")  # Wait for user input
-            if user_input == "tag" or user_input == "t":
-                tag(contents, auth, args.assets) ## end_time=20.5)
+            if user_input in [ "tag" , "t"]:
+                tag(contents, auth, args.assets, tag_config) ## end_time=20.5)
             elif user_input == "qs":
                 for qhit in contents:
                     status = get_status(qhit, auth)
