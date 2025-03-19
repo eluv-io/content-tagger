@@ -12,7 +12,7 @@ from common_ml.utils.dictionary import nested_update
 
 """Convenience script for driving the tagger on bulk content."""
 
-server = os.environ.get("TAGGERV2_HOST", "http://localhost:8086")
+server = os.environ.get("TAGGERV2_URL", "http://localhost:8086")
 
 llava_prompt = "This is an image from a rugby match broadcast. Do not describe what people are wearing. Focus on the action and play depicted in the image. Describe the image in 2 sentences."
 # will round robin between these models
