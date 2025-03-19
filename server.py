@@ -526,7 +526,7 @@ def get_flask_app():
                     # slightly weird logic, but the format_video_tags finalizes files by default whereas format_asset_tags does not,
                     # so, we need to finalize here
                     client.finalize_files(qwt, qlib)
-                ##format_asset_tags(client, qwt)
+                format_asset_tags(client, qwt)
         except HTTPError as e:
             return Response(response=json.dumps({'error': str(e), 'message': """Please verify your authorization token has write access and the write token has not already been committed. \
                                                 This error can also arise if the write token has already been used to finalize tags.'}), status=403, mimetype='application/json"""}))
