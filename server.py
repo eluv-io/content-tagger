@@ -305,6 +305,7 @@ def get_flask_app():
                     media_files, failed = fetch_assets(qhit, save_path, elv_client, **kwargs)
                 else:
                     media_files, failed =  download_stream(qhit, stream, save_path, elv_client, **kwargs, exit_event=job.stop_event)
+            logger.debug(f"got list of media files {media_files}")
         except (StreamNotFoundError, AssetsNotFoundException):
             with lock:
                 _set_stop_status(job, "Failed", f"Content for stream {stream} was not found for {qhit}")
@@ -440,8 +441,7 @@ def get_flask_app():
                 authorization = fields.Str(required=False, missing=None)
             return FinalizeArgs(**FinalizeSchema().load(data))
     
-    @app.route('/<qhit>/finalize', methods=['POST'])
-    def finalize(qhit: str) -> Response:
+    def _finalize_internal(qhit: str, upload_local_tags = True) -> Response:
         try:
             args = FinalizeArgs.from_dict(request.args)
         except (TypeError, ValidationError) as e:
@@ -456,45 +456,47 @@ def get_flask_app():
             return Response(response=json.dumps({'error': 'Unauthorized'}), status=403, mimetype='application/json')
         content_args = parse_qhit(qwt)
         qlib = client.content_object_library_id(**content_args)
-        with lock:
-            jobs_running = len(active_jobs[qhit].values())
-        if jobs_running > 0 and not args.force:
-            return Response(response=json.dumps({'error': 'Some jobs are still running. Use `force=true` to finalize anyway.'}), status=400, mimetype='application/json')
-        
-        if not os.path.exists(os.path.join(config["storage"]["tags"], qhit)):
-            return Response(response=json.dumps({'error': 'No tags found for this content object'}), status=404, mimetype='application/json')
 
         file_jobs = []
-        for stream in os.listdir(os.path.join(config["storage"]["tags"], qhit)):
-            for feature in os.listdir(os.path.join(config["storage"]["tags"], qhit, stream)):
-                tagged_media_files = []
-                for tag in os.listdir(os.path.join(config["storage"]["tags"], qhit, stream, feature)):
-                    tagfile = os.path.join(config["storage"]["tags"], qhit, stream, feature, tag)
-                    tagged_media_files.append(_source_from_tag_file(tagfile))
-                tagged_media_files = list(set(tagged_media_files))
-                num_files = len(tagged_media_files)
-                if not args.replace:
-                    with timeit(f"Filtering tagged files for {qhit}, {feature}, {stream}"):
-                        tagged_media_files = _filter_tagged_files(tagged_media_files, client, qhit, stream, feature)
-                logger.debug(f"Upload status for {qhit}: {feature} on {stream}\nTotal media files: {num_files}, Media files to upload: {len(tagged_media_files)}, Media files already uploaded: {num_files - len(tagged_media_files)}")
-                if not tagged_media_files:
-                    continue
-                if stream == "image":
-                    for source in tagged_media_files:
-                        tagfile = source + "_imagetags.json"
-                        file_jobs.append(ElvClient.FileJob(local_path=tagfile,
-                                                out_path=f"image_tags/{feature}/{os.path.basename(tagfile)}",
-                                                mime_type="application/json"))
-                else:
-                    for source in tagged_media_files:
-                        tagfile = source + "_tags.json"
-                        file_jobs.append(ElvClient.FileJob(local_path=tagfile,
-                                                out_path=f"video_tags/{stream}/{feature}/{os.path.basename(tagfile)}",
-                                                mime_type="application/json"))
-                        if os.path.exists(source + "_frametags.json"):
-                            file_jobs.append(ElvClient.FileJob(local_path=source + "_frametags.json",
-                                                out_path=f"video_tags/{stream}/{feature}/{os.path.basename(source)}_frametags.json",
-                                                mime_type="application/json"))
+        if upload_local_tags:
+            with lock:
+                jobs_running = len(active_jobs[qhit].values())
+            if jobs_running > 0 and not args.force:
+                return Response(response=json.dumps({'error': 'Some jobs are still running. Use `force=true` to finalize anyway.'}), status=400, mimetype='application/json')
+
+            if not os.path.exists(os.path.join(config["storage"]["tags"], qhit)):
+                return Response(response=json.dumps({'error': 'No tags found for this content object'}), status=404, mimetype='application/json')
+
+            for stream in os.listdir(os.path.join(config["storage"]["tags"], qhit)):
+                for feature in os.listdir(os.path.join(config["storage"]["tags"], qhit, stream)):
+                    tagged_media_files = []
+                    for tag in os.listdir(os.path.join(config["storage"]["tags"], qhit, stream, feature)):
+                        tagfile = os.path.join(config["storage"]["tags"], qhit, stream, feature, tag)
+                        tagged_media_files.append(_source_from_tag_file(tagfile))
+                    tagged_media_files = list(set(tagged_media_files))
+                    num_files = len(tagged_media_files)
+                    if not args.replace:
+                        with timeit(f"Filtering tagged files for {qhit}, {feature}, {stream}"):
+                            tagged_media_files = _filter_tagged_files(tagged_media_files, client, qhit, stream, feature)
+                    logger.debug(f"Upload status for {qhit}: {feature} on {stream}\nTotal media files: {num_files}, Media files to upload: {len(tagged_media_files)}, Media files already uploaded: {num_files - len(tagged_media_files)}")
+                    if not tagged_media_files:
+                        continue
+                    if stream == "image":
+                        for source in tagged_media_files:
+                            tagfile = source + "_imagetags.json"
+                            file_jobs.append(ElvClient.FileJob(local_path=tagfile,
+                                                    out_path=f"image_tags/{feature}/{os.path.basename(tagfile)}",
+                                                    mime_type="application/json"))
+                    else:
+                        for source in tagged_media_files:
+                            tagfile = source + "_tags.json"
+                            file_jobs.append(ElvClient.FileJob(local_path=tagfile,
+                                                    out_path=f"video_tags/{stream}/{feature}/{os.path.basename(tagfile)}",
+                                                    mime_type="application/json"))
+                            if os.path.exists(source + "_frametags.json"):
+                                file_jobs.append(ElvClient.FileJob(local_path=source + "_frametags.json",
+                                                    out_path=f"video_tags/{stream}/{feature}/{os.path.basename(source)}_frametags.json",
+                                                    mime_type="application/json"))
 
         if len(file_jobs) > 0:
             try:
@@ -502,7 +504,7 @@ def get_flask_app():
                 with timeit("Uploading tag files"):
                     client.upload_files(library_id=qlib, file_jobs=file_jobs, finalize=False, **content_args)
             except HTTPError as e:
-                return Response(response=json.dumps({'error': str(e), 'message': 'Please verify you\'re authorization token has write access and the write token has not already been committed. \
+                return Response(response=json.dumps({'error': str(e), 'message': 'Please verify your authorization token has write access and the write token has not already been committed. \
                                                     This error can also arise if the write token has already been used to finalize tags.'}), status=403, mimetype='application/json')
             except ValueError as e:
                 return Response(response=json.dumps({'error': str(e), 'message': 'Please verify the provided write token has not already been used to finalize tags.'}), status=400, mimetype='application/json')
@@ -526,13 +528,21 @@ def get_flask_app():
                     client.finalize_files(qwt, qlib)
                 format_asset_tags(client, qwt)
         except HTTPError as e:
-            return Response(response=json.dumps({'error': str(e), 'message': """Please verify you\'re authorization token has write access and the write token has not already been committed. \
+            return Response(response=json.dumps({'error': str(e), 'message': """Please verify your authorization token has write access and the write token has not already been committed. \
                                                 This error can also arise if the write token has already been used to finalize tags.'}), status=403, mimetype='application/json"""}))
 
         client.set_commit_message(qwt, "Uploaded ML Tags", qlib)
 
         return Response(response=json.dumps({'message': 'Succesfully uploaded tag files. Please finalize the write token.', 'write token': qwt}), status=200, mimetype='application/json')
-    
+
+    @app.route('/<qhit>/finalize', methods=['POST'])
+    def finalize(qhit: str) -> Response:
+        return _finalize_internal(qhit, True)
+
+    @app.route('/<qhit>/aggregate', methods=['POST'])
+    def aggregate(qhit: str) -> Response:
+        return _finalize_internal(qhit, False)
+
     # JobStatus represents the status of a job returned by the /status endpoint
     @dataclass
     class JobStatus():
@@ -709,10 +719,11 @@ def get_flask_app():
 
 def main():
     app = get_flask_app()
-    app.run(port=args.port)
+    app.run(port=args.port, host=args.host)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=8086)
+    parser.add_argument('--host', type=str, default="127.0.0.1")
     args = parser.parse_args()
     main()
