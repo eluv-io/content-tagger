@@ -5,6 +5,7 @@ import requests
 import subprocess
 import json
 import os
+import traceback
 from copy import deepcopy
 
 from common_ml.utils.dictionary import nested_update
@@ -187,6 +188,8 @@ def main():
         except EOFError:
             print("")
             break
+        except:
+            print(traceback.format_exc())
 
     print("Exiting")
     exit(0)
