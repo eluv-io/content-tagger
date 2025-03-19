@@ -38,16 +38,13 @@ video_params = {
         "asr": {"stream": "audio" },
         "ocr": {},
         "shot": {},
-        "llava": {"model": {"fps": 0.33, "prompt": llava_prompt} }
+        "llava": {"model": {"fps": 0.33, "prompt": llava_prompt} },
+        "caption": {},
+        "celeb": {},
+        "logo": {}
     }
 }
     
-video_params = {
-    "replace": True,
-    "features": {
-        "ocr": { "model": { "fps": 5, "l_thres": 0.65 } }
-    }
-}
 
 def get_auth(config: str, qhit: str) -> str:
     cmd = f"qfab_cli content token create {qhit} --update --config {config}"
