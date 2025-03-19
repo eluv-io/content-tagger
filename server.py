@@ -441,7 +441,7 @@ def get_flask_app():
                 authorization = fields.Str(required=False, missing=None)
             return FinalizeArgs(**FinalizeSchema().load(data))
     
-    def _finalize_internal(qhit: str, use_local_tags = True) -> Response:
+    def _finalize_internal(qhit: str, upload_local_tags = True) -> Response:
         try:
             args = FinalizeArgs.from_dict(request.args)
         except (TypeError, ValidationError) as e:
@@ -458,7 +458,7 @@ def get_flask_app():
         qlib = client.content_object_library_id(**content_args)
 
         file_jobs = []
-        if use_local_tags:
+        if upload_local_tags:
             with lock:
                 jobs_running = len(active_jobs[qhit].values())
             if jobs_running > 0 and not args.force:
