@@ -163,8 +163,8 @@ def main():
                     status = get_status(qhit, auth)
                     statuses[qhit] = status
                     print(qhit, json.dumps(status, indent=2))
-                os.makedirs("driver_workdir", exist_ok=True)
-                with open("driver_workdir/status.json", "w") as statfile:
+                os.makedirs("rundriver", exist_ok=True)
+                with open("rundriver/status.json", "w") as statfile:
                     statfile.write(json.dumps(statuses, indent = 2))
             elif user_input in [ "finalize", "f" ]:
                 for qhit in contents:
