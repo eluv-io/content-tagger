@@ -23,19 +23,6 @@ assets_params = {"features": {"logo":{}, "ocr": {}}, "replace": False}
 video_params = {
     "replace": False,
     "features": {
-        "llava_brief": { 
-            "model": {
-                "fps": 0.1, "prompt": llava_prompt, 
-                      "llama_endpoint": "http://localhost:11434",
-                      "models": [ "elv-llamavision:1", "llama3.2-vision:latest"]  
-            }
-        }
-    }
-}
-
-video_params = {
-    "replace": False,
-    "features": {
         "asr": {"stream": "audio" },
         "ocr": {},
         "shot": {},
