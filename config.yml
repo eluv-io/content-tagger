@@ -18,6 +18,18 @@ services:
     frame_level: true
     # force to run on cpu
     allowed_gpus: []
+  llava_brief:
+    image: "localhost/llava_brief:latest"
+    type: "video"
+    frame_level: true
+    # force to run on cpu
+    allowed_gpus: []
+  helmet:
+    image: "localhost/helmet:latest"
+    type: "video"
+    frame_level: true
+    # force to run on cpu
+    allowed_gpus: []
   asr: 
     image: "localhost/asr:latest"
     type: "audio"
