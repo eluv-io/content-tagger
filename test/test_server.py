@@ -30,6 +30,17 @@ def postprocess_response(res: dict):
             del res[stream][model]['tag_job_id']
             del res[stream][model]['time_running']
             del res[stream][model]['tagging_progress']
+            if res[stream][model]['error']:
+                res[stream][model]['error'] = ' '.join(filter(lambda word: not word.startswith('tqw__'), res[stream][model]['error'].split()))
+    return res
+
+def postprocess_message(res: dict):
+    res['message'] = ' '.join(filter(lambda word: not word.startswith('tqw__'), res['message'].split()))
+    return res  
+    
+def postprocess_status(res: dict):
+    if res['error']:
+        res['error'] = ' '.join(filter(lambda word: not word.startswith('tqw__'), res['error'].split()))
     return res
 
 def test_server(port: int) -> List[Callable]:
@@ -113,12 +124,18 @@ def test_server(port: int) -> List[Callable]:
         assert response.status_code == 200, response.text
         res.append(response.json())
         time.sleep(5)
-        status_url = f"http://localhost:{port}/{test_objects['legacy_vod']}/status?authorization={legacy_vod_auth}"
-        response = requests.get(status_url) 
+        legacy_vod_status_url = f"http://localhost:{port}/{test_objects['legacy_vod']}/status?authorization={legacy_vod_auth}"
+        response = requests.get(legacy_vod_status_url) 
         res.append(postprocess_response(response.json()))
         
         logger.debug("Waiting for server to finish tagging")
         time.sleep(120)
+        
+        # check that legacy vod tagging is complete
+        response = requests.get(legacy_vod_status_url).json()
+        for stream in response:
+            for model in response[stream]:
+                assert response[stream][model]['status'] == 'Completed', response
 
         response = requests.get(video_status_url).json()
         for stream in response:
@@ -208,7 +225,7 @@ def test_server(port: int) -> List[Callable]:
         tag_url = f"http://localhost:{port}/{image_write}/image_tag?authorization={assets_auth}"
         response = requests.post(tag_url, json={"features": {"dummy_gpu": {"model":{"tags":["hello changed"]}}}, "assets": ["assets/20521092.jpg", "assets/20820751.jpg", "assets/20979342.jpg", "assets/21777769.jpg"], "replace": True})
         assert response.status_code == 200, response.text
-        res.append(response.json())
+        res.append(postprocess_message(response.json()))
         time.sleep(1)
         response = requests.get(image_status_url)
         res.append(postprocess_response(response.json()))
@@ -216,13 +233,13 @@ def test_server(port: int) -> List[Callable]:
         tag_url = f"http://localhost:{port}/{image_write}/image_tag?authorization={assets_auth}"
         response = requests.post(tag_url, json={"features": {"dummy_cpu": {"model":{"tags":["Should not be changed"]}}}, "assets": ["assets/20521092.jpg", "assets/20820751.jpg", "assets/20979342.jpg", "assets/21777769.jpg"], "replace": False})
         assert response.status_code == 200, response.text
-        res.append(response.json())
+        res.append(postprocess_message(response.json()))
         time.sleep(10)
         response = requests.get(image_status_url)
         res.append(postprocess_response(response.json()))
 
         logger.debug("Waiting for server to finish tagging")
-        time.sleep(75)
+        time.sleep(10)
 
         response = requests.get(image_status_url).json()
         for stream in response:

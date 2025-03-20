@@ -19,42 +19,48 @@ from common_ml.utils.files import get_file_type, encode_path
 from src.fabric.video import fetch_stream_metadata
 
 def format_asset_tags(client: ElvClient, write_token: str) -> None:
+    qlib = client.content_object_library_id(write_token=write_token)
     tmpdir = tempfile.TemporaryDirectory()
     save_path = tmpdir.name
-    qlib = client.content_object_library_id(write_token=write_token)
-    res = client.download_directory(dest_path=save_path, fabric_path=f"image_tags", write_token=write_token)
-    for r in res:
-        if r is not None:
-            raise r
-    file_to_tags = defaultdict(dict)
-    for model in os.listdir(save_path):
-        for tag in os.listdir(os.path.join(save_path, model)):
-            with open(os.path.join(save_path, model, tag)) as f:
-                tags = json.load(f)
-            filename = tag.split("_imagetags.json")[0]
-            trackname = label_to_track(feature_to_label(model))
-            if "image_tags" not in file_to_tags[filename]:
-                file_to_tags[filename]["image_tags"] = {}
-            file_to_tags[filename]["image_tags"].update({trackname: {"tags": tags}})
-    filetags = dict(file_to_tags)
-    asset_metadata = client.content_object_metadata(write_token=write_token, metadata_subtree="assets", resolve_links=False)
-    for asset, adata in asset_metadata.items():
-        if not get_file_type(asset) == "image":
-            continue
-        filelink = adata.get("file", {}).get("/", None)
-        if filelink is None or not filelink.startswith("./files"):
-            logger.warning(f"Asset {asset} has no file link")
-            continue
-        filepath = filelink.split("./files/")[1]
-        encoded = encode_path(filepath)
-        if encoded not in filetags:
-            logger.warning(f"No tags found for asset {asset}")
-            continue
-        asset_metadata[asset] = nested_update(adata, filetags[encoded])
-        
-    client.replace_metadata(write_token, asset_metadata, library_id=qlib, metadata_subtree="assets")
-
-    tmpdir.cleanup()
+    try:
+        res = client.download_directory(dest_path=save_path, fabric_path=f"image_tags", write_token=write_token)
+    except HTTPError:
+        logger.warning(f"No image tags")
+        tmpdir.cleanup()
+        return None
+    try:
+        for r in res:
+            if r is not None:
+                raise r
+        file_to_tags = defaultdict(dict)
+        for model in os.listdir(save_path):
+            for tag in os.listdir(os.path.join(save_path, model)):
+                with open(os.path.join(save_path, model, tag)) as f:
+                    tags = json.load(f)
+                filename = tag.split("_imagetags.json")[0]
+                trackname = label_to_track(feature_to_label(model))
+                if "image_tags" not in file_to_tags[filename]:
+                    file_to_tags[filename]["image_tags"] = {}
+                file_to_tags[filename]["image_tags"].update({trackname: {"tags": tags}})
+        filetags = dict(file_to_tags)
+        asset_metadata = client.content_object_metadata(write_token=write_token, metadata_subtree="assets", resolve_links=False)
+        for asset, adata in asset_metadata.items():
+            if not get_file_type(asset) == "image":
+                continue
+            filelink = adata.get("file", {}).get("/", None)
+            if filelink is None or not filelink.startswith("./files"):
+                logger.warning(f"Asset {asset} has no file link")
+                continue
+            filepath = filelink.split("./files/")[1]
+            encoded = encode_path(filepath)
+            if encoded not in filetags:
+                logger.warning(f"No tags found for asset {asset}")
+                continue
+            asset_metadata[asset] = nested_update(adata, filetags[encoded])
+            
+        client.replace_metadata(write_token, asset_metadata, library_id=qlib, metadata_subtree="assets")
+    finally:
+        tmpdir.cleanup()
 
 def format_video_tags(client: ElvClient, write_token: str, streams: List[str], interval: int) -> None:
     """format_video_tags is used to format the tags for compatability with search and video editor.
