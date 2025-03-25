@@ -16,11 +16,13 @@ from common_ml.tags import VideoTag, FrameTag
 from common_ml.utils import nested_update
 from common_ml.utils.files import get_file_type, encode_path
 
+from config import config
+
 from src.fabric.video import fetch_stream_metadata
 
 def format_asset_tags(client: ElvClient, write_token: str) -> None:
     qlib = client.content_object_library_id(write_token=write_token)
-    tmpdir = tempfile.TemporaryDirectory()
+    tmpdir = tempfile.TemporaryDirectory(dir=config["storage"]["tmp"])
     save_path = tmpdir.name
     try:
         res = client.download_directory(dest_path=save_path, fabric_path=f"image_tags", write_token=write_token)
@@ -73,9 +75,7 @@ def format_video_tags(client: ElvClient, write_token: str, streams: List[str], i
         interval: the interval in minutes to bucket the formatted results (in minutes). (10 minutes is convention)
     """
 
-    tmpdir = tempfile.TemporaryDirectory() ## delete=False)
-    
-    logger.debug(f"temporary directory for agg: {tmpdir}")
+    tmpdir = tempfile.TemporaryDirectory(dir=config["storage"]["tmp"])
 
     content_args = parse_qhit(write_token)
     qlib = client.content_object_library_id(**content_args)
@@ -87,22 +87,22 @@ def format_video_tags(client: ElvClient, write_token: str, streams: List[str], i
     fps = None
 
     for stream in streams:
-        stream_tracks = client.list_files(qlib, path=f"/video_tags/{stream}", **content_args)
-        logger.debug(f"stream_tracks for {stream}: {stream_tracks}")
-        for stream_track in stream_tracks:
-            res = client.download_directory(dest_path=os.path.join(save_path, write_token, stream, stream_track), fabric_path=f"video_tags/{stream}/{stream_track}", write_token=write_token)
-            for r in res:
-                if r is not None:
-                    raise r
+        stream_save_path = os.path.join(save_path, write_token, stream)
+        res = client.download_directory(dest_path=stream_save_path, fabric_path=f"video_tags/{stream}", write_token=write_token)
+        for r in res:
+            if r is not None:
+                raise r
         if stream == "source_tags":
             # special logic here for parsing external tags
             logger.info("Parsing external tags")
-            external_tags, labels = _parse_external_tags(os.path.join(save_path, write_token, stream))
+            external_tags, labels = _parse_external_tags(stream_save_path)
             custom_labels.update(labels)
             all_video_tags.update(external_tags)
             continue
+        stream_tracks = os.listdir(stream_save_path) #client.list_files(qlib, path=f"/video_tags/{stream}", **content_args)
+        logger.debug(f"stream_tracks for {stream}: {stream_tracks}")
         _, part_duration, fps, codec = fetch_stream_metadata(write_token, stream, client)
-        for feature in os.listdir(os.path.join(save_path, write_token, stream)):
+        for feature in os.listdir(stream_save_path):
             if feature not in os.listdir(os.path.join(save_path, write_token, stream)):
                 continue
             assert feature not in all_video_tags and feature not in all_frame_tags, f"Feature {feature} already found in another stream"
