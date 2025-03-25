@@ -4,85 +4,14 @@
             "error": "No jobs started for iq__3C58dDYxsn5KKSWGYrfYr44ykJRm"
         },
         {
-            "message": "Tagging started on iq__3C58dDYxsn5KKSWGYrfYr44ykJRm"
-        },
-        {
             "video": {
-                "shot": {
-                    "status": "Starting",
-                    "error": null,
-                    "failed": []
-                },
                 "dummy_gpu": {
-                    "status": "Fetching content",
-                    "error": null,
-                    "failed": []
-                }
-            }
-        },
-        {
-            "message": "Tagging started on iq__3C58dDYxsn5KKSWGYrfYr44ykJRm"
-        },
-        {
-            "video": {
-                "dummy_cpu": {
-                    "status": "Tagging content",
-                    "error": null,
-                    "failed": []
-                },
-                "shot": {
-                    "status": "Tagging content",
-                    "error": null,
-                    "failed": []
-                },
-                "dummy_gpu": {
-                    "status": "Tagging content",
-                    "error": null,
-                    "failed": []
-                }
-            }
-        },
-        {
-            "message": "Image asset tagging started on iq__4BT8BBNEEDvysXqjZgj4BRA5jVo2"
-        },
-        {
-            "image": {
-                "dummy_gpu": {
-                    "status": "Tagging content",
-                    "error": null,
-                    "failed": []
-                }
-            }
-        },
-        {
-            "message": "Image asset tagging started on iq__4BT8BBNEEDvysXqjZgj4BRA5jVo2"
-        },
-        {
-            "image": {
-                "dummy_cpu": {
                     "status": "Completed",
                     "error": null,
                     "failed": []
                 },
-                "dummy_gpu": {
-                    "status": "Completed",
-                    "error": null,
-                    "failed": []
-                }
-            }
-        },
-        {
-            "message": "Tagging started on hq__3B47zhoJbyiwqWUq8DNJJQXHg1GZitfQBXpsGkV2tQLpHzp2McAk7xAFJwKSJ99mgjzZjqRdHU"
-        },
-        {
-            "video": {
                 "shot": {
-                    "status": "Starting",
-                    "error": null,
-                    "failed": []
-                },
-                "dummy_gpu": {
-                    "status": "Fetching content",
+                    "status": "Completed",
                     "error": null,
                     "failed": []
                 }
@@ -95,12 +24,12 @@
                     "error": null,
                     "failed": []
                 },
-                "shot": {
+                "dummy_gpu": {
                     "status": "Completed",
                     "error": null,
                     "failed": []
                 },
-                "dummy_gpu": {
+                "shot": {
                     "status": "Completed",
                     "error": null,
                     "failed": []
@@ -109,12 +38,12 @@
         },
         {
             "image": {
-                "dummy_cpu": {
+                "dummy_gpu": {
                     "status": "Completed",
                     "error": null,
                     "failed": []
                 },
-                "dummy_gpu": {
+                "dummy_cpu": {
                     "status": "Completed",
                     "error": null,
                     "failed": []
@@ -8677,28 +8606,28 @@
         },
         {
             "image": {
-                "dummy_cpu": {
-                    "status": "Completed",
-                    "error": "Tagging already complete for dummy_cpu on",
-                    "failed": []
-                },
                 "dummy_gpu": {
                     "status": "Completed",
                     "error": null,
+                    "failed": []
+                },
+                "dummy_cpu": {
+                    "status": "Completed",
+                    "error": "Tagging already complete for dummy_cpu on",
                     "failed": []
                 }
             }
         },
         {
             "image": {
-                "dummy_cpu": {
-                    "status": "Completed",
-                    "error": "Tagging already complete for dummy_cpu on",
-                    "failed": []
-                },
                 "dummy_gpu": {
                     "status": "Completed",
                     "error": null,
+                    "failed": []
+                },
+                "dummy_cpu": {
+                    "status": "Completed",
+                    "error": "Tagging already complete for dummy_cpu on",
                     "failed": []
                 }
             }

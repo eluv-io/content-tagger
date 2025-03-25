@@ -127,7 +127,6 @@ def format_video_tags(client: ElvClient, write_token: str, streams: List[str], i
     agg_tags = aggregate_video_tags({f: tags for f, tags in all_video_tags.items() if f != "shot"}, intervals)
     formatted_tracks = format_tracks({"shot_tags": agg_tags}, all_video_tags, interval, custom_labels=custom_labels)
     overlays = format_overlay(all_frame_tags, fps, interval)
-
     to_upload = []
     for i, track in enumerate(formatted_tracks):
         fpath = os.path.join(save_path, write_token, f"video-tags-tracks-{i:04d}.json")
@@ -236,13 +235,17 @@ def format_overlay(all_frame_tags: Dict[str, Dict[int, List[FrameTag]]], fps: fl
     if len(all_frame_tags) == 0:
         return []
     buckets = defaultdict(lambda: {"version": 1, "overlay_tags": {"frame_level_tags": defaultdict(dict)}})
-    interval = interval*1000*60 
+    interval = interval*60 
     for feature, frame_tags in all_frame_tags.items():
         label = feature_to_label(feature)
         for frame_idx, ftags in frame_tags.items():
             timestamp_sec = frame_idx/fps
             bucket_idx = int(timestamp_sec/interval)
             buckets[bucket_idx]["overlay_tags"]["frame_level_tags"][frame_idx][label_to_track(label)] = {"tags": [asdict(tag) for tag in ftags]}
+    # add timestamps
+    for bucket in buckets.values():
+        for frame_idx in bucket["overlay_tags"]["frame_level_tags"]:
+            bucket["overlay_tags"]["frame_level_tags"][frame_idx]["timestamp_sec"] = int((frame_idx/fps) * 1000)
     buckets = [buckets[i] if i in buckets else {"version": 1, "overlay_tags": {"frame_level_tags": {}}} for i in range(max(buckets.keys())+1)]
     return buckets
 
@@ -297,9 +300,10 @@ def format_tracks(agg_tags: Dict[str, List[AggTag]], tracks: Dict[str, List[Vide
             if vtag.text is not None:
                 entry["text"] = vtag.text
             bucket_idx = int(vtag.start_time/interval)
-            if key not in result[bucket_idx]["metadata_tags"]:
-                result[bucket_idx]["metadata_tags"][key] = {"label": label, "tags": []}
-            result[bucket_idx]["metadata_tags"][key]["tags"].append(entry)
+            track = label_to_track(label)
+            if track not in result[bucket_idx]["metadata_tags"]:
+                result[bucket_idx]["metadata_tags"][track] = {"label": label, "tags": []}
+            result[bucket_idx]["metadata_tags"][track]["tags"].append(entry)
 
     # convert to list
     return [result[i] if i in result else {"version": 1, "metadata_tags": {}} for i in range(max(result.keys())+1)]
