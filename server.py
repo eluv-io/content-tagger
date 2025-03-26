@@ -88,23 +88,6 @@ def get_flask_app():
     def list_services() -> Response:
         res = _list_services()    
         return Response(response=json.dumps(res), status=200, mimetype='application/json')
-    
-    # TagArgs represents the request body for the /tag endpoint
-    @dataclass
-    class TagArgs(Data):
-        # maps feature name to RunConfig
-        features: Dict[str, RunConfig]
-        # start_time in milliseconds (defaults to 0)
-        start_time: Optional[int]=None
-        # end_time in milliseconds (defaults to entire content)
-        end_time: Optional[int]=None
-        # replace tag files if they already exist
-        replace: bool=False
-
-        @staticmethod
-        def from_dict(data: dict) -> 'TagArgs':
-            features = {feature: RunConfig(**cfg) for feature, cfg in data['features'].items()}
-            return TagArgs(features=features, start_time=data.get('start_time', None), end_time=data.get('end_time', None), replace=data.get('replace', False))
         
     @app.route('/<qhit>/upload_tags', methods=['POST'])
     def upload(qhit: str):
@@ -133,13 +116,30 @@ def get_flask_app():
                 json.dump(fdata, f)
 
         return Response(response=json.dumps({'message': 'Successfully uploaded tags'}), status=200, mimetype='application/json')
+    
+    # TagArgs represents the request body for the /tag endpoint
+    @dataclass
+    class TagArgs(Data):
+        # maps feature name to RunConfig
+        features: Dict[str, RunConfig]
+        # start_time in milliseconds (defaults to 0)
+        start_time: Optional[int]=None
+        # end_time in milliseconds (defaults to entire content)
+        end_time: Optional[int]=None
+        # replace tag files if they already exist
+        replace: bool=False
+
+        @staticmethod
+        def from_dict(data: dict) -> 'TagArgs':
+            features = {feature: RunConfig(**cfg) for feature, cfg in data['features'].items()}
+            return TagArgs(features=features, start_time=data.get('start_time', None), end_time=data.get('end_time', None), replace=data.get('replace', False))
 
     @app.route('/<qhit>/tag', methods=['POST'])
     def tag(qhit: str) -> Response:
         try:
             args = TagArgs.from_dict(request.json)
-        except TypeError as e:
-            return Response(response=json.dumps({'error': str(e)}), status=400, mimetype='application/json')
+        except (KeyError, TypeError) as e:
+            return Response(response=json.dumps({'error': f"Invalid input: {str(e)}"}), status=400, mimetype='application/json')
         
         _, error_response = _get_client(request, qhit, config["fabric"]["parts_url"])
         if error_response:
