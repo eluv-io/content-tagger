@@ -87,46 +87,26 @@ def test_server(port: int) -> List[Callable]:
         tag_url = f"http://localhost:{port}/{test_objects['vod']}/tag?authorization={video_auth}"
         response = requests.post(tag_url, json={"features": {"dummy_gpu": {"model":{"tags":["hello1", "hello2"]}}, "shot":{}}, "replace": True})
         assert response.status_code == 200, response.text
-        res.append(response.json())
-        time.sleep(1)
-        response = requests.get(video_status_url)
-        res.append(postprocess_response(response.json()))
 
         tag_url = f"http://localhost:{port}/{test_objects['vod']}/tag?authorization={video_auth}"
         response = requests.post(tag_url, json={"features": {"dummy_cpu": {"model":{"tags":["a", "b", "a"], "allow_single_frame":False}}}, "replace": True})
         assert response.status_code == 200, response.text
-        res.append(response.json())
-        time.sleep(10)
-
-        response = requests.get(video_status_url)
-        res.append(postprocess_response(response.json()))
 
         image_status_url = f"http://localhost:{port}/{test_objects['assets']}/status?authorization={assets_auth}"
 
         tag_url = f"http://localhost:{port}/{test_objects['assets']}/image_tag?authorization={assets_auth}"
         response = requests.post(tag_url, json={"features": {"dummy_gpu": {"model":{"tags":["hello1"]}}}, "replace": True})
         assert response.status_code == 200, response.text
-        res.append(response.json())
-        time.sleep(1)
-        response = requests.get(image_status_url)
-        res.append(postprocess_response(response.json()))
 
         tag_url = f"http://localhost:{port}/{test_objects['assets']}/image_tag?authorization={assets_auth}"
         response = requests.post(tag_url, json={"features": {"dummy_cpu": {"model":{"tags":["hello2"]}}}, "replace": True})
         assert response.status_code == 200, response.text
-        res.append(response.json())
-        time.sleep(10)
-        response = requests.get(image_status_url)
-        res.append(postprocess_response(response.json()))
-        
+
         tag_url = f"http://localhost:{port}/{test_objects['legacy_vod']}/tag?authorization={legacy_vod_auth}"
         response = requests.post(tag_url, json={"features": {"dummy_gpu": {"model":{"tags":["hello1"]}}, "shot":{}}, "start_time":60, "end_time":180, "replace": False})
         assert response.status_code == 200, response.text
-        res.append(response.json())
-        time.sleep(5)
+
         legacy_vod_status_url = f"http://localhost:{port}/{test_objects['legacy_vod']}/status?authorization={legacy_vod_auth}"
-        response = requests.get(legacy_vod_status_url) 
-        res.append(postprocess_response(response.json()))
         
         logger.debug("Waiting for server to finish tagging")
         time.sleep(120)
@@ -136,6 +116,7 @@ def test_server(port: int) -> List[Callable]:
         for stream in response:
             for model in response[stream]:
                 assert response[stream][model]['status'] == 'Completed', response
+        res.append(postprocess_response(response))
 
         response = requests.get(video_status_url).json()
         for stream in response:

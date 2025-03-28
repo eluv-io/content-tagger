@@ -123,8 +123,15 @@ def format_video_tags(client: ElvClient, write_token: str, streams: List[str], i
             all_video_tags[feature] = merge_video_tag_files(video_tags_files, part_duration, offset)
 
     assert "shot" in all_video_tags, "No shot tags found"
-    intervals = [(tag.start_time, tag.end_time) for tag in all_video_tags["shot"]]
-    agg_tags = aggregate_video_tags({f: tags for f, tags in all_video_tags.items() if f != "shot"}, intervals)
+    shot_intervals = [(tag.start_time, tag.end_time) for tag in all_video_tags["shot"]]
+    agg_tags = aggregate_video_tags({f: tags for f, tags in all_video_tags.items() if f != "shot"}, shot_intervals)
+    if "asr" in all_video_tags:
+        # sentence level aggregation on speech to text
+        sentence_intervals = _get_sentence_intervals(all_video_tags["asr"])
+        sentence_agg_tags = aggregate_video_tags({"asr": all_video_tags["asr"]}, sentence_intervals)
+        stt_sent_track = [VideoTag(agg_tag.start_time, agg_tag.end_time, agg_tag.tags["asr"][0].text) for agg_tag in sentence_agg_tags if "asr" in agg_tag.tags]
+        all_video_tags["auto_captions"] = stt_sent_track
+
     formatted_tracks = format_tracks({"shot_tags": agg_tags}, all_video_tags, interval, custom_labels=custom_labels)
     overlays = format_overlay(all_frame_tags, fps, interval)
     to_upload = []
@@ -165,6 +172,33 @@ def _parse_external_tags(tags_path: str) -> Dict[str, List[VideoTag]]:
                 labels[feature] = data[feature]["label"]
                 external_tags[feature] = _parse_external_track(data[feature])
     return external_tags, labels
+
+def _get_sentence_intervals(tags: List[VideoTag]) -> List[Tuple[int, int]]:
+    sentence_delimiters = ['.', '?', '!']
+    intervals = []
+    if len(tags) == 0:
+        return []
+    quiet = True
+    curr_int = [0]
+    for i, tag in enumerate(tags):
+        assert tag.text is not None 
+        if quiet and tag.start_time > curr_int[0]:
+            # commit the silent interval
+            curr_int.append(tag.start_time)
+            intervals.append((curr_int[0], curr_int[-1]))
+            curr_int.clear()
+            # start a new speaking interval
+            curr_int.append(tag.start_time)
+            quiet = False
+        if tag.text[-1] in sentence_delimiters or i == len(tags)-1:
+            # end and commit the speaking interval, add one due to exclusive bounds
+            curr_int.append(tag.end_time+1)
+            intervals.append((curr_int[0], curr_int[-1]))
+            curr_int.clear()
+            # start a new silent interval
+            curr_int.append(tag.end_time+1)
+            quiet = True
+    return intervals
 
 def _parse_external_track(data: List[Dict[str, object]]) -> List[VideoTag]:
     track = []
