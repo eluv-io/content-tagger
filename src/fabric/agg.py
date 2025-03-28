@@ -99,7 +99,7 @@ def format_video_tags(client: ElvClient, write_token: str, streams: List[str], i
             custom_labels.update(labels)
             all_video_tags.update(external_tags)
             continue
-        stream_tracks = os.listdir(stream_save_path) #client.list_files(qlib, path=f"/video_tags/{stream}", **content_args)
+        stream_tracks = os.listdir(stream_save_path) 
         logger.debug(f"stream_tracks for {stream}: {stream_tracks}")
         _, part_duration, fps, codec = fetch_stream_metadata(write_token, stream, client)
         for feature in os.listdir(stream_save_path):
@@ -142,7 +142,7 @@ def format_video_tags(client: ElvClient, write_token: str, streams: List[str], i
         
     logger.debug(f"upload files {to_upload}")
     jobs = [ElvClient.FileJob(local_path=path, out_path=f"video_tags/{os.path.basename(path)}", mime_type="application/json") for path in to_upload]
-    client.upload_files(write_token=write_token, library_id=qlib, file_jobs=jobs)
+    client.upload_files(write_token=write_token, library_id=qlib, file_jobs=jobs, finalize=False)
 
     logger.debug("done uploading files")
 

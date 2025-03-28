@@ -6,8 +6,6 @@ import threading
 import tempfile
 import shutil
 from common_ml.video_processing import unfrag_video
-from common_ml.utils.files import get_file_type, encode_path
-from common_ml.utils.metrics import timeit
 from config import config
 from loguru import logger
 
@@ -115,10 +113,11 @@ def _fetch_livestream_metadata(qhit: str, stream_name: str, client: ElvClient) -
         raise HTTPError(f"Failed to retrieve periods for live recording {qhit}") from e
     if len(periods) == 0:
         raise StreamNotFoundError(f"Live recording {qhit} is empty")
-    period_parts = [p.get("sources", {}).get(stream_name, {}).get("parts", []) for p in periods]
-    stream = sum(period_parts, [])
+    if len(periods) > 1:
+        raise StreamNotFoundError(f"Multiple periods found for live recording {qhit}. Multi-period tagging is not currently supported.")
+    stream = periods[0].get("sources", {}).get(stream_name, {}).get("parts", [])
     if len(stream) == 0:
-        raise StreamNotFoundError(f"Stream {stream_name} not found in live recording {qhit}")
+        raise StreamNotFoundError(f"Stream {stream_name} was found in live recording, but no parts were found.")
     if stream_name == "video":
         codec = "video"
     elif stream_name.startswith("audio"):
@@ -153,8 +152,8 @@ def _fetch_livestream_metadata(qhit: str, stream_name: str, client: ElvClient) -
         part_duration = int(ts) / int(sr)
         fps = None
 
-    # filter out parts with close_time = 0, meaning the part is still live
-    stream = [part["hash"] for part in stream if part["close_time"] != 0]
+    # filter out parts with finalization_time == 0, meaning the part is still live.
+    stream = [part["hash"] for part in stream if part["finalization_time"] != 0 and part["size"] > 0]
 
     return stream, part_duration, fps, codec
 

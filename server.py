@@ -452,12 +452,14 @@ def get_flask_app():
         for tag in tags:
             shutil.move(tag, os.path.join(tags_path, os.path.basename(tag)))
         shutil.rmtree(tag_dir, ignore_errors=True)
-
+    
     @dataclass
     class FinalizeArgs(Data):
         write_token: str
         replace: bool=False
         force: bool=False
+        # if live is set, then we don't finalize the file job
+        leave_open: bool=False
         authorization: Optional[str]=None
 
         @staticmethod
@@ -466,8 +468,17 @@ def get_flask_app():
                 write_token = fields.Str(required=True)
                 replace = fields.Bool(required=False, missing=False)
                 force = fields.Bool(required=False, missing=False)
+                leave_open = fields.Bool(required=False, missing=False)
                 authorization = fields.Str(required=False, missing=None)
             return FinalizeArgs(**FinalizeSchema().load(data))
+
+    @app.route('/<qhit>/finalize', methods=['POST'])
+    def finalize(qhit: str) -> Response:
+        return _finalize_internal(qhit, True)
+
+    @app.route('/<qhit>/aggregate', methods=['POST'])
+    def aggregate(qhit: str) -> Response:
+        return _finalize_internal(qhit, False)
     
     def _finalize_internal(qhit: str, upload_local_tags = True) -> Response:
         try:
@@ -572,10 +583,6 @@ def get_flask_app():
             with timeit("Aggregating video tags"):
                 if video_streams:
                     format_video_tags(client, qwt, video_streams, config["agg"]["interval"])
-                else:
-                    # slightly weird logic, but the format_video_tags finalizes files by default whereas format_asset_tags does not,
-                    # so, we need to finalize here
-                    client.finalize_files(qwt, qlib)
             with timeit("Aggregating asset tags"):
                 format_asset_tags(client, qwt)
         except HTTPError as e:
@@ -584,18 +591,13 @@ def get_flask_app():
                 "This error can also arise if the write token has already been used to finalize tags."
             )
             return Response(response=json.dumps({'error': str(e), 'message': message}), status=403, mimetype='application/json')
+        
+        if not args.leave_open:
+            client.finalize_files(qwt, qlib)
 
         client.set_commit_message(qwt, "Uploaded ML Tags", qlib)
 
         return Response(response=json.dumps({'message': 'Succesfully uploaded tag files. Please finalize the write token.', 'write token': qwt}), status=200, mimetype='application/json')
-
-    @app.route('/<qhit>/finalize', methods=['POST'])
-    def finalize(qhit: str) -> Response:
-        return _finalize_internal(qhit, True)
-
-    @app.route('/<qhit>/aggregate', methods=['POST'])
-    def aggregate(qhit: str) -> Response:
-        return _finalize_internal(qhit, False)
 
     # JobStatus represents the status of a job returned by the /status endpoint
     @dataclass
