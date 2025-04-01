@@ -17,6 +17,8 @@ import shutil
 import signal
 import atexit
 from marshmallow import ValidationError, fields, Schema
+import tempfile
+
 from common_ml.types import Data
 from common_ml.utils.metrics import timeit
 
@@ -544,9 +546,9 @@ def get_flask_app():
             if os.path.exists(external_tags_path):
                 local_source_tags = os.listdir(external_tags_path)
                 try:
-                    remote_source_tags = client.list_files(qlib, path="video_tags/source_tags/external_tags", **content_args)
+                    remote_source_tags = client.list_files(qlib, path="video_tags/source_tags/external", **content_args)
                 except HTTPError:
-                    logger.debug(f"No source tags found for {qhit}")
+                    logger.debug(f"No source tags found for {qwt}")
                     remote_source_tags = []
                 
                 for local_source in local_source_tags:
@@ -570,27 +572,34 @@ def get_flask_app():
                 return Response(response=json.dumps({'error': str(e), 'message': 'Please verify the provided write token has not already been used to finalize tags.'}), status=400, mimetype='application/json')
         # if no file jobs, then we just do the aggregation
 
-        try:
-            video_streams = client.list_files(qlib, path="/video_tags", **content_args)
-        except HTTPError:
-            video_streams = []
-
-        video_streams = [path.split("/")[0] for path in video_streams if path.endswith("/") and path[:-1] != "image"]
-
-        logger.debug(f"Found video streams: {video_streams}")
+        #try:
+        #    video_streams = client.list_files(qlib, path="/video_tags", **content_args)
+        #except HTTPError:
+        #    video_streams = []
+#
+        #video_streams = [path.split("/")[0] for path in video_streams if path.endswith("/") and path[:-1] != "image"]
+        
+        tmpdir = tempfile.TemporaryDirectory(dir=config["storage"]["tmp"])
+        
+        # copy all tags to the tmpdir
+      
+        with filesystem_lock:
+            shutil.copytree(os.path.join(config["storage"]["tags"], qhit), tmpdir.name, dirs_exist_ok=True)
 
         try:
             with timeit("Aggregating video tags"):
                 if video_streams:
-                    format_video_tags(client, qwt, video_streams, config["agg"]["interval"])
+                    format_video_tags(client, qwt, video_streams, config["agg"]["interval"], tmpdir.name)
             with timeit("Aggregating asset tags"):
-                format_asset_tags(client, qwt)
+                format_asset_tags(client, qwt, tmpdir.name)
         except HTTPError as e:
             message = (
                 "Please verify your authorization token has write access and the write token has not already been committed."
                 "This error can also arise if the write token has already been used to finalize tags."
             )
             return Response(response=json.dumps({'error': str(e), 'message': message}), status=403, mimetype='application/json')
+        finally:
+            tmpdir.cleanup()
         
         if not args.leave_open:
             client.finalize_files(qwt, qlib)

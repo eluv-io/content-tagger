@@ -20,51 +20,48 @@ from config import config
 
 from src.fabric.video import fetch_stream_metadata
 
-def format_asset_tags(client: ElvClient, write_token: str) -> None:
+def format_asset_tags(client: ElvClient, write_token: str, tmp_path: str) -> None:
     qlib = client.content_object_library_id(write_token=write_token)
-    tmpdir = tempfile.TemporaryDirectory(dir=config["storage"]["tmp"])
-    save_path = tmpdir.name
+    save_path = tmp_path
     try:
-        res = client.download_directory(dest_path=save_path, fabric_path=f"image_tags", write_token=write_token)
+        res = _download_missing(client, save_path, "image_tags", write_token=write_token) #client.download_directory(dest_path=save_path, fabric_path="image_tags", write_token=write_token)
     except HTTPError:
-        logger.warning(f"No image tags")
-        tmpdir.cleanup()
-        return None
-    try:
-        for r in res:
-            if r is not None:
-                raise r
-        file_to_tags = defaultdict(dict)
-        for model in os.listdir(save_path):
-            for tag in os.listdir(os.path.join(save_path, model)):
-                with open(os.path.join(save_path, model, tag)) as f:
-                    tags = json.load(f)
-                filename = tag.split("_imagetags.json")[0]
-                trackname = label_to_track(feature_to_label(model))
-                if "image_tags" not in file_to_tags[filename]:
-                    file_to_tags[filename]["image_tags"] = {}
-                file_to_tags[filename]["image_tags"].update({trackname: {"tags": tags}})
-        filetags = dict(file_to_tags)
-        asset_metadata = client.content_object_metadata(write_token=write_token, metadata_subtree="assets", resolve_links=False)
-        for asset, adata in asset_metadata.items():
-            if not get_file_type(asset) == "image":
-                continue
-            filelink = adata.get("file", {}).get("/", None)
-            if filelink is None or not filelink.startswith("./files"):
-                logger.warning(f"Asset {asset} has no file link")
-                continue
-            filepath = filelink.split("./files/")[1]
-            encoded = encode_path(filepath)
-            if encoded not in filetags:
-                logger.warning(f"No tags found for asset {asset}")
-                continue
-            asset_metadata[asset] = nested_update(adata, filetags[encoded])
-            
-        client.replace_metadata(write_token, asset_metadata, library_id=qlib, metadata_subtree="assets")
-    finally:
-        tmpdir.cleanup()
+        logger.warning("No image tags")
+        return
 
-def format_video_tags(client: ElvClient, write_token: str, streams: List[str], interval: int) -> None:
+    for r in res:
+        if r is not None:
+            raise r
+        
+    file_to_tags = defaultdict(dict)
+    for model in os.listdir(save_path):
+        for tag in os.listdir(os.path.join(save_path, model)):
+            with open(os.path.join(save_path, model, tag)) as f:
+                tags = json.load(f)
+            filename = tag.split("_imagetags.json")[0]
+            trackname = label_to_track(feature_to_label(model))
+            if "image_tags" not in file_to_tags[filename]:
+                file_to_tags[filename]["image_tags"] = {}
+            file_to_tags[filename]["image_tags"].update({trackname: {"tags": tags}})
+    filetags = dict(file_to_tags)
+    asset_metadata = client.content_object_metadata(write_token=write_token, metadata_subtree="assets", resolve_links=False)
+    for asset, adata in asset_metadata.items():
+        if not get_file_type(asset) == "image":
+            continue
+        filelink = adata.get("file", {}).get("/", None)
+        if filelink is None or not filelink.startswith("./files"):
+            logger.warning(f"Asset {asset} has no file link")
+            continue
+        filepath = filelink.split("./files/")[1]
+        encoded = encode_path(filepath)
+        if encoded not in filetags:
+            logger.warning(f"No tags found for asset {asset}")
+            continue
+        asset_metadata[asset] = nested_update(adata, filetags[encoded])
+        
+    client.replace_metadata(write_token, asset_metadata, library_id=qlib, metadata_subtree="assets")
+
+def format_video_tags(client: ElvClient, write_token: str, streams: List[str], interval: int, tmp_path: str) -> None:
     """format_video_tags is used to format the tags for compatability with search and video editor.
     It operates on a content write token directly which should be published after the tags are uploaded. 
     
@@ -75,52 +72,51 @@ def format_video_tags(client: ElvClient, write_token: str, streams: List[str], i
         interval: the interval in minutes to bucket the formatted results (in minutes). (10 minutes is convention)
     """
 
-    tmpdir = tempfile.TemporaryDirectory(dir=config["storage"]["tmp"])
-
     content_args = parse_qhit(write_token)
     qlib = client.content_object_library_id(**content_args)
 
-    save_path = tmpdir.name
+    save_path = tmp_path
 
     all_frame_tags, all_video_tags = {}, {}
     custom_labels = {}
     fps = None
-
     for stream in streams:
-        stream_save_path = os.path.join(save_path, write_token, stream)
-        res = client.download_directory(dest_path=stream_save_path, fabric_path=f"video_tags/{stream}", write_token=write_token)
-        for r in res:
-            if r is not None:
-                raise r
+        stream_save_path = os.path.join(tmp_path, stream)
         if stream == "source_tags":
-            # special logic here for parsing external tags
+            res = client.download_directory(dest_path=stream_save_path, fabric_path=f"video_tags/{stream}", write_token=write_token)
+            for r in res:
+                if r is not None:
+                    raise r
             logger.info("Parsing external tags")
             external_tags, labels = _parse_external_tags(stream_save_path)
             custom_labels.update(labels)
             all_video_tags.update(external_tags)
-            continue
-        stream_tracks = os.listdir(stream_save_path) 
-        logger.debug(f"stream_tracks for {stream}: {stream_tracks}")
-        _, part_duration, fps, codec = fetch_stream_metadata(write_token, stream, client)
-        for feature in os.listdir(stream_save_path):
-            if feature not in os.listdir(os.path.join(save_path, write_token, stream)):
-                continue
-            assert feature not in all_video_tags and feature not in all_frame_tags, f"Feature {feature} already found in another stream"
-            tags_path = os.path.join(save_path, write_token, stream, feature)
-            if codec == "video":
-                frames_per_part = part_duration * fps
-                if int(frames_per_part) != frames_per_part:
-                    logger.warning("Calculated frames per part is not an integer, rounding down. This can be caused by variable FPS and may cause overlay tags to be misaligned.")
-                frame_tags_files = [os.path.join(tags_path, file) for file in sorted(os.listdir(tags_path)) if file.endswith("_frametags.json")]
-                if frame_tags_files:
-                    all_frame_tags[feature] = merge_frame_tag_files(frame_tags_files, int(frames_per_part))
-            video_tags_files = [os.path.join(tags_path, tag) for tag in sorted(os.listdir(tags_path)) if tag.endswith("_tags.json")]
-            if len(video_tags_files) == 0:
-                logger.warning(f"No tags found for feature {feature}")
-                continue
-            start_idx = int(os.path.basename(video_tags_files[0]).split("_")[0])
-            offset = start_idx*part_duration
-            all_video_tags[feature] = merge_video_tag_files(video_tags_files, part_duration, offset)
+        else:
+            #for feature in os.listdir(os.path.join(save_path, stream)):
+            res = _download_missing(client, save_path=os.path.join(stream_save_path, feature), fabric_path=f"video_tags/{stream}/{feature}", write_token=write_token)
+            for r in res:
+                if r is not None:
+                    raise r
+            stream_tracks = os.listdir(stream_save_path) 
+            logger.debug(f"stream_tracks for {stream}: {stream_tracks}")
+            _, part_duration, fps, codec = fetch_stream_metadata(write_token, stream, client)
+            for feature in os.listdir(stream_save_path):
+                if feature not in os.listdir(stream_save_path):
+                    continue
+                assert feature not in all_video_tags and feature not in all_frame_tags, f"Feature {feature} already found in another stream"
+                tags_path = os.path.join(stream_save_path, feature)
+                if codec == "video":
+                    frames_per_part = part_duration * fps
+                    if int(frames_per_part) != frames_per_part:
+                        logger.warning("Calculated frames per part is not an integer, rounding down. This can be caused by variable FPS and may cause overlay tags to be misaligned.")
+                    frame_tags_files = [os.path.join(tags_path, file) for file in sorted(os.listdir(tags_path)) if file.endswith("_frametags.json")]
+                    if frame_tags_files:
+                        all_frame_tags[feature] = merge_frame_tag_files(frame_tags_files, int(frames_per_part))
+                video_tags_files = [os.path.join(tags_path, tag) for tag in sorted(os.listdir(tags_path)) if tag.endswith("_tags.json")]
+                if len(video_tags_files) == 0:
+                    logger.warning(f"No tags found for feature {feature}")
+                    continue
+                all_video_tags[feature] = merge_video_tag_files(video_tags_files, part_duration)
 
     assert "shot" in all_video_tags, "No shot tags found"
     shot_intervals = [(tag.start_time, tag.end_time) for tag in all_video_tags["shot"]]
@@ -136,13 +132,13 @@ def format_video_tags(client: ElvClient, write_token: str, streams: List[str], i
     overlays = format_overlay(all_frame_tags, fps, interval)
     to_upload = []
     for i, track in enumerate(formatted_tracks):
-        fpath = os.path.join(save_path, write_token, f"video-tags-tracks-{i:04d}.json")
+        fpath = os.path.join(save_path, f"video-tags-tracks-{i:04d}.json")
         to_upload.append(fpath)
         with open(fpath, 'w') as f:
             json.dump(track, f)
 
     for i, overlay in enumerate(overlays):
-        fpath = os.path.join(save_path, write_token, f"video-tags-overlay-{i:04d}.json")
+        fpath = os.path.join(save_path, f"video-tags-overlay-{i:04d}.json")
         to_upload.append(fpath)
         with open(fpath, 'w') as f:
             json.dump(overlay, f)
@@ -159,8 +155,33 @@ def format_video_tags(client: ElvClient, write_token: str, streams: List[str], i
         add_link(client, basename, write_token, libid)
 
     logger.debug("done linking files")
+    
+def _download_missing(client: ElvClient, save_path: str, fabric_path: str, write_token: str) -> List[Optional[ValueError]]:
+        file_info = client.list_files(write_token=write_token, path=fabric_path, get_info=True)
+        to_download = []
+        new, changed, old = 0, 0, 0
 
-    tmpdir.cleanup()
+        def helper(data: dict, sub_path: str):
+            for key, value in data.items():
+                if key == ".":
+                    continue
+                if "." in value and value["."].get("type", "") == "directory":
+                    helper(value, "/".join([sub_path, key]))
+                else:
+                    fpath = "/".join([sub_path, key])
+                    fsize = value["size"]
+                    if not os.path.exists(os.path.join(save_path, fpath)):
+                        to_download.append(os.path.join(fabric_path, fpath))
+                        new += 1
+                    elif fsize != os.path.getsize(os.path.join(save_path, fname)):
+                        to_download.append(os.path.join(fabric_path, fname))
+                        changed += 1
+                    else:
+                        old += 1
+            
+        helper(file_info, sub_path=fabric_path)
+        logger.debug(f"{new} new files found on fabric. {changed} have changed on fabric. {old} files already up to date")
+        return client.download_files([(fpath, fpath) for fpath in to_download], dest_path=save_path, write_token=write_token)
 
 def _parse_external_tags(tags_path: str) -> Dict[str, List[VideoTag]]:
     external_tags, labels = {}, {}
@@ -218,28 +239,28 @@ def add_link(client: ElvClient, filename: str, qwt: str, libid: str) -> None:
     data = {"/": f"./files/video_tags/{filename}"}
     client.merge_metadata(qwt, data, library_id=libid, metadata_subtree=f'video_tags/{tag_type}/{idx}')
 
-def merge_video_tag_files(tags: List[str], tag_duration: float, offset: float) -> List[VideoTag]:
+def merge_video_tag_files(tags: List[str], part_duration: float) -> List[VideoTag]:
     """Merges all the VideoTags from the given list of files into a single list of VideoTags with global timestamps."""
-    tag_duration = tag_duration*1000
-    offset = offset*1000
+    tag_duration = part_duration*1000
     merged = []
     for tag in tags:
+        part_idx = int(os.path.basename(tag).split("_")[0])
+        part_start = part_idx * tag_duration
         with open(tag, 'r') as f:
             data = json.load(f)
             data = [VideoTag(**tag) for tag in data]
-        merged.extend([VideoTag(start_time=offset + tag.start_time, end_time=offset + tag.end_time, text=tag.text, confidence=tag.confidence) for tag in data])
-        offset += tag_duration
+        merged.extend([VideoTag(start_time=part_start + tag.start_time, end_time=part_start + tag.end_time, text=tag.text, confidence=tag.confidence) for tag in data])
     return merged
 
 def merge_frame_tag_files(tags: List[str], len_frames: int) -> Dict[int, List[FrameTag]]:
     merged = {}
-    frame_offset = 0
     for tag in tags:
+        part_idx = int(os.path.basename(tag).split("_")[0])
+        part_start = part_idx * len_frames
         with open(tag, 'r') as f:
             data = json.load(f)
-            data = {int(frame)+frame_offset: [FrameTag(**tag) for tag in tags] for frame, tags in data.items()}
+            data = {int(frame)+part_start: [FrameTag(**tag) for tag in tags] for frame, tags in data.items()}
         merged.update(data)
-        frame_offset += len_frames
     return merged
 
 def aggregate_video_tags(tags: Dict[str, List[VideoTag]], intervals: List[Tuple[int, int]]) -> List[AggTag]:
