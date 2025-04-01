@@ -166,16 +166,26 @@ def test_server(port: int) -> List[Callable]:
         with timeit("Finalizing video"):
             response = requests.post(finalize_url)
         assert response.status_code == 200, response.text
+        
+        with open(os.path.join(filedir, 'server_out.log'), 'r') as f:
+            # check that only missing files were read from fabric
+            assert any('30 new files found on fabric. 0 have changed on fabric. 25 files already up to date' in line for line in f.readlines())
 
         finalize_url = f"http://localhost:{port}/{test_objects['assets']}/finalize?write_token={image_write}&authorization={image_auth}"
         with timeit("Finalizing assets"):
             response = requests.post(finalize_url)
         assert response.status_code == 200, response.text
         
+        with open(os.path.join(filedir, 'server_out.log'), 'r') as f:
+            assert any('0 new files found on fabric. 0 have changed on fabric. 210 files already up to date' in line for line in f.readlines())
+        
         finalize_url = f"http://localhost:{port}/{test_objects['legacy_vod']}/finalize?write_token={legacy_vod_write}&authorization={legacy_vod_auth}"
         with timeit("Finalizing legacy video"):
             response = requests.post(finalize_url)
         assert response.status_code == 200, response.text
+        
+        with open(os.path.join(filedir, 'server_out.log'), 'r') as f:
+            assert any('0 new files found on fabric. 0 have changed on fabric. 15 files already up to date' in line for line in f.readlines())
 
         res = []
         client = ElvClient.from_configuration_url(config["fabric"]["config_url"], static_token=video_auth)

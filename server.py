@@ -571,25 +571,16 @@ def get_flask_app():
             except ValueError as e:
                 return Response(response=json.dumps({'error': str(e), 'message': 'Please verify the provided write token has not already been used to finalize tags.'}), status=400, mimetype='application/json')
         # if no file jobs, then we just do the aggregation
-
-        #try:
-        #    video_streams = client.list_files(qlib, path="/video_tags", **content_args)
-        #except HTTPError:
-        #    video_streams = []
-#
-        #video_streams = [path.split("/")[0] for path in video_streams if path.endswith("/") and path[:-1] != "image"]
         
         tmpdir = tempfile.TemporaryDirectory(dir=config["storage"]["tmp"])
-        
-        # copy all tags to the tmpdir
-      
         with filesystem_lock:
             shutil.copytree(os.path.join(config["storage"]["tags"], qhit), tmpdir.name, dirs_exist_ok=True)
+            if os.path.exists(os.path.join(tmpdir.name, 'external_tags')):
+                shutil.rmtree(os.path.join(tmpdir.name, 'external_tags'))
 
         try:
             with timeit("Aggregating video tags"):
-                if video_streams:
-                    format_video_tags(client, qwt, video_streams, config["agg"]["interval"], tmpdir.name)
+                format_video_tags(client, qwt, config["agg"]["interval"], tmpdir.name)
             with timeit("Aggregating asset tags"):
                 format_asset_tags(client, qwt, tmpdir.name)
         except HTTPError as e:

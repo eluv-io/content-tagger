@@ -4,27 +4,24 @@ from copy import deepcopy
 from collections import defaultdict
 from dataclasses import asdict
 import os
-from elv_client_py import ElvClient
-import tempfile
 from loguru import logger
 from requests.exceptions import HTTPError
 
-from src.fabric.utils import parse_qhit
+from elv_client_py import ElvClient
 
 from common_ml.tags import AggTag
 from common_ml.tags import VideoTag, FrameTag
 from common_ml.utils import nested_update
 from common_ml.utils.files import get_file_type, encode_path
 
-from config import config
-
 from src.fabric.video import fetch_stream_metadata
+from src.fabric.utils import parse_qhit
 
-def format_asset_tags(client: ElvClient, write_token: str, tmp_path: str) -> None:
+def format_asset_tags(client: ElvClient, write_token: str, tags_path: str) -> None:
     qlib = client.content_object_library_id(write_token=write_token)
-    save_path = tmp_path
+    image_tags_path = os.path.join(tags_path, 'image')
     try:
-        res = _download_missing(client, save_path, "image_tags", write_token=write_token) #client.download_directory(dest_path=save_path, fabric_path="image_tags", write_token=write_token)
+        res = _download_missing(client, image_tags_path, "image_tags", write_token=write_token)
     except HTTPError:
         logger.warning("No image tags")
         return
@@ -34,9 +31,9 @@ def format_asset_tags(client: ElvClient, write_token: str, tmp_path: str) -> Non
             raise r
         
     file_to_tags = defaultdict(dict)
-    for model in os.listdir(save_path):
-        for tag in os.listdir(os.path.join(save_path, model)):
-            with open(os.path.join(save_path, model, tag)) as f:
+    for model in os.listdir(image_tags_path):
+        for tag in os.listdir(os.path.join(image_tags_path, model)):
+            with open(os.path.join(image_tags_path, model, tag)) as f:
                 tags = json.load(f)
             filename = tag.split("_imagetags.json")[0]
             trackname = label_to_track(feature_to_label(model))
@@ -61,7 +58,7 @@ def format_asset_tags(client: ElvClient, write_token: str, tmp_path: str) -> Non
         
     client.replace_metadata(write_token, asset_metadata, library_id=qlib, metadata_subtree="assets")
 
-def format_video_tags(client: ElvClient, write_token: str, streams: List[str], interval: int, tmp_path: str) -> None:
+def format_video_tags(client: ElvClient, write_token: str, interval: int, tags_path: str) -> None:
     """format_video_tags is used to format the tags for compatability with search and video editor.
     It operates on a content write token directly which should be published after the tags are uploaded. 
     
@@ -75,48 +72,56 @@ def format_video_tags(client: ElvClient, write_token: str, streams: List[str], i
     content_args = parse_qhit(write_token)
     qlib = client.content_object_library_id(**content_args)
 
-    save_path = tmp_path
-
+    try:
+        # get all tagged streams from fabric
+        video_streams = client.list_files(qlib, path="/video_tags", **content_args)
+        video_streams = [path.split("/")[0] for path in video_streams if path.endswith("/") and path[:-1] != "image"]
+    except HTTPError:
+        logger.debug("No tagged video streams found on fabric.")
+        return
+        
     all_frame_tags, all_video_tags = {}, {}
     custom_labels = {}
+    
+    if "source_tags" in video_streams:
+        res = client.download_directory(dest_path=os.path.join(tags_path, 'source_tags'), fabric_path="video_tags/source_tags", write_token=write_token)
+        for r in res:
+            if r is not None:
+                raise r
+        logger.info("Parsing external tags")
+        external_tags, labels = _parse_external_tags(os.path.join(tags_path, 'source_tags'))
+        custom_labels.update(labels)
+        all_video_tags.update(external_tags)
+        video_streams.remove("source_tags")
+
     fps = None
-    for stream in streams:
-        stream_save_path = os.path.join(tmp_path, stream)
-        if stream == "source_tags":
-            res = client.download_directory(dest_path=stream_save_path, fabric_path=f"video_tags/{stream}", write_token=write_token)
-            for r in res:
-                if r is not None:
-                    raise r
-            logger.info("Parsing external tags")
-            external_tags, labels = _parse_external_tags(stream_save_path)
-            custom_labels.update(labels)
-            all_video_tags.update(external_tags)
-        else:
-            #for feature in os.listdir(os.path.join(save_path, stream)):
-            res = _download_missing(client, save_path=os.path.join(stream_save_path, feature), fabric_path=f"video_tags/{stream}/{feature}", write_token=write_token)
-            for r in res:
-                if r is not None:
-                    raise r
-            stream_tracks = os.listdir(stream_save_path) 
-            logger.debug(f"stream_tracks for {stream}: {stream_tracks}")
-            _, part_duration, fps, codec = fetch_stream_metadata(write_token, stream, client)
-            for feature in os.listdir(stream_save_path):
-                if feature not in os.listdir(stream_save_path):
-                    continue
-                assert feature not in all_video_tags and feature not in all_frame_tags, f"Feature {feature} already found in another stream"
-                tags_path = os.path.join(stream_save_path, feature)
-                if codec == "video":
-                    frames_per_part = part_duration * fps
-                    if int(frames_per_part) != frames_per_part:
-                        logger.warning("Calculated frames per part is not an integer, rounding down. This can be caused by variable FPS and may cause overlay tags to be misaligned.")
-                    frame_tags_files = [os.path.join(tags_path, file) for file in sorted(os.listdir(tags_path)) if file.endswith("_frametags.json")]
-                    if frame_tags_files:
-                        all_frame_tags[feature] = merge_frame_tag_files(frame_tags_files, int(frames_per_part))
-                video_tags_files = [os.path.join(tags_path, tag) for tag in sorted(os.listdir(tags_path)) if tag.endswith("_tags.json")]
-                if len(video_tags_files) == 0:
-                    logger.warning(f"No tags found for feature {feature}")
-                    continue
-                all_video_tags[feature] = merge_video_tag_files(video_tags_files, part_duration)
+    for stream in video_streams:
+        stream_save_path = os.path.join(tags_path, stream)
+        res = _download_missing(client, save_path=stream_save_path, fabric_path=f"video_tags/{stream}", write_token=write_token)
+        for r in res:
+            if r is not None:
+                raise r
+
+        stream_tracks = os.listdir(stream_save_path)
+        logger.debug(f"stream_tracks for {stream}: {stream_tracks}")
+        _, part_duration, fps, codec = fetch_stream_metadata(write_token, stream, client)
+        for feature in os.listdir(stream_save_path):
+            if feature not in os.listdir(stream_save_path):
+                continue
+            assert feature not in all_video_tags and feature not in all_frame_tags, f"Feature {feature} already found in another stream"
+            tags_path = os.path.join(stream_save_path, feature)
+            if codec == "video":
+                frames_per_part = part_duration * fps
+                if int(frames_per_part) != frames_per_part:
+                    logger.warning("Calculated frames per part is not an integer, rounding down. This can be caused by variable FPS and may cause overlay tags to be misaligned.")
+                frame_tags_files = [os.path.join(tags_path, file) for file in sorted(os.listdir(tags_path)) if file.endswith("_frametags.json")]
+                if frame_tags_files:
+                    all_frame_tags[feature] = merge_frame_tag_files(frame_tags_files, int(frames_per_part))
+            video_tags_files = [os.path.join(tags_path, tag) for tag in sorted(os.listdir(tags_path)) if tag.endswith("_tags.json")]
+            if len(video_tags_files) == 0:
+                logger.warning(f"No tags found for feature {feature}")
+                continue
+            all_video_tags[feature] = merge_video_tag_files(video_tags_files, part_duration)
 
     assert "shot" in all_video_tags, "No shot tags found"
     shot_intervals = [(tag.start_time, tag.end_time) for tag in all_video_tags["shot"]]
@@ -132,13 +137,13 @@ def format_video_tags(client: ElvClient, write_token: str, streams: List[str], i
     overlays = format_overlay(all_frame_tags, fps, interval)
     to_upload = []
     for i, track in enumerate(formatted_tracks):
-        fpath = os.path.join(save_path, f"video-tags-tracks-{i:04d}.json")
+        fpath = os.path.join(tags_path, f"video-tags-tracks-{i:04d}.json")
         to_upload.append(fpath)
         with open(fpath, 'w') as f:
             json.dump(track, f)
 
     for i, overlay in enumerate(overlays):
-        fpath = os.path.join(save_path, f"video-tags-overlay-{i:04d}.json")
+        fpath = os.path.join(tags_path, f"video-tags-overlay-{i:04d}.json")
         to_upload.append(fpath)
         with open(fpath, 'w') as f:
             json.dump(overlay, f)
@@ -155,33 +160,36 @@ def format_video_tags(client: ElvClient, write_token: str, streams: List[str], i
         add_link(client, basename, write_token, libid)
 
     logger.debug("done linking files")
-    
-def _download_missing(client: ElvClient, save_path: str, fabric_path: str, write_token: str) -> List[Optional[ValueError]]:
-        file_info = client.list_files(write_token=write_token, path=fabric_path, get_info=True)
-        to_download = []
-        new, changed, old = 0, 0, 0
 
-        def helper(data: dict, sub_path: str):
-            for key, value in data.items():
-                if key == ".":
-                    continue
-                if "." in value and value["."].get("type", "") == "directory":
-                    helper(value, "/".join([sub_path, key]))
+def _download_missing(client: ElvClient, save_path: str, fabric_path: str, write_token: str) -> List[Optional[ValueError]]:
+    """Recursively downloads the given fabric path into save_path only if there is a difference"""
+    file_info = client.list_files(write_token=write_token, path=fabric_path, get_info=True)
+    to_download = []
+    status = [0, 0, 0]
+
+    def helper(data: dict, sub_path: str):
+        for key, value in data.items():
+            if key == ".":
+                continue
+            if "." in value and value["."].get("type", "") == "directory":
+                helper(value, "/".join([sub_path, key]) if sub_path != "" else key)
+            else:
+                fpath = "/".join([sub_path, key]) if sub_path != "" else key
+                fsize = value["."]["size"]
+                if not os.path.exists(os.path.join(save_path, fpath)):
+                    to_download.append(fpath)
+                    status[0] += 1
+                elif fsize != os.path.getsize(os.path.join(save_path, fpath)):
+                    to_download.append(fpath)
+                    status[1] += 1
                 else:
-                    fpath = "/".join([sub_path, key])
-                    fsize = value["size"]
-                    if not os.path.exists(os.path.join(save_path, fpath)):
-                        to_download.append(os.path.join(fabric_path, fpath))
-                        new += 1
-                    elif fsize != os.path.getsize(os.path.join(save_path, fname)):
-                        to_download.append(os.path.join(fabric_path, fname))
-                        changed += 1
-                    else:
-                        old += 1
-            
-        helper(file_info, sub_path=fabric_path)
-        logger.debug(f"{new} new files found on fabric. {changed} have changed on fabric. {old} files already up to date")
-        return client.download_files([(fpath, fpath) for fpath in to_download], dest_path=save_path, write_token=write_token)
+                    status[2] += 1
+                    
+    helper(file_info, sub_path="")
+    new, changed, old = status
+    logger.debug(f"{new} new files found on fabric. {changed} have changed on fabric. {old} files already up to date")
+
+    return client.download_files([("/".join([fabric_path, path]), path) for path in to_download], dest_path=save_path, write_token=write_token)
 
 def _parse_external_tags(tags_path: str) -> Dict[str, List[VideoTag]]:
     external_tags, labels = {}, {}
