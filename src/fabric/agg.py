@@ -13,6 +13,7 @@ from common_ml.tags import AggTag
 from common_ml.tags import VideoTag, FrameTag
 from common_ml.utils import nested_update
 from common_ml.utils.files import get_file_type, encode_path
+from common_ml.utils.metrics import timeit
 
 from src.fabric.video import fetch_stream_metadata
 from src.fabric.utils import parse_qhit
@@ -84,7 +85,8 @@ def format_video_tags(client: ElvClient, write_token: str, interval: int, tags_p
     custom_labels = {}
     
     if "source_tags" in video_streams:
-        res = client.download_directory(dest_path=os.path.join(tags_path, 'source_tags'), fabric_path="video_tags/source_tags", write_token=write_token)
+        with timeit("Downloading source tags"):
+            res = client.download_directory(dest_path=os.path.join(tags_path, 'source_tags'), fabric_path="video_tags/source_tags", write_token=write_token)
         for r in res:
             if r is not None:
                 raise r
@@ -97,7 +99,8 @@ def format_video_tags(client: ElvClient, write_token: str, interval: int, tags_p
     fps = None
     for stream in video_streams:
         stream_save_path = os.path.join(tags_path, stream)
-        res = _download_missing(client, save_path=stream_save_path, fabric_path=f"video_tags/{stream}", write_token=write_token)
+        with timeit(f"Downloading tags for {stream}"):
+            res = _download_missing(client, save_path=stream_save_path, fabric_path=f"video_tags/{stream}", write_token=write_token)
         for r in res:
             if r is not None:
                 raise r
@@ -109,15 +112,15 @@ def format_video_tags(client: ElvClient, write_token: str, interval: int, tags_p
             if feature not in os.listdir(stream_save_path):
                 continue
             assert feature not in all_video_tags and feature not in all_frame_tags, f"Feature {feature} already found in another stream"
-            tags_path = os.path.join(stream_save_path, feature)
+            model_path = os.path.join(stream_save_path, feature)
             if codec == "video":
                 frames_per_part = part_duration * fps
                 if int(frames_per_part) != frames_per_part:
                     logger.warning("Calculated frames per part is not an integer, rounding down. This can be caused by variable FPS and may cause overlay tags to be misaligned.")
-                frame_tags_files = [os.path.join(tags_path, file) for file in sorted(os.listdir(tags_path)) if file.endswith("_frametags.json")]
+                frame_tags_files = [os.path.join(model_path, file) for file in sorted(os.listdir(model_path)) if file.endswith("_frametags.json")]
                 if frame_tags_files:
                     all_frame_tags[feature] = merge_frame_tag_files(frame_tags_files, int(frames_per_part))
-            video_tags_files = [os.path.join(tags_path, tag) for tag in sorted(os.listdir(tags_path)) if tag.endswith("_tags.json")]
+            video_tags_files = [os.path.join(model_path, tag) for tag in sorted(os.listdir(model_path)) if tag.endswith("_tags.json")]
             if len(video_tags_files) == 0:
                 logger.warning(f"No tags found for feature {feature}")
                 continue
@@ -148,18 +151,16 @@ def format_video_tags(client: ElvClient, write_token: str, interval: int, tags_p
         with open(fpath, 'w') as f:
             json.dump(overlay, f)
         
-    logger.debug(f"upload files {to_upload}")
     jobs = [ElvClient.FileJob(local_path=path, out_path=f"video_tags/{os.path.basename(path)}", mime_type="application/json") for path in to_upload]
-    client.upload_files(write_token=write_token, library_id=qlib, file_jobs=jobs, finalize=False)
+    
+    with timeit("Uploading aggregated files"):
+        client.upload_files(write_token=write_token, library_id=qlib, file_jobs=jobs, finalize=False)
 
     logger.debug("done uploading files")
 
-    libid = client.content_object_library_id(write_token=write_token)
-    for file in to_upload:
-        basename = os.path.basename(file)
-        add_link(client, basename, write_token, libid)
-
-    logger.debug("done linking files")
+    with timeit("Adding links"):
+        libid = client.content_object_library_id(write_token=write_token)
+        add_links(client, to_upload, write_token, libid)
 
 def _download_missing(client: ElvClient, save_path: str, fabric_path: str, write_token: str) -> List[Optional[ValueError]]:
     """Recursively downloads the given fabric path into save_path only if there is a difference"""
@@ -184,7 +185,7 @@ def _download_missing(client: ElvClient, save_path: str, fabric_path: str, write
                     status[1] += 1
                 else:
                     status[2] += 1
-                    
+
     helper(file_info, sub_path="")
     new, changed, old = status
     logger.debug(f"{new} new files found on fabric. {changed} have changed on fabric. {old} files already up to date")
@@ -246,6 +247,24 @@ def add_link(client: ElvClient, filename: str, qwt: str, libid: str) -> None:
 
     data = {"/": f"./files/video_tags/{filename}"}
     client.merge_metadata(qwt, data, library_id=libid, metadata_subtree=f'video_tags/{tag_type}/{idx}')
+ 
+def add_links(client: ElvClient, fpaths: List[str], qwt: str, libid: str) -> None:
+    data = {}
+    for fpath in fpaths:
+        filename = os.path.basename(fpath)
+        if 'video-tags-tracks' in filename:
+            tag_type = 'metadata_tags'
+        elif 'video-tags-overlay' in filename:
+            tag_type = 'overlay_tags'
+        else:
+            continue
+        if tag_type not in data:
+            data[tag_type] = {}
+            
+        idx = ''.join([char for char in filename if char.isdigit()])
+        data[tag_type][idx] = {"/": f"./files/video_tags/{filename}"}
+        
+    client.merge_metadata(qwt, data, library_id=libid, metadata_subtree='video_tags')
 
 def merge_video_tag_files(tags: List[str], part_duration: float) -> List[VideoTag]:
     """Merges all the VideoTags from the given list of files into a single list of VideoTags with global timestamps."""
