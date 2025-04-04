@@ -126,9 +126,12 @@ def format_video_tags(client: ElvClient, write_token: str, interval: int, tags_p
                 continue
             all_video_tags[feature] = merge_video_tag_files(video_tags_files, part_duration)
 
-    assert "shot" in all_video_tags, "No shot tags found"
-    shot_intervals = [(tag.start_time, tag.end_time) for tag in all_video_tags["shot"]]
-    agg_tags = aggregate_video_tags({f: tags for f, tags in all_video_tags.items() if f != "shot"}, shot_intervals)
+    if "shot" in all_video_tags:
+        shot_intervals = [(tag.start_time, tag.end_time) for tag in all_video_tags["shot"]]
+        aggshot_tags = {"shot_tags": aggregate_video_tags({f: tags for f, tags in all_video_tags.items() if f != "shot"}, shot_intervals) }
+    else:
+        aggshot_tags = {}
+
     if "asr" in all_video_tags:
         # sentence level aggregation on speech to text
         sentence_intervals = _get_sentence_intervals(all_video_tags["asr"])
@@ -136,7 +139,7 @@ def format_video_tags(client: ElvClient, write_token: str, interval: int, tags_p
         stt_sent_track = [VideoTag(agg_tag.start_time, agg_tag.end_time, agg_tag.tags["asr"][0].text) for agg_tag in sentence_agg_tags if "asr" in agg_tag.tags]
         all_video_tags["auto_captions"] = stt_sent_track
 
-    formatted_tracks = format_tracks({"shot_tags": agg_tags}, all_video_tags, interval, custom_labels=custom_labels)
+    formatted_tracks = format_tracks(aggshot_tags, all_video_tags, interval, custom_labels=custom_labels)
     overlays = format_overlay(all_frame_tags, fps, interval)
     to_upload = []
     for i, track in enumerate(formatted_tracks):
