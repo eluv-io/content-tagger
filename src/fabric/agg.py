@@ -199,6 +199,7 @@ def _parse_external_tags(tags_path: str) -> Dict[str, List[VideoTag]]:
     external_tags, labels = {}, {}
     for tag_type in os.listdir(tags_path):
         for tag_file in os.listdir(os.path.join(tags_path, tag_type)):
+            logger.debug(f"external tags type: {tag_type} file: {tag_file}")
             with open(os.path.join(tags_path, tag_type, tag_file), 'r') as f:
                 data = json.load(f)["metadata_tags"]
             for feature in data:
@@ -236,7 +237,10 @@ def _get_sentence_intervals(tags: List[VideoTag]) -> List[Tuple[int, int]]:
 def _parse_external_track(data: List[Dict[str, object]]) -> List[VideoTag]:
     track = []
     for tag in data["tags"]:
-        track.append(VideoTag(start_time=tag["start_time"], end_time=tag["end_time"], text="; ".join(tag["text"])))
+        tagdata = tag["text"]
+        if type(tagdata) == list:
+            tagdata = "; ".join(tagdata)
+        track.append(VideoTag(start_time=tag["start_time"], end_time=tag["end_time"], text=tagdata))
     return track
 
 def add_link(client: ElvClient, filename: str, qwt: str, libid: str) -> None:
