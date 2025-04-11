@@ -96,10 +96,10 @@ def response_force_dict(resp):
             "content": resp.content
         }
 
-def finalize(qhit: str, config: str, do_commit: bool):
+def finalize(qhit: str, config: str, do_commit: bool, force = False):
     auth_token = get_auth(config, qhit)
     write_token = get_write_token(qhit, config)
-    finalize_url = f"{server}/{qhit}/finalize?authorization={auth_token}"
+    finalize_url = f"{server}/{qhit}/finalize?authorization={auth_token}&force={force}"
     resp = requests.post(finalize_url, params={"write_token": write_token, "replace": "true"})
     respdict = response_force_dict(resp)
     print(respdict)
@@ -169,6 +169,9 @@ def main():
             elif user_input in [ "finalize", "f" ]:
                 for qhit in contents:
                     finalize(qhit, args.config, args.commit)
+            elif user_input in [ "forcefinalize" ]:
+                for qhit in contents:
+                    finalize(qhit, args.config, args.commit, force = True)
             elif user_input in [ "agg", "aggregate"]:
                 for qhit in contents:
                     aggregate(qhit, args.config, args.commit)
