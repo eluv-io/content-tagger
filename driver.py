@@ -148,8 +148,9 @@ def main():
     print("getting auth...")
     auth = get_auth(args.config, contents[0])
 
-    end_time = args.end_time
-    start_time = args.start_time
+    end_time = None
+    if end_time is not None: end_time = int(args.end_time)
+    start_time = int(args.start_time)
     
     print("Command (t)ag, (s)tatus, (qs)quickstatus, (f)inalize, (agg)regate? ")
     while True:
