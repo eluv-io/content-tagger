@@ -147,17 +147,16 @@ def main():
 
     print("getting auth...")
     auth = get_auth(args.config, contents[0])
+
+    end_time = args.end_time
+    start_time = args.start_time
     
     print("Command (t)ag, (s)tatus, (qs)quickstatus, (f)inalize, (agg)regate? ")
     while True:
         try:
             user_input = input("> ")  # Wait for user input
-            if user_input in [ "tag" , "t"]:
-                tag(contents, auth, args.assets, tag_config) ## end_time=20.5)
-            elif user_input == "qs":
-                for qhit in contents:
-                    quick_status(auth, qhit)
-            elif user_input in [ "status", "s"]:
+
+            if user_input in [ "status", "s", ""]:
                 statuses = {}
                 for qhit in contents:
                     status = get_status(qhit, auth)
@@ -166,6 +165,32 @@ def main():
                 os.makedirs("rundriver", exist_ok=True)
                 with open("rundriver/status.json", "w") as statfile:
                     statfile.write(json.dumps(statuses, indent = 2))
+            elif user_input in [ "tag" , "t"]:
+                tag(contents, auth, args.assets, tag_config, start_time = start_time, end_time = end_time)
+            elif user_input.startswith("+") or user_input.startswith("-"):
+
+                val = user_input[1:]
+                val = float(val) * 60
+                if user_input.startswith("-"): val = val * -1
+                    
+                if end_time is None:
+                    end_time = start_time + val
+                else:                                        
+                    end_time = end_time + int(val)
+                    start_time = start_time + int(val)
+                                    
+                h = int(end_time / 3600)
+                m = int(end_time / 60) % 3600
+                s = int(end_time) % 60
+                hms = "%d:%02d:%02d" % (h, m, s)
+                h = int(start_time / 3600)
+                m = int(start_time / 60) % 3600
+                s = int(start_time) % 60
+                hmss = "%d:%02d:%02d" % (h, m, s)
+                print(f'[{start_time}-{end_time}] [{hmss} - {hms}]')                
+            elif user_input == "qs":
+                for qhit in contents:
+                    quick_status(auth, qhit)
             elif user_input in [ "finalize", "f" ]:
                 for qhit in contents:
                     finalize(qhit, args.config, args.commit)
@@ -211,5 +236,7 @@ if __name__ == "__main__":
     parser.add_argument("--tag-config", default="", help="Tagger config json.  Use @ to read a file")
     ##parser.add_argument("--audio-stream", default="audio", help="which audio stream to tag")
     parser.add_argument("--commit", action="store_true", help="if set, commit on fabric after finalizing on tagger")
+    parser.add_argument("--start-time", help="start time in seconds", default = 0)
+    parser.add_argument("--end-time", help="end time in seconds", default = None)
     args = parser.parse_args()
     main()
