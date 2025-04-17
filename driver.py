@@ -120,6 +120,21 @@ def aggregate(qhit: str, config: str, do_commit: bool):
 
     return write_token
 
+finalized = {}
+def finalize_all(contents: list, config: str, do_commit: bool, force = False):
+    for qhit in contents:
+        if qhit in finalized:
+            print(f"{qhit} already finalized")
+            continue
+
+        print(f"Finalizing {qhit} force = {force}")
+        try:
+            finalize(qhit, config, do_commit, force)
+            finalized[qhit] = True ### xxx store a hash of finalized job IDs
+            
+        except Exception as e:
+            print(f"{e} while finalizing {qhit}")
+        
 def main():
     if args.tag_config != "":
             tag_config = args.tag_config
@@ -193,11 +208,9 @@ def main():
                 for qhit in contents:
                     quick_status(auth, qhit)
             elif user_input in [ "finalize", "f" ]:
-                for qhit in contents:
-                    finalize(qhit, args.config, args.commit)
+                finalize_all(contents, args.config, args.commit, force = False)
             elif user_input in [ "forcefinalize" ]:
-                for qhit in contents:
-                    finalize(qhit, args.config, args.commit, force = True)
+                finalize_all(contents, args.config, args.commit, force = True)
             elif user_input in [ "agg", "aggregate"]:
                 for qhit in contents:
                     aggregate(qhit, args.config, args.commit)
