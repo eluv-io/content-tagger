@@ -59,6 +59,9 @@ class Job:
     # tag_job_id is the job id returned by the manager, will be None until the tagging starts (status is "Running")
     tag_job_id: Optional[str]=None
     error: Optional[str]=None
+    ## wall clock time of the last time this job was "put back" on the queue
+    reput_time: int = 0
+
     
 def get_flask_app():
     app = Flask(__name__)
@@ -86,6 +89,7 @@ def get_flask_app():
     
     shutdown_signal = threading.Event()
 
+    
     @app.route('/list', methods=['GET'])
     def list_services() -> Response:
         res = _list_services()    
@@ -361,22 +365,37 @@ def get_flask_app():
             if _check_exit(job):
                 continue
             
-            if 0 < len(job.allowed_gpus) < manager.num_devices:
-                # This means the job can only run on a subset of GPUs
-                # The sleep prevents the situation where this type of job is added back to queue over and over while it waits for a GPU.
-                time.sleep(config["devices"]["wait_for_gpu_sleep"])
+            gpu_to_use = None
+            cpu_slot_to_use = None
+
+            stopped = False
+            while not manager.await_gpu(timeout=config["devices"]["wait_for_gpu_sleep"]):
+                # check if the job has been stopped, if not then we go back to waiting for a GPU
+                if _check_exit(job):
+                    stopped = True
+                    break
+            if stopped:
+                continue
 
             if wait_for_gpu:
-                stopped = False
-                while not manager.await_gpu(timeout=config["devices"]["wait_for_gpu_sleep"]):
-                    # check if the job has been stopped, if not then we go back to waiting for a GPU
-                    if _check_exit(job):
-                        stopped = True
-                        break
-                if stopped:
-                    continue
+                gpu_to_use = manager.find_available_gpu(job.allowed_gpus)
+            else:
+                ## this is a cpu-only job, so make sure we have a cpu slot
+                cpu_slot_to_use = manager.find_available_cpuslot(job.cpu_slots)
+        
+            if gpu_to_use is None and cpu_slot_to_use is None:
+                # if no CPU slot or GPU is available, then we put the job back on the queue
+                now = time.time()
+                if (now - job.reput_time) < config["devices"]["wait_for_gpu_sleep"]:
+                    # if the job was put back on the queue too recently, then we wait for a bit before putting it back
+                    time.sleep(config["devices"]["wait_for_gpu_sleep"] - (now - job.reput_time))
+
+                job.reput_time = now
+                tag_queue.put(job)
+                continue
+
             try:
-                job_id = manager.run(job.feature, job.run_config.model, job.media_files, job.allowed_gpus)
+                job_id = manager.run(job.feature, job.run_config.model, job.media_files, gpu_to_use, cpu_slot_to_use)
                 with lock:
                     if _is_job_stopped(job):
                         # if the job has been stopped while the container was starting
@@ -760,7 +779,7 @@ def get_flask_app():
     def _startup():
         threading.Thread(target=_job_watcher, daemon=True).start()
         threading.Thread(target=_job_starter, args=(True, gpu_queue), daemon=True).start()
-        threading.Thread(target=_job_starter, args=(False, cpu_queue), daemon=True).start()
+        threading.Thread(target=_job_starter, args=(False, cpu_queue, ), daemon=True).start()
     
     # handle shutdown signals
     signal.signal(signal.SIGINT, lambda sig, frame: _shutdown())
@@ -772,7 +791,7 @@ def get_flask_app():
     _startup()
     CORS(app)
     return app
-
+    
 def main():
     app = get_flask_app()
     app.run(port=args.port, host=args.host)

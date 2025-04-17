@@ -26,6 +26,8 @@ class TagJob:
     logs_out: str
     # device index, None if no GPU
     device: Optional[int]
+    # cpu "slot" index,  None if no CPU slot
+    cpu_slot: Optional[str]
     # status of the job
     status: Literal["Running", "Completed", "Stopped", "Failed"]
     stop_event: threading.Event
@@ -56,10 +58,23 @@ class ResourceManager:
         # (media file, model) pairs, cannot have two jobs going on the same file with the same model
         self.files_tagging = set()
         
+        self.cpu_available = threading.Event()
+        self.cpu_available.set()
+
         # check if GPUs are available
         self.gpu_available = threading.Event()
         if any(status is False for status in self.device_status):
             self.gpu_available.set()
+
+        ## get all the "cpu slots" defined in the model config, and initialize to "available"
+        self.cpuslots = {}
+        for model in config["services"]:
+            if model.get("allowed_gpus", None) is None:
+                cpuslots = model.get("cpu_slots", [ "slot4" + model["image"] ])
+                model["cpu_slots"] = cpuslots
+                for name in cpuslots:
+                    cpuslots[name] = False
+
 
     # Args:
     #     feature (str): The feature to tag the files with.
@@ -68,28 +83,12 @@ class ResourceManager:
     # Returns:
     #     str: The job ID.
     # NOTE: this function creates a new thread to watch the job
-    def run(self, feature: str, run_config: dict, files: List[str], allowed_gpus: List[str]) -> str:
+    def run(self, feature: str, run_config: dict, files: List[str], gpu_device_to_use: Optional[str], cpu_slot_to_use: Optiona[str]) -> str:
         with self.lock:
             self.update_gpu_state()
-            device_idx = None
             container = None
             files_added = []
             try:
-                if len(allowed_gpus) > 0:
-                    # check for an available GPU and set device statuses according
-                    for i, status in enumerate(self.device_status):
-                        if status:
-                            # gpu already in use
-                            continue
-                        if i not in allowed_gpus:
-                            continue
-                        device_idx = i
-                        self.device_status[i] = True
-                        if all(self.device_status[i] for i in range(self.num_devices)):
-                            self.gpu_available.clear()
-                        break
-                    if device_idx is None:
-                        raise NoGPUAvailable("No available GPUs")
                 # start the container
                 jobid = str(uuid.uuid4())
                 if not os.path.exists(os.path.join(config["storage"]["logs"], feature)):
@@ -101,9 +100,9 @@ class ResourceManager:
                     self.files_tagging.add((f, feature))
                     files_added.append((f, feature))
                 save_path = os.path.join(config["storage"]["tmp"], feature, jobid)
-                container = create_container(self.client, feature, save_path, files, run_config, device_idx, logs_out)
+                container = create_container(self.client, feature, save_path, files, run_config, gpu_device_to_use, logs_out)
                 container.start()
-                self.jobs[jobid] = TagJob(container, feature, logs_out, device_idx, "Running", threading.Event(), time.time(), None, files, [], [], save_path=save_path)
+                self.jobs[jobid] = TagJob(container, feature, logs_out, gpu_device_to_use, cpu_slot_to_use, "Running", threading.Event(), time.time(), None, files, [], [], save_path=save_path)
             except Exception as e:
                 # cleanup resources if job fails to start
                 if container:
@@ -114,13 +113,70 @@ class ResourceManager:
                         raise e2
                 for f, feature in files_added:
                     self.files_tagging.remove((f, feature))
-                if device_idx is not None and device_idx not in self.foreign_gpus:
-                    self.device_status[device_idx] = False
+                if gpu_device_to_use is not None and gpu_device_to_use not in self.foreign_gpus:
+                    self.device_status[gpu_device_to_use] = False
                     self.gpu_available.set()
                 raise e
         threading.Thread(target=self._watch_job, args=(jobid, )).start()
         return jobid
     
+    def find_available_gpu(self, allowed_gpus: List[int]) -> Optional[int]:
+        """
+        Finds an available GPU from the list of allowed GPUs.
+        Args:
+            allowed_gpus (List[int]): The list of allowed GPUs to check.
+        Returns:
+            Optional[int]: The index of the available GPU, or None if no GPU is available.
+        """
+
+        with self.lock:
+            self.update_gpu_state()
+
+            gpu_device_to_use = None
+
+            # check for an available GPU and set device statuses according
+            for i, status in enumerate(self.device_status):
+                if status:
+                    # gpu already in use
+                    continue
+                if len(allowed_gpus) != 0 and i not in allowed_gpus:
+                    continue
+                gpu_device_to_use = i
+                self.device_status[i] = True
+                if all(self.device_status[i] for i in range(self.num_devices)):
+                    self.gpu_available.clear()
+                break
+        
+            return gpu_device_to_use
+
+    def find_available_cpuslot(self, allowed_cpu_slots: List[str]) -> Optional[str]:
+        """
+        Finds an available CPU slot from the list of allowed CPU slots.
+        Args:
+            allowed_cpu_slots (List[str]): The list of allowed CPU slots to check
+        Returns:
+            Optional[str]: The available cpu slot name, or None if none are available
+        """
+
+        with self.lock:
+            cpu_slot_to_use = None
+
+            # check for an available GPU and set device statuses according
+            for slot, status in self.cpuslots.iteritems():
+                if status:
+                    # cpu slot already in use
+                    continue
+                if slot not in allowed_cpu_slots:
+                    continue
+                cpu_slot_to_use = slot
+                self.cpuslots[slot] = True
+                if all(self.cpuslots.values()):
+                    self.cpu_available.clear()
+
+                break
+        
+            return cpu_slot_to_use
+
     # Not thread safe, must be called with lock
     def update_gpu_state(self):
         """
@@ -220,6 +276,9 @@ class ResourceManager:
 
     def await_gpu(self, timeout: Optional[int]=None) -> bool:
         return self.gpu_available.wait(timeout=timeout)
+
+    def await_cpu(self, timeout: Optional[int]=None) -> bool:
+        return self.cpu_available.wait(timeout=timeout)
 
     # cleanup job resources
     # NOTE: NOT THREAD SAFE, must be called with lock
