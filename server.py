@@ -17,6 +17,8 @@ import shutil
 import signal
 import atexit
 from marshmallow import ValidationError, fields, Schema
+import tempfile
+
 from common_ml.types import Data
 from common_ml.utils.metrics import timeit
 
@@ -88,6 +90,34 @@ def get_flask_app():
     def list_services() -> Response:
         res = _list_services()    
         return Response(response=json.dumps(res), status=200, mimetype='application/json')
+        
+    @app.route('/<qhit>/upload_tags', methods=['POST'])
+    def upload(qhit: str):
+        uploaded_files = request.files.getlist('file')
+        if len(uploaded_files) == 0:
+            return Response(response=json.dumps({'error': 'No files in request'}), status=400, mimetype='application/json')
+        
+        _, error_response = _get_client(request, qhit, config["fabric"]["config_url"])
+        if error_response:
+            return error_response
+
+        to_upload = []
+        for file in uploaded_files:
+            try:
+                filedata = json.load(file.stream)
+            except json.JSONDecodeError:
+                return Response(response=json.dumps({'error': 'Invalid JSON file'}), status=400, mimetype='application/json')
+            to_upload.append((file.filename, filedata))
+
+        os.makedirs(os.path.join(config["storage"]["tags"], qhit, 'external_tags'), exist_ok=True)
+
+        for fname, fdata in to_upload:
+            if os.path.exists(os.path.join(config["storage"]["tags"], qhit, 'external_tags', fname)):
+                logger.warning(f"File {fname} already exists, overwriting")
+            with open(os.path.join(config["storage"]["tags"], qhit, 'external_tags', fname), 'w') as f:
+                json.dump(fdata, f)
+
+        return Response(response=json.dumps({'message': 'Successfully uploaded tags'}), status=200, mimetype='application/json')
     
     # TagArgs represents the request body for the /tag endpoint
     @dataclass
@@ -110,8 +140,8 @@ def get_flask_app():
     def tag(qhit: str) -> Response:
         try:
             args = TagArgs.from_dict(request.json)
-        except TypeError as e:
-            return Response(response=json.dumps({'error': str(e)}), status=400, mimetype='application/json')
+        except (KeyError, TypeError) as e:
+            return Response(response=json.dumps({'error': f"Invalid input: {str(e)}"}), status=400, mimetype='application/json')
         
         _, error_response = _get_client(request, qhit, config["fabric"]["parts_url"])
         if error_response:
@@ -424,12 +454,14 @@ def get_flask_app():
         for tag in tags:
             shutil.move(tag, os.path.join(tags_path, os.path.basename(tag)))
         shutil.rmtree(tag_dir, ignore_errors=True)
-
+    
     @dataclass
     class FinalizeArgs(Data):
         write_token: str
         replace: bool=False
         force: bool=False
+        # if live is set, then we don't finalize the file job
+        leave_open: bool=False
         authorization: Optional[str]=None
 
         @staticmethod
@@ -438,8 +470,17 @@ def get_flask_app():
                 write_token = fields.Str(required=True)
                 replace = fields.Bool(required=False, missing=False)
                 force = fields.Bool(required=False, missing=False)
+                leave_open = fields.Bool(required=False, missing=False)
                 authorization = fields.Str(required=False, missing=None)
             return FinalizeArgs(**FinalizeSchema().load(data))
+
+    @app.route('/<qhit>/finalize', methods=['POST'])
+    def finalize(qhit: str) -> Response:
+        return _finalize_internal(qhit, True)
+
+    @app.route('/<qhit>/aggregate', methods=['POST'])
+    def aggregate(qhit: str) -> Response:
+        return _finalize_internal(qhit, False)
     
     def _finalize_internal(qhit: str, upload_local_tags = True) -> Response:
         try:
@@ -450,6 +491,7 @@ def get_flask_app():
         client, error_response = _get_client(request, qwt, config["fabric"]["config_url"])
         if error_response:
             return error_response
+        # TODO: if write token doesn't exist it will give 404, but we return 403 unauthorized which is misleading.
         if not _authenticate(client, qhit):
             # make sure that the auth token has access to the content object where the tags are from
             # TODO: we may need to check more permissions to make sure the user should be able to read the tags. 
@@ -468,6 +510,8 @@ def get_flask_app():
                 return Response(response=json.dumps({'error': 'No tags found for this content object'}), status=404, mimetype='application/json')
 
             for stream in os.listdir(os.path.join(config["storage"]["tags"], qhit)):
+                if stream == "external_tags":
+                    continue
                 for feature in os.listdir(os.path.join(config["storage"]["tags"], qhit, stream)):
                     tagged_media_files = []
                     for tag in os.listdir(os.path.join(config["storage"]["tags"], qhit, stream, feature)):
@@ -497,6 +541,25 @@ def get_flask_app():
                                 file_jobs.append(ElvClient.FileJob(local_path=source + "_frametags.json",
                                                     out_path=f"video_tags/{stream}/{feature}/{os.path.basename(source)}_frametags.json",
                                                     mime_type="application/json"))
+                                
+            external_tags_path = os.path.join(config["storage"]["tags"], qhit, "external_tags")
+            if os.path.exists(external_tags_path):
+                local_source_tags = os.listdir(external_tags_path)
+                try:
+                    remote_source_tags = client.list_files(qlib, path="video_tags/source_tags/external", **content_args)
+                except HTTPError:
+                    logger.debug(f"No source tags found for {qwt}")
+                    remote_source_tags = []
+                
+                for local_source in local_source_tags:
+                    tagfile = os.path.join(config["storage"]["tags"], qhit, "external_tags", local_source)
+                    file_jobs.append(ElvClient.FileJob(local_path=tagfile,
+                                                        out_path=f"video_tags/source_tags/external/{local_source}",
+                                                        mime_type="application/json"))
+                    # TODO: we do need a way to make it so we can do replace=true for external tags but not on the rest. if we can improve the efficiency of this step we could just do two passes and 
+                    # Let the user specify which features they want to finalize, and they could do two steps. For now, we will default to always overwriting the external tags.
+                    if local_source in remote_source_tags:
+                        logger.warning(f"External tag file {local_source} already exists, overwriting")
 
         if len(file_jobs) > 0:
             try:
@@ -504,44 +567,37 @@ def get_flask_app():
                 with timeit("Uploading tag files"):
                     client.upload_files(library_id=qlib, file_jobs=file_jobs, finalize=False, **content_args)
             except HTTPError as e:
-                return Response(response=json.dumps({'error': str(e), 'message': 'Please verify your authorization token has write access and the write token has not already been committed. \
-                                                    This error can also arise if the write token has already been used to finalize tags.'}), status=403, mimetype='application/json')
+                return Response(json.dumps({'error': str(e), 'message': 'Please verify your authorization token has write access and the write token has not already been committed. This error can also arise if the write token has already been used to finalize tags.'}), status=403, mimetype='application/json')
             except ValueError as e:
                 return Response(response=json.dumps({'error': str(e), 'message': 'Please verify the provided write token has not already been used to finalize tags.'}), status=400, mimetype='application/json')
         # if no file jobs, then we just do the aggregation
+        
+        tmpdir = tempfile.TemporaryDirectory(dir=config["storage"]["tmp"])
+        with filesystem_lock:
+            shutil.copytree(os.path.join(config["storage"]["tags"], qhit), tmpdir.name, dirs_exist_ok=True)
+            if os.path.exists(os.path.join(tmpdir.name, 'external_tags')):
+                shutil.rmtree(os.path.join(tmpdir.name, 'external_tags'))
 
         try:
-            video_streams = client.list_files(qlib, path="/video_tags", **content_args)
-        except HTTPError:
-            video_streams = []
-        video_streams = [path.split("/")[0] for path in video_streams if path.endswith("/") and path[:-1] != "image"]
-
-        logger.debug(f"Found video streams: {video_streams}")
-
-        try:
-            with timeit("Aggregating tags"):
-                if video_streams:
-                    format_video_tags(client, qwt, video_streams, config["agg"]["interval"])
-                else:
-                    # slightly weird logic, but the format_video_tags finalizes files by default whereas format_asset_tags does not,
-                    # so, we need to finalize here
-                    client.finalize_files(qwt, qlib)
-                format_asset_tags(client, qwt)
+            with timeit("Aggregating video tags"):
+                format_video_tags(client, qwt, config["agg"]["interval"], tmpdir.name)
+            with timeit("Aggregating asset tags"):
+                format_asset_tags(client, qwt, tmpdir.name)
         except HTTPError as e:
-            return Response(response=json.dumps({'error': str(e), 'message': """Please verify your authorization token has write access and the write token has not already been committed. \
-                                                This error can also arise if the write token has already been used to finalize tags.'}), status=403, mimetype='application/json"""}))
+            message = (
+                "Please verify your authorization token has write access and the write token has not already been committed."
+                "This error can also arise if the write token has already been used to finalize tags."
+            )
+            return Response(response=json.dumps({'error': str(e), 'message': message}), status=403, mimetype='application/json')
+        finally:
+            tmpdir.cleanup()
+        
+        if not args.leave_open:
+            client.finalize_files(qwt, qlib)
 
         client.set_commit_message(qwt, "Uploaded ML Tags", qlib)
 
         return Response(response=json.dumps({'message': 'Succesfully uploaded tag files. Please finalize the write token.', 'write token': qwt}), status=200, mimetype='application/json')
-
-    @app.route('/<qhit>/finalize', methods=['POST'])
-    def finalize(qhit: str) -> Response:
-        return _finalize_internal(qhit, True)
-
-    @app.route('/<qhit>/aggregate', methods=['POST'])
-    def aggregate(qhit: str) -> Response:
-        return _finalize_internal(qhit, False)
 
     # JobStatus represents the status of a job returned by the /status endpoint
     @dataclass

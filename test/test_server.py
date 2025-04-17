@@ -87,46 +87,26 @@ def test_server(port: int) -> List[Callable]:
         tag_url = f"http://localhost:{port}/{test_objects['vod']}/tag?authorization={video_auth}"
         response = requests.post(tag_url, json={"features": {"dummy_gpu": {"model":{"tags":["hello1", "hello2"]}}, "shot":{}}, "replace": True})
         assert response.status_code == 200, response.text
-        res.append(response.json())
-        time.sleep(1)
-        response = requests.get(video_status_url)
-        res.append(postprocess_response(response.json()))
 
         tag_url = f"http://localhost:{port}/{test_objects['vod']}/tag?authorization={video_auth}"
         response = requests.post(tag_url, json={"features": {"dummy_cpu": {"model":{"tags":["a", "b", "a"], "allow_single_frame":False}}}, "replace": True})
         assert response.status_code == 200, response.text
-        res.append(response.json())
-        time.sleep(10)
-
-        response = requests.get(video_status_url)
-        res.append(postprocess_response(response.json()))
 
         image_status_url = f"http://localhost:{port}/{test_objects['assets']}/status?authorization={assets_auth}"
 
         tag_url = f"http://localhost:{port}/{test_objects['assets']}/image_tag?authorization={assets_auth}"
         response = requests.post(tag_url, json={"features": {"dummy_gpu": {"model":{"tags":["hello1"]}}}, "replace": True})
         assert response.status_code == 200, response.text
-        res.append(response.json())
-        time.sleep(1)
-        response = requests.get(image_status_url)
-        res.append(postprocess_response(response.json()))
 
         tag_url = f"http://localhost:{port}/{test_objects['assets']}/image_tag?authorization={assets_auth}"
         response = requests.post(tag_url, json={"features": {"dummy_cpu": {"model":{"tags":["hello2"]}}}, "replace": True})
         assert response.status_code == 200, response.text
-        res.append(response.json())
-        time.sleep(10)
-        response = requests.get(image_status_url)
-        res.append(postprocess_response(response.json()))
-        
+
         tag_url = f"http://localhost:{port}/{test_objects['legacy_vod']}/tag?authorization={legacy_vod_auth}"
         response = requests.post(tag_url, json={"features": {"dummy_gpu": {"model":{"tags":["hello1"]}}, "shot":{}}, "start_time":60, "end_time":180, "replace": False})
         assert response.status_code == 200, response.text
-        res.append(response.json())
-        time.sleep(5)
+
         legacy_vod_status_url = f"http://localhost:{port}/{test_objects['legacy_vod']}/status?authorization={legacy_vod_auth}"
-        response = requests.get(legacy_vod_status_url) 
-        res.append(postprocess_response(response.json()))
         
         logger.debug("Waiting for server to finish tagging")
         time.sleep(120)
@@ -136,6 +116,7 @@ def test_server(port: int) -> List[Callable]:
         for stream in response:
             for model in response[stream]:
                 assert response[stream][model]['status'] == 'Completed', response
+        res.append(postprocess_response(response))
 
         response = requests.get(video_status_url).json()
         for stream in response:
@@ -185,16 +166,26 @@ def test_server(port: int) -> List[Callable]:
         with timeit("Finalizing video"):
             response = requests.post(finalize_url)
         assert response.status_code == 200, response.text
+        
+        with open(os.path.join(filedir, 'server_out.log'), 'r') as f:
+            # check that only missing files were read from fabric
+            assert any('30 new files found on fabric. 0 have changed on fabric. 25 files already up to date' in line for line in f.readlines())
 
         finalize_url = f"http://localhost:{port}/{test_objects['assets']}/finalize?write_token={image_write}&authorization={image_auth}"
         with timeit("Finalizing assets"):
             response = requests.post(finalize_url)
         assert response.status_code == 200, response.text
         
+        with open(os.path.join(filedir, 'server_out.log'), 'r') as f:
+            assert any('0 new files found on fabric. 0 have changed on fabric. 210 files already up to date' in line for line in f.readlines())
+        
         finalize_url = f"http://localhost:{port}/{test_objects['legacy_vod']}/finalize?write_token={legacy_vod_write}&authorization={legacy_vod_auth}"
         with timeit("Finalizing legacy video"):
             response = requests.post(finalize_url)
         assert response.status_code == 200, response.text
+        
+        with open(os.path.join(filedir, 'server_out.log'), 'r') as f:
+            assert any('0 new files found on fabric. 0 have changed on fabric. 15 files already up to date' in line for line in f.readlines())
 
         res = []
         client = ElvClient.from_configuration_url(config["fabric"]["config_url"], static_token=video_auth)

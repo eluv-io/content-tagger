@@ -10,7 +10,7 @@ setup(
         'loguru',
         'podman',
         'pynvml',
-        'elv-client-py @ git+https://github.com/eluv-io/elv-client-py.git@static_event_loop#egg=elv-client-py',
+        'elv-client-py @ git+https://github.com/eluv-io/elv-client-py.git#egg=elv-client-py',
         'quick_test_py @ git+https://github.com/elv-nickB/quick_test_py.git#egg=quick_test_py',
         'common_ml @ git+ssh://git@github.com/qluvio/common-ml.git#egg=common_ml',
     ]
