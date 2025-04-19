@@ -6,3 +6,5 @@ test/test_audio
 test/test_video
 __pycache__
 .vscode
+configs
+logs

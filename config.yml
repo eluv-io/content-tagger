@@ -10,7 +10,7 @@ fabric:
   # used for downloading parts (requires special build)
   parts_url: http://192.168.96.203/config?self&qspace=main
   # for all other fabric interaction
-  config_url: https://host-76-74-28-229.contentfabric.io/config?self&qspace=main 
+  config_url: https://host-76-74-28-229.contentfabric.io/config?self&qspace=main
 services:
   llava:
     image: "localhost/llava:latest"
@@ -18,6 +18,7 @@ services:
     frame_level: true
     # force to run on cpu
     allowed_gpus: []
+    cpu_slots: []
   llava_brief:
     image: "localhost/llava_brief:latest"
     type: "video"
@@ -41,10 +42,12 @@ services:
     image: "localhost/shot:latest"
     type: "video"
     frame_level: false
+    allowed_gpus: [0, 2, 3, 4]
   celeb:
     image: "localhost/celeb:latest"
     type: "video"
     frame_level: true
+    allowed_gpus: [0, 2, 3, 4]
   ocr:
     image: "localhost/ocr:latest"
     type: "video"
@@ -70,11 +73,13 @@ services:
     type: "video"
     frame_level: true
     allowed_gpus: []
+    cpu_slots: []
 devices: 
   # if true, then tagger will run on gpus even if they are used by a foreign process
   # TODO: implement this, it is currently disabled to make life easier
   allow_in_use_gpus: false
   wait_for_gpu_sleep: 5
+  default_cpu_slots: ["cpu1", "cpu2", "cpu3", "cpu4"]
 watcher:
   sleep: 5
 agg:
