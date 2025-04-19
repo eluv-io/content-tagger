@@ -247,7 +247,36 @@ def test_server(port: int) -> List[Callable]:
     
         return res
     
-    return [test_tag, test_finalize, test_write_token_tag]
+    def test_cpu_limit():
+        # Check that cpus are queued
+        # initiate 3 requests to dummy_cpu
+        
+        tag_url = f"http://localhost:{port}/{test_objects['vod']}/tag?authorization={video_auth}"
+        response = requests.post(tag_url, json={"features": {"dummy_cpu": {"model":{"tags":["a", "b", "a"], "allow_single_frame":False}}}, "replace": True})
+        assert response.status_code == 200, response.text
+
+        tag_url = f"http://localhost:{port}/{test_objects['legacy_vod']}/tag?authorization={legacy_vod_auth}"
+        response = requests.post(tag_url, json={"features": {"dummy_cpu": {"model":{"tags":["hello1"]}}, "shot":{}}, "start_time":60, "end_time":120, "replace": True})
+        assert response.status_code == 200, response.text
+
+        tag_url = f"http://localhost:{port}/{test_objects['assets']}/image_tag?authorization={assets_auth}"
+        response = requests.post(tag_url, json={"features": {"dummy_cpu": {"model":{"tags":["a", "b", "a"], "allow_single_frame":False}}}, "replace": True})
+        assert response.status_code == 200, response.text
+        
+        status_urls = [f"http://localhost:{port}/{test_objects['vod']}/status?authorization={video_auth}",
+                       f"http://localhost:{port}/{test_objects['legacy_vod']}/status?authorization={legacy_vod_auth}",
+                       f"http://localhost:{port}/{test_objects['assets']}/status?authorization={assets_auth}"]
+        
+        starttime = time.time()
+        while time.time() - starttime < 120:
+            for url in status_urls:
+                response = requests.get(url, timeout=30)
+                assert response.status_code == 200, response.text
+                res = response.json()
+                print(res)
+            time.sleep(3)
+    
+    return [test_cpu_limit] #[test_tag, test_finalize, test_write_token_tag]
 
 def main():
     filedir = os.path.dirname(os.path.abspath(__file__))

@@ -12,7 +12,14 @@ def load_config() -> Any:
             config["storage"][p] = os.path.join(root_path, config["storage"][p])
         if not os.path.exists(config["storage"][p]):
             os.makedirs(config["storage"][p])
-        
+
+    for modelname, modelconf in config["services"].items():
+        if len(modelconf.get("cpu_slots", [])) > 0:
+            assert modelconf.get("allowed_gpus", None) == [], f"If cpuslots are set, allowed_gpus must be empty. Check {modelname} in config.yml"
+        elif modelconf.get("allowed_gpus", None) == []:
+            # set the default cpu slots
+            modelconf["cpu_slots"] = config["devices"]["default_cpu_slots"][:]
+
     return config
 
 config = load_config()

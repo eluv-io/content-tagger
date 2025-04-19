@@ -28,7 +28,7 @@ from src.fabric.agg import format_video_tags, format_asset_tags
 from src.fabric.video import download_stream, StreamNotFoundError
 from src.fabric.assets import fetch_assets, AssetsNotFoundException
 
-from src.manager import ResourceManager, NoGPUAvailable
+from src.manager import ResourceManager, NoResourceAvailable
 
 # RunConfig gives model level tagging params
 @dataclass
@@ -43,6 +43,7 @@ class Job:
     status: Literal["Starting", 
                     "Fetching content",
                     "Waiting to be assigned GPU", 
+                    "Waiting for CPU resource", 
                     "Completed", 
                     "Failed", 
                     "Stopped"]
@@ -55,6 +56,7 @@ class Job:
     time_started: float
     failed: List[str]
     allowed_gpus: List[str]
+    allowed_cpus: List[str]
     time_ended: Optional[float]=None
     # tag_job_id is the job id returned by the manager, will be None until the tagging starts (status is "Running")
     tag_job_id: Optional[str]=None
@@ -167,8 +169,9 @@ def get_flask_app():
             for feature, run_config in args.features.items():
                 # get the subset of GPUs that the model can run on, default to all of them
                 allowed_gpus = config["services"][feature].get("allowed_gpus", list(range(manager.num_devices)))
+                allowed_cpus = config["services"][feature].get("cpu_slots", [])
                 logger.debug(f"Starting {feature} on {qhit}: {run_config.stream}")
-                job = Job(qhit=qhit, run_config=run_config, feature=feature, media_files=[], failed=[], replace=args.replace, status="Starting", stop_event=threading.Event(), time_started=time.time(), allowed_gpus=allowed_gpus)
+                job = Job(qhit=qhit, run_config=run_config, feature=feature, media_files=[], failed=[], replace=args.replace, status="Starting", stop_event=threading.Event(), time_started=time.time(), allowed_gpus=allowed_gpus, allowed_cpus=allowed_cpus)
                 active_jobs[qhit][(run_config.stream, feature)] = job
                 threading.Thread(target=_video_tag, args=(job, _get_authorization(request), args.start_time, args.end_time)).start()
         return Response(response=json.dumps({'message': f'Tagging started on {qhit}'}), status=200, mimetype='application/json')
@@ -211,6 +214,7 @@ def get_flask_app():
         else:
             with lock:
                 job.media_files = media_files
+                job.status = "Waiting for CPU resource"
             cpu_queue.put(job)
 
     def _filter_tagged_files(media_files: List[str], client: ElvClient, qhit: str, stream: str, feature: str) -> List[str]:
@@ -304,7 +308,8 @@ def get_flask_app():
             for feature, run_config in args.features.items():
                 # get the subset of GPUs that the model can run on, default to all of them
                 allowed_gpus = config["services"][feature].get("allowed_gpus", list(range(manager.num_devices)))
-                job = Job(qhit=qhit, feature=feature, run_config=run_config, media_files=[], failed=[], replace=args.replace, allowed_gpus=allowed_gpus, status="Starting", stop_event=threading.Event(), time_started=time.time())
+                allowed_cpus = config["services"][feature].get("cpu_slots", [])
+                job = Job(qhit=qhit, feature=feature, run_config=run_config, media_files=[], failed=[], replace=args.replace, allowed_gpus=allowed_gpus, allowed_cpus=allowed_cpus, status="Starting", stop_event=threading.Event(), time_started=time.time())
                 active_jobs[qhit][('image', feature)] = job
                 threading.Thread(target=_image_tag, args=(job, _get_authorization(request), args.assets)).start()
         return Response(response=json.dumps({'message': f'Image asset tagging started on {qhit}'}), status=200, mimetype='application/json')
@@ -353,7 +358,7 @@ def get_flask_app():
             return [], []
         return media_files, failed
 
-    def _job_starter(wait_for_gpu: bool, tag_queue: Queue) -> None:
+    def _job_starter(job_type: Literal["cpu"] | Literal["gpu"], tag_queue: Queue) -> None:
         """
         Args:
             wait_for_gpu (bool): if True, then the job starter will wait for a GPU to be available before starting the job
@@ -364,12 +369,20 @@ def get_flask_app():
             job = tag_queue.get()
             if _check_exit(job):
                 continue
-            
-            gpu_to_use = None
-            cpu_slot_to_use = None
+
+            def wait_for_resource():
+                # wait for a GPU to be available
+                if job_type == "gpu":
+                    logger.debug('Waiting for GPU')
+                    return manager.await_gpu(timeout=config["devices"]["wait_for_gpu_sleep"])
+                elif job_type == "cpu":
+                    logger.debug('Waiting for CPU')
+                    return manager.await_cpu(timeout=config["devices"]["wait_for_gpu_sleep"])
+                else:
+                    raise ValueError(f"Unknown job type: {job_type}")
 
             stopped = False
-            while not manager.await_gpu(timeout=config["devices"]["wait_for_gpu_sleep"]):
+            while not wait_for_resource():
                 # check if the job has been stopped, if not then we go back to waiting for a GPU
                 if _check_exit(job):
                     stopped = True
@@ -377,25 +390,18 @@ def get_flask_app():
             if stopped:
                 continue
 
-            if wait_for_gpu:
-                gpu_to_use = manager.find_available_gpu(job.allowed_gpus)
-            else:
-                ## this is a cpu-only job, so make sure we have a cpu slot
-                cpu_slot_to_use = manager.find_available_cpuslot(job.cpu_slots)
-        
-            if gpu_to_use is None and cpu_slot_to_use is None:
-                # if no CPU slot or GPU is available, then we put the job back on the queue
-                now = time.time()
-                if (now - job.reput_time) < config["devices"]["wait_for_gpu_sleep"]:
-                    # if the job was put back on the queue too recently, then we wait for a bit before putting it back
-                    time.sleep(config["devices"]["wait_for_gpu_sleep"] - (now - job.reput_time))
+            logger.debug('Acquired CPU')
 
-                job.reput_time = now
-                tag_queue.put(job)
-                continue
+            #if job_type == "gpu":
+            #    gpu_to_use = manager.find_available_gpu(job.allowed_gpus)
+            #else:
+            #    ## this is a cpu-only job, so make sure we have a cpu slot
+            #    cpu_slot_to_use = manager.find_available_cpuslot(job.allowed_cpus)
+#
+            #if gpu_to_use is None and cpu_slot_to_use is None:
 
             try:
-                job_id = manager.run(job.feature, job.run_config.model, job.media_files, gpu_to_use, cpu_slot_to_use)
+                job_id = manager.run(job.feature, job.run_config.model, job.media_files, job.allowed_gpus, job.allowed_cpus)
                 with lock:
                     if _is_job_stopped(job):
                         # if the job has been stopped while the container was starting
@@ -404,15 +410,22 @@ def get_flask_app():
                     job.tag_job_id = job_id
                     job.status = "Tagging content"
                 logger.success(f"Started running {job.feature} on {job.qhit}")
-            except NoGPUAvailable:
+            except NoResourceAvailable:
                 # This error can happen if the model can only run on a subset of GPUs. 
-                job.error = "Tried to assign GPU but no suitable one was found. The job was placed back on the queue."
+                job.error = "Tried to assign GPU or CPU slot, but no suitable one was found. The job was placed back on the queue."
+                # if no CPU slot or GPU is available, then we put the job back on the queue
+                now = time.time()
+                if (now - job.reput_time) < config["devices"]["wait_for_gpu_sleep"]:
+                    # if the job was put back on the queue too recently, then we wait for a bit before putting it back
+                    time.sleep(config["devices"]["wait_for_gpu_sleep"] - (now - job.reput_time))
+                job.reput_time = now
                 tag_queue.put(job)
+                continue
             except Exception as e:
                 # handle the unexpected
                 with lock:
                     _set_stop_status(job, "Failed", str(e))
-                    
+
     def _job_watcher() -> None:
         while True:
             for qhit in active_jobs:
@@ -443,7 +456,7 @@ def get_flask_app():
                         inactive_jobs[qhit][(stream, feature)] = job
                         del active_jobs[qhit][(stream, feature)]
             time.sleep(config["watcher"]["sleep"])
-            
+
     def _check_exit(job: Job) -> bool:
         """
         Returns True if the job has received a stop signal, False otherwise. 
@@ -618,9 +631,9 @@ def get_flask_app():
 
         return Response(response=json.dumps({'message': 'Succesfully uploaded tag files. Please finalize the write token.', 'write token': qwt}), status=200, mimetype='application/json')
 
-    # JobStatus represents the status of a job returned by the /status endpoint
     @dataclass
     class JobStatus():
+        # JobStatus represents the status of a job returned by the /status endpoint
         status: Literal["Starting", 
                         "Fetching content",
                         "Waiting to be assigned GPU", 
@@ -771,27 +784,27 @@ def get_flask_app():
         logger.info("All jobs stopped")
         # Uses os._exit to avoid calling atexit functions
         os._exit(0)
-        
+
     # not thread safe, call with lock
     def _is_job_stopped(job: Job) -> bool:
         return job.status == "Stopped" or job.status == "Failed"
-    
+
     def _startup():
         threading.Thread(target=_job_watcher, daemon=True).start()
-        threading.Thread(target=_job_starter, args=(True, gpu_queue), daemon=True).start()
-        threading.Thread(target=_job_starter, args=(False, cpu_queue, ), daemon=True).start()
-    
+        threading.Thread(target=_job_starter, args=("gpu", gpu_queue), daemon=True).start()
+        threading.Thread(target=_job_starter, args=("cpu", cpu_queue), daemon=True).start()
+
     # handle shutdown signals
     signal.signal(signal.SIGINT, lambda sig, frame: _shutdown())
     signal.signal(signal.SIGTERM, lambda sig, frame: _shutdown())
 
     # in case of a different cause for shutdown other than a termination signal
     atexit.register(_shutdown)
-            
+
     _startup()
     CORS(app)
     return app
-    
+
 def main():
     app = get_flask_app()
     app.run(port=args.port, host=args.host)
