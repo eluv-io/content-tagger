@@ -2,10 +2,17 @@ import yaml
 import os
 from typing import Any
 
-def load_config() -> Any:   
+def load_config() -> Any:
     root_path = os.path.dirname(os.path.abspath(__file__))
-    with open('config.yml', 'r') as f:
+
+    if os.path.exists('config-local.yml'):
+        path = 'config-local.yml'
+    else:
+        path = 'config.yml'
+
+    with open(path, 'r') as f:
         config = yaml.safe_load(f)
+
     # If the path is not absolute, we assume it is relative to the root directory
     for p in config["storage"].keys():
         if not config["storage"][p].startswith('/'):
