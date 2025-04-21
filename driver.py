@@ -206,7 +206,7 @@ def main():
             user_split = re.split(r" +", user_line)
             user_input = user_split[0]
             
-            if user_input in [ "status", "s", ""]:
+            if user_input in [ "status", "s"]:
                 statuses = {}
                 for qhit in contents:
                     status = get_status(qhit, auth)
