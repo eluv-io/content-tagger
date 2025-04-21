@@ -128,7 +128,7 @@ finalized = {}
 def finalize_all(contents: list, config: str, do_commit: bool, force = False):
     for qhit in contents:
         if qhit in finalized:
-            print(f"{qhit} already finalized")
+            print(f"{qhit} already finalized, clearfinalize to clear list")
             continue
 
         print(f"Finalizing {qhit} force = {force}")
@@ -140,6 +140,8 @@ def finalize_all(contents: list, config: str, do_commit: bool, force = False):
             print(f"{e} while finalizing {qhit}")
         
 def main():
+    global finalized
+    
     if args.tag_config != "":
             tag_config = args.tag_config
     else:
@@ -174,8 +176,11 @@ def main():
     print("Command (t)ag, (s)tatus, (qs)quickstatus, (f)inalize, (agg)regate? ")
     while True:
         try:
-            user_input = input("> ")  # Wait for user input
+            user_line = input("> ")  # Wait for user input
 
+            user_split = re.split(r" +", user_line)
+            user_input = user_split[0]
+            
             if user_input in [ "status", "s", ""]:
                 statuses = {}
                 for qhit in contents:
@@ -185,6 +190,19 @@ def main():
                 os.makedirs("rundriver", exist_ok=True)
                 with open("rundriver/status.json", "w") as statfile:
                     statfile.write(json.dumps(statuses, indent = 2))
+            elif user_input in [ "cf", "clearfinalize"]:
+                iqsub = None
+                if len(user_split) > 1:
+                    iqsub = user_split[1]
+
+                newfinalized = {}
+                if iqsub:
+                    for iq, state in finalized.items():
+                        if re.match(iqsub, iq):
+                            state = False
+                        newfinalized[iq] = state
+                        
+                finalized = newfinalized
             elif user_input in [ "tag" , "t"]:
                 tag(contents, auth, args.assets, tag_config, start_time = start_time, end_time = end_time)
             elif user_input.startswith("+") or user_input.startswith("-"):
