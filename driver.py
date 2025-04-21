@@ -204,7 +204,17 @@ def main():
                         
                 finalized = newfinalized
             elif user_input in [ "tag" , "t"]:
-                tag(contents, auth, args.assets, tag_config, start_time = start_time, end_time = end_time)
+                this_tag_config = tag_config
+                iqsub = None
+                if len(user_split) > 1:
+                    iqsub = user_split[1]
+                if len(user_split) > 2:
+                    track = user_split[2]
+                    this_tag_config = deepcopy(tag_config)
+                    this_tag_config['features'] = { track: tag_config['features'][track] }
+                contentsub = [ x for x in contents if iqsub == None or re.match(iqsub, x) ]    
+                tag(contentsub, auth, args.assets, this_tag_config,
+                    start_time = start_time, end_time = end_time)
             elif user_input.startswith("+") or user_input.startswith("-"):
 
                 val = user_input[1:]
@@ -230,9 +240,15 @@ def main():
                 for qhit in contents:
                     quick_status(auth, qhit)
             elif user_input in [ "finalize", "f" ]:
-                finalize_all(contents, args.config, args.commit, force = False)
+                contensub = contents
+                if len(user_split) > 1:
+                    contentsub = user_split[1:]
+                finalize_all(contentsub, args.config, args.commit, force = False)
             elif user_input in [ "forcefinalize" ]:
-                finalize_all(contents, args.config, args.commit, force = True)
+                contensub = contents
+                if len(user_split) > 1:
+                    contentsub = user_split[1:]
+                finalize_all(contentsub, args.config, args.commit, force = True)
             elif user_input in [ "agg", "aggregate"]:
                 for qhit in contents:
                     aggregate(qhit, args.config, args.commit)
