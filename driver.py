@@ -273,7 +273,7 @@ def main():
                 print(f'[{start_time}-{end_time}] [{hmss} - {hms}]')                
             elif user_input == "qs":
                 for qhit in contents:
-                    quick_status(auth, qhit)
+                    quick_status(auth, qhit, " ".join(user_split[1:]))
             elif user_input in [ "finalize", "f" ]:
                 contensub = contents
                 if len(user_split) > 1:
@@ -304,14 +304,21 @@ def main():
     print("Exiting")
     exit(0)
 
-def quick_status(auth, qhit):
+def quick_status(auth, qhit, filter = None):
+    if filter == "": 
+        filter = None
     status = get_status(qhit, auth)
     if status.get("error", None):
-        print("[%9s] %-32s / %s: %s" % ("", qhit, "err", status['error']) )
+        line = "[%9s] %-32s / %s: %s" % ("", qhit, "err", status['error']) 
+        if filter is None or re.search(filter, line):
+            print(line)
         return
     for imgorvid, models in status.items():
         for model, stat in models.items():
-            print("[%9s] %-32s / %s: %s" % (stat.get("tagging_progress", ""), qhit, f"({imgorvid}) {model}", stat.get("status", "??") ) )
+            line =  "[%9s] %-32s / %s: %s" % (stat.get("tagging_progress", ""), qhit, f"({imgorvid}) {model}", stat.get("status", "??") ) 
+            if filter is None or re.search(filter, line):
+                print(line)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Basic tag driver")
