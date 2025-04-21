@@ -5,6 +5,8 @@ import requests
 import subprocess
 import json
 import os
+import re
+import time
 import traceback
 from copy import deepcopy
 
@@ -68,6 +70,8 @@ def tag(contents: list, auth: str, assets: bool, params: dict, start_time: float
                     
         res = requests.post(url, params={"authorization": auth}, json=params)
         print(response_force_dict(res))
+
+        time.sleep(float(os.environ.get("TAGGERV2_START_SLEEP", 0)))
 
 def is_running(qhit: str, auth: str):
     res = requests.get(f"{server}/{qhit}/status", params={"authorization": auth})
