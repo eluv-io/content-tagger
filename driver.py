@@ -138,7 +138,29 @@ def finalize_all(contents: list, config: str, do_commit: bool, force = False):
             
         except Exception as e:
             print(f"{e} while finalizing {qhit}")
-        
+
+def stop(qhit: str, auth: str, features: list[str]):
+    """
+    Stops the tagging process for a specific track of a given content (iq).
+
+    Args:
+        iq (str): The content identifier.
+        auth (str): Authorization token.
+        features (list): The tracks to stop tagging for.
+    """
+
+    params = {"authorization": auth}
+    for feature in features:
+        url = f"{server}/{qhit}/stop/{feature}"
+        try:
+            res = requests.post(url, params=params)
+            if res.status_code == 200:
+                print(f"Successfully stopped tagging for {qhit} on track {feature}.")
+            else:
+                print(f"Failed to stop tagging for {qhit} on track {feature}: {res.status_code} {res.text}")
+        except Exception as e:
+            print(f"Error while stopping tagging for {qhit} on track {feature}: {e}")
+            
 def main():
     global finalized
     
@@ -164,7 +186,10 @@ def main():
         contents = [args.iq]
 
     print("getting model list:")
-    print(requests.get(f"{server}/list").json())
+    modresp =requests.get(f"{server}/list")
+    modresp.raise_for_status()
+    models = modresp.json()
+    print(models)
 
     print("getting auth...")
     auth = get_auth(args.config, contents[0])
@@ -203,6 +228,16 @@ def main():
                         newfinalized[iq] = state
                         
                 finalized = newfinalized
+            elif user_input in [ "stop" ]:
+                if len(user_split) < 2:
+                    print("must specify iq and optionally tag track")
+                    continue
+                iq = user_split[1]
+                if len(user_split) > 2:
+                    tracks = [user_split[2]]
+                else:
+                    tracks = models
+                stop(iq, auth, tracks)
             elif user_input in [ "tag" , "t"]:
                 this_tag_config = tag_config
                 iqsub = None
