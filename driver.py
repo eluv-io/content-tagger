@@ -209,6 +209,8 @@ def main():
             if user_input in [ "status", "s"]:
                 statuses = {}
                 for qhit in contents:
+                    if len(user_input) > 1:
+                        if not re.match(user_input[1], qhit): continue                        
                     status = get_status(qhit, auth)
                     statuses[qhit] = status
                     print(qhit, json.dumps(status, indent=2))
