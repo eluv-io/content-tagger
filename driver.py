@@ -275,12 +275,12 @@ def main():
                 for qhit in contents:
                     quick_status(auth, qhit, " ".join(user_split[1:]))
             elif user_input in [ "finalize", "f" ]:
-                contensub = contents
+                contentsub = contents
                 if len(user_split) > 1:
                     contentsub = user_split[1:]
                 finalize_all(contentsub, args.config, args.commit, force = False)
             elif user_input in [ "forcefinalize" ]:
-                contensub = contents
+                contentsub = contents
                 if len(user_split) > 1:
                     contentsub = user_split[1:]
                 finalize_all(contentsub, args.config, args.commit, force = True)
