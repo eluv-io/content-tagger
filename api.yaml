@@ -6,12 +6,12 @@ info:
   description: |
     This service is used for generating ml-tags on content objects and publishing them. Depending on the model, it can generate tags for video/audio streams as well as static image assets. 
 servers:
-  - url: https://ai.contentfabric.io/tagger
+  - url: https://ai.contentfabric.io/tagger (placeholder)
 paths:
   /{qid}/tag:
     post:
       summary: |
-        Starts a tagging job for the given content object based on a given time-range and set of models to run. The job will run asynchronously, and the status can be checked with /status
+        Starts a tagging job for the given content object mezzanine based on a given time-range and set of models to run. The job will run asynchronously, and the status can be checked with /status
       parameters:
         - in: path
           name: qid
@@ -34,33 +34,38 @@ paths:
               properties:
                 start_time:
                   type: integer
-                  description: Start time in seconds to tag
+                  description: Start time of tag job (in seconds)
                   default: 0
                 end_time:
                   type: integer
-                  description: End time in milliseconds to tag. If not specified, it will use the full duration. 
+                  description: End time of tag job. If not specified, it will tag the full duration. (in seconds)
+                  default: null
                   example: 10
                 features:
                   type: object
-                  properties:
-                    feature_name:
-                      type: object
-                      properties:
-                        stream:
-                          type: string
-                          description: Stream name to Tag. If not provided, will tag the default stream ("video" for video-level models or "audio" for audio-level models)
-                          example: "audio"
-                        model:
-                          type: object
-                          description: Model configuration information to override any defaults. Consult the individual model documentation for the required fields. Leave empty to use the default configuration.
-                          example: {"fps": 2, "threshold": 0.5}
-                      required: 
-                        - model_config
+                  description: Map of feature name (e.g., "celeb") to tagging config
+                  additionalProperties:
+                    type: object
+                    properties:
+                      stream:
+                        type: string
+                        description: Stream name to tag. Defaults to "video" or "audio" depending on model type.
+                        example: "audio"
+                      model:
+                        type: object
+                        description: Model configuration to override defaults. This has no fixed schema and may vary per model. 
+                        example: {"fps": 2, "threshold": 0.5}
+                    required:
+                      - model
                   example:
-                    {"celeb":{"allow_single_frame":false, "fps": 2}}
+                    celeb:
+                      stream: "video"
+                      model:
+                        fps: 2
+                        allow_single_frame: false
                 replace:
                   type: boolean
-                  description: If this is set to true, we will regenerate previously uploaded tag files. Note this will not affect the content until finalization.
+                  description: If this is set to true, the tagger will recreate tags even if they already exist in the content fabric. If false, then the tagger will only tag the difference. Note, the tagger will not finalize the write token.
               required:
                 - features
       responses:
@@ -77,7 +82,7 @@ paths:
   /{qid}/image_tag:
     post:
       summary: |
-        Starts an image tagging job for the given content object based on the provided file paths and set of models to run. The status can be checked with /status
+        Starts an image tagging job for the given content object. This generates tags for image asset files and stores them as raw metadata in the object under /meta/assets. The status can be checked with /status
       parameters:
         - in: path
           name: qid
@@ -103,25 +108,23 @@ paths:
                   items: 
                     type: string
                   example: ["/assets/abc.jpg", "/assets/bar.jpg"]
-                  description: Set of file paths which point to image files to tag. If this is not set, then we will tag all images under /meta/assets 
+                  description: Set of file paths which point to image files to tag. If this is not set, then we will tag all images under /meta/assets.
                 features:
                   type: object
-                  properties:
-                    feature_name:
-                      type: object
-                      properties:
-                        stream:
-                          type: string
-                          description: Stream name to Tag. If not provided, will tag the default stream ("video" for video-level models or "audio" for audio-level models)
-                          example: "audio"
-                        model:
-                          type: object
-                          description: Model configuration information to override any defaults. Consult the individual model documentation for the required fields. Leave empty to use the default configuration.
-                          example: {"fps": 2, "threshold": 0.5}
-                      required: 
-                        - model_config
+                  description: Map of feature name (e.g., "celeb") to tagging config
+                  additionalProperties:
+                    type: object
+                    properties:
+                      model:
+                        type: object
+                        description: Model configuration to override defaults. This has no fixed schema and may vary per model. 
+                        example: {"fps": 2, "threshold": 0.5}
+                    required:
+                      - model
                   example:
-                    {"celeb":{"allow_single_frame":false, "fps": 2}}
+                    celeb:
+                      model:
+                        ground_truth: "sports"
                 replace:
                   type: boolean
                   description: If this is set to true, we will regenerate previously uploaded tag files. Note this will not affect the content until finalization.
@@ -141,7 +144,7 @@ paths:
   /{qid}/status:
     get:
       summary: |
-        Get the status of all the tagging jobs for the given content object. 
+        Get the status of all tagging jobs for the given content object. 
       parameters:
         - in: path
           name: qid
@@ -179,10 +182,10 @@ paths:
                     type: string
                     description: Error message if the job has failed
                     example: null
-  /{qid}/stop/{feature}:
-    delete:
+  /{qid}/stop/{model}:
+    post:
       summary: |
-        Stops the tagging job for the given content object based on the given feature.
+        Stops a tagging job.
       parameters:
         - in: path
           name: qid
@@ -191,7 +194,7 @@ paths:
             type: string
           description: Content object id that is beging tagged
         - in: path
-          name: feature
+          name: model
           required: true
           schema:
             type: string
