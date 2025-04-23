@@ -276,6 +276,9 @@ def main():
             elif user_input == "qs":
                 for qhit in contents:
                     quick_status(auth, qhit, " ".join(user_split[1:]))
+            elif user_input in [ 'reverse' ]:
+                contents.reverse()
+                print("First element:", contents[0])
             elif user_input in [ "finalize", "f" ]:
                 contentsub = contents
                 if len(user_split) > 1:
