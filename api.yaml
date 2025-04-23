@@ -4,14 +4,14 @@ info:
   title: Content Tagger API
   version: 1.0.0
   description: |
-    This service is used for generating ml-tags on content objects and publishing them. Depending on the model, it can generate tags for video/audio streams as well as static image assets. 
+    This service is used for generating and publishing ML tags for content objects in the Content Fabric.
 servers:
   - url: https://ai.contentfabric.io/tagger (placeholder)
 paths:
   /{qid}/tag:
     post:
       summary: |
-        Starts a tagging job for the given content object mezzanine based on a given time-range and set of models to run. The job will run asynchronously, and the status can be checked with /status
+        Starts a tagging job for the given content object mezzanine based on a given time-range and set of models to run. The job will run asynchronously, and the status can be checked with GET /status
       parameters:
         - in: path
           name: qid
@@ -24,7 +24,7 @@ paths:
           required: false
           schema:
             type: string
-          description: Fabric authorization token. This can also be passed in the header.
+          description: Fabric authorization token. It should be valid against the content object.
       requestBody:
         required: true
         content:
@@ -43,17 +43,17 @@ paths:
                   example: 10
                 features:
                   type: object
-                  description: Map of feature name (e.g., "celeb") to tagging config
+                  description: Map of model name (e.g., "celeb") to tagging config. Check /list for available models.
                   additionalProperties:
                     type: object
                     properties:
                       stream:
                         type: string
-                        description: Stream name to tag. Defaults to "video" or "audio" depending on model type.
+                        description: Stream name to tag for the given model. Typically this is "video" for video models and "audio" for audio models. Oftentimes the audio streams have different names so check the mezzanine metadata for the correct stream name.
                         example: "audio"
                       model:
                         type: object
-                        description: Model configuration to override defaults. This has no fixed schema and may vary per model. 
+                        description: Model configuration to override defaults. This has no fixed schema and may vary per model. Leave blank to use the default model configuration.
                         example: {"fps": 2, "threshold": 0.5}
                     required:
                       - model
@@ -65,7 +65,7 @@ paths:
                         allow_single_frame: false
                 replace:
                   type: boolean
-                  description: If this is set to true, the tagger will recreate tags even if they already exist in the content fabric. If false, then the tagger will only tag the difference. Note, the tagger will not finalize the write token.
+                  description: If this is set to true, the tagger will retag all parts even if they already exist in the content fabric. If false, then the tagger will only tag parts which do not already have published tags. Note, the tagger will not finalize the write token.
               required:
                 - features
       responses:
@@ -82,7 +82,7 @@ paths:
   /{qid}/image_tag:
     post:
       summary: |
-        Starts an image tagging job for the given content object. This generates tags for image asset files and stores them as raw metadata in the object under /meta/assets. The status can be checked with /status
+        Starts an image tagging job for the given content object. This generates tags for image asset files and stores them as raw metadata in the object under /meta/assets. Most of the documentation here is the same as the /tag endpoint.
       parameters:
         - in: path
           name: qid
@@ -95,7 +95,7 @@ paths:
           required: false
           schema:
             type: string
-          description: Fabric authorization token. This can also be passed in the header.
+          description: Fabric authorization token
       requestBody:
         required: true
         content:
@@ -144,7 +144,7 @@ paths:
   /{qid}/status:
     get:
       summary: |
-        Get the status of all tagging jobs for the given content object. 
+        Get the status of all tagging jobs for the given content object.
       parameters:
         - in: path
           name: qid
@@ -157,7 +157,7 @@ paths:
           required: false
           schema:
             type: string
-          description: Fabric authorization token. This can also be passed in the header.
+          description: Fabric authorization token
       responses:
         '200':
           description: Summary of the given tags
@@ -176,7 +176,7 @@ paths:
                     example: 30.30
                   tag_job_id:
                     type: string
-                    description: The tag job id, once tagging has begun. Not useful for the user. 
+                    description: The tag job id, once tagging has begun. Not currently useful for the user. 
                     example: null
                   error:
                     type: string
@@ -198,13 +198,13 @@ paths:
           required: true
           schema:
             type: string
-          description: Feature to stop tagging
+          description: Model to stop tagging
         - in: query
           name: authorization
           required: false
           schema:
             type: string
-          description: Fabric authorization token. This can also be passed in the header.
+          description: Fabric authorization token
       responses:
         '200':
           description: Summary of the given tags
@@ -226,7 +226,7 @@ paths:
           required: false
           schema:
             type: string
-          description: Fabric authorization token. This can also be passed in the header.
+          description: Fabric authorization token
       responses:
         '200':
           description: Summary of the given tags
