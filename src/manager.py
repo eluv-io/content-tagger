@@ -80,12 +80,9 @@ class ResourceManager:
                 # GPU models should not have cpu slots
                 continue
             allowed_slots = model_conf.get("cpu_slots", [f"slot4{modelname}"])
-            print(f"Allowed slots for {modelname}: {allowed_slots}")
             for slotname in allowed_slots:
                 self.cpuslots[slotname] = False
-
-        logger.debug(f"Cpu slots: {json.dumps(self.cpuslots, indent=2)}")
-
+                
     def run(self, feature: str, run_config: dict, files: List[str], allowed_gpus: List[int], allowed_cpus: List[str]) -> str:
         # Args:
         #     feature (str): The feature to tag the files with.
@@ -209,7 +206,6 @@ class ResourceManager:
 
             break
     
-        print(f"Cpu slots: {json.dumps(self.cpuslots, indent=2)}")
         return cpu_slot_to_use
 
     # Not thread safe, must be called with lock
@@ -236,15 +232,16 @@ class ResourceManager:
                 
         if all(self.device_status[i] for i in range(self.num_devices)):
             self.gpu_available.clear()
-            
+
     def _is_container_active(self, status: str) -> bool:
         return status == "running" or status == "created"
-    
+
     # main function for watching and finalizing the job which is running in a container
     def _watch_job(self, jobid: str) -> None:
         # because we aren't deleting keys, we don't need to lock
         job = self.jobs[jobid]
         logger.info(f"Watching job {jobid}")
+
         with open(job.logs_out, "w") as fout:
             try:
                 ts = 0
@@ -257,7 +254,15 @@ class ResourceManager:
                     ts = int(time.time())
                     for log in logs:
                         fout.write(log.decode("utf-8"))
-                    
+
+                    tags = os.listdir(job.save_path)
+
+                    if len(tags) > 0:
+                        # remove the tag with the most recent write time
+                        latest_idx = max(range(len(tags)), key=lambda i: os.path.getmtime(os.path.join(job.save_path, tags[i])))
+                        tags.pop(latest_idx)
+                        job.tags = [os.path.join(job.save_path, tag) for tag in tags]
+
                     time.sleep(1)
             except Exception as e:
                 logger.error(f"Error while watching job {jobid}: {e}")
@@ -274,7 +279,7 @@ class ResourceManager:
             with self.lock:
                 self._cleanup_job(jobid, "Stopped")
             return
-        
+
         exit_code = job.container.attrs["State"]["ExitCode"]
         if exit_code != 0:
             logger.error(f"Job {jobid} failed to complete")

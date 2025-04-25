@@ -373,10 +373,8 @@ def get_flask_app():
             def wait_for_resource():
                 # wait for a GPU to be available
                 if job_type == "gpu":
-                    logger.debug('Waiting for GPU')
                     return manager.await_gpu(timeout=config["devices"]["wait_for_gpu_sleep"])
                 elif job_type == "cpu":
-                    logger.debug('Waiting for CPU')
                     return manager.await_cpu(timeout=config["devices"]["wait_for_gpu_sleep"])
                 else:
                     raise ValueError(f"Unknown job type: {job_type}")
@@ -391,14 +389,6 @@ def get_flask_app():
                 continue
 
             logger.debug('Acquired CPU')
-
-            #if job_type == "gpu":
-            #    gpu_to_use = manager.find_available_gpu(job.allowed_gpus)
-            #else:
-            #    ## this is a cpu-only job, so make sure we have a cpu slot
-            #    cpu_slot_to_use = manager.find_available_cpuslot(job.allowed_cpus)
-#
-            #if gpu_to_use is None and cpu_slot_to_use is None:
 
             try:
                 job_id = manager.run(job.feature, job.run_config.model, job.media_files, job.allowed_gpus, job.allowed_cpus)
@@ -438,6 +428,10 @@ def get_flask_app():
                             _set_stop_status(job, "Stopped")
                         continue
                     status = manager.status(job.tag_job_id)
+                    with filesystem_lock:
+                        # move outputted tags to their correct place
+                        # lock in case of race condition with status or finalize calls
+                        _copy_new_files(job, status.tags)
                     if status.status == "Running":
                         continue
                     # otherwise the job has finished: either successfully or with an error
@@ -479,13 +473,24 @@ def get_flask_app():
     def _move_files(job: Job, tags: List[str]) -> None:
         if len(tags) == 0:
             return
-        tag_dir = os.path.dirname(tags[0])
         qhit, stream, feature = job.qhit, job.run_config.stream, job.feature
         tags_path = os.path.join(config["storage"]["tags"], qhit, stream, feature)
         os.makedirs(tags_path, exist_ok=True)
         for tag in tags:
             shutil.move(tag, os.path.join(tags_path, os.path.basename(tag)))
+        tag_dir = os.path.dirname(tags[0])
         shutil.rmtree(tag_dir, ignore_errors=True)
+
+    def _copy_new_files(job: Job, tags: List[str]) -> None:
+        if len(tags) == 0:
+            return
+        qhit, stream, feature = job.qhit, job.run_config.stream, job.feature
+        tags_path = os.path.join(config["storage"]["tags"], qhit, stream, feature)
+        os.makedirs(tags_path, exist_ok=True)
+        for tag in tags:
+            if os.path.exists(os.path.join(tags_path, os.path.basename(tag))):
+                continue
+            shutil.copyfile(tag, os.path.join(tags_path, os.path.basename(tag)))
     
     @dataclass
     class FinalizeArgs(Data):
@@ -560,15 +565,23 @@ def get_flask_app():
                     if stream == "image":
                         for source in tagged_media_files:
                             tagfile = source + "_imagetags.json"
+                            if not os.path.exists(tagfile):
+                                logger.warning(f"Expected tag file {tagfile} not found, skipping")
+                                continue
                             file_jobs.append(ElvClient.FileJob(local_path=tagfile,
                                                     out_path=f"image_tags/{feature}/{os.path.basename(tagfile)}",
                                                     mime_type="application/json"))
                     else:
                         for source in tagged_media_files:
                             tagfile = source + "_tags.json"
+                            if not os.path.exists(tagfile):
+                                # this should only happen if force=True and frametags get written before video tags
+                                logger.warning(f"Expected tag file {tagfile} not found, skipping.")
+                                continue
                             file_jobs.append(ElvClient.FileJob(local_path=tagfile,
                                                     out_path=f"video_tags/{stream}/{feature}/{os.path.basename(tagfile)}",
                                                     mime_type="application/json"))
+
                             if os.path.exists(source + "_frametags.json"):
                                 file_jobs.append(ElvClient.FileJob(local_path=source + "_frametags.json",
                                                     out_path=f"video_tags/{stream}/{feature}/{os.path.basename(source)}_frametags.json",
@@ -603,7 +616,7 @@ def get_flask_app():
             except ValueError as e:
                 return Response(response=json.dumps({'error': str(e), 'message': 'Please verify the provided write token has not already been used to finalize tags.'}), status=400, mimetype='application/json')
         # if no file jobs, then we just do the aggregation
-        
+
         tmpdir = tempfile.TemporaryDirectory(dir=config["storage"]["tmp"])
         with filesystem_lock:
             shutil.copytree(os.path.join(config["storage"]["tags"], qhit), tmpdir.name, dirs_exist_ok=True)
