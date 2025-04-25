@@ -179,7 +179,7 @@ def _download_missing(client: ElvClient, save_path: str, fabric_path: str, write
                 helper(value, "/".join([sub_path, key]) if sub_path != "" else key)
             else:
                 fpath = "/".join([sub_path, key]) if sub_path != "" else key
-                fsize = value["."]["size"]
+                fsize = value.get(".", {}).get("size", -1)
                 if not os.path.exists(os.path.join(save_path, fpath)):
                     to_download.append(fpath)
                     status[0] += 1
@@ -280,9 +280,15 @@ def merge_video_tag_files(tags: List[str], part_duration: float) -> List[VideoTa
     for tag in tags:
         part_idx = int(os.path.basename(tag).split("_")[0])
         part_start = part_idx * tag_duration
-        with open(tag, 'r') as f:
-            data = json.load(f)
-            data = [VideoTag(**tag) for tag in data]
+        try:
+            with open(tag, 'r') as f:
+                data = json.load(f)
+                data = [VideoTag(**tag) for tag in data]
+        except json.decoder.JSONDecodeError as jd:
+            logger.error(f"ERROR Decoding File {tag}: {jd}") 
+            ## with open(tag, 'r') as f: print(f.read())
+            raise jd
+        
         merged.extend([VideoTag(start_time=part_start + tag.start_time, end_time=part_start + tag.end_time, text=tag.text, confidence=tag.confidence) for tag in data])
     return merged
 
