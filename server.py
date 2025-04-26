@@ -18,7 +18,7 @@ import signal
 import atexit
 from marshmallow import ValidationError, fields, Schema
 import tempfile
-
+import setproctitle
 from common_ml.types import Data
 from common_ml.utils.metrics import timeit
 
@@ -810,6 +810,7 @@ def main():
     app.run(port=args.port, host=args.host)
 
 if __name__ == '__main__':
+    setproctitle.setproctitle("content-tagger")
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=8086)
     parser.add_argument('--host', type=str, default="127.0.0.1")
