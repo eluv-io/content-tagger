@@ -19,10 +19,11 @@ import atexit
 from marshmallow import ValidationError, fields, Schema
 import tempfile
 import setproctitle
+import sys
 from common_ml.types import Data
 from common_ml.utils.metrics import timeit
 
-from config import config
+from config import config, reload_config
 from src.fabric.utils import parse_qhit
 from src.fabric.agg import format_video_tags, format_asset_tags
 from src.fabric.video import download_stream, StreamNotFoundError
@@ -805,7 +806,19 @@ def get_flask_app():
     CORS(app)
     return app
 
+LOCAL_CONFIG = "tagger-config.yml"
 def main():
+    if args.directory:
+        os.chdir(args.directory)
+        logger.info(f"changed directory to {args.directory}")
+        
+        if not os.path.exists(LOCAL_CONFIG):
+            logger.error(f"You have specified directory {args.directory} but no {LOCAL_CONFIG} file was found there. This is probably an error.")
+            sys.exit(1)
+    if os.path.exists(LOCAL_CONFIG):
+        reload_config(LOCAL_CONFIG)
+
+    logger.info("Python interpreter version: " + sys.version)
     app = get_flask_app()
     app.run(port=args.port, host=args.host)
 
@@ -814,5 +827,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=8086)
     parser.add_argument('--host', type=str, default="127.0.0.1")
+    parser.add_argument('--directory', type=str)
     args = parser.parse_args()
     main()

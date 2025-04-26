@@ -2,18 +2,16 @@ import yaml
 import os
 from typing import Any
 
-def load_config() -> Any:
-    root_path = os.path.dirname(os.path.abspath(__file__))
+def load_config(path = None) -> Any:
+    root_path = os.getcwd()
 
-    if os.path.exists('config-local.yml'):
-        path = 'config-local.yml'
-    else:
-        path = 'config.yml'
+    if path is None:
+        path = os.path.dirname(os.path.abspath(__file__)) + '/config.yml'
 
     with open(path, 'r') as f:
         config = yaml.safe_load(f)
 
-    # If the path is not absolute, we assume it is relative to the root directory
+    # If the path is not absolute, we assume it is relative to the current directory
     for p in config["storage"].keys():
         if not config["storage"][p].startswith('/'):
             config["storage"][p] = os.path.join(root_path, config["storage"][p])
@@ -30,3 +28,11 @@ def load_config() -> Any:
     return config
 
 config = load_config()
+
+def reload_config(file: str):
+    newconfig = load_config(file)
+    for k in list(config.keys()):
+        del config[k]
+    for k, v in newconfig.items():
+        config[k] = v
+        
