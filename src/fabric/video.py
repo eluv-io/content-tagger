@@ -5,6 +5,8 @@ import os
 import threading
 import tempfile
 import shutil
+import asyncio
+
 from common_ml.video_processing import unfrag_video
 from config import config
 from loguru import logger
@@ -23,6 +25,7 @@ def download_stream(qhit: str, stream_name: str, output_path: str, client: ElvCl
 
     parts, part_duration, _, codec_type = fetch_stream_metadata(qhit, stream_name, client)
     return _download_parts(qhit, output_path, client, codec_type, parts, part_duration, start_time, end_time, replace, exit_event)
+    #return _download_parts_async(qhit, output_path, client, codec_type, parts, part_duration, start_time, end_time, replace, exit_event)
 
 def fetch_stream_metadata(qhit: str, stream_name: str, client: ElvClient) -> Tuple[List[tuple], float, float, str]:
     if _is_live(qhit, client):
@@ -156,6 +159,64 @@ def _fetch_livestream_metadata(qhit: str, stream_name: str, client: ElvClient) -
     stream = [part["hash"] for part in stream if part["finalization_time"] != 0 and part["size"] > 0]
 
     return stream, part_duration, fps, codec
+
+def _download_parts_async(qhit: str, output_path: str, client: ElvClient, codec_type: str,
+                          parts: List[str], part_duration: float,
+                          start_time: Optional[int] = None, end_time: Optional[int] = None,
+                          replace: bool = False, exit_event: Optional[threading.Event] = None) -> List[str]:
+
+    semaphore = asyncio.Semaphore(16)
+    res, failed = [], []  # shared
+    lock = asyncio.Lock()
+
+    async def runner():
+        tmp_path = tempfile.mkdtemp(dir=config["storage"]["tmp"])
+        os.makedirs(output_path, exist_ok=True)
+
+        async def handle_part(idx, part_hash):
+            pstart = idx * part_duration
+            pend = (idx + 1) * part_duration
+            idx_str = str(idx).zfill(4)
+
+            if not (start_time <= pstart < end_time) and not (start_time <= pend < end_time):
+                return
+            save_path = os.path.join(output_path, f"{idx_str}_{part_hash}.mp4")
+            if not replace and os.path.exists(save_path):
+                async with lock:
+                    res.append(save_path)
+                return
+
+            logger.info(f"Downloading part {part_hash} for {qhit}")
+            tmpfile = os.path.join(tmp_path, f"{idx_str}_{part_hash}")
+            try:
+                async with semaphore:
+                    await asyncio.to_thread(client.download_part, save_path=tmpfile, part_hash=part_hash, **parse_qhit(qhit))
+
+                if codec_type == "video":
+                    unfrag_video(tmpfile, save_path)
+                else:
+                    shutil.move(tmpfile, save_path)
+
+                async with lock:
+                    res.append(save_path)
+            except Exception as e:
+                if os.path.exists(save_path):
+                    os.remove(save_path)
+                async with lock:
+                    failed.append(part_hash)
+                logger.error(f"Failed to download part {part_hash} for {qhit}: {str(e)}")
+
+        tasks = []
+        for idx, part_hash in enumerate(parts):
+            if exit_event and exit_event.is_set():
+                break
+            tasks.append(handle_part(idx, part_hash))
+
+        await asyncio.gather(*tasks)
+        shutil.rmtree(tmp_path, ignore_errors=True)
+
+    asyncio.run(runner())
+    return res, failed
 
 def _download_parts(qhit: str, output_path: str, client: ElvClient, codec_type: str, parts: List[str], part_duration: float, start_time: Optional[int]=None, end_time: Optional[int]=None, replace: bool=False, exit_event: Optional[threading.Event]=None) -> List[str]:
     """Downloads the parts from the stream."""
