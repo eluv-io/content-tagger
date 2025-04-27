@@ -276,7 +276,7 @@ def test_server(port: int) -> List[Callable]:
                 print(res)
             time.sleep(3)
     
-    return [test_cpu_limit] #[test_tag, test_finalize, test_write_token_tag]
+    return [test_tag, test_finalize, test_write_token_tag]
 
 def main():
     filedir = os.path.dirname(os.path.abspath(__file__))

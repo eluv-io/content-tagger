@@ -20,6 +20,7 @@ from marshmallow import ValidationError, fields, Schema
 import tempfile
 import setproctitle
 import sys
+from waitress import serve
 from common_ml.types import Data
 from common_ml.utils.metrics import timeit
 
@@ -390,16 +391,6 @@ def get_flask_app():
                     break
             if stopped:
                 continue
-
-            logger.debug('Acquired CPU')
-
-            #if job_type == "gpu":
-            #    gpu_to_use = manager.find_available_gpu(job.allowed_gpus)
-            #else:
-            #    ## this is a cpu-only job, so make sure we have a cpu slot
-            #    cpu_slot_to_use = manager.find_available_cpuslot(job.allowed_cpus)
-#
-            #if gpu_to_use is None and cpu_slot_to_use is None:
 
             try:
                 job_id = manager.run(job.feature, job.run_config.model, job.media_files, job.allowed_gpus, job.allowed_cpus)
@@ -820,7 +811,8 @@ def main():
 
     logger.info("Python interpreter version: " + sys.version)
     app = get_flask_app()
-    app.run(port=args.port, host=args.host)
+
+    serve(app, host=args.host, port=args.port)
 
 if __name__ == '__main__':
     setproctitle.setproctitle("content-tagger")
