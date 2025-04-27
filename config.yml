@@ -73,7 +73,11 @@ services:
     type: "video"
     frame_level: true
     allowed_gpus: []
-    cpu_slots: []
+  test_slow:
+    image: "localhost/slow_model_test:latest"
+    type: "video"
+    frame_level: true
+    allowed_gpus: []
 devices: 
   # if true, then tagger will run on gpus even if they are used by a foreign process
   # TODO: implement this, it is currently disabled to make life easier
