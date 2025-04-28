@@ -15,8 +15,6 @@ def load_config(path = None) -> Any:
     for p in config["storage"].keys():
         if not config["storage"][p].startswith('/'):
             config["storage"][p] = os.path.join(root_path, config["storage"][p])
-        if not os.path.exists(config["storage"][p]):
-            os.makedirs(config["storage"][p])
 
     for modelname, modelconf in config["services"].items():
         if len(modelconf.get("cpu_slots", [])) > 0:

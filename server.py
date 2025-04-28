@@ -809,6 +809,10 @@ def main():
     if os.path.exists(LOCAL_CONFIG):
         reload_config(LOCAL_CONFIG)
 
+    for p in config["storage"].values():
+        logger.debug("create storage directory: " + p)
+        os.makedirs(p, exist_ok = True)
+        
     logger.info("Python interpreter version: " + sys.version)
     app = get_flask_app()
 
