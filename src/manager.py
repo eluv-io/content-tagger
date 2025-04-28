@@ -192,7 +192,7 @@ class ResourceManager:
 
         cpu_slot_to_use = None
 
-        # check for an available GPU and set device statuses according
+        # check for an available CPU slot and set device statuses accordingly
         for slot, status in self.cpuslots.items():
             if status:
                 # cpu slot already in use
