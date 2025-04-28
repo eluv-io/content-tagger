@@ -138,7 +138,7 @@ curl -X POST "http://localhost:8086/iq__3VtpCUVv4DRdjAiPgoDYuJZb4Abp/finalize?wr
 
 ```json
 {
-  "message": "Succesfully uploaded tag files. Please finalize the write token.",
+  "message": "Successfully uploaded tag files. Please finalize the write token.",
   "write token": "tqw__HSX6TnUJpn2hk7yQZj6ho2fYaJxF3DJsbrA9HT5ufvWvBJtMbShr89bXppWicWu7PT2RVP7w2dHfafJUrP8"
 }
 ```
