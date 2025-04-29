@@ -34,6 +34,9 @@ services:
   asr: 
     image: "localhost/asr:latest"
     type: "audio"
+  french_asr: 
+    image: "localhost/multilingual:latest"
+    type: "audio"
   caption:
     image: "localhost/caption:latest"
     type: "video"
@@ -88,3 +91,6 @@ watcher:
   sleep: 5
 agg:
   interval: 10
+  coalesce_features: 
+    - asr
+    - french_asr
