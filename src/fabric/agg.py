@@ -18,6 +18,8 @@ from common_ml.utils.metrics import timeit
 from src.fabric.video import fetch_stream_metadata
 from src.fabric.utils import parse_qhit
 
+from config import config
+
 def format_asset_tags(client: ElvClient, write_token: str, tags_path: str) -> None:
     qlib = client.content_object_library_id(write_token=write_token)
     image_tags_path = os.path.join(tags_path, 'image')
@@ -322,7 +324,8 @@ def aggregate_video_tags(tags: Dict[str, List[VideoTag]], intervals: List[Tuple[
 
     # TODO: not sure where else to define this custom logic
     for agg_tag in result:
-        agg_tag.coalesce("asr")
+        for feat in config["agg"]["coalesce_features"]:
+            agg_tag.coalesce(feat)
     
     return result
 
