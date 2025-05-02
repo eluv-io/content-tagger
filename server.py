@@ -65,7 +65,6 @@ class Job:
     error: Optional[str]=None
     ## wall clock time of the last time this job was "put back" on the queue
     reput_time: int = 0
-
     
 def get_flask_app():
     app = Flask(__name__)
@@ -104,7 +103,7 @@ def get_flask_app():
         uploaded_files = request.files.getlist('file')
         if len(uploaded_files) == 0:
             return Response(response=json.dumps({'error': 'No files in request'}), status=400, mimetype='application/json')
-        
+
         _, error_response = _get_client(request, qhit, config["fabric"]["config_url"])
         if error_response:
             return error_response
@@ -117,13 +116,14 @@ def get_flask_app():
                 return Response(response=json.dumps({'error': 'Invalid JSON file'}), status=400, mimetype='application/json')
             to_upload.append((file.filename, filedata))
 
-        os.makedirs(os.path.join(config["storage"]["tags"], qhit, 'external_tags'), exist_ok=True)
+        with filesystem_lock:
+            os.makedirs(os.path.join(config["storage"]["tags"], qhit, 'external_tags'), exist_ok=True)
 
-        for fname, fdata in to_upload:
-            if os.path.exists(os.path.join(config["storage"]["tags"], qhit, 'external_tags', fname)):
-                logger.warning(f"File {fname} already exists, overwriting")
-            with open(os.path.join(config["storage"]["tags"], qhit, 'external_tags', fname), 'w') as f:
-                json.dump(fdata, f)
+            for fname, fdata in to_upload:
+                if os.path.exists(os.path.join(config["storage"]["tags"], qhit, 'external_tags', fname)):
+                    logger.warning(f"File {fname} already exists, overwriting")
+                with open(os.path.join(config["storage"]["tags"], qhit, 'external_tags', fname), 'w') as f:
+                    json.dump(fdata, f)
 
         return Response(response=json.dumps({'message': 'Successfully uploaded tags'}), status=200, mimetype='application/json')
     
@@ -247,7 +247,7 @@ def get_flask_app():
             if filename not in tagged:
                 untagged.append(media_file)
         return untagged
-    
+
     def _source_from_tag_file(tagged_file: str) -> str:
         """
         Args:

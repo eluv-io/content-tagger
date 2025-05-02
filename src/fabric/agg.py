@@ -217,7 +217,9 @@ def _get_sentence_intervals(tags: List[VideoTag]) -> List[Tuple[int, int]]:
     quiet = True
     curr_int = [0]
     for i, tag in enumerate(tags):
-        assert tag.text is not None 
+        if not tag.text:
+            continue
+        assert tag.text is not None
         if quiet and tag.start_time > curr_int[0]:
             # commit the silent interval
             curr_int.append(tag.start_time)
