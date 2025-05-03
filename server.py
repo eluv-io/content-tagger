@@ -90,6 +90,9 @@ def get_flask_app():
     # maps (qhit, stream) -> lock
     download_lock = defaultdict(threading.Lock)
     
+    # make sure we don't finalize against the same write token at the same time
+    finalize_lock = defaultdict(threading.Lock)
+    
     shutdown_signal = threading.Event()
 
     
@@ -513,11 +516,15 @@ def get_flask_app():
 
     @app.route('/<qhit>/finalize', methods=['POST'])
     def finalize(qhit: str) -> Response:
-        return _finalize_internal(qhit, True)
+        write_token = request.args.get('write_token')
+        with finalize_lock[write_token]:
+            return _finalize_internal(qhit, True)
 
     @app.route('/<qhit>/aggregate', methods=['POST'])
     def aggregate(qhit: str) -> Response:
-        return _finalize_internal(qhit, False)
+        write_token = request.args.get('write_token')
+        with finalize_lock[write_token]:
+            return _finalize_internal(qhit, True)
     
     def _finalize_internal(qhit: str, upload_local_tags = True) -> Response:
         try:
