@@ -101,11 +101,36 @@ def get_flask_app():
         res = _list_services()    
         return Response(response=json.dumps(res), status=200, mimetype='application/json')
         
+    @dataclass
+    class UploadArgs(Data):
+        aggregate: bool=False
+        authorization: Optional[str]=None
+        write_token: str=""
+
+        # finalize args, set by default
+        leave_open: bool=True
+        force: bool=True
+        replace: bool=True
+        
+        @staticmethod
+        def from_dict(data: dict) -> 'UploadArgs':
+            class UploadArgsSchema(Schema):
+                aggregate = fields.Bool(required=False, missing=False)
+                write_token = fields.Str(required=False, missing="")
+                authorization = fields.Str(required=False, missing=None)
+                
+            return UploadArgs(**UploadArgsSchema().load(data))
+        
     @app.route('/<qhit>/upload_tags', methods=['POST'])
     def upload(qhit: str):
         uploaded_files = request.files.getlist('file')
         if len(uploaded_files) == 0:
             return Response(response=json.dumps({'error': 'No files in request'}), status=400, mimetype='application/json')
+        
+        try:
+            args = UploadArgs.from_dict(request.args)
+        except (KeyError, TypeError) as e:
+            return Response(response=json.dumps({'error': f"Invalid input: {str(e)}"}), status=400, mimetype='application/json')
 
         _, error_response = _get_client(request, qhit, config["fabric"]["config_url"])
         if error_response:
@@ -127,9 +152,15 @@ def get_flask_app():
                     logger.warning(f"File {fname} already exists, overwriting")
                 with open(os.path.join(config["storage"]["tags"], qhit, 'external_tags', fname), 'w') as f:
                     json.dump(fdata, f)
+                    
+        if not args.write_token:
+            args.write_token = qhit
+
+        if args.aggregate:
+            return _finalize_internal(qhit, args, True)
 
         return Response(response=json.dumps({'message': 'Successfully uploaded tags'}), status=200, mimetype='application/json')
-    
+
     # TagArgs represents the request body for the /tag endpoint
     @dataclass
     class TagArgs(Data):
@@ -516,21 +547,23 @@ def get_flask_app():
 
     @app.route('/<qhit>/finalize', methods=['POST'])
     def finalize(qhit: str) -> Response:
-        write_token = request.args.get('write_token')
-        with finalize_lock[write_token]:
-            return _finalize_internal(qhit, True)
-
-    @app.route('/<qhit>/aggregate', methods=['POST'])
-    def aggregate(qhit: str) -> Response:
-        write_token = request.args.get('write_token')
-        with finalize_lock[write_token]:
-            return _finalize_internal(qhit, True)
-    
-    def _finalize_internal(qhit: str, upload_local_tags = True) -> Response:
         try:
             args = FinalizeArgs.from_dict(request.args)
         except (TypeError, ValidationError) as e:
             return Response(response=json.dumps({'message': 'invalid request', 'error': str(e)}), status=400, mimetype='application/json')
+        with finalize_lock[args.write_token]:
+            return _finalize_internal(qhit, args, True)
+
+    @app.route('/<qhit>/aggregate', methods=['POST'])
+    def aggregate(qhit: str) -> Response:
+        try:
+            args = FinalizeArgs.from_dict(request.args)
+        except (TypeError, ValidationError) as e:
+            return Response(response=json.dumps({'message': 'invalid request', 'error': str(e)}), status=400, mimetype='application/json')
+        with finalize_lock[args.write_token]:
+            return _finalize_internal(qhit, args, False)
+    
+    def _finalize_internal(qhit: str, args: FinalizeArgs, upload_local_tags = True) -> Response:
         qwt = args.write_token
         client, error_response = _get_client(request, qwt, config["fabric"]["config_url"])
         if error_response:
@@ -598,7 +631,7 @@ def get_flask_app():
             if os.path.exists(external_tags_path):
                 local_source_tags = os.listdir(external_tags_path)
                 try:
-                    remote_source_tags = client.list_files(qlib, path="video_tags/source_tags/external", **content_args)
+                    remote_source_tags = client.list_files(qlib, path="video_tags/source_tags/user", **content_args)
                 except HTTPError:
                     logger.debug(f"No source tags found for {qwt}")
                     remote_source_tags = []
@@ -606,7 +639,7 @@ def get_flask_app():
                 for local_source in local_source_tags:
                     tagfile = os.path.join(config["storage"]["tags"], qhit, "external_tags", local_source)
                     file_jobs.append(ElvClient.FileJob(local_path=tagfile,
-                                                        out_path=f"video_tags/source_tags/external/{local_source}",
+                                                        out_path=f"video_tags/source_tags/user/{local_source}",
                                                         mime_type="application/json"))
                     # TODO: we do need a way to make it so we can do replace=true for external tags but not on the rest. if we can improve the efficiency of this step we could just do two passes and 
                     # Let the user specify which features they want to finalize, and they could do two steps. For now, we will default to always overwriting the external tags.
@@ -626,7 +659,8 @@ def get_flask_app():
 
         tmpdir = tempfile.TemporaryDirectory(dir=config["storage"]["tmp"])
         with filesystem_lock:
-            shutil.copytree(os.path.join(config["storage"]["tags"], qhit), tmpdir.name, dirs_exist_ok=True)
+            if os.path.exists(os.path.join(config["storage"]["tags"], qhit)):
+                shutil.copytree(os.path.join(config["storage"]["tags"], qhit), tmpdir.name, dirs_exist_ok=True)
             if os.path.exists(os.path.join(tmpdir.name, 'external_tags')):
                 shutil.rmtree(os.path.join(tmpdir.name, 'external_tags'))
 
