@@ -376,7 +376,7 @@ def format_tracks(agg_tags: Dict[str, List[AggTag]], tracks: Dict[str, List[Vide
             bucket_idx = int(agg_tag.start_time/interval) if interval is not None else 0
             if key not in result[bucket_idx]["metadata_tags"]:
                 result[bucket_idx]["metadata_tags"][key] = {"label": label, "tags": []}
-            
+
             for track, video_tags in agg_tag.tags.items():
                 if track in custom_labels:
                     track_label = custom_labels[track]
@@ -393,7 +393,8 @@ def format_tracks(agg_tags: Dict[str, List[AggTag]], tracks: Dict[str, List[Vide
     # add standalone tracks
     for key, video_tags in tracks.items():
         if key in custom_labels:
-            label = custom_labels[key]
+            #label = custom_labels[key]
+            continue # quick fix to not dupe the user tags
         else:
             label = feature_to_label(key)
         for vtag in video_tags:
