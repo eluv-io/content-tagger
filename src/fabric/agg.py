@@ -155,9 +155,9 @@ def format_video_tags(client: ElvClient, write_token: str, interval: int, tags_p
         to_upload.append(fpath)
         with open(fpath, 'w') as f:
             json.dump(overlay, f)
-        
+
     jobs = [ElvClient.FileJob(local_path=path, out_path=f"video_tags/{os.path.basename(path)}", mime_type="application/json") for path in to_upload]
-    
+
     with timeit("Uploading aggregated files"):
         client.upload_files(write_token=write_token, library_id=qlib, file_jobs=jobs, finalize=False)
 
@@ -202,8 +202,12 @@ def _parse_external_tags(tags_path: str) -> Dict[str, List[VideoTag]]:
     for tag_type in os.listdir(tags_path):
         for tag_file in os.listdir(os.path.join(tags_path, tag_type)):
             logger.debug(f"external tags type: {tag_type} file: {tag_file}")
-            with open(os.path.join(tags_path, tag_type, tag_file), 'r') as f:
-                data = json.load(f)["metadata_tags"]
+            try:
+                with open(os.path.join(tags_path, tag_type, tag_file), 'r') as f:
+                    data = json.load(f)["metadata_tags"]
+            except Exception as e:
+                logger.error(f"Error parsing external tags file {tag_file}: {e}")
+                continue
             for feature in data:
                 labels[feature] = data[feature]["label"]
                 external_tags[feature] = _parse_external_track(data[feature])
