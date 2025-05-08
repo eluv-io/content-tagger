@@ -42,6 +42,9 @@ def get_auth(config: str, qhit: str) -> str:
     return token
 
 def get_write_token(qhit: str, config: str) -> str:
+    if qhit.startswith("tqw"):
+        return qhit
+    
     cmd = f"qfab_cli content edit {qhit} --config {config}"
     out = subprocess.run(cmd, shell=True, check=True, capture_output=True).stdout.decode("utf-8")
     write_token = json.loads(out)["q"]["write_token"]
@@ -100,11 +103,11 @@ def response_force_dict(resp):
             "content": resp.content
         }
 
-def finalize(qhit: str, config: str, do_commit: bool, force = False):
+def finalize(qhit: str, config: str, do_commit: bool, force = False, leave_open = False):
     auth_token = get_auth(config, qhit)
     write_token = get_write_token(qhit, config)
     finalize_url = f"{server}/{qhit}/finalize?authorization={auth_token}&force={force}"
-    resp = requests.post(finalize_url, params={"write_token": write_token, "replace": "true"})
+    resp = requests.post(finalize_url, params={"write_token": write_token, "replace": "true", "leave_open": leave_open})
     respdict = response_force_dict(resp)
     print(respdict)
     if do_commit and "error" not in respdict:
@@ -133,7 +136,10 @@ def finalize_all(contents: list, config: str, do_commit: bool, force = False):
 
         print(f"Finalizing {qhit} force = {force}")
         try:
-            finalize(qhit, config, do_commit, force)
+            leave_open = False
+            if qhit.startswith("tqw"): leave_open = True
+            
+            finalize(qhit, config, do_commit, force, leave_open)
             finalized[qhit] = True ### xxx store a hash of finalized job IDs
             
         except Exception as e:
