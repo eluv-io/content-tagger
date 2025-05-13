@@ -1,12 +1,49 @@
 #!/usr/bin/env python
 import readline
+import signal
 
-def get_input(prompt):
-    ##readline.set_startup_hook(lambda: readline.insert_text(get_input.current_input))
-    line = input(prompt)
-    ##get_input.current_input = line
-    return line
+interrupt = False    ## can be removed and calculated from other values...
+lastInput = ""
+lastInputTime = 0
+timeout_value = 1000
 
+def interrupted(signum, stack):
+    global interrupt, lastInput, lastInputTime, timeout_value
+    buf = readline.get_line_buffer()
+    local_timeout_value = timeout_value
+    if local_timeout_value is None:
+        return
+    elif (buf != lastInput):
+        ## print("buf changed", buf)
+        lastInput = buf
+        lastInputTime = time.time()
+    elif time.time() - lastInputTime > local_timeout_value:
+        ## print("buf did not change and time was up")
+        interrupt = True
+        raise Exception("Input timed out.")
+    
+    ## reset alarm if buf changed OR time was less than timeout
+    signal.alarm(timeout_value)
+
+signal.signal(signal.SIGALRM, interrupted)
+
+def get_input(prompt, timeout = None):
+    global interrupt, lastInputTime, timeout_value
+    
+    interrupt = False
+    timeout_value = timeout
+    lastInputTime = time.time()
+
+    if timeout: signal.alarm(2)
+
+    try:
+        line = input(prompt)
+        return line
+    except Exception as e:
+        if interrupt:
+            return None
+        raise e
+        
 import argparse
 import requests
 import subprocess
@@ -211,11 +248,18 @@ def main():
     if end_time is not None: end_time = int(args.end_time)
     start_time = int(args.start_time)
     
+    timeout = None
+
     print("Command (t)ag, (s)tatus, (qs)quickstatus, (f)inalize, (agg)regate? ")
     while True:
         try:
-            user_line = get_input("> ")  # Wait for user input
-            print("command: " + user_line)
+            user_line = get_input("> ", timeout = timeout)  # Wait for user input
+
+            if (timeout and user_line is None):
+                user_line = "qs"
+                print("[auto quickstatus]")
+            elif user_line != "":
+                print("command: " + user_line)
             
             user_split = re.split(r" +", user_line)
             user_input = user_split[0]
@@ -288,8 +332,15 @@ def main():
                 hmss = "%d:%02d:%02d" % (h, m, s)
                 print(f'[{start_time}-{end_time}] [{hmss} - {hms}]')                
             elif user_input == "qs":
-                for qhit in contents:
-                    quick_status(auth, qhit, " ".join(user_split[1:]))
+                if len(user_split) > 1 and user_split[1] == "on":
+                    timeout = 60
+                    print("quickstatus on, time: " + str(timeout))
+                elif len(user_split) > 1 and user_split[1] == "off":
+                    print("quickstatus off")
+                    timeout = None
+                else:
+                    for qhit in contents:
+                        quick_status(auth, qhit, " ".join(user_split[1:]))
             elif user_input in [ 'reverse' ]:
                 contents.reverse()
                 print("First element:", contents[0])
