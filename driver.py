@@ -1,4 +1,11 @@
 #!/usr/bin/env python
+import readline
+
+def get_input(prompt):
+    ##readline.set_startup_hook(lambda: readline.insert_text(get_input.current_input))
+    line = input(prompt)
+    ##get_input.current_input = line
+    return line
 
 import argparse
 import requests
@@ -207,7 +214,7 @@ def main():
     print("Command (t)ag, (s)tatus, (qs)quickstatus, (f)inalize, (agg)regate? ")
     while True:
         try:
-            user_line = input("> ")  # Wait for user input
+            user_line = get_input("> ")  # Wait for user input
             print("command: " + user_line)
             
             user_split = re.split(r" +", user_line)
