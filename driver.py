@@ -208,7 +208,8 @@ def main():
     while True:
         try:
             user_line = input("> ")  # Wait for user input
-
+            print("command: " + user_line)
+            
             user_split = re.split(r" +", user_line)
             user_input = user_split[0]
             
