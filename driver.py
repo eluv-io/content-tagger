@@ -322,7 +322,7 @@ def quick_status(auth, qhit, filter = None):
     if status.get("error", None):
         line = "[%9s] %-32s / %s: %s" % ("", qhit, "err", status['error']) 
         if filter is None or re.search(filter, line):
-            print(line)
+            print(line, flush = True)
         return
     for imgorvid, models in status.items():
         for model, stat in models.items():
