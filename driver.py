@@ -213,7 +213,13 @@ def stop(qhit: str, auth: str, features: list[str]):
                 print(f"Failed to stop tagging for {qhit} on track {feature}: {res.status_code} {res.text}")
         except Exception as e:
             print(f"Error while stopping tagging for {qhit} on track {feature}: {e}")
-            
+
+def list_models():
+    print("getting model list:")
+    modresp = requests.get(f"{server}/list")
+    modresp.raise_for_status()
+    return modresp.json()
+    
 def main():
     global finalized
     
@@ -238,12 +244,9 @@ def main():
     else:
         contents = [args.iq]
 
-    print("getting model list:")
-    modresp =requests.get(f"{server}/list")
-    modresp.raise_for_status()
-    models = modresp.json()
-    print(models)
-
+    models = list_models()
+    print("models:" , models)
+    
     print("getting auth...")
     auth = get_auth(args.config, contents[0])
 
@@ -281,6 +284,9 @@ def main():
                 os.makedirs("rundriver", exist_ok=True)
                 with open("rundriver/status.json", "w") as statfile:
                     statfile.write(json.dumps(statuses, indent = 2))
+            elif user_input in [ "list", "l" ]:
+                models = list_models()
+                print("models:", models)
             elif user_input in [ "cf", "clearfinalize"]:
                 iqsub = None
                 if len(user_split) > 1:
