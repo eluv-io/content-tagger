@@ -272,8 +272,11 @@ def main():
             
             user_split = re.split(r" +", user_line)
             user_input = user_split[0]
+
+            reset_quickstatus = True
             
             if user_input in [ "status", "s"]:
+                reset_quickstatus = False
                 statuses = {}
                 for qhit in contents:
                     if len(user_input) > 1:
@@ -344,6 +347,7 @@ def main():
                 hmss = "%d:%02d:%02d" % (h, m, s)
                 print(f'[{start_time}-{end_time}] [{hmss} - {hms}]')                
             elif user_input == "qs":
+                reset_quickstatus = False
                 if len(user_split) > 1 and user_split[1] == "on":
                     timeout = 60
                     print("quickstatus on, time: " + str(timeout))
@@ -371,8 +375,16 @@ def main():
                     aggregate(qhit, args.config, args.commit)
             elif user_input in [ "quit", "exit"]:
                 break
+            elif user_input == "":
+                reset_quickstatus = False
             else:
+                reset_quickstatus = False
                 print(f"Invalid command: {user_input}")
+
+            if reset_quickstatus and timeout:
+                timeout = None
+                print("[auto quickstatus turned off]")
+                
         except KeyboardInterrupt:
             print("")
             break
