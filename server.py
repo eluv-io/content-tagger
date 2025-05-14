@@ -768,7 +768,8 @@ def get_flask_app():
     
     def _list_services() -> List[str]:
         with PodmanClient() as podman_client:
-            images = [image.tags[0] for image in podman_client.images.list() if image.tags]
+            images = sum([image.tags for image in podman_client.images.list() if image.tags], [])
+
         res = []
         for service in config['services']:
             if config['services'][service]['image'] in images:
