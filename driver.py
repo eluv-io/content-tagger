@@ -300,6 +300,7 @@ def main():
                     for iq, state in finalized.items():
                         if re.match(iqsub, iq):
                             state = False
+                            print(iq, "cleared")
                         newfinalized[iq] = state
                         
                 finalized = newfinalized
