@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import readline
+import time
 import signal
 
 interrupt = False    ## can be removed and calculated from other values...
@@ -38,6 +39,8 @@ def get_input(prompt, timeout = None):
 
     try:
         line = input(prompt)
+        timeout_value = None
+        lastInputTime = time.time()
         return line
     except Exception as e:
         if interrupt:
@@ -50,7 +53,6 @@ import subprocess
 import json
 import os
 import re
-import time
 import traceback
 from copy import deepcopy
 
