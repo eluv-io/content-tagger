@@ -2,6 +2,7 @@
 import readline
 import time
 import signal
+import sys
 
 interrupt = False    ## can be removed and calculated from other values...
 lastInput = ""
@@ -255,8 +256,11 @@ def main():
     print("Command (t)ag, (s)tatus, (qs)quickstatus, (f)inalize, (agg)regate? ")
     while True:
         try:
-            user_line = get_input("> ", timeout = timeout)  # Wait for user input
-
+            if sys.stdin.isatty():
+                user_line = get_input("> ", timeout = timeout)  # Wait for user input
+            else:
+                user_line = input("")
+                
             if (timeout and user_line is None):
                 user_line = "qs"
                 print("[auto quickstatus]")
