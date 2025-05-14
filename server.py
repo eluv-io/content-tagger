@@ -52,6 +52,7 @@ class Job:
     qhit: str
     feature: str
     run_config: RunConfig
+    # signal to stop the job
     stop_event: threading.Event
     media_files: List[str]
     replace: bool
@@ -59,6 +60,8 @@ class Job:
     failed: List[str]
     allowed_gpus: List[str]
     allowed_cpus: List[str]
+    # signal to indicate job completion
+    completion_signal: threading.Event
     time_ended: Optional[float]=None
     # tag_job_id is the job id returned by the manager, will be None until the tagging starts (status is "Running")
     tag_job_id: Optional[str]=None
@@ -66,7 +69,16 @@ class Job:
     ## wall clock time of the last time this job was "put back" on the queue
     reput_time: int = 0
 
-    
+
+@dataclass
+class LiveJob:
+    stream_token: str
+    stop_event: threading.Event
+    time_started: float
+    batches_tagged: int
+    tagged_duration: int
+    time_ended: Optional[float]=None
+
 def get_flask_app():
     app = Flask(__name__)
     # manages the gpu and inference jobs
@@ -90,9 +102,10 @@ def get_flask_app():
     # make sure no two streams are being downloaded at the same time. 
     # maps (qhit, stream) -> lock
     download_lock = defaultdict(threading.Lock)
+
+    live_jobs = {}
     
     shutdown_signal = threading.Event()
-
     
     @app.route('/list', methods=['GET'])
     def list_services() -> Response:
@@ -151,10 +164,13 @@ def get_flask_app():
         except (KeyError, TypeError) as e:
             return Response(response=json.dumps({'error': f"Invalid input: {str(e)}"}), status=400, mimetype='application/json')
         
-        _, error_response = _get_client(request, qhit, config["fabric"]["parts_url"])
+        client, error_response = _get_client(request, qhit, config["fabric"]["parts_url"])
         if error_response:
             return error_response
-        
+
+        return _tag(qhit, args, client)
+
+    def _tag(qhit: str, args: TagArgs, client: ElvClient) -> Response:
         invalid_services = _get_invalid_features(args.features.keys())
         if invalid_services:
             return Response(response=json.dumps({'error': f"Services {invalid_services} not found"}), status=404, mimetype='application/json')
@@ -175,9 +191,10 @@ def get_flask_app():
                 logger.debug(f"Starting {feature} on {qhit}: {run_config.stream}")
                 job = Job(qhit=qhit, run_config=run_config, feature=feature, media_files=[], failed=[], replace=args.replace, status="Starting", stop_event=threading.Event(), time_started=time.time(), allowed_gpus=allowed_gpus, allowed_cpus=allowed_cpus)
                 active_jobs[qhit][(run_config.stream, feature)] = job
-                threading.Thread(target=_video_tag, args=(job, _get_authorization(request), args.start_time, args.end_time)).start()
+                threading.Thread(target=_video_tag, args=(job, client.token, args.start_time, args.end_time)).start()
+
         return Response(response=json.dumps({'message': f'Tagging started on {qhit}'}), status=200, mimetype='application/json')
-    
+
     def _video_tag(job: Job, authorization: str, start_time: Optional[int], end_time: Optional[int]) -> None:
         part_download_client = ElvClient.from_configuration_url(config_url=config["fabric"]["parts_url"], static_token=authorization)
         media_files, failed = _download_content(job, part_download_client, start_time=start_time, end_time=end_time)
@@ -445,6 +462,7 @@ def get_flask_app():
                     if status.status == "Failed":
                         job.error = "An error occurred while running model container"
                     job.time_ended = time.time()
+                    job.completion_signal.set()
                     with lock:
                         # move job to inactive_jobs
                         inactive_jobs[qhit][(stream, feature)] = job
@@ -694,10 +712,19 @@ def get_flask_app():
         _, error_response = _get_client(request, qhit, config["fabric"]["config_url"])
         if error_response:
             return error_response
+        
+        res = _status(qhit)
+
+        if 'error' in res:
+            return Response(response=json.dumps(res), status=404, mimetype='application/json')
+
+        return Response(response=json.dumps(res), status=200, mimetype='application/json')
+
+    def _status(qhit) -> dict:
         with lock:
             jobs = set(active_jobs[qhit].keys()) | set(inactive_jobs[qhit].keys())
             if len(jobs) == 0:
-                return Response(response=json.dumps({'error': f"No jobs started for {qhit}"}), status=404, mimetype='application/json')
+                return {'error': f"No jobs started for {qhit}"}
             res = defaultdict(dict)
             for job in jobs:
                 stream, feature = job
@@ -708,8 +735,8 @@ def get_flask_app():
         for stream in list(res.keys()):
             for feature in list(res[stream].keys()):
                 res[stream][feature] = asdict(res[stream][feature])
-        return Response(response=json.dumps(res), status=200, mimetype='application/json')
-    
+        return res
+
     @app.route('/<qhit>/stop/<feature>', methods=['POST'])
     def stop(qhit: str, feature: str) -> Response:
         _, error_response = _get_client(request, qhit, config["fabric"]["config_url"])
@@ -724,6 +751,172 @@ def get_flask_app():
             for job in jobs:
                 job.stop_event.set()
         return Response(response=json.dumps({'message': f"Stopping {feature} on {qhit}. Check with /status for completion."}), status=200, mimetype='application/json')
+
+    @dataclass
+    class LiveTagArgs(Data):
+        # maps feature name to RunConfig
+        features: Dict[str, RunConfig]
+        # length of duration to tag at a time in between finalizes
+        batch_size: int
+        replace: bool=False
+
+        @staticmethod
+        def from_dict(data: dict) -> 'TagArgs':
+            features = {feature: RunConfig(**cfg) for feature, cfg in data['features'].items()}
+            batch_size = data.get('batch_size', config["live_tagging"]["batch_size"])
+            if batch_size < 60:
+                raise ValueError("Batch size must be at least 60 seconds")
+            return TagArgs(features=features, batch_size=batch_size, start_time=data.get('start_time', None), end_time=data.get('end_time', None), replace=data.get('replace', False))
+    
+    @app.route('/<qid>/live_tagging/start', methods=['POST'])
+    def start_live_tagging(qid: str) -> Response:
+        try:
+            args = LiveTagArgs.from_dict(request.json)
+        except (KeyError, TypeError) as e:
+            return Response(response=json.dumps({'error': f"Invalid input: {str(e)}"}), status=400, mimetype='application/json')
+        
+        client, error_response = _get_client(request, qid, config["fabric"]["config_url"])
+        if error_response:
+            return error_response
+        
+        try:
+            stream_token = client.content_object_metadata(object_id=qid, metadata_subtree="live_recording/status/edge_write_token")
+        except HTTPError as e:
+            logger.error(f"Failed to get stream token:\n{e}")
+            return Response(response=json.dumps({'error': 'Failed to get stream token'}), status=400, mimetype='application/json')
+
+        if not stream_token:
+            return Response(response=json.dumps({'error': 'No live token found'}), status=404, mimetype='application/json')
+        
+        if qid in live_jobs and live_jobs[qid].running:
+            return Response(response=json.dumps({'error': f"Live tagging already in progress for {qid} Please stop that job before continuing."}), status=400, mimetype='application/json')
+        
+        try:
+            num_periods = len(client.content_object_metadata(metadata_subtree='live_recording/recordings/live_offering', resolve_links=False, write_token=stream_token))
+        except Exception as e:
+            logger.error(f"Failed to get live periods:\n{e}")
+            return Response(response=json.dumps({'error': 'Failed to get periods metadata from livestream token.'}), status=400, mimetype='application/json')
+
+        if num_periods == 0:
+            return Response(response=json.dumps({'error': 'No periods found for this livestream token'}), status=404, mimetype='application/json')
+        
+        live_jobs[qid] = LiveJob(stream_token=stream_token, running=True, status="Starting", time_started=time.time(), batches_tagged=0, tagged_duration=0, period=num_periods-1, stop_event=threading.Event())
+
+        threading.Thread(target=_stream_watcher, args=(qid, args, client), daemon=True).start()
+
+        return Response(response=json.dumps({'message': f'Livestream tagging started on {qid}'}), status=200, mimetsype='application/json')
+
+    def _stream_watcher(qid: str, args: LiveTagArgs, client: ElvClient) -> None:
+        tag_args = TagArgs(features=args.features, replace=args.replace)
+
+        while True:
+            try:
+                live_job = live_jobs[qid]
+                if live_job.stop_event.is_set():
+                    logger.info(f"Stopping live tagging for {qid}")
+                    with lock:
+                        _set_livestream_stop_status(qid, "Stopped")
+                    return
+                stream_token = client.content_object_metadata(object_id=qid, metadata_subtree="live_recording/status/edge_write_token")
+                if stream_token != live_job.stream_token:
+                    logger.error(f"Stream token mismatch: {stream_token} != {live_job.stream_token}")
+                    with lock:
+                        _set_livestream_stop_status(qid, "Ended", "A new stream token was found.")
+                    return
+                num_periods = len(client.content_object_metadata(metadata_subtree='live_recording/recordings/live_offering', resolve_links=False, write_token=stream_token))
+                if num_periods > live_job.period + 1:
+                    logger.error(f"A new period has started for {qid}, stopping live tagging")
+                    with lock:
+                        _set_livestream_stop_status(qid, "Ended", "A new recording period started.")
+                    return
+                duration = _get_livestream_duration(live_job.stream_token, live_job.period, client)
+                if duration == live_job.tagged_duration:
+                    with lock:
+                        _set_livestream_stop_status(qid, "Finished")
+                elif duration < live_job.tagged_duration + args.batch_size:
+                    logger.info(f"Waiting for {args.batch_size} seconds before tagging next batch")
+                    live_job.status = f"Waiting {args.batch_size} seconds for next batch"
+                    time.sleep(args.batch_size)
+
+                if live_job.stop_event.is_set():
+                    logger.info(f"Stopping live tagging for {qid}")
+                    with lock:
+                        _set_livestream_stop_status(qid, "Stopped")
+                    return
+
+                tag_args.end_time = live_job.tagged_duration + args.batch_size
+                live_job.status = "Tagging Batch"
+                _tag(stream_token, tag_args, client)
+                for feature, status in active_jobs[stream_token]:
+                    logger.debug(f"Waiting for {feature} to finish tagging")
+                    status.completion_signal.wait()
+                    logger.debug(f"Tagging completed for {feature} on {stream_token}")
+
+                if live_job.stop_event.is_set():
+                    logger.info(f"Stopping live tagging for {qid} before finalization")
+                    with lock:
+                        _set_livestream_stop_status(qid, "Stopped")
+                    return
+
+                live_job.status = "Finalizing Batch"
+                _finalize_internal(stream_token, upload_local_tags=True)
+
+                live_job.tagged_duration = duration
+                live_job.batches_tagged += 1
+            except Exception as e:
+                logger.error(f"Failed to get stream token:\n{e}")
+                with lock:
+                    _set_livestream_stop_status(qid, "Error")
+                return
+
+    def _get_livestream_duration(live_token: str, period: int, client: ElvClient) -> int:
+        periods = client.content_object_metadata(write_token=live_token, metadata_subtree="live_recording/recordings/live_offering")
+        if period >= len(periods):
+            raise ValueError(f"Period {period} out of range for livestream token {live_token}")
+        if 'video' not in periods[period]['finalized_parts_info']:
+            return 0
+        num_parts = periods[period]['finalized_parts_info']['video']['n_parts']
+        if num_parts == 0:
+            return 0
+        video_mez_duration_ts = periods[period]['video_mez_duration_ts']
+        timescale = periods[period]['video_timescale']
+        part_duration = video_mez_duration_ts / timescale
+        return (num_parts - 1) * part_duration
+
+    @app.route('/<qid>/live_tagging/stop', methods=['POST'])
+    def stop_live_tagging(qid: str) -> Response:
+        if qid not in live_jobs:
+            return Response(response=json.dumps({'error': f"No live tagging job found for {qid}"}), status=404, mimetype='application/json')
+        if not live_jobs[qid].running:
+            return Response(response=json.dumps({'error': f"Live tagging job for {qid} is not running"}), status=400, mimetype='application/json')
+        live_jobs[qid].stop_event.set()
+        # stop tagging jobs
+        stream_token = live_jobs[qid].stream_token
+        if stream_token in active_jobs:
+            for job in list(active_jobs[stream_token].values()):
+                job.stop_event.set()
+        return Response(response=json.dumps({'message': f"Stopping live tagging for {qid}"}), status=200, mimetype='application/json')
+
+    @app.route('/<qhit>/live_tagging/status', methods=['GET'])
+    def live_tagging_status(qhit: str) -> Response:
+        if qhit not in live_jobs:
+            return Response(response=json.dumps({'error': f"No live tagging job found for {qhit}"}), status=404, mimetype='application/json')
+        job = live_jobs[qhit]
+
+        with lock:
+            res = {
+                'status': job.status,
+                'time_running': time.time() - job.time_started if job.time_ended is None else job.time_ended - job.time_started,
+                'tagged_duration': job.tagged_duration,
+                'batches_tagged': job.batches_tagged
+            }
+
+        if job.stream_token in active_jobs:
+            # if we are tagging a batch, report the status of the batch
+            batch_status = _status(job.stream_token)
+            res["batch_status"] = batch_status
+
+        return Response(response=json.dumps(res), status=200, mimetype='application/json')
     
     def _list_services() -> List[str]:
         with PodmanClient() as podman_client:
@@ -744,8 +937,16 @@ def get_flask_app():
         job.status = status
         job.error = error
         job.time_ended = time.time()
+        job.completion_signal.set()
         inactive_jobs[qhit][(stream, feature)] = job
         del active_jobs[qhit][(stream, feature)]
+
+    def _set_livestream_stop_status(qid: str, status: str, error: Optional[str]=None) -> None:
+        job = live_jobs[qid]
+        job.status = status
+        job.error = error
+        job.running = False
+        job.time_ended = time.time()
         
     def _get_client(request: Request, qhit: str, config_url: str) -> Tuple[ElvClient, Optional[Response]]:
         auth = _get_authorization(request)

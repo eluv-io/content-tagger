@@ -32,11 +32,14 @@ services:
     # force to run on cpu
     allowed_gpus: []
   asr: 
-    image: "localhost/asr:latest"
+    image: "localhost/hungarian:latest"
     type: "audio"
   french_asr: 
     image: "localhost/multilingual:latest"
     type: "audio"
+  #hungarian: 
+  #  image: "localhost/hungarian:latest"
+  #  type: "audio"
   caption:
     image: "localhost/caption:latest"
     type: "video"
@@ -94,3 +97,6 @@ agg:
   coalesce_features: 
     - asr
     - french_asr
+    - hungarian
+live_tagging:
+  batch_size: 300
