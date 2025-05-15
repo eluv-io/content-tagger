@@ -260,7 +260,7 @@ def main():
     while True:
         try:
             if sys.stdin.isatty():
-                user_line = get_input("> ", timeout = timeout)  # Wait for user input
+                user_line = get_input(f"{server} > ", timeout = timeout)  # Wait for user input
             else:
                 user_line = input("")
                 
