@@ -82,11 +82,14 @@ class ResourceManager:
             allowed_slots = model_conf.get("cpu_slots", [f"slot4{modelname}"])
             for slotname in allowed_slots:
                 self.cpuslots[slotname] = False
-    def run(self, feature: str, run_config: dict, files: List[str], allowed_gpus: List[int], allowed_cpus: List[str]) -> str:
+    def run(self, feature: str, run_config: dict, files: List[str], allowed_gpus: List[int], allowed_cpus: List[str], logs_subpath: Optional[str]=None) -> str:
         # Args:
         #     feature (str): The feature to tag the files with.
         #     run_config (dict): The configuration to run the model with. This is model-specific. Check the model's documentation.
         #     files (List[str]): The list of files to tag.
+        #     allowed_gpus (List[int]): The list of allowed GPUs to use. If empty, any GPU can be used.
+        #     allowed_cpus (List[str]): The list of allowed CPU slots to use. If empty, any CPU slot can be used.
+        #     logs_path (Optional[str]): The path to save the logs. If None, a default path will be used.
         # Returns:
         #     str: The job ID.
         # NOTE: this function creates a new thread to watch the job
@@ -110,11 +113,16 @@ class ResourceManager:
                     if cpu_slot_to_use is None:
                         raise NoResourceAvailable("No CPU slots available")
                     
-                # start the container
+                logs_dir = os.path.join(config["storage"]["logs"], feature)
+                if logs_subpath:
+                    logs_dir = os.path.join(logs_dir, logs_subpath)
+                os.makedirs(logs_dir, exist_ok=True)
+
+                # to order logs chronologically
+                log_idx = len(os.listdir(logs_dir))
                 jobid = str(uuid.uuid4())
-                if not os.path.exists(os.path.join(config["storage"]["logs"], feature)):
-                    os.makedirs(os.path.join(config["storage"]["logs"], feature))
-                logs_out = os.path.join(config["storage"]["logs"], feature, f"{jobid}.log")
+                logs_out = os.path.join(logs_dir, f"{log_idx}_{jobid}.log")
+
                 for f in files:
                     if (f, feature) in self.files_tagging:
                         raise ValueError(f"File {f} is already being tagged with {feature}")

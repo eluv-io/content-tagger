@@ -8,7 +8,7 @@ storage:
   logs: logs
 fabric:
   # used for downloading parts (requires special build)
-  parts_url: https://host-154-14-185-98.contentfabric.io/config?self&qspace=main 
+  parts_url: http://192.168.96.203/config?self&qspace=main
   # for all other fabric interaction
   config_url: https://host-154-14-185-98.contentfabric.io/config?self&qspace=main
 services:
@@ -51,7 +51,7 @@ services:
     image: "localhost/celeb:latest"
     type: "video"
     frame_level: true
-    allowed_gpus: [0, 2, 3, 4]
+    allowed_gpus: [0, 2]
   ocr:
     image: "localhost/ocr:latest"
     type: "video"
@@ -67,6 +67,10 @@ services:
     # NOTE: this depends on the host machine
     # device ids which don't exist on the host will be ignored when scheduling jobs
     allowed_gpus: [0, 2, 3, 4]
+  windmill:
+    image: "localhost/breakdance:latest"
+    type: "video"
+    allowed_gpus: [2]
   # Used for testing
   dummy_gpu:
     image: "localhost/dummy_gpu:latest"

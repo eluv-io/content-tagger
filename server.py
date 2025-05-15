@@ -425,7 +425,7 @@ def get_flask_app():
                 continue
 
             try:
-                job_id = manager.run(job.feature, job.run_config.model, job.media_files, job.allowed_gpus, job.allowed_cpus)
+                job_id = manager.run(job.feature, job.run_config.model, job.media_files, job.allowed_gpus, job.allowed_cpus, logs_subpath=job.qhit)
                 with lock:
                     if _is_job_stopped(job):
                         # if the job has been stopped while the container was starting

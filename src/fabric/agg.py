@@ -294,7 +294,6 @@ def merge_video_tag_files(tags: List[str], part_duration: float) -> List[VideoTa
                 data = [VideoTag(**tag) for tag in data]
         except json.decoder.JSONDecodeError as jd:
             logger.error(f"ERROR Decoding File {tag}: {jd}") 
-            ## with open(tag, 'r') as f: print(f.read())
             raise jd
         
         merged.extend([VideoTag(start_time=part_start + tag.start_time, end_time=part_start + tag.end_time, text=tag.text, confidence=tag.confidence) for tag in data])
@@ -305,9 +304,13 @@ def merge_frame_tag_files(tags: List[str], len_frames: int) -> Dict[int, List[Fr
     for tag in tags:
         part_idx = int(os.path.basename(tag).split("_")[0])
         part_start = part_idx * len_frames
-        with open(tag, 'r') as f:
-            data = json.load(f)
-            data = {int(frame)+part_start: [FrameTag(**tag) for tag in tags] for frame, tags in data.items()}
+        try:
+            with open(tag, 'r') as f:
+                data = json.load(f)
+                data = {int(frame)+part_start: [FrameTag(**tag) for tag in tags] for frame, tags in data.items()}
+        except json.decoder.JSONDecodeError as jd:
+            logger.error(f"ERROR Decoding tag file {tag}: {jd}")
+            raise jd
         merged.update(data)
     return merged
 
