@@ -62,6 +62,7 @@ from common_ml.utils.dictionary import nested_update
 """Convenience script for driving the tagger on bulk content."""
 
 server = os.environ.get("TAGGERV2_URL", "http://localhost:8086")
+written = {}
 
 llava_prompt = "This is an image from a rugby match broadcast. Do not describe what people are wearing. Focus on the action and play depicted in the image. Describe the image in 2 sentences."
 # will round robin between these models
@@ -150,11 +151,11 @@ def response_force_dict(resp):
             "content": resp.content
         }
 
-def finalize(qhit: str, config: str, do_commit: bool, force = False, leave_open = False):
+def write(qhit: str, config: str, do_commit: bool, force = False, leave_open = False):
     auth_token = get_auth(config, qhit)
     write_token = get_write_token(qhit, config)
-    finalize_url = f"{server}/{qhit}/finalize?authorization={auth_token}&force={force}"
-    resp = requests.post(finalize_url, params={"write_token": write_token, "replace": "true", "leave_open": leave_open})
+    write_url = f"{server}/{qhit}/finalize?authorization={auth_token}&force={force}"
+    resp = requests.post(write_url, params={"write_token": write_token, "replace": "true", "leave_open": leave_open})
     respdict = response_force_dict(resp)
     print(respdict)
     if do_commit and "error" not in respdict:
@@ -165,8 +166,8 @@ def finalize(qhit: str, config: str, do_commit: bool, force = False, leave_open 
 def aggregate(qhit: str, config: str, do_commit: bool):
     auth_token = get_auth(config, qhit)
     write_token = get_write_token(qhit, config)
-    finalize_url = f"{server}/{qhit}/aggregate?authorization={auth_token}"
-    resp = requests.post(finalize_url, params={"write_token": write_token, "replace": "true"})
+    aggregate_url = f"{server}/{qhit}/aggregate?authorization={auth_token}"
+    resp = requests.post(aggregate_url, params={"write_token": write_token, "replace": "true"})
     respdict = response_force_dict(resp)
     print(respdict)
     if do_commit and "error" not in respdict:
@@ -174,20 +175,21 @@ def aggregate(qhit: str, config: str, do_commit: bool):
 
     return write_token
 
-finalized = {}
-def finalize_all(contents: list, config: str, do_commit: bool, force = False):
+def write_all(contents: list, config: str, do_commit: bool, force = False):
     for qhit in contents:
-        if qhit in finalized:
-            print(f"{qhit} already finalized, clearfinalize to clear list")
+        if qhit in written:
+            print(f"{qhit} already written, clearwritten to clear list")
             continue
 
         print(f"Finalizing {qhit} force = {force}")
         try:
             leave_open = False
-            if qhit.startswith("tqw"): leave_open = True
+            if qhit.startswith("tqw"):
+                leave_open = True
+                do_commit = False
             
-            finalize(qhit, config, do_commit, force, leave_open)
-            finalized[qhit] = True ### xxx store a hash of finalized job IDs
+            write(qhit, config, do_commit, force, leave_open)
+            written[qhit] = True ### xxx store a hash of written job IDs
             
         except Exception as e:
             print(f"{e} while finalizing {qhit}")
@@ -219,9 +221,23 @@ def list_models():
     modresp = requests.get(f"{server}/list")
     modresp.raise_for_status()
     return modresp.json()
+
+def help():
+    print("""
+t,tag [iq_regex] [model]        tag content
+                                if iq_regex specified, only tag matching
+                                if model specified, only start that model
+stop [iq] [model]               stop tagging
+                                if iq given, only stop for that iq (must be full iq, not regex)
+                                if model given, only stop for that model
+s,status                        show status
+qs [regex]                      quick status, if regex given, match output only containing regex
+list                            list models tagger knows about
+cw,clearwritten                 clear the "written" state to allow re-writing
+h,help                          this help""")
     
 def main():
-    global finalized
+    global written
     
     if args.tag_config != "":
             tag_config = args.tag_config
@@ -230,11 +246,13 @@ def main():
             tag_config = assets_params
         else:
             tag_config = video_params
+    
     if args.tag_config.startswith('@'):
         conffile = args.tag_config[1:]
         print("reading tag config...")
         with open(conffile, "r") as conf:
            tag_config = json.load(conf)
+
     if args.contents:
         print("reading contents...")
         with open(args.contents, 'r') as f:
@@ -254,25 +272,32 @@ def main():
     if end_time is not None: end_time = int(args.end_time)
     start_time = int(args.start_time)
     
-    timeout = None
+    quickstatus_watch = None
 
-    print("Command (t)ag, (s)tatus, (qs)quickstatus, (f)inalize, (agg)regate? ")
+    tty = sys.stdin.isatty()
+    if tty:
+        help()
+        
     while True:
         try:
-            if sys.stdin.isatty():
+            if tty:
+                timeout = None
+                if quickstatus_watch is not None:
+                    timeout = 60
                 user_line = get_input(f"{server} > ", timeout = timeout)  # Wait for user input
             else:
                 user_line = input("")
                 
-            if (timeout and user_line is None):
-                user_line = "qs"
+            if (quickstatus_watch and user_line is None):
+                user_line = quickstatus_watch
                 print("[auto quickstatus]")
-            elif user_line != "":
+            elif user_line != "" and not tty:
+                ## echo the command if they are being piped in from a script...
                 print("command: " + user_line)
-            
+                
             user_split = re.split(r" +", user_line)
             user_input = user_split[0]
-
+            
             reset_quickstatus = True
             
             if user_input in [ "status", "s"]:
@@ -280,30 +305,33 @@ def main():
                 statuses = {}
                 for qhit in contents:
                     if len(user_input) > 1:
-                        if not re.match(user_input[1], qhit): continue                        
+                        if not re.search(user_input[1], qhit): continue                        
                     status = get_status(qhit, auth)
                     statuses[qhit] = status
                     print(qhit, json.dumps(status, indent=2))
                 os.makedirs("rundriver", exist_ok=True)
                 with open("rundriver/status.json", "w") as statfile:
                     statfile.write(json.dumps(statuses, indent = 2))
+            elif user_input in [ "finalize", "f" ]:
+                print("it's called 'write' now (to avoid confusion over what it does)")
             elif user_input in [ "list", "l" ]:
                 models = list_models()
                 print("models:", models)
-            elif user_input in [ "cf", "clearfinalize"]:
+            elif user_input in [ "cw", "clearwritten"]:
                 iqsub = None
                 if len(user_split) > 1:
                     iqsub = user_split[1]
 
-                newfinalized = {}
+                new_written = {}
                 if iqsub:
-                    for iq, state in finalized.items():
-                        if re.match(iqsub, iq):
-                            state = False
+                    for iq, state in written.items():
+                        if re.search(iqsub, iq):
                             print(iq, "cleared")
-                        newfinalized[iq] = state
+                        else:
+                            print(iq, "written")
+                            new_written[iq] = written[iq]
                         
-                finalized = newfinalized
+                written = new_written
             elif user_input in [ "stop" ]:
                 if len(user_split) < 2:
                     print("must specify iq and optionally tag track")
@@ -323,7 +351,7 @@ def main():
                     track = user_split[2]
                     this_tag_config = deepcopy(tag_config)
                     this_tag_config['features'] = { track: tag_config['features'][track] }
-                contentsub = [ x for x in contents if iqsub == None or re.match(iqsub, x) ]    
+                contentsub = [ x for x in contents if iqsub == None or re.search(iqsub, x) ]    
                 tag(contentsub, auth, args.assets, this_tag_config,
                     start_time = start_time, end_time = end_time)
             elif user_input.startswith("+") or user_input.startswith("-"):
@@ -349,41 +377,43 @@ def main():
                 print(f'[{start_time}-{end_time}] [{hmss} - {hms}]')                
             elif user_input == "qs":
                 reset_quickstatus = False
-                if len(user_split) > 1 and user_split[1] == "on":
-                    timeout = 60
-                    print("quickstatus on, time: " + str(timeout))
+                if len(user_split) > 1 and user_split[1] == "watch":
+                    quickstatus_watch = " ".join(["qs"] + user_split[2:])
+                    print("quickstatus on, command: " + quickstatus_watch)
                 elif len(user_split) > 1 and user_split[1] == "off":
                     print("quickstatus off")
-                    timeout = None
+                    quickstatus_watch = None
                 else:
                     for qhit in contents:
                         quick_status(auth, qhit, " ".join(user_split[1:]))
             elif user_input in [ 'reverse' ]:
                 contents.reverse()
                 print("First element:", contents[0])
-            elif user_input in [ "finalize", "f" ]:
+            elif user_input in [ "write", "w" ]:
                 contentsub = contents
                 if len(user_split) > 1:
                     contentsub = user_split[1:]
-                finalize_all(contentsub, args.config, args.commit, force = False)
-            elif user_input in [ "forcefinalize" ]:
+                write_all(contentsub, args.config, args.commit, force = False)
+            elif user_input in [ "forcewrite" ]:
                 contentsub = contents
                 if len(user_split) > 1:
                     contentsub = user_split[1:]
-                finalize_all(contentsub, args.config, args.commit, force = True)
+                write_all(contentsub, args.config, args.commit, force = True)
             elif user_input in [ "agg", "aggregate"]:
                 for qhit in contents:
                     aggregate(qhit, args.config, args.commit)
             elif user_input in [ "quit", "exit"]:
                 break
+            elif user_input in [ "h", "help"]:
+                help()
             elif user_input == "":
                 reset_quickstatus = False
             else:
                 reset_quickstatus = False
                 print(f"Invalid command: {user_input}")
 
-            if reset_quickstatus and timeout:
-                timeout = None
+            if reset_quickstatus and quickstatus_watch:
+                quickstatus_watch = None
                 print("[auto quickstatus turned off]")
                 
         except KeyboardInterrupt:
@@ -424,7 +454,7 @@ if __name__ == "__main__":
     parser.add_argument("--config", help="fabric config file to use for making tokens")
     parser.add_argument("--tag-config", default="", help="Tagger config json.  Use @ to read a file")
     ##parser.add_argument("--audio-stream", default="audio", help="which audio stream to tag")
-    parser.add_argument("--commit", action="store_true", help="if set, commit on fabric after finalizing on tagger")
+    parser.add_argument("--commit", "--finalize", action="store_true", help="if set, commit (finalize) on fabric after writing on tagger")
     parser.add_argument("--start-time", help="start time in seconds", default = 0)
     parser.add_argument("--end-time", help="end time in seconds", default = None)
     args = parser.parse_args()

@@ -545,6 +545,7 @@ def get_flask_app():
                 authorization = fields.Str(required=False, missing=None)
             return FinalizeArgs(**FinalizeSchema().load(data))
 
+    @app.route('/<qhit>/write', methods=['POST'])
     @app.route('/<qhit>/finalize', methods=['POST'])
     def finalize(qhit: str) -> Response:
         try:
