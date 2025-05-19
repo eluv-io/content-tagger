@@ -118,7 +118,8 @@ def tag(contents: list, auth: str, assets: bool, params: dict, start_time: float
 
         if end_time is not None:
             params["end_time"] = end_time
-                    
+
+        print(json.dumps(params, indent=2))
         res = requests.post(url, params={"authorization": auth}, json=params)
         print(response_force_dict(res))
 
@@ -400,7 +401,10 @@ def main():
                     contentsub = user_split[1:]
                 write_all(contentsub, args.config, args.commit, force = True)
             elif user_input in [ "agg", "aggregate"]:
-                for qhit in contents:
+                contentsub = contents
+                if len(user_split) > 1:
+                    contentsub = user_split[1:]
+                for qhit in contentsub:
                     aggregate(qhit, args.config, args.commit)
             elif user_input in [ "quit", "exit"]:
                 break
