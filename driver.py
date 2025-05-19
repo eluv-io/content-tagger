@@ -269,7 +269,7 @@ def main():
     auth = get_auth(args.config, contents[0])
 
     end_time = None
-    if end_time is not None: end_time = int(args.end_time)
+    if args.end_time is not None: end_time = int(args.end_time)
     start_time = int(args.start_time)
     
     quickstatus_watch = None
