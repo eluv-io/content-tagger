@@ -27,7 +27,7 @@ cd ..
 for repo in "${models[@]}"; do
     if [ ! -d "$repo" ]; then
         echo CLONE: $repo  -------------
-        git clone git@github.com:qluvio/$repo
+        git clone git@github.com:eluv-io/$repo
     elif [ "$update" = "true" ]; then
         echo UPDATE: $repo  -------------
         (cd "$repo" && git fetch && git_recent && git pull && git status --porcelain )
