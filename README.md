@@ -14,7 +14,7 @@ A server for running individual containerized tagger models and publishing tags.
 2. Python
 3. A podman image for each model you want to run. See the individual model repos for more information. 
 4. A gpu, cpu inference is not yet supported. 
-5. ssh key with github access to qluvio
+5. ssh key with github access to eluv-io
 
 ## Setup w/ conda
 
