@@ -95,8 +95,10 @@ def format_video_tags(client: ElvClient, write_token: str, interval: int, tags_p
         logger.info("Parsing external tags")
         external_tags, labels = _parse_external_tags(os.path.join(tags_path, 'source_tags'))
         custom_labels.update(labels)
-        all_video_tags.update(external_tags)
+        ##all_video_tags.update(external_tags)
         video_streams.remove("source_tags")
+    else:
+        external_tags = {}
 
     fps = None
     for stream in video_streams:
@@ -130,7 +132,14 @@ def format_video_tags(client: ElvClient, write_token: str, interval: int, tags_p
 
     if "shot" in all_video_tags:
         shot_intervals = [(tag.start_time, tag.end_time) for tag in all_video_tags["shot"]]
-        aggshot_tags = {"shot_tags": aggregate_video_tags({f: tags for f, tags in all_video_tags.items() if f != "shot"}, shot_intervals) }
+    elif "shot" in external_tags:
+        ## this is only true for the case of converting v1 shot tags into external tags (rare)
+        shot_intervals = [(tag.start_time, tag.end_time) for tag in external_tags["shot"]]
+    else:
+        shot_intervals = []
+    
+    if len(shot_intervals) > 0:
+        aggshot_tags = {"shot_tags": aggregate_video_tags({f: tags for f, tags in (list(all_video_tags.items()) + list(external_tags.items())) if f != "shot"}, shot_intervals) }
     else:
         aggshot_tags = {}
 
