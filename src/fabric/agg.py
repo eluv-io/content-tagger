@@ -86,6 +86,7 @@ def format_video_tags(client: ElvClient, write_token: str, interval: int, tags_p
     all_frame_tags, all_video_tags = {}, {}
     custom_labels = {}
     
+
     if "source_tags" in video_streams:
         with timeit("Downloading source tags"):
             res = client.download_directory(dest_path=os.path.join(tags_path, 'source_tags'), fabric_path="video_tags/source_tags", write_token=write_token)
@@ -116,6 +117,7 @@ def format_video_tags(client: ElvClient, write_token: str, interval: int, tags_p
             if feature not in os.listdir(stream_save_path):
                 continue
             assert feature not in all_video_tags and feature not in all_frame_tags, f"Feature {feature} already found in another stream"
+            assert feature not in external_tags, f"Feature {feature} already found in another stream in external tags"
             model_path = os.path.join(stream_save_path, feature)
             if codec == "video":
                 frames_per_part = part_duration * fps
@@ -128,8 +130,9 @@ def format_video_tags(client: ElvClient, write_token: str, interval: int, tags_p
             if len(video_tags_files) == 0:
                 logger.warning(f"No tags found for feature {feature}")
                 continue
-            all_video_tags[feature] = merge_video_tag_files(video_tags_files, part_duration)
+            all_video_tags[feature] = merge_video_tag_files(video_tags_files, part_duration, combine_across_parts = (feature == "shot"))
 
+    ## shot must be entirely ml-tagger or entirely external tags, both is not allowed
     if "shot" in all_video_tags:
         shot_intervals = [(tag.start_time, tag.end_time) for tag in all_video_tags["shot"]]
     elif "shot" in external_tags:
@@ -143,6 +146,7 @@ def format_video_tags(client: ElvClient, write_token: str, interval: int, tags_p
     else:
         aggshot_tags = {}
 
+    ## xxx asr external / user -- blah
     if "asr" in all_video_tags:
         # sentence level aggregation on speech to text
         sentence_intervals = _get_sentence_intervals(all_video_tags["asr"])
@@ -290,7 +294,7 @@ def add_links(client: ElvClient, fpaths: List[str], qwt: str, libid: str) -> Non
         
     client.merge_metadata(qwt, data, library_id=libid, metadata_subtree='video_tags')
 
-def merge_video_tag_files(tags: List[str], part_duration: float) -> List[VideoTag]:
+def merge_video_tag_files(tags: List[str], part_duration: float, combine_across_parts = False) -> List[VideoTag]:
     """Merges all the VideoTags from the given list of files into a single list of VideoTags with global timestamps."""
     tag_duration = part_duration*1000
     merged = []
@@ -304,8 +308,14 @@ def merge_video_tag_files(tags: List[str], part_duration: float) -> List[VideoTa
         except json.decoder.JSONDecodeError as jd:
             logger.error(f"ERROR Decoding File {tag}: {jd}") 
             raise jd
-        
+
+        if combine_across_parts and len(merged) > 0 and merged[-1].end_time == part_start and len(data) > 0 and data[0].start_time == 0 and merged[-1].text == data[0].text:
+            logger.debug(f"Merging part {part_idx} with previous part due to part boundary alignment")
+            merged[-1].end_time = data[0].end_time + part_start
+            data.pop(0)
+
         merged.extend([VideoTag(start_time=part_start + tag.start_time, end_time=part_start + tag.end_time, text=tag.text, confidence=tag.confidence) for tag in data])
+
     return merged
 
 def merge_frame_tag_files(tags: List[str], len_frames: int) -> Dict[int, List[FrameTag]]:
