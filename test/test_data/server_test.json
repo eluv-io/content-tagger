@@ -5,12 +5,12 @@
         },
         {
             "video": {
-                "dummy_gpu": {
+                "shot": {
                     "status": "Completed",
                     "error": null,
                     "failed": []
                 },
-                "shot": {
+                "dummy_gpu": {
                     "status": "Completed",
                     "error": null,
                     "failed": []
@@ -19,17 +19,17 @@
         },
         {
             "video": {
+                "shot": {
+                    "status": "Completed",
+                    "error": null,
+                    "failed": []
+                },
                 "dummy_cpu": {
                     "status": "Completed",
                     "error": null,
                     "failed": []
                 },
                 "dummy_gpu": {
-                    "status": "Completed",
-                    "error": null,
-                    "failed": []
-                },
-                "shot": {
                     "status": "Completed",
                     "error": null,
                     "failed": []
@@ -38,12 +38,12 @@
         },
         {
             "image": {
-                "dummy_gpu": {
+                "dummy_cpu": {
                     "status": "Completed",
                     "error": null,
                     "failed": []
                 },
-                "dummy_cpu": {
+                "dummy_gpu": {
                     "status": "Completed",
                     "error": null,
                     "failed": []
@@ -8606,28 +8606,28 @@
         },
         {
             "image": {
-                "dummy_gpu": {
-                    "status": "Completed",
-                    "error": null,
-                    "failed": []
-                },
                 "dummy_cpu": {
                     "status": "Completed",
                     "error": "Tagging already complete for dummy_cpu on",
+                    "failed": []
+                },
+                "dummy_gpu": {
+                    "status": "Completed",
+                    "error": null,
                     "failed": []
                 }
             }
         },
         {
             "image": {
-                "dummy_gpu": {
-                    "status": "Completed",
-                    "error": null,
-                    "failed": []
-                },
                 "dummy_cpu": {
                     "status": "Completed",
                     "error": "Tagging already complete for dummy_cpu on",
+                    "failed": []
+                },
+                "dummy_gpu": {
+                    "status": "Completed",
+                    "error": null,
                     "failed": []
                 }
             }
@@ -8679,6 +8679,70 @@
                 },
                 "confidence": 1.0
             }
+        ]
+    ],
+    [
+        [
+            "0001_hqpe2BbXbGr5swuUCsU2fGsdh8B1DDm58FD8qFWjgdL2BMADSe6hrY.mp4_frametags.json",
+            "0001_hqpe2BbXbGr5swuUCsU2fGsdh8B1DDm58FD8qFWjgdL2BMADSe6hrY.mp4_tags.json",
+            "0002_hqpedr99TN9cxgDb33qn641mtAhDAkiQERGwaEazKf2YbY211CbbW.mp4_frametags.json",
+            "0002_hqpedr99TN9cxgDb33qn641mtAhDAkiQERGwaEazKf2YbY211CbbW.mp4_tags.json",
+            "0003_hqpesSzwndStRVdWmnWEGPU3L6c1MkHut4jur6NWPxbJR2n4X4tDu.mp4_frametags.json",
+            "0003_hqpesSzwndStRVdWmnWEGPU3L6c1MkHut4jur6NWPxbJR2n4X4tDu.mp4_tags.json",
+            "0004_hqpe25aPwt8YBQVrwruHupfiqhZfp8D7vmnCg3VPnZQttq1nPyHT7D.mp4_frametags.json",
+            "0004_hqpe25aPwt8YBQVrwruHupfiqhZfp8D7vmnCg3VPnZQttq1nPyHT7D.mp4_tags.json",
+            "0005_hqpe2wAZKzwowsCb13QrP536ZuDKxESpCHAkNMzEBuuxkzyZEFmaaJ.mp4_frametags.json",
+            "0005_hqpe2wAZKzwowsCb13QrP536ZuDKxESpCHAkNMzEBuuxkzyZEFmaaJ.mp4_tags.json",
+            "0006_hqpekUBkzs1N4vsVbYVyizvPX45EAJYQhjBLzKdVLZpaejSfMYWXR.mp4_frametags.json",
+            "0006_hqpekUBkzs1N4vsVbYVyizvPX45EAJYQhjBLzKdVLZpaejSfMYWXR.mp4_tags.json",
+            "0007_hqpe2vv66AXw5yBBjQXDRW2CtRgQ9wvMYSbCSjpPU6VNESfnViKb1h.mp4_frametags.json",
+            "0007_hqpe2vv66AXw5yBBjQXDRW2CtRgQ9wvMYSbCSjpPU6VNESfnViKb1h.mp4_tags.json",
+            "0008_hqpe2dbsPW948dT8ZxSDRD4pQ4pVgC8a6xfgd4ebNDGwPzAt93aHQK.mp4_frametags.json",
+            "0008_hqpe2dbsPW948dT8ZxSDRD4pQ4pVgC8a6xfgd4ebNDGwPzAt93aHQK.mp4_tags.json",
+            "0009_hqpe2cmNjbKpyRadqRMgXZT8pXH8gnPCiQnbDACtouNEetXmwhG96x.mp4_frametags.json",
+            "0009_hqpe2cmNjbKpyRadqRMgXZT8pXH8gnPCiQnbDACtouNEetXmwhG96x.mp4_tags.json",
+            "0010_hqpe21tMwaVHH3fBBUaK7gcP4akFhVStGUfoypbCz5vH6tofe44Qej.mp4_tags.json"
+        ],
+        [
+            "0001_hqpe2BbXbGr5swuUCsU2fGsdh8B1DDm58FD8qFWjgdL2BMADSe6hrY.mp4_frametags.json",
+            "0001_hqpe2BbXbGr5swuUCsU2fGsdh8B1DDm58FD8qFWjgdL2BMADSe6hrY.mp4_tags.json",
+            "0002_hqpedr99TN9cxgDb33qn641mtAhDAkiQERGwaEazKf2YbY211CbbW.mp4_frametags.json",
+            "0002_hqpedr99TN9cxgDb33qn641mtAhDAkiQERGwaEazKf2YbY211CbbW.mp4_tags.json",
+            "0003_hqpesSzwndStRVdWmnWEGPU3L6c1MkHut4jur6NWPxbJR2n4X4tDu.mp4_frametags.json",
+            "0003_hqpesSzwndStRVdWmnWEGPU3L6c1MkHut4jur6NWPxbJR2n4X4tDu.mp4_tags.json",
+            "0004_hqpe25aPwt8YBQVrwruHupfiqhZfp8D7vmnCg3VPnZQttq1nPyHT7D.mp4_frametags.json",
+            "0004_hqpe25aPwt8YBQVrwruHupfiqhZfp8D7vmnCg3VPnZQttq1nPyHT7D.mp4_tags.json",
+            "0005_hqpe2wAZKzwowsCb13QrP536ZuDKxESpCHAkNMzEBuuxkzyZEFmaaJ.mp4_frametags.json",
+            "0005_hqpe2wAZKzwowsCb13QrP536ZuDKxESpCHAkNMzEBuuxkzyZEFmaaJ.mp4_tags.json",
+            "0006_hqpekUBkzs1N4vsVbYVyizvPX45EAJYQhjBLzKdVLZpaejSfMYWXR.mp4_frametags.json",
+            "0006_hqpekUBkzs1N4vsVbYVyizvPX45EAJYQhjBLzKdVLZpaejSfMYWXR.mp4_tags.json",
+            "0007_hqpe2vv66AXw5yBBjQXDRW2CtRgQ9wvMYSbCSjpPU6VNESfnViKb1h.mp4_frametags.json",
+            "0007_hqpe2vv66AXw5yBBjQXDRW2CtRgQ9wvMYSbCSjpPU6VNESfnViKb1h.mp4_tags.json",
+            "0008_hqpe2dbsPW948dT8ZxSDRD4pQ4pVgC8a6xfgd4ebNDGwPzAt93aHQK.mp4_frametags.json",
+            "0008_hqpe2dbsPW948dT8ZxSDRD4pQ4pVgC8a6xfgd4ebNDGwPzAt93aHQK.mp4_tags.json",
+            "0009_hqpe2cmNjbKpyRadqRMgXZT8pXH8gnPCiQnbDACtouNEetXmwhG96x.mp4_frametags.json",
+            "0009_hqpe2cmNjbKpyRadqRMgXZT8pXH8gnPCiQnbDACtouNEetXmwhG96x.mp4_tags.json",
+            "0010_hqpe21tMwaVHH3fBBUaK7gcP4akFhVStGUfoypbCz5vH6tofe44Qej.mp4_frametags.json",
+            "0010_hqpe21tMwaVHH3fBBUaK7gcP4akFhVStGUfoypbCz5vH6tofe44Qej.mp4_tags.json",
+            "0011_hqpeBjj24uBooWLD9bUW8NZpRGyGHdJVDhSS2qFe2vmviSxvZperB.mp4_frametags.json",
+            "0011_hqpeBjj24uBooWLD9bUW8NZpRGyGHdJVDhSS2qFe2vmviSxvZperB.mp4_tags.json",
+            "0012_hqpe24cyyLSFowDtkyDurUMGyQPjEe8cV3Faz9nqHFmsWGjYQpdxjZ.mp4_frametags.json",
+            "0012_hqpe24cyyLSFowDtkyDurUMGyQPjEe8cV3Faz9nqHFmsWGjYQpdxjZ.mp4_tags.json",
+            "0013_hqpe2hszTTBbz7vPpqaVMPaGTrwZCrxW5rSB68Ko44VrXaPDstF6Mu.mp4_frametags.json",
+            "0013_hqpe2hszTTBbz7vPpqaVMPaGTrwZCrxW5rSB68Ko44VrXaPDstF6Mu.mp4_tags.json",
+            "0014_hqpe2fbT7xgvqVd9ZJpdpguaGW8f2n3oYzVL4uBzcf9Gd8US4QXHA7.mp4_frametags.json",
+            "0014_hqpe2fbT7xgvqVd9ZJpdpguaGW8f2n3oYzVL4uBzcf9Gd8US4QXHA7.mp4_tags.json",
+            "0015_hqpewZm4DFdSUG7wfnh3BHrLXjjCw8ebJU53BeCkLm48QHQyK9Qb1.mp4_frametags.json",
+            "0015_hqpewZm4DFdSUG7wfnh3BHrLXjjCw8ebJU53BeCkLm48QHQyK9Qb1.mp4_tags.json",
+            "0016_hqpec4hckrzByyiToNViULUNnHyTZApVB3gR1SQ8VVBkd62vgk8mM.mp4_frametags.json",
+            "0016_hqpec4hckrzByyiToNViULUNnHyTZApVB3gR1SQ8VVBkd62vgk8mM.mp4_tags.json",
+            "0017_hqpe2ieDEu95m9YPraWf41TLpvG5ACGcsGoXANFiCAgjdhKuJXCk8w.mp4_frametags.json",
+            "0017_hqpe2ieDEu95m9YPraWf41TLpvG5ACGcsGoXANFiCAgjdhKuJXCk8w.mp4_tags.json",
+            "0018_hqpe25YdSvV864cWNUUVJGrrAyqa8WSinYbQqjUynH9X5zgpigNncw.mp4_frametags.json",
+            "0018_hqpe25YdSvV864cWNUUVJGrrAyqa8WSinYbQqjUynH9X5zgpigNncw.mp4_tags.json",
+            "0019_hqpe2qY26usKX29bRZHaCjKaCc73Xb5xFzNSxdsf7g6aHSUsf1rvPy.mp4_frametags.json",
+            "0019_hqpe2qY26usKX29bRZHaCjKaCc73Xb5xFzNSxdsf7g6aHSUsf1rvPy.mp4_tags.json",
+            "0020_hqpe23XWcGCgTtVBLdUoZfN7tGKxvbQJBruhiMzUyfoeMc4fm6cPy1.mp4_tags.json"
         ]
     ]
 ]

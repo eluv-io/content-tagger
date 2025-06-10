@@ -113,8 +113,8 @@ def _fetch_livestream_metadata(qhit: str, stream_name: str, client: ElvClient) -
         raise HTTPError(f"Failed to retrieve periods for live recording {qhit}") from e
     if len(periods) == 0:
         raise StreamNotFoundError(f"Live recording {qhit} is empty")
-    if len(periods) > 1:
-        raise StreamNotFoundError(f"Multiple periods found for live recording {qhit}. Multi-period tagging is not currently supported.")
+    #if len(periods) > 1:
+    #    raise StreamNotFoundError(f"Multiple periods found for live recording {qhit}. Multi-period tagging is not currently supported.")
     stream = periods[0].get("sources", {}).get(stream_name, {}).get("parts", [])
     if len(stream) == 0:
         raise StreamNotFoundError(f"Stream {stream_name} was found in live recording, but no parts were found.")
