@@ -1,19 +1,22 @@
-import pynvml
-import atexit
-import uuid
+import time
 import os
+import uuid
 import threading
-import podman
-from podman.domain.containers import Container
+import atexit
 from dataclasses import dataclass
 from typing import List, Optional, Literal, Dict
+import json
+
+import pynvml
+import podman
+from podman.domain.containers import Container
 from loguru import logger
-import time
 
 from src.containers import create_container
+
 from config import config
 
-class NoGPUAvailable(Exception):
+class NoResourceAvailable(Exception):
     pass
 
 @dataclass
@@ -26,6 +29,8 @@ class TagJob:
     logs_out: str
     # device index, None if no GPU
     device: Optional[int]
+    # cpu "slot" index,  None if no CPU slot
+    cpu_slot: Optional[str]
     # status of the job
     status: Literal["Running", "Completed", "Stopped", "Failed"]
     stop_event: threading.Event
@@ -37,6 +42,10 @@ class TagJob:
     tags: List[str]
     warnings: List[str]
     save_path: str
+    
+    def __post_init__(self):
+        if self.device is not None and self.cpu_slot is not None:
+            raise ValueError("a TagJob cannot have both a GPU and CPU slot")
 
 class ResourceManager:
     def __init__(self):
@@ -56,54 +65,73 @@ class ResourceManager:
         # (media file, model) pairs, cannot have two jobs going on the same file with the same model
         self.files_tagging = set()
         
+        self.cpu_available = threading.Event()
+        self.cpu_available.set()
+
         # check if GPUs are available
         self.gpu_available = threading.Event()
         if any(status is False for status in self.device_status):
             self.gpu_available.set()
 
-    # Args:
-    #     feature (str): The feature to tag the files with.
-    #     run_config (dict): The configuration to run the model with. This is model-specific. Check the model's documentation.
-    #     files (List[str]): The list of files to tag.
-    # Returns:
-    #     str: The job ID.
-    # NOTE: this function creates a new thread to watch the job
-    def run(self, feature: str, run_config: dict, files: List[str], allowed_gpus: List[str]) -> str:
+        # get all the "cpu slots" defined in the model config, and initialize to "available"
+        self.cpuslots = {}
+        for modelname, model_conf in config["services"].items():
+            if model_conf.get("allowed_gpus", None) != []:
+                # GPU models should not have cpu slots
+                continue
+            allowed_slots = model_conf.get("cpu_slots", [f"slot4{modelname}"])
+            for slotname in allowed_slots:
+                self.cpuslots[slotname] = False
+    def run(self, feature: str, run_config: dict, files: List[str], allowed_gpus: List[int], allowed_cpus: List[str], logs_subpath: Optional[str]=None) -> str:
+        # Args:
+        #     feature (str): The feature to tag the files with.
+        #     run_config (dict): The configuration to run the model with. This is model-specific. Check the model's documentation.
+        #     files (List[str]): The list of files to tag.
+        #     allowed_gpus (List[int]): The list of allowed GPUs to use. If empty, any GPU can be used.
+        #     allowed_cpus (List[str]): The list of allowed CPU slots to use. If empty, any CPU slot can be used.
+        #     logs_path (Optional[str]): The path to save the logs. If None, a default path will be used.
+        # Returns:
+        #     str: The job ID.
+        # NOTE: this function creates a new thread to watch the job
         with self.lock:
             self.update_gpu_state()
-            device_idx = None
             container = None
             files_added = []
+            cpu_slot_to_use, gpu_device_to_use = None, None
             try:
-                if len(allowed_gpus) > 0:
-                    # check for an available GPU and set device statuses according
-                    for i, status in enumerate(self.device_status):
-                        if status:
-                            # gpu already in use
-                            continue
-                        if i not in allowed_gpus:
-                            continue
-                        device_idx = i
-                        self.device_status[i] = True
-                        if all(self.device_status[i] for i in range(self.num_devices)):
-                            self.gpu_available.clear()
-                        break
-                    if device_idx is None:
-                        raise NoGPUAvailable("No available GPUs")
-                # start the container
+                if len(allowed_gpus) == 0 and len(allowed_cpus) == 0:
+                    raise NoResourceAvailable("No GPUs or CPU slots available")
+                if len(allowed_gpus) > 0 and len(allowed_cpus) > 0:
+                    raise ValueError("Cannot use both GPUs and CPU slots at the same time")
+                
+                if allowed_gpus:
+                    gpu_device_to_use = self._acquire_gpu(allowed_gpus)
+                    if gpu_device_to_use is None:
+                        raise NoResourceAvailable("No GPUs available")
+                else:
+                    cpu_slot_to_use = self._acquire_cpu(allowed_cpus)
+                    if cpu_slot_to_use is None:
+                        raise NoResourceAvailable("No CPU slots available")
+                    
+                logs_dir = os.path.join(config["storage"]["logs"], feature)
+                if logs_subpath:
+                    logs_dir = os.path.join(logs_dir, logs_subpath)
+                os.makedirs(logs_dir, exist_ok=True)
+
+                # to order logs chronologically
+                log_idx = len(os.listdir(logs_dir))
                 jobid = str(uuid.uuid4())
-                if not os.path.exists(os.path.join(config["storage"]["logs"], feature)):
-                    os.makedirs(os.path.join(config["storage"]["logs"], feature))
-                logs_out = os.path.join(config["storage"]["logs"], feature, f"{jobid}.log")
+                logs_out = os.path.join(logs_dir, f"{log_idx}_{jobid}.log")
+
                 for f in files:
                     if (f, feature) in self.files_tagging:
                         raise ValueError(f"File {f} is already being tagged with {feature}")
                     self.files_tagging.add((f, feature))
                     files_added.append((f, feature))
                 save_path = os.path.join(config["storage"]["tmp"], feature, jobid)
-                container = create_container(self.client, feature, save_path, files, run_config, device_idx, logs_out)
+                container = create_container(self.client, feature, save_path, files, run_config, gpu_device_to_use, logs_out)
                 container.start()
-                self.jobs[jobid] = TagJob(container, feature, logs_out, device_idx, "Running", threading.Event(), time.time(), None, files, [], [], save_path=save_path)
+                self.jobs[jobid] = TagJob(container, feature, logs_out, gpu_device_to_use, cpu_slot_to_use, "Running", threading.Event(), time.time(), None, files, [], [], save_path=save_path)
             except Exception as e:
                 # cleanup resources if job fails to start
                 if container:
@@ -114,13 +142,79 @@ class ResourceManager:
                         raise e2
                 for f, feature in files_added:
                     self.files_tagging.remove((f, feature))
-                if device_idx is not None and device_idx not in self.foreign_gpus:
-                    self.device_status[device_idx] = False
+                if gpu_device_to_use is not None and gpu_device_to_use not in self.foreign_gpus:
+                    self.device_status[gpu_device_to_use] = False
                     self.gpu_available.set()
+                if cpu_slot_to_use is not None:
+                    self.cpuslots[cpu_slot_to_use] = False
+                    self.cpu_available.set()
                 raise e
         threading.Thread(target=self._watch_job, args=(jobid, )).start()
         return jobid
     
+    def _acquire_gpu(self, allowed_gpus: List[int]) -> Optional[int]:
+        """
+        Finds an available GPU from the list of allowed GPUs.
+        Args:
+            allowed_gpus (List[int]): The list of allowed GPUs to check.
+        Returns:
+            Optional[int]: The index of the available GPU, or None if no GPU is available.
+            
+        This function is not thread safe, and should be called with the lock held.
+        """
+        
+        logger.debug("Trying to acquire gpu slot")
+
+        self.update_gpu_state()
+
+        gpu_device_to_use = None
+
+        # check for an available GPU and set device statuses according
+        for i, status in enumerate(self.device_status):
+            if status:
+                # gpu already in use
+                continue
+            if len(allowed_gpus) != 0 and i not in allowed_gpus:
+                continue
+            gpu_device_to_use = i
+            self.device_status[i] = True
+            if all(self.device_status[i] for i in range(self.num_devices)):
+                self.gpu_available.clear()
+            break
+    
+        return gpu_device_to_use
+
+    def _acquire_cpu(self, allowed_cpu_slots: List[str]) -> Optional[str]:
+        """
+        Finds an available CPU slot from the list of allowed CPU slots.
+        Args:
+            allowed_cpu_slots (List[str]): The list of allowed CPU slots to check
+        Returns:
+            Optional[str]: The available cpu slot name, or None if none are available
+            
+        This function is not thread safe, and should be called with the lock held.
+        """
+        
+        logger.debug("Trying to acquire cpu slot")
+
+        cpu_slot_to_use = None
+
+        # check for an available GPU and set device statuses according
+        for slot, status in self.cpuslots.items():
+            if status:
+                # cpu slot already in use
+                continue
+            if slot not in allowed_cpu_slots:
+                continue
+            cpu_slot_to_use = slot
+            self.cpuslots[slot] = True
+            if all(self.cpuslots.values()):
+                self.cpu_available.clear()
+
+            break
+    
+        return cpu_slot_to_use
+
     # Not thread safe, must be called with lock
     def update_gpu_state(self):
         """
@@ -145,15 +239,16 @@ class ResourceManager:
                 
         if all(self.device_status[i] for i in range(self.num_devices)):
             self.gpu_available.clear()
-            
+
     def _is_container_active(self, status: str) -> bool:
         return status == "running" or status == "created"
-    
+
     # main function for watching and finalizing the job which is running in a container
     def _watch_job(self, jobid: str) -> None:
         # because we aren't deleting keys, we don't need to lock
         job = self.jobs[jobid]
         logger.info(f"Watching job {jobid}")
+
         with open(job.logs_out, "w") as fout:
             try:
                 ts = 0
@@ -166,7 +261,15 @@ class ResourceManager:
                     ts = int(time.time())
                     for log in logs:
                         fout.write(log.decode("utf-8"))
-                    
+
+                    tags = os.listdir(job.save_path)
+
+                    if len(tags) > 0:
+                        # remove the tag with the most recent write time
+                        latest_idx = max(range(len(tags)), key=lambda i: os.path.getmtime(os.path.join(job.save_path, tags[i])))
+                        tags.pop(latest_idx)
+                        job.tags = [os.path.join(job.save_path, tag) for tag in tags]
+
                     time.sleep(1)
             except Exception as e:
                 logger.error(f"Error while watching job {jobid}: {e}")
@@ -183,7 +286,7 @@ class ResourceManager:
             with self.lock:
                 self._cleanup_job(jobid, "Stopped")
             return
-        
+
         exit_code = job.container.attrs["State"]["ExitCode"]
         if exit_code != 0:
             logger.error(f"Job {jobid} failed to complete")
@@ -221,6 +324,9 @@ class ResourceManager:
     def await_gpu(self, timeout: Optional[int]=None) -> bool:
         return self.gpu_available.wait(timeout=timeout)
 
+    def await_cpu(self, timeout: Optional[int]=None) -> bool:
+        return self.cpu_available.wait(timeout=timeout)
+
     # cleanup job resources
     # NOTE: NOT THREAD SAFE, must be called with lock
     def _cleanup_job(self, jobid: str, status: str) -> None:
@@ -230,17 +336,20 @@ class ResourceManager:
         self._stop_container(job.container)
         for f in job.media_files:
             self.files_tagging.remove((f, job.feature))
-            
-        if job.device is None:
-            return
-            
-        # this implies a foreign process started while the job was running 
-        if is_gpu_in_use(job.device):
-            if job.device not in self.foreign_gpus:
-                self.foreign_gpus.append(job.device)
+
+        if job.device is not None:
+            # free the gpu slot
+            if is_gpu_in_use(job.device):
+                # this implies a foreign process started while the job was running, so we don't free the gpu
+                if job.device not in self.foreign_gpus:
+                    self.foreign_gpus.append(job.device)
+            else:
+                self.device_status[job.device] = False
+                self.gpu_available.set()
         else:
-            self.device_status[job.device] = False
-            self.gpu_available.set()
+            # free the cpu slot
+            self.cpuslots[job.cpu_slot] = False
+            self.cpu_available.set()
 
     def _stop_container(self, container: Container) -> None:
         logger.info(f"Stopping container: status={container.status}")
@@ -265,7 +374,7 @@ class ResourceManager:
             else:
                 return ResourceManager.TagJobStatus(job.status, tags=job.tags, \
                         time_elapsed=time.time() - job.time_started) 
-                
+
     def shutdown(self):
         """
         Stop all running jobs and close the podman client.

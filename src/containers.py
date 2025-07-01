@@ -41,7 +41,7 @@ def create_container(client: PodmanClient, feature: str, save_path: str, files: 
             "type": "bind",
             "read_only": True
         })
-    kwargs = {"image": feature, 
+    kwargs = {"image": config["services"][feature]["image"],
             "command": [f"{os.path.basename(p)}" for p in files] + ["--config", f"{json.dumps(run_config)}"], 
             "mounts": volumes, 
             "remove": True, 
