@@ -261,8 +261,10 @@ def main():
             if len(contents) == 0:
                 raise ValueError("No contents found in file.")
     else:
-        contents = [args.iq]
+        contents = [] #args.iq]
 
+    contents = contents + args.iq
+        
     models = list_models()
     print("models:" , models)
     
@@ -453,7 +455,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Basic tag driver")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("-c", "--contents", help="filename with list of contents (iq's) to tag")
-    group.add_argument("-q", "--iq", help="a single content (iq) to tag")    
+    group.add_argument("-q", "--iq", nargs='*', default=[], help="content (iq) to tag (specified directly)")    
     parser.add_argument("--assets", action="store_true", help="if set, tag assets instead of videos")
     parser.add_argument("--config", help="fabric config file to use for making tokens")
     parser.add_argument("--tag-config", default="", help="Tagger config json.  Use @ to read a file")
