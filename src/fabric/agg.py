@@ -146,7 +146,6 @@ def format_video_tags(client: ElvClient, write_token: str, interval: int, tags_p
     else:
         aggshot_tags = {}
 
-    ## xxx asr external / user -- blah
     if "asr" in all_video_tags:
         # sentence level aggregation on speech to text
         sentence_intervals = _get_sentence_intervals(all_video_tags["asr"])
@@ -226,6 +225,7 @@ def _parse_external_tags(tags_path: str) -> Dict[str, List[VideoTag]]:
                 external_tags[feature] = _parse_external_track(data[feature])
     return external_tags, labels
 
+MAX_SENTENCE_WORDS = 250
 def _get_sentence_intervals(tags: List[VideoTag]) -> List[Tuple[int, int]]:
     sentence_delimiters = ['.', '?', '!']
     intervals = []
@@ -233,6 +233,7 @@ def _get_sentence_intervals(tags: List[VideoTag]) -> List[Tuple[int, int]]:
         return []
     quiet = True
     curr_int = [0]
+    fake_sentence_cutoff = MAX_SENTENCE_WORDS
     for i, tag in enumerate(tags):
         if not tag.text:
             continue
@@ -245,7 +246,8 @@ def _get_sentence_intervals(tags: List[VideoTag]) -> List[Tuple[int, int]]:
             # start a new speaking interval
             curr_int.append(tag.start_time)
             quiet = False
-        if tag.text[-1] in sentence_delimiters or i == len(tags)-1:
+        if tag.text[-1] in sentence_delimiters or i == len(tags)-1 or i > fake_sentence_cutoff:
+            fake_sentence_cutoff = i + MAX_SENTENCE_WORDS
             # end and commit the speaking interval, add one due to exclusive bounds
             curr_int.append(tag.end_time+1)
             intervals.append((curr_int[0], curr_int[-1]))
