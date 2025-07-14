@@ -682,7 +682,7 @@ def get_flask_app():
         if not args.leave_open:
             client.finalize_files(qwt, qlib)
 
-        client.set_commit_message(qwt, "Uploaded ML Tags", qlib)
+        client.set_commit_message(qwt, "uploaded/aggregated ML tags (taggerv2)", qlib)
 
         return Response(response=json.dumps({'message': 'Succesfully uploaded tag files. Please finalize the write token.', 'write token': qwt}), status=200, mimetype='application/json')
 
