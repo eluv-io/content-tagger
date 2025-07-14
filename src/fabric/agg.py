@@ -356,6 +356,10 @@ def aggregate_video_tags(tags: Dict[str, List[VideoTag]], intervals: List[Tuple[
     for agg_tag in result:
         for feat in config["agg"]["coalesce_features"]:
             agg_tag.coalesce(feat)
+
+    for agg_tag in result:
+        for feat in config["agg"]["single_shot_tag"]:
+            agg_tag.keep_longest(feat)
     
     return result
 

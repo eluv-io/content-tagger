@@ -96,6 +96,11 @@ watcher:
   sleep: 5
 agg:
   interval: 10
+  ## if a feature is in this list, don't allow more than one tag per shot (in shot tags)
+  ## (if there are more, then the tag with the greatest duration will be kept)
+  ## this is to avoid errors sorting on the field
+  single_shot_tag:
+    - music
   coalesce_features: 
     - asr
     - french_asr
