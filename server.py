@@ -66,6 +66,10 @@ class Job:
     ## wall clock time of the last time this job was "put back" on the queue
     reput_time: int = 0
     
+
+## for debugging, keep the last tmpdir (only if set)
+last_tmpdir = None
+
 def get_flask_app():
     app = Flask(__name__)
     # manages the gpu and inference jobs
@@ -659,6 +663,7 @@ def get_flask_app():
         # if no file jobs, then we just do the aggregation
 
         tmpdir = tempfile.TemporaryDirectory(dir=config["storage"]["tmp"])
+
         with filesystem_lock:
             if os.path.exists(os.path.join(config["storage"]["tags"], qhit)):
                 shutil.copytree(os.path.join(config["storage"]["tags"], qhit), tmpdir.name, dirs_exist_ok=True)
@@ -677,7 +682,12 @@ def get_flask_app():
             )
             return Response(response=json.dumps({'error': str(e), 'message': message}), status=403, mimetype='application/json')
         finally:
-            tmpdir.cleanup()
+            if "keeplasttemp" in os.environ.get("TAGGER_AGG", ""):
+                ## for debugging, keep the last temp directory
+                global last_tmpdir
+                last_tmpdir = tmpdir
+            else:
+                tmpdir.cleanup()
         
         if not args.leave_open:
             client.finalize_files(qwt, qlib)
