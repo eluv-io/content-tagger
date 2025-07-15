@@ -318,7 +318,8 @@ def merge_video_tag_files(tags: List[str], part_duration: float, combine_across_
 
         merged.extend([VideoTag(start_time=part_start + tag.start_time, end_time=part_start + tag.end_time, text=tag.text, confidence=tag.confidence) for tag in data])
 
-    return merged
+    ## round the video tags, but do it after, so shots are more likely to get combined...
+    return [ VideoTag(start_time=round(vt.start_time), end_time=round(vt.end_time), text=vt.text, confidence=vt.confidence) for vt in merged ]
 
 def merge_frame_tag_files(tags: List[str], len_frames: int) -> Dict[int, List[FrameTag]]:
     merged = {}
