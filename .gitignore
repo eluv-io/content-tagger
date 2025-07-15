@@ -1,4 +1,5 @@
 config-local.yml
+tagger-config.yml
 rundriver
 data
 *.egg-info
@@ -9,3 +10,5 @@ __pycache__
 .vscode
 configs
 logs
+.aux
+work
