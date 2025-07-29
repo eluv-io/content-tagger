@@ -3,8 +3,21 @@ from podman.domain.containers import Container
 import json
 import os
 from typing import List, Optional
+from loguru import logger
 
 from config import config
+
+def list_services() -> List[str]:
+    with PodmanClient() as podman_client:
+        images = sum([image.tags for image in podman_client.images.list() if image.tags], [])
+
+    res = []
+    for service in config['services']:
+        if config['services'][service]['image'] in images:
+            res.append(service)
+        else:
+            logger.error(f"Image {config['services'][service]['image']} not found")
+    return res
 
 # Run a container with the given feature and files
 # Outputs list of tag files

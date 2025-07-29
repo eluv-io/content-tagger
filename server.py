@@ -8,7 +8,6 @@ from loguru import logger
 from dataclasses import dataclass, asdict, field
 import os
 from elv_client_py import ElvClient
-from queue import Queue
 from collections import defaultdict
 import threading
 from requests.exceptions import HTTPError
@@ -29,78 +28,31 @@ from src.fabric.utils import parse_qhit
 from src.fabric.agg import format_video_tags, format_asset_tags
 from src.fabric.video import download_stream, StreamNotFoundError
 from src.fabric.assets import fetch_assets, AssetsNotFoundException
+from src.tagger.jobs import JobsStore
 
 from src.manager import ResourceManager, NoResourceAvailable
 
-# RunConfig gives model level tagging params
-@dataclass
-class RunConfig():
-    # model config, used to overwrite the model level config
-    model: dict=field(default_factory=dict) 
-    # stream name to run the model on, None to use the default stream. "image" is a special case which will tag image assets
-    stream: Optional[str]=None
-
-@dataclass
-class Job:
-    status: Literal["Starting", 
-                    "Fetching content",
-                    "Waiting to be assigned GPU", 
-                    "Waiting for CPU resource", 
-                    "Completed", 
-                    "Failed", 
-                    "Stopped"]
-    qhit: str
-    feature: str
-    run_config: RunConfig
-    stop_event: threading.Event
-    media_files: List[str]
-    replace: bool
-    time_started: float
-    failed: List[str]
-    allowed_gpus: List[str]
-    allowed_cpus: List[str]
-    time_ended: Optional[float]=None
-    # tag_job_id is the job id returned by the manager, will be None until the tagging starts (status is "Running")
-    tag_job_id: Optional[str]=None
-    error: Optional[str]=None
-    ## wall clock time of the last time this job was "put back" on the queue
-    reput_time: int = 0
     
-
 ## for debugging, keep the last tmpdir (only if set)
 last_tmpdir = None
 
+def configure_routes(app: Flask) -> None:
+    # Configure the Flask app with the routes defined in this module.
+    @app.route('/<qhit>/tag', methods=['POST'])
+    def tag(qhit: str) -> tuple[Response, int]:
+        handle_tag(qhit)
+
+def boot_state(app: Flask) -> None:
+    app_state = {}
+
+    app_state["resource_manager"] = ResourceManager()
+
+    app_state["jobs_store"] = JobsStore
+
+    app.config["state"] = state
+
 def get_flask_app():
     app = Flask(__name__)
-    # manages the gpu and inference jobs
-    manager = ResourceManager()
-    
-    # queue for jobs waiting to be assigned a GPU
-    gpu_queue = Queue()
-
-    # queue for jobs waiting to be submitted that don't require a GPU
-    cpu_queue = Queue()
-
-    # locks active, and inactive jobs dictionaries
-    lock = threading.Lock()
-    # maps qhit -> (feature, stream) -> job
-    active_jobs = defaultdict(dict)
-    inactive_jobs = defaultdict(dict)
-    
-    # need for some filesytem operations
-    filesystem_lock = threading.Lock()
-
-    # make sure no two streams are being downloaded at the same time. 
-    # maps (qhit, stream) -> lock
-    download_lock = defaultdict(threading.Lock)
-
-    # controls the number of concurrent downloads
-    dl_sem = threading.Semaphore(config["fabric"]["max_downloads"])
-    
-    # make sure we don't finalize against the same write token at the same time
-    finalize_lock = defaultdict(threading.Lock)
-    
-    shutdown_signal = threading.Event()
 
     
     @app.route('/list', methods=['GET'])
@@ -168,97 +120,9 @@ def get_flask_app():
 
         return Response(response=json.dumps({'message': 'Successfully uploaded tags'}), status=200, mimetype='application/json')
 
-    # TagArgs represents the request body for the /tag endpoint
-    @dataclass
-    class TagArgs(Data):
-        # maps feature name to RunConfig
-        features: Dict[str, RunConfig]
-        # start_time in milliseconds (defaults to 0)
-        start_time: Optional[int]=None
-        # end_time in milliseconds (defaults to entire content)
-        end_time: Optional[int]=None
-        # replace tag files if they already exist
-        replace: bool=False
-
-        @staticmethod
-        def from_dict(data: dict) -> 'TagArgs':
-            features = {feature: RunConfig(**cfg) for feature, cfg in data['features'].items()}
-            return TagArgs(features=features, start_time=data.get('start_time', None), end_time=data.get('end_time', None), replace=data.get('replace', False))
-
     @app.route('/<qhit>/tag', methods=['POST'])
     def tag(qhit: str) -> Response:
-        try:
-            args = TagArgs.from_dict(request.json)
-        except (KeyError, TypeError) as e:
-            return Response(response=json.dumps({'error': f"Invalid input: {str(e)}"}), status=400, mimetype='application/json')
-        
-        _, error_response = _get_client(request, qhit, config["fabric"]["parts_url"])
-        if error_response:
-            return error_response
-        
-        invalid_services = _get_invalid_features(args.features.keys())
-        if invalid_services:
-            return Response(response=json.dumps({'error': f"Services {invalid_services} not found"}), status=404, mimetype='application/json')
-            
-        with lock:
-            if shutdown_signal.is_set():
-                return Response(response=json.dumps({'error': 'Server is shutting down'}), status=503, mimetype='application/json')
-            for feature, run_config in args.features.items():
-                if run_config.stream is None:
-                    # if stream name is not provided, we pick stream based on whether the model is audio/video based
-                    run_config.stream = config["services"][feature]["type"]
-                if (run_config.stream, feature) in active_jobs[qhit]:
-                    return Response(response=json.dumps({'error': f"{feature} tagging is already in progress for {qhit} on {run_config.stream}"}), status=400, mimetype='application/json')
-            for feature, run_config in args.features.items():
-                # get the subset of GPUs that the model can run on, default to all of them
-                allowed_gpus = config["services"][feature].get("allowed_gpus", list(range(manager.num_devices)))
-                allowed_cpus = config["services"][feature].get("cpu_slots", [])
-                logger.debug(f"Starting {feature} on {qhit}: {run_config.stream}")
-                job = Job(qhit=qhit, run_config=run_config, feature=feature, media_files=[], failed=[], replace=args.replace, status="Starting", stop_event=threading.Event(), time_started=time.time(), allowed_gpus=allowed_gpus, allowed_cpus=allowed_cpus)
-                active_jobs[qhit][(run_config.stream, feature)] = job
-                threading.Thread(target=_video_tag, args=(job, _get_authorization(request), args.start_time, args.end_time)).start()
-        return Response(response=json.dumps({'message': f'Tagging started on {qhit}'}), status=200, mimetype='application/json')
-    
-    def _video_tag(job: Job, authorization: str, start_time: Optional[int], end_time: Optional[int]) -> None:
-        part_download_client = ElvClient.from_configuration_url(config_url=config["fabric"]["parts_url"], static_token=authorization)
-        media_files, failed = _download_content(job, part_download_client, start_time=start_time, end_time=end_time)
-        job.media_files = media_files
-        job.failed = failed
-        _submit_tag_job(job, ElvClient.from_configuration_url(config_url=config["fabric"]["config_url"], static_token=authorization))
-
-    def _submit_tag_job(job: Job, client: ElvClient) -> None:
-        if _check_exit(job):
-            return
-        media_files = job.media_files
-        if len(media_files) == 0:
-            with lock:
-                if _is_job_stopped(job):
-                    return
-                _set_stop_status(job, "Failed", f"No media files found for {job.qhit}")
-            return
-        total_media_files = len(media_files)
-        if not job.replace:
-            media_files = _filter_tagged_files(media_files, client, job.qhit, job.run_config.stream, job.feature)
-        logger.debug(f"Tag status for {job.qhit}: {job.feature} on {job.run_config.stream}")
-        logger.debug(f"Total media files: {total_media_files}, Media files to tag: {len(media_files)}, Media files already tagged: {total_media_files - len(media_files)}")
-        if len(media_files) == 0:
-            with lock:
-                if _is_job_stopped(job):
-                    return
-                _set_stop_status(job, "Completed", f"Tagging already complete for {job.feature} on {job.qhit}")
-            return
-        if len(job.allowed_gpus) > 0:
-            # model will run on a gpu
-            with lock:
-                # TODO: Probably don't need lock
-                job.media_files = media_files
-                job.status = "Waiting to be assigned GPU"
-            gpu_queue.put(job)
-        else:
-            with lock:
-                job.media_files = media_files
-                job.status = "Waiting for CPU resource"
-            cpu_queue.put(job)
+        handle_tag(qhit)
 
     def _filter_tagged_files(media_files: List[str], client: ElvClient, qhit: str, stream: str, feature: str) -> List[str]:
         """
@@ -333,10 +197,6 @@ def get_flask_app():
         _, error_response = _get_client(request, qhit, config["fabric"]["config_url"])
         if error_response:
             return error_response
-        
-        invalid_services = _get_invalid_features(args.features.keys())
-        if invalid_services:
-            return Response(response=json.dumps({'error': f"Services {invalid_services} not found"}), status=404, mimetype='application/json')
 
         for feature, run_config in args.features.items():
             if not config["services"][feature].get("frame_level", False):
@@ -366,40 +226,6 @@ def get_flask_app():
         job.media_files = deduped
         job.failed = failed
         _submit_tag_job(job, elv_client)
-    
-    def _download_content(job: Job, elv_client: ElvClient, **kwargs) -> List[str]:
-        media_files, failed = [], []
-        stream = job.run_config.stream
-        qhit = job.qhit
-
-        if stream == "image":
-            save_path = os.path.join(config["storage"]["images"], qhit, stream)
-        else:
-            save_path = os.path.join(config["storage"]["parts"], qhit, stream)
-
-        try:
-            # TODO: if waiting for lock, and stop_event is set, it will keep waiting and stop only after the lock is acquired.
-            with download_lock[(qhit, stream)]:
-                job.status = "Fetching content"
-                with dl_sem:
-                    # if fetching finished while waiting for lock, this will return immediately
-                    if stream == "image":
-                        media_files, failed = fetch_assets(qhit, save_path, elv_client, **kwargs)
-                    else:
-                        media_files, failed =  download_stream(qhit, stream, save_path, elv_client, **kwargs, exit_event=job.stop_event)
-            logger.debug(f"got list of media files {media_files}")
-        except (StreamNotFoundError, AssetsNotFoundException):
-            with lock:
-                _set_stop_status(job, "Failed", f"Content for stream {stream} was not found for {qhit}")
-        except HTTPError as e:
-            with lock:
-                _set_stop_status(job, "Failed", f"Failed to fetch stream {stream} for {qhit}: {str(e)}. Make sure authorization token hasn't expired.")
-        except Exception as e:
-            with lock:
-                _set_stop_status(job, "Failed", f"Unknown error occurred while fetching stream {stream} for {qhit}: {str(e)}")
-        if _check_exit(job):
-            return [], []
-        return media_files, failed
 
     def _job_starter(job_type: Literal["cpu"] | Literal["gpu"], tag_queue: Queue) -> None:
         """
@@ -801,18 +627,6 @@ def get_flask_app():
                 job.stop_event.set()
         return Response(response=json.dumps({'message': f"Stopping {feature} on {qhit}. Check with /status for completion."}), status=200, mimetype='application/json')
     
-    def _list_services() -> List[str]:
-        with PodmanClient() as podman_client:
-            images = sum([image.tags for image in podman_client.images.list() if image.tags], [])
-
-        res = []
-        for service in config['services']:
-            if config['services'][service]['image'] in images:
-                res.append(service)
-            else:
-                logger.error(f"Image {config['services'][service]['image']} not found")
-        return res
-    
     # Not thread safe
     # Should be called with lock
     def _set_stop_status(job: Job, status: str, error: Optional[str]=None) -> None:
@@ -823,34 +637,6 @@ def get_flask_app():
         job.time_ended = time.time()
         inactive_jobs[qhit][(stream, feature)] = job
         del active_jobs[qhit][(stream, feature)]
-        
-    def _get_client(request: Request, qhit: str, config_url: str) -> Tuple[ElvClient, Optional[Response]]:
-        auth = _get_authorization(request)
-        if not auth:
-            return None, Response(response=json.dumps({'error': 'No authorization provided'}), status=400, mimetype='application/json')
-        client = ElvClient.from_configuration_url(config_url=config_url, static_token=auth)
-        if not _authenticate(client, qhit):
-            return None, Response(response=json.dumps({'error': 'Unauthorized'}), status=403, mimetype='application/json')
-        return client, None
-
-    def _get_authorization(req: Request) -> Optional[str]:
-        auth = req.headers.get('Authorization', None)
-        if auth:
-            return auth
-        return req.args.get('authorization', None)
-    
-    # Basic authentication against the object
-    def _authenticate(client: ElvClient, qhit: str) -> bool:
-        try:
-            client.content_object(**parse_qhit(qhit))
-        except HTTPError as e:
-            logger.error(e)
-            return False
-        return True
-    
-    def _get_invalid_features(features: Iterable[str]) -> List[str]:
-        services = _list_services()
-        return [feature for feature in features if feature not in services]
     
     def _shutdown() -> None:
         logger.warning("Shutting down")
