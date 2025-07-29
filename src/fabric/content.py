@@ -7,6 +7,8 @@ from requests.exceptions import HTTPError
 from src.api.auth import parse_qhit
 from config import config
 
+# TODO: this neeeds to work as expected for write tokens
+
 class Content():
     """Content object representation and API wrapper.
     """

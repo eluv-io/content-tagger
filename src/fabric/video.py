@@ -1,5 +1,4 @@
-from typing import List, Optional, Tuple
-from elv_client_py import ElvClient
+from typing import Optional, Tuple
 from requests.exceptions import HTTPError
 import os
 import threading
@@ -9,42 +8,54 @@ from common_ml.video_processing import unfrag_video
 from config import config
 from loguru import logger
 
-from .utils import parse_qhit
+from src.fabric.content import Content
+from src.api.errors import MissingResourceError, BadRequestError
 
 class StreamNotFoundError(RuntimeError):
     """Custom exception for specific error conditions."""
     pass
 
-def download_stream(qhit: str, stream_name: str, output_path: str, client: ElvClient, start_time: Optional[int]=None, end_time: Optional[int]=None, replace: bool=False, exit_event: Optional[threading.Event]=None) -> List[str]:
+def download_stream(
+        q: Content,
+        stream_name: str, 
+        output_path: str, 
+        start_time: Optional[int]=None,
+        end_time: Optional[int]=None, 
+        replace: bool=False, 
+        exit_event: Optional[threading.Event]=None
+    ) -> list[str]:
     if start_time is None:
         start_time = 0
     if end_time is None:
         end_time = float("inf")
 
-    parts, part_duration, _, codec_type = fetch_stream_metadata(qhit, stream_name, client)
-    return _download_parts(qhit, output_path, client, codec_type, parts, part_duration, start_time, end_time, replace, exit_event)
+    parts, part_duration, _, codec_type = fetch_stream_metadata(q, stream_name)
+    return _download_parts(q, output_path, codec_type, parts, part_duration, start_time, end_time, replace, exit_event)
 
-def fetch_stream_metadata(qhit: str, stream_name: str, client: ElvClient) -> Tuple[List[tuple], float, float, str]:
-    if _is_live(qhit, client):
-        return _fetch_livestream_metadata(qhit, stream_name, client)
-    elif _is_legacy_vod(qhit, client):
-        return _fetch_legacy_vod_metadata(qhit, stream_name, client)
+def fetch_stream_metadata(q: Content, stream_name: str) -> Tuple[list[str], float, float | None, str]:
+    if _is_live(q):
+        return _fetch_livestream_metadata(q, stream_name)
+    elif _is_legacy_vod(q):
+        return _fetch_legacy_vod_metadata(q, stream_name)
     else:
-        return _fetch_vod_metadata(qhit, stream_name, client)
+        return _fetch_vod_metadata(q, stream_name)
 
-def _fetch_vod_metadata(qhit: str, stream_name: str, client: ElvClient) -> Tuple[List[str], float, float, str]:
+def _fetch_vod_metadata(
+        q: Content, 
+        stream_name: str
+    ) -> Tuple[list[str], float, float | None, str]:
     try:
-        transcodes = client.content_object_metadata(metadata_subtree='transcodes', resolve_links=False, **parse_qhit(qhit))
+        transcodes = q.content_object_metadata(metadata_subtree='transcodes', resolve_links=False)
     except HTTPError as e:
-        raise HTTPError(f"Failed to retrieve transcodes for {qhit}") from e
+        raise HTTPError(f"Failed to retrieve transcodes for {q.qhit}") from e
 
     try:
-        streams = client.content_object_metadata(metadata_subtree='offerings/default/playout/streams', resolve_links=False, **parse_qhit(qhit))
+        streams = q.content_object_metadata(metadata_subtree='offerings/default/playout/streams', resolve_links=False)
     except HTTPError as e:
-        raise HTTPError(f"Failed to retrieve streams for {qhit}") from e
+        raise HTTPError(f"Failed to retrieve streams for {q.qhit}") from e
     
     if stream_name not in streams:
-        raise StreamNotFoundError(f"Stream {stream_name} not found in {qhit}")
+        raise MissingResourceError(f"Stream {stream_name} not found in {q.qhit}")
     
     representations = streams[stream_name].get("representations", {})
 
@@ -55,17 +66,17 @@ def _fetch_vod_metadata(qhit: str, stream_name: str, client: ElvClient) -> Tuple
             transcode_id = tid
             continue
         if tid != transcode_id:
-            logger.error(f"Multiple transcode_ids found for stream {stream_name} in {qhit}! Continuing with the first one found.")
+            logger.error(f"Multiple transcode_ids found for stream {stream_name} in {q.qhit}! Continuing with the first one found.")
 
     if transcode_id is None:
-        raise StreamNotFoundError(f"Transcode_id not found for stream {stream_name} in {qhit}")
+        raise MissingResourceError(f"Transcode_id not found for stream {stream_name} in {q.qhit}")
 
     transcode_meta = transcodes[transcode_id]["stream"]
     codec_type = transcode_meta["codec_type"]
     stream = transcode_meta["sources"]
 
     if len(stream) == 0:
-        raise StreamNotFoundError(f"Stream {stream_name} is empty")
+        raise MissingResourceError(f"Stream {stream_name} is empty")
     
     part_duration = stream[0]["duration"]["float"]
 
@@ -77,18 +88,23 @@ def _fetch_vod_metadata(qhit: str, stream_name: str, client: ElvClient) -> Tuple
 
     return parts, part_duration, fps, codec_type
 
-def _fetch_legacy_vod_metadata(qhit: str, stream_name: str, client: ElvClient) -> Tuple[List[tuple], str]:
+def _fetch_legacy_vod_metadata(
+        q: Content, 
+        stream_name: str
+    ) -> tuple[list[str], float, float | None, str]:
     """Returns the parts with start/end time & the codec for the stream."""
 
     try:
-        streams = client.content_object_metadata(metadata_subtree='offerings/default/media_struct/streams', resolve_links=False, **parse_qhit(qhit))
+        streams = q.content_object_metadata(metadata_subtree='offerings/default/media_struct/streams', resolve_links=False)
     except HTTPError as e:
-        raise HTTPError(f"Failed to retrieve streams for {qhit}") from e
+        raise HTTPError(f"Failed to retrieve streams for {q.qhit}") from e
+    
     if stream_name not in streams:
-        raise StreamNotFoundError(f"Stream {stream_name} not found in {qhit}")
+        raise MissingResourceError(f"Stream {stream_name} not found in {q.qhit}")
+    
     stream = streams[stream_name].get("sources", [])
     if len(stream) == 0:
-        raise StreamNotFoundError(f"Stream {stream_name} is empty")
+        raise MissingResourceError(f"Stream {stream_name} is empty")
     
     parts = [part["source"] for part in stream]
     
@@ -96,7 +112,7 @@ def _fetch_legacy_vod_metadata(qhit: str, stream_name: str, client: ElvClient) -
     part_duration = stream[0]["duration"]["float"]
 
     if codec is None:
-        raise ValueError(f"Codec type not found for stream {stream_name} in {qhit}")
+        raise MissingResourceError(f"Codec type not found for stream {stream_name} in {q.qhit}")
     
     fps = None
     if codec == "video":
@@ -104,37 +120,37 @@ def _fetch_legacy_vod_metadata(qhit: str, stream_name: str, client: ElvClient) -
     
     return parts, part_duration, fps, codec
 
-def _fetch_livestream_metadata(qhit: str, stream_name: str, client: ElvClient) -> Tuple[List[tuple], str]:
+def _fetch_livestream_metadata(q: Content, stream_name: str) -> tuple[list[str], float, float | None, str]:
     """Returns the livestream parts with start/end time & the codec for the stream."""
 
     try:
-        periods = client.content_object_metadata(metadata_subtree='live_recording/recordings/live_offering', resolve_links=False, **parse_qhit(qhit))
+        periods = q.content_object_metadata(metadata_subtree='live_recording/recordings/live_offering', resolve_links=False)
     except HTTPError as e:
-        raise HTTPError(f"Failed to retrieve periods for live recording {qhit}") from e
+        raise HTTPError(f"Failed to retrieve periods for live recording {q.qhit}") from e
     if len(periods) == 0:
-        raise StreamNotFoundError(f"Live recording {qhit} is empty")
+        raise MissingResourceError(f"Live recording {q.qhit} is empty")
     #if len(periods) > 1:
     #    raise StreamNotFoundError(f"Multiple periods found for live recording {qhit}. Multi-period tagging is not currently supported.")
     stream = periods[0].get("sources", {}).get(stream_name, {}).get("parts", [])
     if len(stream) == 0:
-        raise StreamNotFoundError(f"Stream {stream_name} was found in live recording, but no parts were found.")
+        raise MissingResourceError(f"Stream {stream_name} was found in live recording, but no parts were found.")
     if stream_name == "video":
         codec = "video"
     elif stream_name.startswith("audio"):
         codec = "audio"
     else:
-        raise ValueError(f"Invalid stream name for live: {stream_name}. Must be 'video' or start with prefix 'audio'.")
+        raise BadRequestError(f"Invalid stream name for live: {stream_name}. Must be 'video' or start with prefix 'audio'.")
     
     try:
-        xc_params = client.content_object_metadata(metadata_subtree='live_recording/recording_config/recording_params/xc_params', resolve_links=False, **parse_qhit(qhit))
+        xc_params = q.content_object_metadata(metadata_subtree='live_recording/recording_config/recording_params/xc_params', resolve_links=False)
     except HTTPError as e:
-        raise HTTPError(f"Failed to retrieve live stream metadata from {qhit}") from e
+        raise HTTPError(f"Failed to retrieve live stream metadata from {q.qhit}") from e
     
     if codec == "video":
         try:
-            live_stream_info = client.content_object_metadata(metadata_subtree='live_recording_config/probe_info/streams', resolve_links=False, **parse_qhit(qhit))
+            live_stream_info = q.content_object_metadata(metadata_subtree='live_recording_config/probe_info/streams', resolve_links=False)
         except HTTPError as e:
-            raise HTTPError(f"Failed to retrieve live stream metadata from {qhit}") from e
+            raise HTTPError(f"Failed to retrieve live stream metadata from {q.qhit}") from e
         video_stream_info = None
         for stream_info in live_stream_info:
             if stream_info["codec_type"] == "video":
@@ -157,7 +173,17 @@ def _fetch_livestream_metadata(qhit: str, stream_name: str, client: ElvClient) -
 
     return stream, part_duration, fps, codec
 
-def _download_parts(qhit: str, output_path: str, client: ElvClient, codec_type: str, parts: List[str], part_duration: float, start_time: Optional[int]=None, end_time: Optional[int]=None, replace: bool=False, exit_event: Optional[threading.Event]=None) -> List[str]:
+def _download_parts(
+        q: Content, 
+        output_path: str, 
+        codec_type: str, 
+        parts: list[str], 
+        part_duration: float, 
+        start_time: int, 
+        end_time: int, 
+        replace: bool=False, 
+        exit_event: Optional[threading.Event]=None
+    ) -> tuple[list[str], list[str]]:
     """Downloads the parts from the stream."""
     
     tmp_path = tempfile.mkdtemp(dir=config["storage"]["tmp"])
@@ -176,11 +202,11 @@ def _download_parts(qhit: str, output_path: str, client: ElvClient, codec_type: 
             res.append(os.path.join(output_path, f"{idx}_{part_hash}.mp4"))
             continue
         else:
-            logger.info(f"Downloading part {part_hash} for {qhit}")
+            logger.info(f"Downloading part {part_hash} for {q.qhit}")
         try:
             tmpfile = os.path.join(tmp_path, f"{idx}_{part_hash}")
             save_path = os.path.join(output_path, f"{idx}_{part_hash}.mp4")
-            client.download_part(save_path=tmpfile, part_hash=part_hash, **parse_qhit(qhit))
+            q.download_part(save_path=tmpfile, part_hash=part_hash)
             if codec_type == "video":
                 unfrag_video(tmpfile, save_path)
             else:
@@ -191,23 +217,24 @@ def _download_parts(qhit: str, output_path: str, client: ElvClient, codec_type: 
                 # remove the corrupt file if it exists
                 os.remove(save_path)
             failed.append(part_hash)
-            logger.error(f"Failed to download part {part_hash} for {qhit}: {str(e)}")
+            logger.error(f"Failed to download part {part_hash} for {q.qhit}: {str(e)}")
             continue
     shutil.rmtree(tmp_path, ignore_errors=True)
     return res, failed
 
-def _is_live(qhit: str, client: ElvClient) -> bool:
-    if not qhit.startswith("tqw__"):
+def _is_live(q: Content) -> bool:
+    if not q.qhit.startswith("tqw__"):
         return False
     try:
-        client.content_object_metadata(metadata_subtree='live_recording', write_token=qhit)
+        # TODO: make sure works for write token 
+        q.content_object_metadata(metadata_subtree='live_recording')
     except HTTPError:
         return False
     return True
 
-def _is_legacy_vod(qhit: str, client: ElvClient) -> bool:
+def _is_legacy_vod(q: Content) -> bool:
     try:
-        client.content_object_metadata(metadata_subtree='transcodes', **parse_qhit(qhit))
+        q.content_object_metadata(metadata_subtree='transcodes')
     except HTTPError:
         return True
     return False
