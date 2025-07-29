@@ -93,6 +93,9 @@ def get_flask_app():
     # make sure no two streams are being downloaded at the same time. 
     # maps (qhit, stream) -> lock
     download_lock = defaultdict(threading.Lock)
+
+    # controls the number of concurrent downloads
+    dl_sem = threading.Semaphore(config["fabric"]["max_downloads"])
     
     # make sure we don't finalize against the same write token at the same time
     finalize_lock = defaultdict(threading.Lock)
@@ -378,12 +381,12 @@ def get_flask_app():
             # TODO: if waiting for lock, and stop_event is set, it will keep waiting and stop only after the lock is acquired.
             with download_lock[(qhit, stream)]:
                 job.status = "Fetching content"
-
-                # if fetching finished while waiting for lock, this will return immediately
-                if stream == "image":
-                    media_files, failed = fetch_assets(qhit, save_path, elv_client, **kwargs)
-                else:
-                    media_files, failed =  download_stream(qhit, stream, save_path, elv_client, **kwargs, exit_event=job.stop_event)
+                with dl_sem:
+                    # if fetching finished while waiting for lock, this will return immediately
+                    if stream == "image":
+                        media_files, failed = fetch_assets(qhit, save_path, elv_client, **kwargs)
+                    else:
+                        media_files, failed =  download_stream(qhit, stream, save_path, elv_client, **kwargs, exit_event=job.stop_event)
             logger.debug(f"got list of media files {media_files}")
         except (StreamNotFoundError, AssetsNotFoundException):
             with lock:
@@ -456,37 +459,58 @@ def get_flask_app():
 
     def _job_watcher() -> None:
         while True:
-            for qhit in active_jobs:
-                for (stream, feature), job in list(active_jobs[qhit].items()):
-                    if not job.status == "Tagging content":
-                        continue
-                    if job.stop_event.is_set():
-                        manager.stop(job.tag_job_id)
+            try:
+                for qhit in active_jobs:
+                    for (stream, feature), job in list(active_jobs[qhit].items()):
+                        if not job.status == "Tagging content":
+                            continue
+                        if job.stop_event.is_set():
+                            manager.stop(job.tag_job_id)
+                            with lock:
+                                _set_stop_status(job, "Stopped")
+                            continue
+                        try:
+                            status = manager.status(job.tag_job_id)
+                        except Exception as e:
+                            logger.error(f"Error getting status for job {job.qhit}/{job.feature}: {e}")
+                            with lock:
+                                _set_stop_status(job, "Failed", f"Error getting job status: {str(e)}")
+                            continue
+                        
+                        try:
+                            with filesystem_lock:
+                                # move outputted tags to their correct place
+                                # lock in case of race condition with status or finalize calls
+                                _copy_new_files(job, status.tags)
+                        except Exception as e:
+                            logger.error(f"Error copying files for job {job.qhit}/{job.feature}: {e}")
+                            # Don't fail the job for copy errors, just log and continue
+                        
+                        if status.status == "Running":
+                            continue
+                        # otherwise the job has finished: either successfully or with an error
+                        if status.status == "Completed":
+                            logger.success(f"Finished running {job.feature} on {job.qhit}")
+                            try:
+                                with filesystem_lock:
+                                    # move outputted tags to their correct place
+                                    # lock in case of race condition with status or finalize calls
+                                    _move_files(job, status.tags)
+                            except Exception as e:
+                                logger.error(f"Error moving files for job {job.qhit}/{job.feature}: {e}")
+                                # Still mark as completed even if file move failed
+                        
+                        job.status = status.status
+                        if status.status == "Failed":
+                            job.error = "An error occurred while running model container"
+                        job.time_ended = time.time()
                         with lock:
-                            _set_stop_status(job, "Stopped")
-                        continue
-                    status = manager.status(job.tag_job_id)
-                    with filesystem_lock:
-                        # move outputted tags to their correct place
-                        # lock in case of race condition with status or finalize calls
-                        _copy_new_files(job, status.tags)
-                    if status.status == "Running":
-                        continue
-                    # otherwise the job has finished: either successfully or with an error
-                    if status.status == "Completed":
-                        logger.success(f"Finished running {job.feature} on {job.qhit}")
-                        with filesystem_lock:
-                            # move outputted tags to their correct place
-                            # lock in case of race condition with status or finalize calls
-                            _move_files(job, status.tags)
-                    job.status = status.status
-                    if status.status == "Failed":
-                        job.error = "An error occurred while running model container"
-                    job.time_ended = time.time()
-                    with lock:
-                        # move job to inactive_jobs
-                        inactive_jobs[qhit][(stream, feature)] = job
-                        del active_jobs[qhit][(stream, feature)]
+                            # move job to inactive_jobs
+                            inactive_jobs[qhit][(stream, feature)] = job
+                            del active_jobs[qhit][(stream, feature)]
+            except Exception as e:
+                logger.error(f"Unexpected error in job watcher: {e}")
+                # Continue the loop even if there was an error
             time.sleep(config["watcher"]["sleep"])
 
     def _check_exit(job: Job) -> bool:
