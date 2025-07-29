@@ -6,11 +6,12 @@ import os
 from typing import List, Optional, Literal
 from dataclasses import dataclass, field
 from requests import HTTPError
+import shutil
 
 from loguru import logger
 
 from src.tagger.jobs import JobsStore
-from src.tagger.resource_manager import ResourceManager
+from src.tagger.resource_manager import ResourceManager, NoResourceAvailable
 from src.fabric.content import Content
 from src.api.tagging.format import TagArgs
 from src.containers import list_services
@@ -106,7 +107,12 @@ class Tagger():
                 self.job_store.active_jobs[q.qhit][(run_config.stream, feature)] = job
                 threading.Thread(target=self._video_tag, args=(job, args.start_time, args.end_time)).start()
 
-    def _video_tag(self, job: Job, start_time: int | None, end_time: int | None) -> None:
+    def _video_tag(
+            self, 
+            job: Job, 
+            start_time: int | None, 
+            end_time: int | None
+        ) -> None:
         media_files, failed = self._download_content(job, q, start_time=start_time, end_time=end_time)
         job.media_files = media_files
         job.failed = failed
@@ -230,7 +236,12 @@ class Tagger():
         # not thread safe, call with lock
         return job.status == "Stopped" or job.status == "Failed"
     
-    def _set_stop_status(self, job: Job, status: str, error: str | None=None) -> None:
+    def _set_stop_status(
+            self, 
+            job: Job, 
+            status: str, 
+            error: str | None=None
+        ) -> None:
         # Not thread safe
         # Should be called with lock
         qhit, stream, feature = job.q.qhit, job.run_config.stream, job.feature
@@ -290,3 +301,150 @@ class Tagger():
             return tagged_file.split("_tags.json")[0]
 
         raise ValueError(f"Unknown tag file format: {tagged_file}")
+    
+    def _job_starter(
+            self, 
+            job_type: Literal["cpu"] | Literal["gpu"], 
+            tag_queue: Queue
+        ) -> None:
+        """
+        Args:
+            wait_for_gpu (bool): if True, then the job starter will wait for a GPU to be available before starting the job
+            tag_queue (Queue): queue for jobs waiting to be submitted
+        """
+        while True:
+            # blocks until a job is available
+            job = tag_queue.get()
+            if self._check_exit(job):
+                continue
+
+            def wait_for_resource():
+                # wait for a GPU to be available
+                if job_type == "gpu":
+                    return self.manager.await_gpu(timeout=config["devices"]["wait_for_gpu_sleep"])
+                elif job_type == "cpu":
+                    return self.manager.await_cpu(timeout=config["devices"]["wait_for_gpu_sleep"])
+                else:
+                    raise ValueError(f"Unknown job type: {job_type}")
+
+            stopped = False
+            while not wait_for_resource():
+                # check if the job has been stopped, if not then we go back to waiting for a GPU
+                if self._check_exit(job):
+                    stopped = True
+                    break
+            if stopped:
+                continue
+
+            try:
+                job_id = self.manager.run(job.feature, job.run_config.model, job.media_files, job.allowed_gpus, job.allowed_cpus, logs_subpath=job.qhit)
+                with self.store_lock:
+                    if self._is_job_stopped(job):
+                        # if the job has been stopped while the container was starting
+                        self.manager.stop(job.tag_job_id)
+                        continue
+                    job.tag_job_id = job_id
+                    job.status = "Tagging content"
+                logger.success(f"Started running {job.feature} on {job.qhit}")
+            except NoResourceAvailable as e:
+                # This error can happen if the model can only run on a subset of GPUs. 
+                job.error = "Tried to assign GPU or CPU slot, but no suitable one was found. The job was placed back on the queue."
+                # if no CPU slot or GPU is available, then we put the job back on the queue
+                now = time.time()
+                if (now - job.reput_time) < config["devices"]["wait_for_gpu_sleep"]:
+                    # if the job was put back on the queue too recently, then we wait for a bit before putting it back
+                    time.sleep(config["devices"]["wait_for_gpu_sleep"] - (now - job.reput_time))
+                job.reput_time = now
+                tag_queue.put(job)
+                continue
+            except Exception as e:
+                # handle the unexpected
+                with self.store_lock:
+                    self._set_stop_status(job, "Failed", str(e))
+
+    def _job_watcher(self) -> None:
+        active_jobs = self.job_store.active_jobs
+        while True:
+            try:
+                for qhit in active_jobs:
+                    for (stream, feature), job in list(active_jobs[qhit].items()):
+                        if not job.status == "Tagging content":
+                            continue
+                        if job.stop_event.is_set():
+                            self.manager.stop(job.tag_job_id)
+                            with self.store_lock:
+                                self._set_stop_status(job, "Stopped")
+                            continue
+                        try:
+                            status = self.manager.status(job.tag_job_id)
+                        except Exception as e:
+                            logger.error(f"Error getting status for job {job.qhit}/{job.feature}: {e}")
+                            with self.store_lock:
+                                self._set_stop_status(job, "Failed", f"Error getting job status: {str(e)}")
+                            continue
+                        
+                        try:
+                            with self.filesystem_lock:
+                                # move outputted tags to their correct place
+                                # lock in case of race condition with status or finalize calls
+                                self._copy_new_files(job, status.tags)
+                        except Exception as e:
+                            logger.error(f"Error copying files for job {job.qhit}/{job.feature}: {e}")
+                            # Don't fail the job for copy errors, just log and continue
+                        
+                        if status.status == "Running":
+                            continue
+                        # otherwise the job has finished: either successfully or with an error
+                        if status.status == "Completed":
+                            logger.success(f"Finished running {job.feature} on {job.qhit}")
+                            try:
+                                with self.filesystem_lock:
+                                    # move outputted tags to their correct place
+                                    # lock in case of race condition with status or finalize calls
+                                    self._move_files(job, status.tags)
+                            except Exception as e:
+                                logger.error(f"Error moving files for job {job.qhit}/{job.feature}: {e}")
+                                # Still mark as completed even if file move failed
+                        
+                        job.status = status.status
+                        if status.status == "Failed":
+                            job.error = "An error occurred while running model container"
+                        job.time_ended = time.time()
+                        with self.store_lock:
+                            # move job to inactive_jobs
+                            self.job_store.inactive_jobs[qhit][(stream, feature)] = job
+                            del active_jobs[qhit][(stream, feature)]
+            except Exception as e:
+                logger.error(f"Unexpected error in job watcher: {e}")
+                # Continue the loop even if there was an error
+            time.sleep(config["watcher"]["sleep"])
+
+    def _move_files(
+            self, 
+            job: Job, 
+            tags: List[str]
+        ) -> None:
+        if len(tags) == 0:
+            return
+        qhit, stream, feature = job.q.qhit, job.run_config.stream, job.feature
+        tags_path = os.path.join(config["storage"]["tags"], qhit, stream, feature)
+        os.makedirs(tags_path, exist_ok=True)
+        for tag in tags:
+            shutil.move(tag, os.path.join(tags_path, os.path.basename(tag)))
+        tag_dir = os.path.dirname(tags[0])
+        shutil.rmtree(tag_dir, ignore_errors=True)
+
+    def _copy_new_files(
+            self, 
+            job: Job, 
+            tags: List[str]
+        ) -> None:
+        if len(tags) == 0:
+            return
+        qhit, stream, feature = job.q.qhit, job.run_config.stream, job.feature
+        tags_path = os.path.join(config["storage"]["tags"], qhit, stream, feature)
+        os.makedirs(tags_path, exist_ok=True)
+        for tag in tags:
+            if os.path.exists(os.path.join(tags_path, os.path.basename(tag))):
+                continue
+            shutil.copyfile(tag, os.path.join(tags_path, os.path.basename(tag)))

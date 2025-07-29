@@ -1,8 +1,7 @@
 import argparse
-from typing import List, Optional, Literal, Dict, Iterable, Tuple
-from flask import Flask, request, Response, Request
+from typing import List, Optional, Literal, Dict
+from flask import Flask, request, Response, jsonify
 from flask_cors import CORS
-from podman import PodmanClient
 import json
 from loguru import logger
 from dataclasses import dataclass, asdict, field
@@ -22,15 +21,18 @@ import sys
 from waitress import serve
 from common_ml.types import Data
 from common_ml.utils.metrics import timeit
+import traceback
 
 from config import config, reload_config
 from src.fabric.utils import parse_qhit
 from src.fabric.agg import format_video_tags, format_asset_tags
-from src.fabric.video import download_stream, StreamNotFoundError
-from src.fabric.assets import fetch_assets, AssetsNotFoundException
 from src.tagger.jobs import JobsStore
+from src.containers import list_services
+from src.api.tagging.handlers import handle_tag
+from src.api.errors import BadRequestError, MissingResourceError
 
-from src.manager import ResourceManager, NoResourceAvailable
+from src.tagger.tagger import Tagger
+from src.tagger.resource_manager import ResourceManager, NoResourceAvailable
 
     
 ## for debugging, keep the last tmpdir (only if set)
@@ -38,9 +40,35 @@ last_tmpdir = None
 
 def configure_routes(app: Flask) -> None:
     # Configure the Flask app with the routes defined in this module.
+
+    @app.errorhandler(BadRequestError)
+    def handle_bad_request(e):
+        tb = traceback.format_exc()
+        logger.error(f"Bad request: {e}\n{tb}")
+        return jsonify({'message': e.message}), 400
+
+    @app.errorhandler(HTTPError)
+    def handle_http_error(e):
+        tb = traceback.format_exc()
+        logger.error(f"Bad request:\n{tb}")
+        status_code = e.response.status_code
+        error_resp = json.loads(e.response.text)
+        return jsonify({'message': 'Fabric API error', 'error': error_resp}), status_code
+
+    @app.errorhandler(MissingResourceError)
+    def handle_missing_resource(e):
+        tb = traceback.format_exc()
+        logger.error(f"Missing resource: {e}\n{tb}")
+        return jsonify({'message': e.message}), 404
+
+    @app.route('/list', methods=['GET'])
+    def list_services() -> Response:
+        res = list_services()    
+        return Response(response=json.dumps(res), status=200, mimetype='application/json')
+
     @app.route('/<qhit>/tag', methods=['POST'])
     def tag(qhit: str) -> tuple[Response, int]:
-        handle_tag(qhit)
+        return handle_tag(qhit)
 
 def boot_state(app: Flask) -> None:
     app_state = {}
@@ -49,16 +77,15 @@ def boot_state(app: Flask) -> None:
 
     app_state["jobs_store"] = JobsStore
 
-    app.config["state"] = state
+    app_state["tagger"] = Tagger
+
+    app.config["state"] = app_state
 
 def get_flask_app():
     app = Flask(__name__)
 
     
-    @app.route('/list', methods=['GET'])
-    def list_services() -> Response:
-        res = _list_services()    
-        return Response(response=json.dumps(res), status=200, mimetype='application/json')
+
         
     @dataclass
     class UploadArgs(Data):
@@ -180,140 +207,6 @@ def get_flask_app():
         job.media_files = deduped
         job.failed = failed
         _submit_tag_job(job, elv_client)
-
-    def _job_starter(job_type: Literal["cpu"] | Literal["gpu"], tag_queue: Queue) -> None:
-        """
-        Args:
-            wait_for_gpu (bool): if True, then the job starter will wait for a GPU to be available before starting the job
-            tag_queue (Queue): queue for jobs waiting to be submitted
-        """
-        while True:
-            # blocks until a job is available
-            job = tag_queue.get()
-            if _check_exit(job):
-                continue
-
-            def wait_for_resource():
-                # wait for a GPU to be available
-                if job_type == "gpu":
-                    return manager.await_gpu(timeout=config["devices"]["wait_for_gpu_sleep"])
-                elif job_type == "cpu":
-                    return manager.await_cpu(timeout=config["devices"]["wait_for_gpu_sleep"])
-                else:
-                    raise ValueError(f"Unknown job type: {job_type}")
-
-            stopped = False
-            while not wait_for_resource():
-                # check if the job has been stopped, if not then we go back to waiting for a GPU
-                if _check_exit(job):
-                    stopped = True
-                    break
-            if stopped:
-                continue
-
-            try:
-                job_id = manager.run(job.feature, job.run_config.model, job.media_files, job.allowed_gpus, job.allowed_cpus, logs_subpath=job.qhit)
-                with lock:
-                    if _is_job_stopped(job):
-                        # if the job has been stopped while the container was starting
-                        manager.stop(job.tag_job_id)
-                        continue
-                    job.tag_job_id = job_id
-                    job.status = "Tagging content"
-                logger.success(f"Started running {job.feature} on {job.qhit}")
-            except NoResourceAvailable:
-                # This error can happen if the model can only run on a subset of GPUs. 
-                job.error = "Tried to assign GPU or CPU slot, but no suitable one was found. The job was placed back on the queue."
-                # if no CPU slot or GPU is available, then we put the job back on the queue
-                now = time.time()
-                if (now - job.reput_time) < config["devices"]["wait_for_gpu_sleep"]:
-                    # if the job was put back on the queue too recently, then we wait for a bit before putting it back
-                    time.sleep(config["devices"]["wait_for_gpu_sleep"] - (now - job.reput_time))
-                job.reput_time = now
-                tag_queue.put(job)
-                continue
-            except Exception as e:
-                # handle the unexpected
-                with lock:
-                    _set_stop_status(job, "Failed", str(e))
-
-    def _job_watcher() -> None:
-        while True:
-            try:
-                for qhit in active_jobs:
-                    for (stream, feature), job in list(active_jobs[qhit].items()):
-                        if not job.status == "Tagging content":
-                            continue
-                        if job.stop_event.is_set():
-                            manager.stop(job.tag_job_id)
-                            with lock:
-                                _set_stop_status(job, "Stopped")
-                            continue
-                        try:
-                            status = manager.status(job.tag_job_id)
-                        except Exception as e:
-                            logger.error(f"Error getting status for job {job.qhit}/{job.feature}: {e}")
-                            with lock:
-                                _set_stop_status(job, "Failed", f"Error getting job status: {str(e)}")
-                            continue
-                        
-                        try:
-                            with filesystem_lock:
-                                # move outputted tags to their correct place
-                                # lock in case of race condition with status or finalize calls
-                                _copy_new_files(job, status.tags)
-                        except Exception as e:
-                            logger.error(f"Error copying files for job {job.qhit}/{job.feature}: {e}")
-                            # Don't fail the job for copy errors, just log and continue
-                        
-                        if status.status == "Running":
-                            continue
-                        # otherwise the job has finished: either successfully or with an error
-                        if status.status == "Completed":
-                            logger.success(f"Finished running {job.feature} on {job.qhit}")
-                            try:
-                                with filesystem_lock:
-                                    # move outputted tags to their correct place
-                                    # lock in case of race condition with status or finalize calls
-                                    _move_files(job, status.tags)
-                            except Exception as e:
-                                logger.error(f"Error moving files for job {job.qhit}/{job.feature}: {e}")
-                                # Still mark as completed even if file move failed
-                        
-                        job.status = status.status
-                        if status.status == "Failed":
-                            job.error = "An error occurred while running model container"
-                        job.time_ended = time.time()
-                        with lock:
-                            # move job to inactive_jobs
-                            inactive_jobs[qhit][(stream, feature)] = job
-                            del active_jobs[qhit][(stream, feature)]
-            except Exception as e:
-                logger.error(f"Unexpected error in job watcher: {e}")
-                # Continue the loop even if there was an error
-            time.sleep(config["watcher"]["sleep"])
-
-    def _move_files(job: Job, tags: List[str]) -> None:
-        if len(tags) == 0:
-            return
-        qhit, stream, feature = job.qhit, job.run_config.stream, job.feature
-        tags_path = os.path.join(config["storage"]["tags"], qhit, stream, feature)
-        os.makedirs(tags_path, exist_ok=True)
-        for tag in tags:
-            shutil.move(tag, os.path.join(tags_path, os.path.basename(tag)))
-        tag_dir = os.path.dirname(tags[0])
-        shutil.rmtree(tag_dir, ignore_errors=True)
-
-    def _copy_new_files(job: Job, tags: List[str]) -> None:
-        if len(tags) == 0:
-            return
-        qhit, stream, feature = job.qhit, job.run_config.stream, job.feature
-        tags_path = os.path.join(config["storage"]["tags"], qhit, stream, feature)
-        os.makedirs(tags_path, exist_ok=True)
-        for tag in tags:
-            if os.path.exists(os.path.join(tags_path, os.path.basename(tag))):
-                continue
-            shutil.copyfile(tag, os.path.join(tags_path, os.path.basename(tag)))
     
     @dataclass
     class FinalizeArgs(Data):

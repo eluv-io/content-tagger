@@ -6,7 +6,7 @@ from src.api.auth import get_authorization
 from src.fabric.content import Content
 from src.tagger.tagger import Tagger
 
-def handle_tag(qhit: str) -> Response:
+def handle_tag(qhit: str) -> tuple[Response, int]:
     auth = get_authorization(request)
     
     q = Content(qhit, auth)
