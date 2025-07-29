@@ -1,0 +1,1 @@
+podman build . --format docker -t slow_model_test --network host --build-arg SSH_AUTH_SOCK=$SSH_AUTH_SOCK --volume "${SSH_AUTH_SOCK}:${SSH_AUTH_SOCK}"

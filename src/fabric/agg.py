@@ -18,6 +18,8 @@ from common_ml.utils.metrics import timeit
 from src.fabric.video import fetch_stream_metadata
 from src.fabric.utils import parse_qhit
 
+from config import config
+
 def format_asset_tags(client: ElvClient, write_token: str, tags_path: str) -> None:
     qlib = client.content_object_library_id(write_token=write_token)
     image_tags_path = os.path.join(tags_path, 'image')
@@ -84,6 +86,7 @@ def format_video_tags(client: ElvClient, write_token: str, interval: int, tags_p
     all_frame_tags, all_video_tags = {}, {}
     custom_labels = {}
     
+
     if "source_tags" in video_streams:
         with timeit("Downloading source tags"):
             res = client.download_directory(dest_path=os.path.join(tags_path, 'source_tags'), fabric_path="video_tags/source_tags", write_token=write_token)
@@ -93,8 +96,10 @@ def format_video_tags(client: ElvClient, write_token: str, interval: int, tags_p
         logger.info("Parsing external tags")
         external_tags, labels = _parse_external_tags(os.path.join(tags_path, 'source_tags'))
         custom_labels.update(labels)
-        all_video_tags.update(external_tags)
+        ##all_video_tags.update(external_tags)
         video_streams.remove("source_tags")
+    else:
+        external_tags = {}
 
     fps = None
     for stream in video_streams:
@@ -112,6 +117,7 @@ def format_video_tags(client: ElvClient, write_token: str, interval: int, tags_p
             if feature not in os.listdir(stream_save_path):
                 continue
             assert feature not in all_video_tags and feature not in all_frame_tags, f"Feature {feature} already found in another stream"
+            assert feature not in external_tags, f"Feature {feature} already found in another stream in external tags"
             model_path = os.path.join(stream_save_path, feature)
             if codec == "video":
                 frames_per_part = part_duration * fps
@@ -124,11 +130,19 @@ def format_video_tags(client: ElvClient, write_token: str, interval: int, tags_p
             if len(video_tags_files) == 0:
                 logger.warning(f"No tags found for feature {feature}")
                 continue
-            all_video_tags[feature] = merge_video_tag_files(video_tags_files, part_duration)
+            all_video_tags[feature] = merge_video_tag_files(video_tags_files, part_duration, combine_across_parts = (feature == "shot"))
 
+    ## shot must be entirely ml-tagger or entirely external tags, both is not allowed
     if "shot" in all_video_tags:
         shot_intervals = [(tag.start_time, tag.end_time) for tag in all_video_tags["shot"]]
-        aggshot_tags = {"shot_tags": aggregate_video_tags({f: tags for f, tags in all_video_tags.items() if f != "shot"}, shot_intervals) }
+    elif "shot" in external_tags:
+        ## this is only true for the case of converting v1 shot tags into external tags (rare)
+        shot_intervals = [(tag.start_time, tag.end_time) for tag in external_tags["shot"]]
+    else:
+        shot_intervals = []
+    
+    if len(shot_intervals) > 0:
+        aggshot_tags = {"shot_tags": aggregate_video_tags({f: tags for f, tags in (list(all_video_tags.items()) + list(external_tags.items())) if f != "shot"}, shot_intervals) }
     else:
         aggshot_tags = {}
 
@@ -153,9 +167,9 @@ def format_video_tags(client: ElvClient, write_token: str, interval: int, tags_p
         to_upload.append(fpath)
         with open(fpath, 'w') as f:
             json.dump(overlay, f)
-        
+
     jobs = [ElvClient.FileJob(local_path=path, out_path=f"video_tags/{os.path.basename(path)}", mime_type="application/json") for path in to_upload]
-    
+
     with timeit("Uploading aggregated files"):
         client.upload_files(write_token=write_token, library_id=qlib, file_jobs=jobs, finalize=False)
 
@@ -179,7 +193,7 @@ def _download_missing(client: ElvClient, save_path: str, fabric_path: str, write
                 helper(value, "/".join([sub_path, key]) if sub_path != "" else key)
             else:
                 fpath = "/".join([sub_path, key]) if sub_path != "" else key
-                fsize = value["."]["size"]
+                fsize = value.get(".", {}).get("size", -1)
                 if not os.path.exists(os.path.join(save_path, fpath)):
                     to_download.append(fpath)
                     status[0] += 1
@@ -200,13 +214,18 @@ def _parse_external_tags(tags_path: str) -> Dict[str, List[VideoTag]]:
     for tag_type in os.listdir(tags_path):
         for tag_file in os.listdir(os.path.join(tags_path, tag_type)):
             logger.debug(f"external tags type: {tag_type} file: {tag_file}")
-            with open(os.path.join(tags_path, tag_type, tag_file), 'r') as f:
-                data = json.load(f)["metadata_tags"]
+            try:
+                with open(os.path.join(tags_path, tag_type, tag_file), 'r') as f:
+                    data = json.load(f)["metadata_tags"]
+            except Exception as e:
+                logger.error(f"Error parsing external tags file {tag_file}: {e}")
+                continue
             for feature in data:
                 labels[feature] = data[feature]["label"]
                 external_tags[feature] = _parse_external_track(data[feature])
     return external_tags, labels
 
+MAX_SENTENCE_WORDS = 250
 def _get_sentence_intervals(tags: List[VideoTag]) -> List[Tuple[int, int]]:
     sentence_delimiters = ['.', '?', '!']
     intervals = []
@@ -214,8 +233,11 @@ def _get_sentence_intervals(tags: List[VideoTag]) -> List[Tuple[int, int]]:
         return []
     quiet = True
     curr_int = [0]
+    fake_sentence_cutoff = MAX_SENTENCE_WORDS
     for i, tag in enumerate(tags):
-        assert tag.text is not None 
+        if not tag.text:
+            continue
+        assert tag.text is not None
         if quiet and tag.start_time > curr_int[0]:
             # commit the silent interval
             curr_int.append(tag.start_time)
@@ -224,7 +246,8 @@ def _get_sentence_intervals(tags: List[VideoTag]) -> List[Tuple[int, int]]:
             # start a new speaking interval
             curr_int.append(tag.start_time)
             quiet = False
-        if tag.text[-1] in sentence_delimiters or i == len(tags)-1:
+        if tag.text[-1] in sentence_delimiters or i == len(tags)-1 or i > fake_sentence_cutoff:
+            fake_sentence_cutoff = i + MAX_SENTENCE_WORDS
             # end and commit the speaking interval, add one due to exclusive bounds
             curr_int.append(tag.end_time+1)
             intervals.append((curr_int[0], curr_int[-1]))
@@ -273,27 +296,43 @@ def add_links(client: ElvClient, fpaths: List[str], qwt: str, libid: str) -> Non
         
     client.merge_metadata(qwt, data, library_id=libid, metadata_subtree='video_tags')
 
-def merge_video_tag_files(tags: List[str], part_duration: float) -> List[VideoTag]:
+def merge_video_tag_files(tags: List[str], part_duration: float, combine_across_parts = False) -> List[VideoTag]:
     """Merges all the VideoTags from the given list of files into a single list of VideoTags with global timestamps."""
     tag_duration = part_duration*1000
     merged = []
     for tag in tags:
         part_idx = int(os.path.basename(tag).split("_")[0])
         part_start = part_idx * tag_duration
-        with open(tag, 'r') as f:
-            data = json.load(f)
-            data = [VideoTag(**tag) for tag in data]
+        try:
+            with open(tag, 'r') as f:
+                data = json.load(f)
+                data = [VideoTag(**tag) for tag in data]
+        except json.decoder.JSONDecodeError as jd:
+            logger.error(f"ERROR Decoding File {tag}: {jd}") 
+            raise jd
+
+        if combine_across_parts and len(merged) > 0 and merged[-1].end_time == part_start and len(data) > 0 and data[0].start_time == 0 and merged[-1].text == data[0].text:
+            logger.debug(f"Merging part {part_idx} with previous part due to part boundary alignment")
+            merged[-1].end_time = data[0].end_time + part_start
+            data.pop(0)
+
         merged.extend([VideoTag(start_time=part_start + tag.start_time, end_time=part_start + tag.end_time, text=tag.text, confidence=tag.confidence) for tag in data])
-    return merged
+
+    ## round the video tags, but do it after, so shots are more likely to get combined...
+    return [ VideoTag(start_time=round(vt.start_time), end_time=round(vt.end_time), text=vt.text, confidence=vt.confidence) for vt in merged ]
 
 def merge_frame_tag_files(tags: List[str], len_frames: int) -> Dict[int, List[FrameTag]]:
     merged = {}
     for tag in tags:
         part_idx = int(os.path.basename(tag).split("_")[0])
         part_start = part_idx * len_frames
-        with open(tag, 'r') as f:
-            data = json.load(f)
-            data = {int(frame)+part_start: [FrameTag(**tag) for tag in tags] for frame, tags in data.items()}
+        try:
+            with open(tag, 'r') as f:
+                data = json.load(f)
+                data = {int(frame)+part_start: [FrameTag(**tag) for tag in tags] for frame, tags in data.items()}
+        except json.decoder.JSONDecodeError as jd:
+            logger.error(f"ERROR Decoding tag file {tag}: {jd}")
+            raise jd
         merged.update(data)
     return merged
 
@@ -316,7 +355,12 @@ def aggregate_video_tags(tags: Dict[str, List[VideoTag]], intervals: List[Tuple[
 
     # TODO: not sure where else to define this custom logic
     for agg_tag in result:
-        agg_tag.coalesce("asr")
+        for feat in config["agg"]["coalesce_features"]:
+            agg_tag.coalesce(feat)
+
+    for agg_tag in result:
+        for feat in config["agg"]["single_shot_tag"]:
+            agg_tag.keep_longest(feat)
     
     return result
 
@@ -361,7 +405,7 @@ def format_tracks(agg_tags: Dict[str, List[AggTag]], tracks: Dict[str, List[Vide
             bucket_idx = int(agg_tag.start_time/interval) if interval is not None else 0
             if key not in result[bucket_idx]["metadata_tags"]:
                 result[bucket_idx]["metadata_tags"][key] = {"label": label, "tags": []}
-            
+
             for track, video_tags in agg_tag.tags.items():
                 if track in custom_labels:
                     track_label = custom_labels[track]
@@ -378,7 +422,8 @@ def format_tracks(agg_tags: Dict[str, List[AggTag]], tracks: Dict[str, List[Vide
     # add standalone tracks
     for key, video_tags in tracks.items():
         if key in custom_labels:
-            label = custom_labels[key]
+            #label = custom_labels[key]
+            continue # quick fix to not dupe the user tags
         else:
             label = feature_to_label(key)
         for vtag in video_tags:

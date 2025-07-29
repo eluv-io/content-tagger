@@ -179,7 +179,7 @@ def test_server(port: int) -> List[Callable]:
         with open(os.path.join(filedir, 'server_out.log'), 'r') as f:
             assert any('0 new files found on fabric. 0 have changed on fabric. 210 files already up to date' in line for line in f.readlines())
         
-        finalize_url = f"http://localhost:{port}/{test_objects['legacy_vod']}/finalize?write_token={legacy_vod_write}&authorization={legacy_vod_auth}"
+        finalize_url = f"http://localhost:{port}/{test_objects['legacy_vod']}/finalize?write_token={legacy_vod_write}&leave_open=true&authorization={legacy_vod_auth}"
         with timeit("Finalizing legacy video"):
             response = requests.post(finalize_url)
         assert response.status_code == 200, response.text
@@ -242,12 +242,110 @@ def test_server(port: int) -> List[Callable]:
         for tag in sorted(os.listdir(os.path.join(image_tags_path, "dummy_gpu"))):
             with open(os.path.join(image_tags_path, "dummy_gpu", tag)) as f:
                 res.append(json.load(f))
-                
+
         assert not os.path.exists(os.path.join(image_tags_path, "dummy_cpu")) or len(os.listdir(os.path.join(image_tags_path, "dummy_cpu"))) == 0
     
         return res
     
-    return [test_tag, test_finalize, test_write_token_tag]
+    def test_partial_finalize():
+        # remove tags from data dir
+        vod_tags_path = os.path.join(config["storage"]["tags"], test_objects['legacy_vod'], "video")
+        image_tags_path = os.path.join(config["storage"]["tags"], test_objects['assets'], "image")
+        shutil.rmtree(vod_tags_path, ignore_errors=True)
+        shutil.rmtree(image_tags_path, ignore_errors=True)
+
+        image_auth = get_auth(test_objects['assets'])
+        legacy_vod_auth = get_auth(test_objects['legacy_vod'])
+
+        image_write = get_write_token(test_objects['assets'])
+        legacy_vod_write = get_write_token(test_objects['legacy_vod'])
+
+        # tag full durations on legacy vod write token
+        tag_url = f"http://localhost:{port}/{test_objects['legacy_vod']}/tag?authorization={legacy_vod_auth}"
+        finalize_url = f"http://localhost:{port}/{test_objects['legacy_vod']}/finalize?write_token={legacy_vod_write}&authorization={legacy_vod_auth}&force=true&leave_open=true"
+        
+        response = requests.post(tag_url, json={"start_time": 60, "end_time": 1000, "features": {"test_slow": {"model":{"tags":["test partial finalize"], "allow_single_frame":False}}}, "replace": False})
+        assert response.status_code == 200, response.text
+
+        # Check tag status until 10 parts have been tagged
+        status_url = f"http://localhost:{port}/{test_objects['legacy_vod']}/status?authorization={legacy_vod_auth}"
+        parts_tagged = 0
+        while parts_tagged < 10:
+            response = requests.get(status_url, timeout=30)
+            assert response.status_code == 200, response.text
+            res = response.json()
+            tagging_progress = res["video"]["test_slow"]["tagging_progress"]
+            if tagging_progress:
+                parts_tagged = int(res["video"]["test_slow"]["tagging_progress"].split("/")[0])
+            time.sleep(3)
+
+        # check for odd number of files in the directory
+        assert len(os.listdir(vod_tags_path)) % 2 == 1, os.listdir(vod_tags_path)
+
+        # finalize legacy vod write token
+        
+        with timeit("Finalizing legacy video"):
+            response = requests.post(finalize_url)
+
+        assert response.status_code == 200, response.text
+
+        res = []
+        client = ElvClient.from_configuration_url(config["fabric"]["config_url"], static_token=legacy_vod_auth)
+        files = client.list_files(write_token=legacy_vod_write, path='video_tags/video/test_slow')
+        res.append(files)
+
+        status_url = f"http://localhost:{port}/{test_objects['legacy_vod']}/status?authorization={legacy_vod_auth}"
+        parts_tagged = 0
+        while parts_tagged < 20:
+            response = requests.get(status_url, timeout=30)
+            assert response.status_code == 200, response.text
+            resp = response.json()
+            tagging_progress = resp["video"]["test_slow"]["tagging_progress"]
+            if tagging_progress:
+                parts_tagged = int(resp["video"]["test_slow"]["tagging_progress"].split("/")[0])
+            time.sleep(3)
+
+        finalize_url = f"http://localhost:{port}/{test_objects['legacy_vod']}/finalize?write_token={legacy_vod_write}&authorization={legacy_vod_auth}&force=true"
+        with timeit("Finalizing legacy video"):
+            response = requests.post(finalize_url)
+
+        assert response.status_code == 200, response.text
+
+        files = client.list_files(write_token=legacy_vod_write, path='video_tags/video/test_slow')
+        res.append(files)
+
+        return res
+    
+    def test_cpu_limit():
+        # Check that cpus are queued
+        # initiate 3 requests to dummy_cpu
+        
+        tag_url = f"http://localhost:{port}/{test_objects['vod']}/tag?authorization={video_auth}"
+        response = requests.post(tag_url, json={"features": {"dummy_cpu": {"model":{"tags":["a", "b", "a"], "allow_single_frame":False}}}, "replace": True})
+        assert response.status_code == 200, response.text
+
+        tag_url = f"http://localhost:{port}/{test_objects['legacy_vod']}/tag?authorization={legacy_vod_auth}"
+        response = requests.post(tag_url, json={"features": {"dummy_cpu": {"model":{"tags":["hello1"]}}, "shot":{}}, "start_time":60, "end_time":120, "replace": True})
+        assert response.status_code == 200, response.text
+
+        tag_url = f"http://localhost:{port}/{test_objects['assets']}/image_tag?authorization={assets_auth}"
+        response = requests.post(tag_url, json={"features": {"dummy_cpu": {"model":{"tags":["a", "b", "a"], "allow_single_frame":False}}}, "replace": True})
+        assert response.status_code == 200, response.text
+        
+        status_urls = [f"http://localhost:{port}/{test_objects['vod']}/status?authorization={video_auth}",
+                       f"http://localhost:{port}/{test_objects['legacy_vod']}/status?authorization={legacy_vod_auth}",
+                       f"http://localhost:{port}/{test_objects['assets']}/status?authorization={assets_auth}"]
+        
+        starttime = time.time()
+        while time.time() - starttime < 120:
+            for url in status_urls:
+                response = requests.get(url, timeout=30)
+                assert response.status_code == 200, response.text
+                res = response.json()
+                print(res)
+            time.sleep(3)
+    
+    return [test_tag, test_finalize, test_write_token_tag, test_partial_finalize]
 
 def main():
     filedir = os.path.dirname(os.path.abspath(__file__))

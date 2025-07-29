@@ -18,17 +18,19 @@ import signal
 import atexit
 from marshmallow import ValidationError, fields, Schema
 import tempfile
-
+import setproctitle
+import sys
+from waitress import serve
 from common_ml.types import Data
 from common_ml.utils.metrics import timeit
 
-from config import config
+from config import config, reload_config
 from src.fabric.utils import parse_qhit
 from src.fabric.agg import format_video_tags, format_asset_tags
 from src.fabric.video import download_stream, StreamNotFoundError
 from src.fabric.assets import fetch_assets, AssetsNotFoundException
 
-from src.manager import ResourceManager, NoGPUAvailable
+from src.manager import ResourceManager, NoResourceAvailable
 
 # RunConfig gives model level tagging params
 @dataclass
@@ -43,6 +45,7 @@ class Job:
     status: Literal["Starting", 
                     "Fetching content",
                     "Waiting to be assigned GPU", 
+                    "Waiting for CPU resource", 
                     "Completed", 
                     "Failed", 
                     "Stopped"]
@@ -55,11 +58,18 @@ class Job:
     time_started: float
     failed: List[str]
     allowed_gpus: List[str]
+    allowed_cpus: List[str]
     time_ended: Optional[float]=None
     # tag_job_id is the job id returned by the manager, will be None until the tagging starts (status is "Running")
     tag_job_id: Optional[str]=None
     error: Optional[str]=None
+    ## wall clock time of the last time this job was "put back" on the queue
+    reput_time: int = 0
     
+
+## for debugging, keep the last tmpdir (only if set)
+last_tmpdir = None
+
 def get_flask_app():
     app = Flask(__name__)
     # manages the gpu and inference jobs
@@ -84,12 +94,36 @@ def get_flask_app():
     # maps (qhit, stream) -> lock
     download_lock = defaultdict(threading.Lock)
     
+    # make sure we don't finalize against the same write token at the same time
+    finalize_lock = defaultdict(threading.Lock)
+    
     shutdown_signal = threading.Event()
 
+    
     @app.route('/list', methods=['GET'])
     def list_services() -> Response:
         res = _list_services()    
         return Response(response=json.dumps(res), status=200, mimetype='application/json')
+        
+    @dataclass
+    class UploadArgs(Data):
+        aggregate: bool=False
+        authorization: Optional[str]=None
+        write_token: str=""
+
+        # finalize args, set by default
+        leave_open: bool=True
+        force: bool=True
+        replace: bool=True
+        
+        @staticmethod
+        def from_dict(data: dict) -> 'UploadArgs':
+            class UploadArgsSchema(Schema):
+                aggregate = fields.Bool(required=False, missing=False)
+                write_token = fields.Str(required=False, missing="")
+                authorization = fields.Str(required=False, missing=None)
+                
+            return UploadArgs(**UploadArgsSchema().load(data))
         
     @app.route('/<qhit>/upload_tags', methods=['POST'])
     def upload(qhit: str):
@@ -97,6 +131,11 @@ def get_flask_app():
         if len(uploaded_files) == 0:
             return Response(response=json.dumps({'error': 'No files in request'}), status=400, mimetype='application/json')
         
+        try:
+            args = UploadArgs.from_dict(request.args)
+        except (KeyError, TypeError) as e:
+            return Response(response=json.dumps({'error': f"Invalid input: {str(e)}"}), status=400, mimetype='application/json')
+
         _, error_response = _get_client(request, qhit, config["fabric"]["config_url"])
         if error_response:
             return error_response
@@ -109,16 +148,23 @@ def get_flask_app():
                 return Response(response=json.dumps({'error': 'Invalid JSON file'}), status=400, mimetype='application/json')
             to_upload.append((file.filename, filedata))
 
-        os.makedirs(os.path.join(config["storage"]["tags"], qhit, 'external_tags'), exist_ok=True)
+        with filesystem_lock:
+            os.makedirs(os.path.join(config["storage"]["tags"], qhit, 'external_tags'), exist_ok=True)
 
-        for fname, fdata in to_upload:
-            if os.path.exists(os.path.join(config["storage"]["tags"], qhit, 'external_tags', fname)):
-                logger.warning(f"File {fname} already exists, overwriting")
-            with open(os.path.join(config["storage"]["tags"], qhit, 'external_tags', fname), 'w') as f:
-                json.dump(fdata, f)
+            for fname, fdata in to_upload:
+                if os.path.exists(os.path.join(config["storage"]["tags"], qhit, 'external_tags', fname)):
+                    logger.warning(f"File {fname} already exists, overwriting")
+                with open(os.path.join(config["storage"]["tags"], qhit, 'external_tags', fname), 'w') as f:
+                    json.dump(fdata, f)
+                    
+        if not args.write_token:
+            args.write_token = qhit
+
+        if args.aggregate:
+            return _finalize_internal(qhit, args, True)
 
         return Response(response=json.dumps({'message': 'Successfully uploaded tags'}), status=200, mimetype='application/json')
-    
+
     # TagArgs represents the request body for the /tag endpoint
     @dataclass
     class TagArgs(Data):
@@ -163,8 +209,9 @@ def get_flask_app():
             for feature, run_config in args.features.items():
                 # get the subset of GPUs that the model can run on, default to all of them
                 allowed_gpus = config["services"][feature].get("allowed_gpus", list(range(manager.num_devices)))
+                allowed_cpus = config["services"][feature].get("cpu_slots", [])
                 logger.debug(f"Starting {feature} on {qhit}: {run_config.stream}")
-                job = Job(qhit=qhit, run_config=run_config, feature=feature, media_files=[], failed=[], replace=args.replace, status="Starting", stop_event=threading.Event(), time_started=time.time(), allowed_gpus=allowed_gpus)
+                job = Job(qhit=qhit, run_config=run_config, feature=feature, media_files=[], failed=[], replace=args.replace, status="Starting", stop_event=threading.Event(), time_started=time.time(), allowed_gpus=allowed_gpus, allowed_cpus=allowed_cpus)
                 active_jobs[qhit][(run_config.stream, feature)] = job
                 threading.Thread(target=_video_tag, args=(job, _get_authorization(request), args.start_time, args.end_time)).start()
         return Response(response=json.dumps({'message': f'Tagging started on {qhit}'}), status=200, mimetype='application/json')
@@ -207,6 +254,7 @@ def get_flask_app():
         else:
             with lock:
                 job.media_files = media_files
+                job.status = "Waiting for CPU resource"
             cpu_queue.put(job)
 
     def _filter_tagged_files(media_files: List[str], client: ElvClient, qhit: str, stream: str, feature: str) -> List[str]:
@@ -237,7 +285,7 @@ def get_flask_app():
             if filename not in tagged:
                 untagged.append(media_file)
         return untagged
-    
+
     def _source_from_tag_file(tagged_file: str) -> str:
         """
         Args:
@@ -300,7 +348,8 @@ def get_flask_app():
             for feature, run_config in args.features.items():
                 # get the subset of GPUs that the model can run on, default to all of them
                 allowed_gpus = config["services"][feature].get("allowed_gpus", list(range(manager.num_devices)))
-                job = Job(qhit=qhit, feature=feature, run_config=run_config, media_files=[], failed=[], replace=args.replace, allowed_gpus=allowed_gpus, status="Starting", stop_event=threading.Event(), time_started=time.time())
+                allowed_cpus = config["services"][feature].get("cpu_slots", [])
+                job = Job(qhit=qhit, feature=feature, run_config=run_config, media_files=[], failed=[], replace=args.replace, allowed_gpus=allowed_gpus, allowed_cpus=allowed_cpus, status="Starting", stop_event=threading.Event(), time_started=time.time())
                 active_jobs[qhit][('image', feature)] = job
                 threading.Thread(target=_image_tag, args=(job, _get_authorization(request), args.assets)).start()
         return Response(response=json.dumps({'message': f'Image asset tagging started on {qhit}'}), status=200, mimetype='application/json')
@@ -349,7 +398,7 @@ def get_flask_app():
             return [], []
         return media_files, failed
 
-    def _job_starter(wait_for_gpu: bool, tag_queue: Queue) -> None:
+    def _job_starter(job_type: Literal["cpu"] | Literal["gpu"], tag_queue: Queue) -> None:
         """
         Args:
             wait_for_gpu (bool): if True, then the job starter will wait for a GPU to be available before starting the job
@@ -360,23 +409,27 @@ def get_flask_app():
             job = tag_queue.get()
             if _check_exit(job):
                 continue
-            
-            if 0 < len(job.allowed_gpus) < manager.num_devices:
-                # This means the job can only run on a subset of GPUs
-                # The sleep prevents the situation where this type of job is added back to queue over and over while it waits for a GPU.
-                time.sleep(config["devices"]["wait_for_gpu_sleep"])
 
-            if wait_for_gpu:
-                stopped = False
-                while not manager.await_gpu(timeout=config["devices"]["wait_for_gpu_sleep"]):
-                    # check if the job has been stopped, if not then we go back to waiting for a GPU
-                    if _check_exit(job):
-                        stopped = True
-                        break
-                if stopped:
-                    continue
+            def wait_for_resource():
+                # wait for a GPU to be available
+                if job_type == "gpu":
+                    return manager.await_gpu(timeout=config["devices"]["wait_for_gpu_sleep"])
+                elif job_type == "cpu":
+                    return manager.await_cpu(timeout=config["devices"]["wait_for_gpu_sleep"])
+                else:
+                    raise ValueError(f"Unknown job type: {job_type}")
+
+            stopped = False
+            while not wait_for_resource():
+                # check if the job has been stopped, if not then we go back to waiting for a GPU
+                if _check_exit(job):
+                    stopped = True
+                    break
+            if stopped:
+                continue
+
             try:
-                job_id = manager.run(job.feature, job.run_config.model, job.media_files, job.allowed_gpus)
+                job_id = manager.run(job.feature, job.run_config.model, job.media_files, job.allowed_gpus, job.allowed_cpus, logs_subpath=job.qhit)
                 with lock:
                     if _is_job_stopped(job):
                         # if the job has been stopped while the container was starting
@@ -385,15 +438,22 @@ def get_flask_app():
                     job.tag_job_id = job_id
                     job.status = "Tagging content"
                 logger.success(f"Started running {job.feature} on {job.qhit}")
-            except NoGPUAvailable:
+            except NoResourceAvailable:
                 # This error can happen if the model can only run on a subset of GPUs. 
-                job.error = "Tried to assign GPU but no suitable one was found. The job was placed back on the queue."
+                job.error = "Tried to assign GPU or CPU slot, but no suitable one was found. The job was placed back on the queue."
+                # if no CPU slot or GPU is available, then we put the job back on the queue
+                now = time.time()
+                if (now - job.reput_time) < config["devices"]["wait_for_gpu_sleep"]:
+                    # if the job was put back on the queue too recently, then we wait for a bit before putting it back
+                    time.sleep(config["devices"]["wait_for_gpu_sleep"] - (now - job.reput_time))
+                job.reput_time = now
                 tag_queue.put(job)
+                continue
             except Exception as e:
                 # handle the unexpected
                 with lock:
                     _set_stop_status(job, "Failed", str(e))
-                    
+
     def _job_watcher() -> None:
         while True:
             for qhit in active_jobs:
@@ -406,6 +466,10 @@ def get_flask_app():
                             _set_stop_status(job, "Stopped")
                         continue
                     status = manager.status(job.tag_job_id)
+                    with filesystem_lock:
+                        # move outputted tags to their correct place
+                        # lock in case of race condition with status or finalize calls
+                        _copy_new_files(job, status.tags)
                     if status.status == "Running":
                         continue
                     # otherwise the job has finished: either successfully or with an error
@@ -424,7 +488,7 @@ def get_flask_app():
                         inactive_jobs[qhit][(stream, feature)] = job
                         del active_jobs[qhit][(stream, feature)]
             time.sleep(config["watcher"]["sleep"])
-            
+
     def _check_exit(job: Job) -> bool:
         """
         Returns True if the job has received a stop signal, False otherwise. 
@@ -447,13 +511,24 @@ def get_flask_app():
     def _move_files(job: Job, tags: List[str]) -> None:
         if len(tags) == 0:
             return
-        tag_dir = os.path.dirname(tags[0])
         qhit, stream, feature = job.qhit, job.run_config.stream, job.feature
         tags_path = os.path.join(config["storage"]["tags"], qhit, stream, feature)
         os.makedirs(tags_path, exist_ok=True)
         for tag in tags:
             shutil.move(tag, os.path.join(tags_path, os.path.basename(tag)))
+        tag_dir = os.path.dirname(tags[0])
         shutil.rmtree(tag_dir, ignore_errors=True)
+
+    def _copy_new_files(job: Job, tags: List[str]) -> None:
+        if len(tags) == 0:
+            return
+        qhit, stream, feature = job.qhit, job.run_config.stream, job.feature
+        tags_path = os.path.join(config["storage"]["tags"], qhit, stream, feature)
+        os.makedirs(tags_path, exist_ok=True)
+        for tag in tags:
+            if os.path.exists(os.path.join(tags_path, os.path.basename(tag))):
+                continue
+            shutil.copyfile(tag, os.path.join(tags_path, os.path.basename(tag)))
     
     @dataclass
     class FinalizeArgs(Data):
@@ -474,19 +549,26 @@ def get_flask_app():
                 authorization = fields.Str(required=False, missing=None)
             return FinalizeArgs(**FinalizeSchema().load(data))
 
+    @app.route('/<qhit>/write', methods=['POST'])
     @app.route('/<qhit>/finalize', methods=['POST'])
     def finalize(qhit: str) -> Response:
-        return _finalize_internal(qhit, True)
-
-    @app.route('/<qhit>/aggregate', methods=['POST'])
-    def aggregate(qhit: str) -> Response:
-        return _finalize_internal(qhit, False)
-    
-    def _finalize_internal(qhit: str, upload_local_tags = True) -> Response:
         try:
             args = FinalizeArgs.from_dict(request.args)
         except (TypeError, ValidationError) as e:
             return Response(response=json.dumps({'message': 'invalid request', 'error': str(e)}), status=400, mimetype='application/json')
+        with finalize_lock[args.write_token]:
+            return _finalize_internal(qhit, args, True)
+
+    @app.route('/<qhit>/aggregate', methods=['POST'])
+    def aggregate(qhit: str) -> Response:
+        try:
+            args = FinalizeArgs.from_dict(request.args)
+        except (TypeError, ValidationError) as e:
+            return Response(response=json.dumps({'message': 'invalid request', 'error': str(e)}), status=400, mimetype='application/json')
+        with finalize_lock[args.write_token]:
+            return _finalize_internal(qhit, args, False)
+    
+    def _finalize_internal(qhit: str, args: FinalizeArgs, upload_local_tags = True) -> Response:
         qwt = args.write_token
         client, error_response = _get_client(request, qwt, config["fabric"]["config_url"])
         if error_response:
@@ -528,15 +610,23 @@ def get_flask_app():
                     if stream == "image":
                         for source in tagged_media_files:
                             tagfile = source + "_imagetags.json"
+                            if not os.path.exists(tagfile):
+                                logger.warning(f"Expected tag file {tagfile} not found, skipping")
+                                continue
                             file_jobs.append(ElvClient.FileJob(local_path=tagfile,
                                                     out_path=f"image_tags/{feature}/{os.path.basename(tagfile)}",
                                                     mime_type="application/json"))
                     else:
                         for source in tagged_media_files:
                             tagfile = source + "_tags.json"
+                            if not os.path.exists(tagfile):
+                                # this should only happen if force=True and frametags get written before video tags
+                                logger.warning(f"Expected tag file {tagfile} not found, skipping.")
+                                continue
                             file_jobs.append(ElvClient.FileJob(local_path=tagfile,
                                                     out_path=f"video_tags/{stream}/{feature}/{os.path.basename(tagfile)}",
                                                     mime_type="application/json"))
+
                             if os.path.exists(source + "_frametags.json"):
                                 file_jobs.append(ElvClient.FileJob(local_path=source + "_frametags.json",
                                                     out_path=f"video_tags/{stream}/{feature}/{os.path.basename(source)}_frametags.json",
@@ -546,7 +636,7 @@ def get_flask_app():
             if os.path.exists(external_tags_path):
                 local_source_tags = os.listdir(external_tags_path)
                 try:
-                    remote_source_tags = client.list_files(qlib, path="video_tags/source_tags/external", **content_args)
+                    remote_source_tags = client.list_files(qlib, path="video_tags/source_tags/user", **content_args)
                 except HTTPError:
                     logger.debug(f"No source tags found for {qwt}")
                     remote_source_tags = []
@@ -554,7 +644,7 @@ def get_flask_app():
                 for local_source in local_source_tags:
                     tagfile = os.path.join(config["storage"]["tags"], qhit, "external_tags", local_source)
                     file_jobs.append(ElvClient.FileJob(local_path=tagfile,
-                                                        out_path=f"video_tags/source_tags/external/{local_source}",
+                                                        out_path=f"video_tags/source_tags/user/{local_source}",
                                                         mime_type="application/json"))
                     # TODO: we do need a way to make it so we can do replace=true for external tags but not on the rest. if we can improve the efficiency of this step we could just do two passes and 
                     # Let the user specify which features they want to finalize, and they could do two steps. For now, we will default to always overwriting the external tags.
@@ -571,10 +661,12 @@ def get_flask_app():
             except ValueError as e:
                 return Response(response=json.dumps({'error': str(e), 'message': 'Please verify the provided write token has not already been used to finalize tags.'}), status=400, mimetype='application/json')
         # if no file jobs, then we just do the aggregation
-        
+
         tmpdir = tempfile.TemporaryDirectory(dir=config["storage"]["tmp"])
+
         with filesystem_lock:
-            shutil.copytree(os.path.join(config["storage"]["tags"], qhit), tmpdir.name, dirs_exist_ok=True)
+            if os.path.exists(os.path.join(config["storage"]["tags"], qhit)):
+                shutil.copytree(os.path.join(config["storage"]["tags"], qhit), tmpdir.name, dirs_exist_ok=True)
             if os.path.exists(os.path.join(tmpdir.name, 'external_tags')):
                 shutil.rmtree(os.path.join(tmpdir.name, 'external_tags'))
 
@@ -590,18 +682,23 @@ def get_flask_app():
             )
             return Response(response=json.dumps({'error': str(e), 'message': message}), status=403, mimetype='application/json')
         finally:
-            tmpdir.cleanup()
+            if "keeplasttemp" in os.environ.get("TAGGER_AGG", ""):
+                ## for debugging, keep the last temp directory
+                global last_tmpdir
+                last_tmpdir = tmpdir
+            else:
+                tmpdir.cleanup()
         
         if not args.leave_open:
             client.finalize_files(qwt, qlib)
 
-        client.set_commit_message(qwt, "Uploaded ML Tags", qlib)
+        client.set_commit_message(qwt, "uploaded/aggregated ML tags (taggerv2)", qlib)
 
         return Response(response=json.dumps({'message': 'Succesfully uploaded tag files. Please finalize the write token.', 'write token': qwt}), status=200, mimetype='application/json')
 
-    # JobStatus represents the status of a job returned by the /status endpoint
     @dataclass
     class JobStatus():
+        # JobStatus represents the status of a job returned by the /status endpoint
         status: Literal["Starting", 
                         "Fetching content",
                         "Waiting to be assigned GPU", 
@@ -682,7 +779,8 @@ def get_flask_app():
     
     def _list_services() -> List[str]:
         with PodmanClient() as podman_client:
-            images = [image.tags[0] for image in podman_client.images.list() if image.tags]
+            images = sum([image.tags for image in podman_client.images.list() if image.tags], [])
+
         res = []
         for service in config['services']:
             if config['services'][service]['image'] in images:
@@ -752,34 +850,49 @@ def get_flask_app():
         logger.info("All jobs stopped")
         # Uses os._exit to avoid calling atexit functions
         os._exit(0)
-        
+
     # not thread safe, call with lock
     def _is_job_stopped(job: Job) -> bool:
         return job.status == "Stopped" or job.status == "Failed"
-    
+
     def _startup():
         threading.Thread(target=_job_watcher, daemon=True).start()
-        threading.Thread(target=_job_starter, args=(True, gpu_queue), daemon=True).start()
-        threading.Thread(target=_job_starter, args=(False, cpu_queue), daemon=True).start()
-    
+        threading.Thread(target=_job_starter, args=("gpu", gpu_queue), daemon=True).start()
+        threading.Thread(target=_job_starter, args=("cpu", cpu_queue), daemon=True).start()
+
     # handle shutdown signals
     signal.signal(signal.SIGINT, lambda sig, frame: _shutdown())
     signal.signal(signal.SIGTERM, lambda sig, frame: _shutdown())
 
     # in case of a different cause for shutdown other than a termination signal
     atexit.register(_shutdown)
-            
+
     _startup()
     CORS(app)
     return app
 
+LOCAL_CONFIG = "tagger-config.yml"
 def main():
+    if args.directory:
+        os.chdir(args.directory)
+        logger.info(f"changed directory to {args.directory}")
+        
+        if not os.path.exists(LOCAL_CONFIG):
+            logger.error(f"You have specified directory {args.directory} but no {LOCAL_CONFIG} file was found there. This is probably an error.")
+            sys.exit(1)
+    if os.path.exists(LOCAL_CONFIG):
+        reload_config(LOCAL_CONFIG)
+
+    logger.info("Python interpreter version: " + sys.version)
     app = get_flask_app()
-    app.run(port=args.port, host=args.host)
+
+    serve(app, host=args.host, port=args.port)
 
 if __name__ == '__main__':
+    setproctitle.setproctitle("content-tagger")
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=8086)
     parser.add_argument('--host', type=str, default="127.0.0.1")
+    parser.add_argument('--directory', type=str)
     args = parser.parse_args()
     main()
