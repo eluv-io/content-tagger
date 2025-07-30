@@ -68,6 +68,8 @@ class Tagger():
         
         self.shutdown_signal = threading.Event()
 
+        self._startup()
+
     def tag(self, q: Content, args: TagArgs | ImageTagArgs) -> None:
         tagging_images = isinstance(args, ImageTagArgs)
 
@@ -171,6 +173,26 @@ class Tagger():
     def get_running_jobs(self, qhit: str) -> list[Job]:
         with self.store_lock:
             return list(self.job_store.active_jobs[qhit].values())
+        
+    def cleanup(self) -> None:
+        self.shutdown_signal.set()
+        active_jobs = self.job_store.active_jobs
+        to_stop = []
+        with self.store_lock:
+            for qhit in active_jobs:
+                for job in active_jobs[qhit].values():
+                    to_stop.append(job)
+                    job.stop_event.set()
+            logger.info(f"Stopping {len(to_stop)} jobs")
+        while True:
+            exit = True
+            for job in to_stop:
+                if not self._is_job_stopped(job):
+                    exit = False
+            if exit:
+                # quit loop and finish
+                break
+            time.sleep(1)
 
     def _video_tag(
             self, 
@@ -307,9 +329,9 @@ class Tagger():
             progress = f"{tagged_files}/{tagged_files}"
         else:
             progress = ""
-            
+
         return JobStatus(status=job.status, time_running=time_running, tagging_progress=progress, tag_job_id=job.tag_job_id, error=job.error, failed=job.failed)
-    
+
     def _is_job_stopped(self, job: Job) -> bool:
         # not thread safe, call with lock
         return job.status == "Stopped" or job.status == "Failed"
@@ -526,3 +548,8 @@ class Tagger():
             if os.path.exists(os.path.join(tags_path, os.path.basename(tag))):
                 continue
             shutil.copyfile(tag, os.path.join(tags_path, os.path.basename(tag)))
+
+    def _startup(self) -> None:
+        threading.Thread(target=self._job_watcher, daemon=True).start()
+        threading.Thread(target=self._job_starter, args=("gpu", self.gpu_queue), daemon=True).start()
+        threading.Thread(target=self._job_starter, args=("cpu", self.cpu_queue), daemon=True).start()

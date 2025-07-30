@@ -1,5 +1,5 @@
 import argparse
-from flask import Flask, request, Response, jsonify
+from flask import Flask, Response, jsonify
 from flask_cors import CORS
 import json
 from loguru import logger
@@ -7,7 +7,6 @@ import os
 from collections import defaultdict
 import threading
 from requests.exceptions import HTTPError
-import time
 import signal
 import atexit
 import setproctitle
@@ -75,6 +74,16 @@ def configure_routes(app: Flask) -> None:
     @app.route('/<qhit>/upload_tags', methods=['POST'])
     def upload(qhit: str) -> Response:
         return handle_upload(qhit)
+    
+
+    @app.route('/<qhit>/write', methods=['POST'])
+    @app.route('/<qhit>/finalize', methods=['POST'])
+    def finalize(qhit: str) -> Response:
+        handle_finalize(qhit)
+
+    @app.route('/<qhit>/aggregate', methods=['POST'])
+    def aggregate(qhit: str) -> Response:
+        handle_aggregate(qhit)
 
 def boot_state(app: Flask) -> None:
     app_state = {}
@@ -95,58 +104,27 @@ def boot_state(app: Flask) -> None:
 
     app.config["state"] = app_state
 
-def get_flask_app():
-    app = Flask(__name__)
-        
-    @app.route('/<qhit>/upload_tags', methods=['POST'])
-    def upload(qhit: str):
-        handle_upload(qhit)
+def configure_lifecycle(app: Flask) -> None:
 
-    @app.route('/<qhit>/write', methods=['POST'])
-    @app.route('/<qhit>/finalize', methods=['POST'])
-    def finalize(qhit: str) -> Response:
-        handle_finalize(qhit)
-
-    @app.route('/<qhit>/aggregate', methods=['POST'])
-    def aggregate(qhit: str) -> Response:
-        handle_aggregate(qhit)
-
-    def _shutdown() -> None:
-        logger.warning("Shutting down")
-        to_stop = []
-        shutdown_signal.set()
-        with lock:
-            for qhit in active_jobs:
-                for job in active_jobs[qhit].values():
-                    to_stop.append(job)
-                    job.stop_event.set()
-            logger.info(f"Stopping {len(to_stop)} jobs")
-        while True:
-            exit = True
-            for job in to_stop:
-                if not _is_job_stopped(job):
-                    exit = False
-            if exit:
-                # quit loop and finish
-                break
-            time.sleep(1)
-        logger.info("All jobs stopped")
-        # Uses os._exit to avoid calling atexit functions
+    def _cleanup():
+        """Cleanup resources before shutdown."""
+        logger.info("Cleaning up resources...")
+        app_state = app.config["state"]
+        app_state["resource_manager"].cleanup()
+        app_state["jobs_store"].cleanup()
+        logger.info("Cleanup completed.")
         os._exit(0)
 
-    def _startup():
-        threading.Thread(target=_job_watcher, daemon=True).start()
-        threading.Thread(target=_job_starter, args=("gpu", gpu_queue), daemon=True).start()
-        threading.Thread(target=_job_starter, args=("cpu", cpu_queue), daemon=True).start()
+    atexit.register(_cleanup)
+    signal.signal(signal.SIGINT, lambda signum, frame: _cleanup())
+    signal.signal(signal.SIGTERM, lambda signum, frame: _cleanup())
 
-    # handle shutdown signals
-    signal.signal(signal.SIGINT, lambda sig, frame: _shutdown())
-    signal.signal(signal.SIGTERM, lambda sig, frame: _shutdown())
-
-    # in case of a different cause for shutdown other than a termination signal
-    atexit.register(_shutdown)
-
-    _startup()
+def create_app() -> Flask:
+    """Main entry point for the server."""
+    app = Flask(__name__)
+    boot_state(app)
+    configure_routes(app)
+    configure_lifecycle(app)
     CORS(app)
     return app
 
@@ -163,7 +141,7 @@ def main():
         reload_config(LOCAL_CONFIG)
 
     logger.info("Python interpreter version: " + sys.version)
-    app = get_flask_app()
+    app = create_app()
 
     serve(app, host=args.host, port=args.port)
 

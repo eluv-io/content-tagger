@@ -82,7 +82,18 @@ class ResourceManager:
             allowed_slots = model_conf.get("cpu_slots", [f"slot4{modelname}"])
             for slotname in allowed_slots:
                 self.cpuslots[slotname] = False
-    def run(self, feature: str, run_config: dict, files: List[str], allowed_gpus: List[int], allowed_cpus: List[str], logs_subpath: Optional[str]=None) -> str:
+
+    # TODO: add function to add new files to an existing job
+
+    def run(
+            self, 
+            feature: str, 
+            run_config: dict, 
+            files: List[str], 
+            allowed_gpus: List[int], 
+            allowed_cpus: List[str], 
+            logs_subpath: Optional[str]=None
+    ) -> str:
         # Args:
         #     feature (str): The feature to tag the files with.
         #     run_config (dict): The configuration to run the model with. This is model-specific. Check the model's documentation.
@@ -129,6 +140,7 @@ class ResourceManager:
                     self.files_tagging.add((f, feature))
                     files_added.append((f, feature))
                 save_path = os.path.join(config["storage"]["tmp"], feature, jobid)
+                # TODO: we have reference to the container, we just need to keep it alive and push to stdin
                 container = create_container(self.client, feature, save_path, files, run_config, gpu_device_to_use, logs_out)
                 container.start()
                 self.jobs[jobid] = TagJob(container, feature, logs_out, gpu_device_to_use, cpu_slot_to_use, "Running", threading.Event(), time.time(), None, files, [], [], save_path=save_path)
