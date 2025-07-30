@@ -14,7 +14,7 @@ from src.tagger.jobs import JobsStore
 from src.tagger.resource_manager import ResourceManager, NoResourceAvailable
 from src.fabric.content import Content
 from src.api.tagging.format import TagArgs, ImageTagArgs
-from src.containers import list_services
+from src.tagger.containers import list_services
 from src.api.errors import MissingResourceError, BadRequestError
 from src.tagger.jobs import Job
 from src.fabric.video import download_stream, StreamNotFoundError
@@ -44,6 +44,7 @@ class Tagger():
             self, 
             job_store: JobsStore,
             manager: ResourceManager,
+            filesystem_lock: threading.Lock | None
         ):
         self.job_store = job_store
         self.manager = manager
@@ -51,7 +52,9 @@ class Tagger():
         self.cpu_queue = Queue()
         self.gpu_queue = Queue()
 
-        self.filesystem_lock = threading.Lock()
+        self.filesystem_lock = filesystem_lock
+        if filesystem_lock is None:
+            self.filesystem_lock = threading.Lock()
 
         self.store_lock = threading.Lock()
         self.job_store = job_store
@@ -164,6 +167,10 @@ class Tagger():
             jobs = [active_jobs[qhit][job_key] for job_key in feature_job_keys]
             for job in jobs:
                 job.stop_event.set()
+
+    def get_running_jobs(self, qhit: str) -> list[Job]:
+        with self.store_lock:
+            return list(self.job_store.active_jobs[qhit].values())
 
     def _video_tag(
             self, 

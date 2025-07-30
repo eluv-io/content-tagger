@@ -12,7 +12,7 @@ import podman
 from podman.domain.containers import Container
 from loguru import logger
 
-from src.containers import create_container
+from src.tagger.containers import create_container
 
 from config import config
 
