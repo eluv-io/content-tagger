@@ -105,7 +105,6 @@ class Tagger():
                 # get the subset of GPUs that the model can run on, default to all of them
                 allowed_gpus = config["services"][feature].get("allowed_gpus", list(range(self.manager.num_devices)))
                 allowed_cpus = config["services"][feature].get("cpu_slots", [])
-                logger.debug(f"Starting {feature} on {q.qid}: {run_config.stream}")
                 job = Job(
                     q=q, 
                     run_config=run_config, 
@@ -241,12 +240,15 @@ class Tagger():
                         media_files, failed =  download_stream(job.q, stream, save_path, **kwargs, exit_event=job.stop_event)
             logger.debug(f"got list of media files {media_files}")
         except (StreamNotFoundError, AssetsNotFoundException):
+            logger.exception(f"Content for stream {stream} was not found for {qhit}")
             with self.store_lock:
                 self._set_stop_status(job, "Failed", f"Content for stream {stream} was not found for {qhit}")
         except HTTPError as e:
+            logger.exception(f"HTTPError occurred while fetching stream {stream} for {qhit}: {e}")
             with self.store_lock:
                 self._set_stop_status(job, "Failed", f"Failed to fetch stream {stream} for {qhit}: {str(e)}. Make sure authorization token hasn't expired.")
         except Exception as e:
+            logger.exception(f"Unknown error occurred while fetching stream {stream} for {qhit}: {e}")
             with self.store_lock:
                 self._set_stop_status(job, "Failed", f"Unknown error occurred while fetching stream {stream} for {qhit}: {str(e)}")
         if self._check_exit(job):
