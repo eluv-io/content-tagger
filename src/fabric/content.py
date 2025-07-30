@@ -2,7 +2,6 @@
 from typing import Any, Dict
 
 from elv_client_py import ElvClient
-from requests.exceptions import HTTPError
 
 from src.api.auth import parse_qhit
 from config import config

@@ -4,7 +4,7 @@ from collections import defaultdict
 import time
 import os
 from typing import List, Optional, Literal
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from requests import HTTPError
 import shutil
 
@@ -13,7 +13,7 @@ from loguru import logger
 from src.tagger.jobs import JobsStore
 from src.tagger.resource_manager import ResourceManager, NoResourceAvailable
 from src.fabric.content import Content
-from src.api.tagging.format import TagArgs
+from src.api.tagging.format import TagArgs, ImageTagArgs
 from src.containers import list_services
 from src.api.errors import MissingResourceError, BadRequestError
 from src.tagger.jobs import Job
@@ -65,7 +65,9 @@ class Tagger():
         
         self.shutdown_signal = threading.Event()
 
-    def tag(self, qhit: str, q: Content, args: TagArgs) -> None:
+    def tag(self, q: Content, args: TagArgs | ImageTagArgs) -> None:
+        tagging_images = isinstance(args, ImageTagArgs)
+
         services = list_services()
 
         invalid_features = [feature for feature in args.features if feature not in services]
@@ -74,6 +76,13 @@ class Tagger():
             raise MissingResourceError(
                 f"Invalid features: {', '.join(invalid_features)}. Available features: {', '.join(services)}"
             )
+        
+        if tagging_images:
+            for feature, run_config in args.features.items():
+                if not config["services"][feature].get("frame_level", False):
+                    raise MissingResourceError(
+                        f"Image tagging for {feature} is not supported"
+                    )
         
         with self.store_lock:
             if self.shutdown_signal.is_set():
@@ -105,7 +114,56 @@ class Tagger():
                     allowed_cpus=allowed_cpus
                 )
                 self.job_store.active_jobs[q.qhit][(run_config.stream, feature)] = job
-                threading.Thread(target=self._video_tag, args=(job, args.start_time, args.end_time)).start()
+                if tagging_images:
+                    threading.Thread(target=self._image_tag, args=(job, args.assets)).start()
+                else:
+                    threading.Thread(target=self._video_tag, args=(job, args.start_time, args.end_time)).start()
+
+    def status(self, qhit: str) -> dict[str, dict[str, JobStatus]]:
+        """
+        Args:
+            qhit (str): content object, hash, or write token that files belong to
+        Returns:
+            dict[str, dict[str, JobStatus]]: a dictionary mapping stream -> feature -> JobStatus
+        """
+
+        active_jobs = self.job_store.active_jobs
+        inactive_jobs = self.job_store.inactive_jobs
+
+        with self.store_lock:
+            jobs = set(active_jobs[qhit].keys()) | set(inactive_jobs[qhit].keys())
+            if len(jobs) == 0:
+                raise MissingResourceError(
+                    f"No jobs started for {qhit}. Please start a tagging job first."
+                )
+            res = defaultdict(dict)
+            for job in jobs:
+                stream, feature = job
+                if job in active_jobs[qhit]:
+                    res[stream][feature] = self._get_job_status(active_jobs[qhit][job])
+                else:
+                    res[stream][feature] = self._get_job_status(inactive_jobs[qhit][job])
+
+        for stream in list(res.keys()):
+            for feature in list(res[stream].keys()):
+                res[stream][feature] = asdict(res[stream][feature])
+
+        return res
+    
+    def stop(self, qhit: str, feature: str) -> None:
+        active_jobs = self.job_store.active_jobs
+        with self.store_lock:
+            job_keys = active_jobs[qhit].keys()
+            feature_job_keys = [job_key for job_key in job_keys if job_key[1] == feature]
+            
+            if len(feature_job_keys) == 0:
+                raise MissingResourceError(
+                    f"No job running for {feature} on {qhit}"
+                )
+            
+            jobs = [active_jobs[qhit][job_key] for job_key in feature_job_keys]
+            for job in jobs:
+                job.stop_event.set()
 
     def _video_tag(
             self, 
@@ -113,8 +171,21 @@ class Tagger():
             start_time: int | None, 
             end_time: int | None
         ) -> None:
-        media_files, failed = self._download_content(job, q, start_time=start_time, end_time=end_time)
+        media_files, failed = self._download_content(job, start_time=start_time, end_time=end_time)
         job.media_files = media_files
+        job.failed = failed
+        self._submit_tag_job(job)
+
+    def _image_tag(
+            self,
+            job: Job,
+            assets: list[str] | None
+        ) -> None:
+        images, failed = self._download_content(job, assets=assets)
+        deduped = list(set(images))
+        if len(deduped) > 0:
+            logger.warning(f"Found {len(images) - len(deduped)} duplicate images.")
+        job.media_files = deduped
         job.failed = failed
         self._submit_tag_job(job)
 
@@ -135,9 +206,9 @@ class Tagger():
                 with self.dl_sem:
                     # if fetching finished while waiting for lock, this will return immediately
                     if stream == "image":
-                        media_files, failed = fetch_assets(q, save_path,  **kwargs)
+                        media_files, failed = fetch_assets(job.q, save_path,  **kwargs)
                     else:
-                        media_files, failed =  download_stream(q, stream, save_path, **kwargs, exit_event=job.stop_event)
+                        media_files, failed =  download_stream(job.q, stream, save_path, **kwargs, exit_event=job.stop_event)
             logger.debug(f"got list of media files {media_files}")
         except (StreamNotFoundError, AssetsNotFoundException):
             with self.store_lock:

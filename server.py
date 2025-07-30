@@ -28,7 +28,7 @@ from src.fabric.utils import parse_qhit
 from src.fabric.agg import format_video_tags, format_asset_tags
 from src.tagger.jobs import JobsStore
 from src.containers import list_services
-from src.api.tagging.handlers import handle_tag
+from src.api.tagging.handlers import handle_tag, handle_image_tag, handle_status, handle_stop
 from src.api.errors import BadRequestError, MissingResourceError
 
 from src.tagger.tagger import Tagger
@@ -67,25 +67,37 @@ def configure_routes(app: Flask) -> None:
         return Response(response=json.dumps(res), status=200, mimetype='application/json')
 
     @app.route('/<qhit>/tag', methods=['POST'])
-    def tag(qhit: str) -> tuple[Response, int]:
+    def tag(qhit: str) -> Response:
         return handle_tag(qhit)
+    
+    @app.route('/<qhit>/image_tag', methods=['POST'])
+    def image_tag(qhit: str) -> Response:
+        return handle_image_tag(qhit)
+    
+    @app.route('/<qhit>/status', methods=['GET'])
+    def status(qhit: str) -> Response:
+        return handle_status(qhit)
+    
+    @app.route('/<qhit>/stop/<feature>', methods=['POST'])
+    def stop(qhit: str, feature: str) -> Response:
+        return handle_stop(qhit, feature)
 
 def boot_state(app: Flask) -> None:
     app_state = {}
 
     app_state["resource_manager"] = ResourceManager()
 
-    app_state["jobs_store"] = JobsStore
+    app_state["jobs_store"] = JobsStore()
 
-    app_state["tagger"] = Tagger
+    app_state["tagger"] = Tagger(
+        job_store=app_state["jobs_store"],
+        manager=app_state["resource_manager"],
+    )
 
     app.config["state"] = app_state
 
 def get_flask_app():
     app = Flask(__name__)
-
-    
-
         
     @dataclass
     class UploadArgs(Data):
@@ -146,67 +158,6 @@ def get_flask_app():
             return _finalize_internal(qhit, args, True)
 
         return Response(response=json.dumps({'message': 'Successfully uploaded tags'}), status=200, mimetype='application/json')
-
-    @app.route('/<qhit>/tag', methods=['POST'])
-    def tag(qhit: str) -> Response:
-        handle_tag(qhit)
-
-     # TagArgs represents the request body for the /tag endpoint
-    @dataclass
-    class ImageTagArgs(Data):
-        # maps feature name to RunConfig
-        features: Dict[str, RunConfig]
-
-        # asset file paths to tag relative to the content object e.g. /assets/image.jpg, if empty then we will look in /meta/assets and tag all the image assets located there. 
-        assets: Optional[List[str]]
-
-        # replace tag files if they already exist
-        replace: bool=False
-
-        @staticmethod
-        def from_dict(data: dict) -> 'ImageTagArgs':
-            features = {feature: RunConfig(stream='image', **cfg) for feature, cfg in data['features'].items()}
-            return ImageTagArgs(features=features, assets=data.get('assets', None), replace=data.get('replace', False))
-        
-    @app.route('/<qhit>/image_tag', methods=['POST'])
-    def image_tag(qhit: str) -> Response:
-        try:
-            args = ImageTagArgs.from_dict(request.json)
-        except TypeError as e:
-            return Response(response=json.dumps({'error': str(e)}), status=400, mimetype='application/json')
-        
-        _, error_response = _get_client(request, qhit, config["fabric"]["config_url"])
-        if error_response:
-            return error_response
-
-        for feature, run_config in args.features.items():
-            if not config["services"][feature].get("frame_level", False):
-                return Response(response=json.dumps({'error': f"Image tagging for {feature} is not supported"}), status=400, mimetype='application/json')
-            
-        with lock:
-            if shutdown_signal.is_set():
-                return Response(response=json.dumps({'error': 'Server is shutting down'}), status=503, mimetype='application/json')
-            for feature in args.features.keys():
-                if active_jobs[qhit].get(('image', feature), None):
-                    return Response(response=json.dumps({'error': f"Image tagging for at least one of the requested features, {feature}, is already in progress for {qhit}"}), status=400, mimetype='application/json')
-            for feature, run_config in args.features.items():
-                # get the subset of GPUs that the model can run on, default to all of them
-                allowed_gpus = config["services"][feature].get("allowed_gpus", list(range(manager.num_devices)))
-                allowed_cpus = config["services"][feature].get("cpu_slots", [])
-                job = Job(qhit=qhit, feature=feature, run_config=run_config, media_files=[], failed=[], replace=args.replace, allowed_gpus=allowed_gpus, allowed_cpus=allowed_cpus, status="Starting", stop_event=threading.Event(), time_started=time.time())
-                active_jobs[qhit][('image', feature)] = job
-                threading.Thread(target=_image_tag, args=(job, _get_authorization(request), args.assets)).start()
-        return Response(response=json.dumps({'message': f'Image asset tagging started on {qhit}'}), status=200, mimetype='application/json')
-    
-    def _image_tag(job: Job, authorization: str, assets: Optional[List[str]]) -> None:
-        elv_client = ElvClient.from_configuration_url(config_url=config["fabric"]["config_url"], static_token=authorization)
-        images, failed = _download_content(job, elv_client, assets=assets)
-        deduped = list(set(images))
-        if len(deduped) > 0:
-            logger.warning(f"Found {len(images) - len(deduped)} duplicate images.")
-        job.media_files = deduped
-        job.failed = failed
-        _submit_tag_job(job, elv_client)
     
     @dataclass
     class FinalizeArgs(Data):
@@ -373,43 +324,6 @@ def get_flask_app():
         client.set_commit_message(qwt, "uploaded/aggregated ML tags (taggerv2)", qlib)
 
         return Response(response=json.dumps({'message': 'Succesfully uploaded tag files. Please finalize the write token.', 'write token': qwt}), status=200, mimetype='application/json')
-    
-    @app.route('/<qhit>/status', methods=['GET'])
-    def status(qhit: str) -> Response:
-        """Get the status of all tag jobs for a given qhit"""
-        _, error_response = _get_client(request, qhit, config["fabric"]["config_url"])
-        if error_response:
-            return error_response
-        with lock:
-            jobs = set(active_jobs[qhit].keys()) | set(inactive_jobs[qhit].keys())
-            if len(jobs) == 0:
-                return Response(response=json.dumps({'error': f"No jobs started for {qhit}"}), status=404, mimetype='application/json')
-            res = defaultdict(dict)
-            for job in jobs:
-                stream, feature = job
-                if job in active_jobs[qhit]:
-                    res[stream][feature] = _get_job_status(active_jobs[qhit][job])
-                else:
-                    res[stream][feature] = _get_job_status(inactive_jobs[qhit][job])
-        for stream in list(res.keys()):
-            for feature in list(res[stream].keys()):
-                res[stream][feature] = asdict(res[stream][feature])
-        return Response(response=json.dumps(res), status=200, mimetype='application/json')
-    
-    @app.route('/<qhit>/stop/<feature>', methods=['POST'])
-    def stop(qhit: str, feature: str) -> Response:
-        _, error_response = _get_client(request, qhit, config["fabric"]["config_url"])
-        if error_response: 
-            return error_response
-        with lock:
-            job_keys = active_jobs[qhit].keys()
-            feature_job_keys = [job_key for job_key in job_keys if job_key[1] == feature]
-            if len(feature_job_keys) == 0:
-                return Response(response=json.dumps({'error': f"No job running for {feature} on {qhit}"}), status=404, mimetype='application/json')
-            jobs = [active_jobs[qhit][job_key] for job_key in feature_job_keys]
-            for job in jobs:
-                job.stop_event.set()
-        return Response(response=json.dumps({'message': f"Stopping {feature} on {qhit}. Check with /status for completion."}), status=200, mimetype='application/json')
 
     
     def _shutdown() -> None:
