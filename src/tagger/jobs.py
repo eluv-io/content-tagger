@@ -1,6 +1,7 @@
 from typing import List, Optional, Literal
 from dataclasses import dataclass, field
 import threading
+from collections import defaultdict
 
 from src.fabric.content import Content
 
@@ -43,5 +44,5 @@ class JobsStore:
     """
     A store for jobs, used to keep track of active jobs and their statuses.
     """
-    active_jobs: dict[str, dict[tuple[str, str], Job]] = field(default_factory=dict)
-    inactive_jobs: dict[str, dict[tuple[str, str], Job]] = field(default_factory=dict)
+    active_jobs: dict[str, dict[tuple[str, str], Job]] = field(default_factory=lambda: defaultdict(dict))
+    inactive_jobs: dict[str, dict[tuple[str, str], Job]] = field(default_factory=lambda: defaultdict(dict))

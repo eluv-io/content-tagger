@@ -3,10 +3,11 @@ from queue import Queue
 from collections import defaultdict
 import time
 import os
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Any
 from dataclasses import dataclass, field, asdict
 from requests import HTTPError
 import shutil
+import traceback
 
 from loguru import logger
 
@@ -44,7 +45,7 @@ class Tagger():
             self, 
             job_store: JobsStore,
             manager: ResourceManager,
-            filesystem_lock: threading.Lock | None
+            filesystem_lock: Any
         ):
         self.job_store = job_store
         self.manager = manager
@@ -312,7 +313,7 @@ class Tagger():
             time_running = job.time_ended - job.time_started
         
         if job.status == "Tagging content":
-            with filesystem_lock:
+            with self.filesystem_lock:
                 # read how many files have been tagged
                 tag_dir = os.path.join(config["storage"]["tmp"], job.feature, job.tag_job_id)
                 if not os.path.exists(tag_dir):
@@ -437,7 +438,7 @@ class Tagger():
                 continue
 
             try:
-                job_id = self.manager.run(job.feature, job.run_config.model, job.media_files, job.allowed_gpus, job.allowed_cpus, logs_subpath=job.qhit)
+                job_id = self.manager.run(job.feature, job.run_config.model, job.media_files, job.allowed_gpus, job.allowed_cpus, logs_subpath=job.q.qhit)
                 with self.store_lock:
                     if self._is_job_stopped(job):
                         # if the job has been stopped while the container was starting
@@ -445,7 +446,7 @@ class Tagger():
                         continue
                     job.tag_job_id = job_id
                     job.status = "Tagging content"
-                logger.success(f"Started running {job.feature} on {job.qhit}")
+                logger.success(f"Started running {job.feature} on {job.q.qhit}")
             except NoResourceAvailable as e:
                 # This error can happen if the model can only run on a subset of GPUs. 
                 job.error = "Tried to assign GPU or CPU slot, but no suitable one was found. The job was placed back on the queue."
@@ -459,6 +460,7 @@ class Tagger():
                 continue
             except Exception as e:
                 # handle the unexpected
+                logger.error(f"{traceback.format_exc()}")
                 with self.store_lock:
                     self._set_stop_status(job, "Failed", str(e))
 
@@ -478,7 +480,7 @@ class Tagger():
                         try:
                             status = self.manager.status(job.tag_job_id)
                         except Exception as e:
-                            logger.error(f"Error getting status for job {job.qhit}/{job.feature}: {e}")
+                            logger.error(f"Error getting status for job {job.q.qhit}/{job.feature}: {e}")
                             with self.store_lock:
                                 self._set_stop_status(job, "Failed", f"Error getting job status: {str(e)}")
                             continue
@@ -489,14 +491,14 @@ class Tagger():
                                 # lock in case of race condition with status or finalize calls
                                 self._copy_new_files(job, status.tags)
                         except Exception as e:
-                            logger.error(f"Error copying files for job {job.qhit}/{job.feature}: {e}")
+                            logger.error(f"Error copying files for job {job.q.qhit}/{job.feature}: {e}")
                             # Don't fail the job for copy errors, just log and continue
                         
                         if status.status == "Running":
                             continue
                         # otherwise the job has finished: either successfully or with an error
                         if status.status == "Completed":
-                            logger.success(f"Finished running {job.feature} on {job.qhit}")
+                            logger.success(f"Finished running {job.feature} on {job.q.qhit}")
                             try:
                                 with self.filesystem_lock:
                                     # move outputted tags to their correct place

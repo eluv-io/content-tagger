@@ -16,8 +16,10 @@ import traceback
 
 from config import config, reload_config
 from src.tagger.jobs import JobsStore
+
 from src.api.tagging.handlers import handle_tag, handle_image_tag, handle_status, handle_stop
 from src.api.tags.handlers import handle_finalize, handle_aggregate
+from src.tagger.containers import list_services
 from src.api.errors import BadRequestError, MissingResourceError
 
 from src.tagger.tagger import Tagger
@@ -51,7 +53,7 @@ def configure_routes(app: Flask) -> None:
         return jsonify({'message': e.message}), 404
 
     @app.route('/list', methods=['GET'])
-    def list_services() -> Response:
+    def list() -> Response:
         res = list_services()    
         return Response(response=json.dumps(res), status=200, mimetype='application/json')
 
@@ -79,11 +81,11 @@ def configure_routes(app: Flask) -> None:
     @app.route('/<qhit>/write', methods=['POST'])
     @app.route('/<qhit>/finalize', methods=['POST'])
     def finalize(qhit: str) -> Response:
-        handle_finalize(qhit)
+        return handle_finalize(qhit)
 
     @app.route('/<qhit>/aggregate', methods=['POST'])
     def aggregate(qhit: str) -> Response:
-        handle_aggregate(qhit)
+        return handle_aggregate(qhit)
 
 def boot_state(app: Flask) -> None:
     app_state = {}
@@ -110,8 +112,8 @@ def configure_lifecycle(app: Flask) -> None:
         """Cleanup resources before shutdown."""
         logger.info("Cleaning up resources...")
         app_state = app.config["state"]
-        app_state["resource_manager"].cleanup()
-        app_state["jobs_store"].cleanup()
+        app_state["tagger"].cleanup()
+        app_state["resource_manager"].shutdown()
         logger.info("Cleanup completed.")
         os._exit(0)
 

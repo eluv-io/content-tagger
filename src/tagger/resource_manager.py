@@ -5,7 +5,6 @@ import threading
 import atexit
 from dataclasses import dataclass
 from typing import List, Optional, Literal, Dict
-import json
 
 import pynvml
 import podman
@@ -51,7 +50,6 @@ class ResourceManager:
     def __init__(self):
         pynvml.nvmlInit()
         self.client = podman.PodmanClient()
-        atexit.register(self.shutdown)
         self.num_devices = pynvml.nvmlDeviceGetCount()
 
         # ensures thread safety of device_status, jobs, and files_tagging
