@@ -31,13 +31,6 @@ services:
     frame_level: true
     # force to run on cpu
     allowed_gpus: []
-  asr: 
-    image: "localhost/hungarian:latest"
-    type: "audio"
-    allowed_gpus: [] 
-  french_asr: 
-    image: "localhost/multilingual:latest"
-    type: "audio"
   caption:
     image: "localhost/caption:latest"
     type: "video"
@@ -104,3 +97,4 @@ agg:
   coalesce_features: 
     - asr
     - french_asr
+    - hungarian_asr
