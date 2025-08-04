@@ -60,6 +60,18 @@ services:
     # NOTE: this depends on the host machine
     # device ids which don't exist on the host will be ignored when scheduling jobs
     allowed_gpus: [0, 2, 3, 4]
+  asr: 
+    image: "localhost/asr:latest"
+    type: "audio"
+    allowed_gpus: [0, 2, 3, 4]
+  french_asr: 
+    image: "localhost/multilingual:latest"
+    type: "audio"
+    allowed_gpus: [0, 2, 3, 4]
+  hungarian_asr: 
+    image: "localhost/hungarian:latest"
+    type: "audio"
+    allowed_gpus: [0, 2, 3, 4]
   windmill:
     image: "localhost/breakdance:latest"
     type: "video"
