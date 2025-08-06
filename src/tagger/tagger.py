@@ -149,8 +149,8 @@ class Tagger():
                 else:
                     res[stream][feature] = self._get_job_status(inactive_jobs[qhit][job])
 
-        for stream in list(res.keys()):
-            for feature in list(res[stream].keys()):
+        for stream in sorted(res.keys()):
+            for feature in sorted(res[stream].keys()):
                 res[stream][feature] = asdict(res[stream][feature])
 
         return res

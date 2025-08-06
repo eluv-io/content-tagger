@@ -20,7 +20,7 @@ ARG SSH_AUTH_SOCK
 ENV SSH_AUTH_SOCK ${SSH_AUTH_SOCK}
 
 RUN mkdir src
-COPY setup.py .
+COPY requirements.txt .
 
 RUN /opt/conda/envs/dummy/bin/pip install -r requirements.txt
 
