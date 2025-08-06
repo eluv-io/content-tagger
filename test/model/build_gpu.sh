@@ -1,1 +1,0 @@
-podman build . --format docker -t dummy_gpu --network host --build-arg SSH_AUTH_SOCK=$SSH_AUTH_SOCK --volume "${SSH_AUTH_SOCK}:${SSH_AUTH_SOCK}"

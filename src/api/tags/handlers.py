@@ -79,7 +79,7 @@ def _finalize_internal(qhit: str, args: FinalizeArgs, upload_local_tags = True) 
     client = get_client(request, qwt, config["fabric"]["config_url"])
 
     authorization = get_authorization(request)
-    
+
     content_args = parse_qhit(qwt)
 
     q = Content(qwt, authorization)
@@ -91,7 +91,7 @@ def _finalize_internal(qhit: str, args: FinalizeArgs, upload_local_tags = True) 
     file_jobs = []
     if upload_local_tags:
         running_jobs = tagger.get_running_jobs(qhit)
-        
+
         if len(running_jobs) > 0 and not args.force:
             raise BadRequestError(
                 "Some jobs are still running. Use `force=true` to finalize anyway."
@@ -105,44 +105,26 @@ def _finalize_internal(qhit: str, args: FinalizeArgs, upload_local_tags = True) 
         for stream in os.listdir(os.path.join(config["storage"]["tags"], qhit)):
             if stream == "external_tags":
                 continue
-            for feature in os.listdir(os.path.join(config["storage"]["tags"], qhit, stream)):
-                tagged_media_files = []
-                for tag in os.listdir(os.path.join(config["storage"]["tags"], qhit, stream, feature)):
-                    tagfile = os.path.join(config["storage"]["tags"], qhit, stream, feature, tag)
-                    tagged_media_files.append(tagger._source_from_tag_file(tagfile))
-                tagged_media_files = list(set(tagged_media_files))
-                num_files = len(tagged_media_files)
+            stream_path = os.path.join(config["storage"]["tags"], qhit, stream)
+            for feature in os.listdir(stream_path):
+                tagspath = os.path.join(stream_path, feature)
+                tagfiles = [os.path.join(tagspath, tf) for tf in os.listdir(tagspath)]
+                num_files = len(tagfiles)
                 if not args.replace:
                     with timeit(f"Filtering tagged files for {qhit}, {feature}, {stream}"):
-                        tagged_media_files = tagger._filter_tagged_files(tagged_media_files, q, stream, feature)
-                logger.debug(f"Upload status for {qhit}: {feature} on {stream}\nTotal media files: {num_files}, Media files to upload: {len(tagged_media_files)}, Media files already uploaded: {num_files - len(tagged_media_files)}")
-                if not tagged_media_files:
+                        tagfiles = tagger._filter_tagged_files(tagfiles, q, stream, feature)
+                logger.debug(f"Upload status for {qhit}: {feature} on {stream}\nTotal media files: {num_files}, Media files to upload: {len(tagfiles)}, Media files already uploaded: {num_files - len(tagfiles)}")
+                if not tagfiles:
                     continue
-                if stream == "image":
-                    for source in tagged_media_files:
-                        tagfile = source + "_imagetags.json"
-                        if not os.path.exists(tagfile):
-                            logger.warning(f"Expected tag file {tagfile} not found, skipping")
-                            continue
-                        file_jobs.append(ElvClient.FileJob(local_path=tagfile,
-                                                out_path=f"image_tags/{feature}/{os.path.basename(tagfile)}",
-                                                mime_type="application/json"))
-                else:
-                    for source in tagged_media_files:
-                        tagfile = source + "_tags.json"
-                        if not os.path.exists(tagfile):
-                            # this should only happen if force=True and frametags get written before video tags
-                            logger.warning(f"Expected tag file {tagfile} not found, skipping.")
-                            continue
-                        file_jobs.append(ElvClient.FileJob(local_path=tagfile,
-                                                out_path=f"video_tags/{stream}/{feature}/{os.path.basename(tagfile)}",
-                                                mime_type="application/json"))
+                for tagfile in tagfiles:
+                    if stream == "image":
+                        tags_dir = "image_tags"
+                    else:
+                        tags_dir = f"video_tags/{stream}"
+                    file_jobs.append(ElvClient.FileJob(local_path=tagfile,
+                                            out_path=f"{tags_dir}/{feature}/{os.path.basename(tagfile)}",
+                                            mime_type="application/json"))
 
-                        if os.path.exists(source + "_frametags.json"):
-                            file_jobs.append(ElvClient.FileJob(local_path=source + "_frametags.json",
-                                                out_path=f"video_tags/{stream}/{feature}/{os.path.basename(source)}_frametags.json",
-                                                mime_type="application/json"))
-                            
         external_tags_path = os.path.join(config["storage"]["tags"], qhit, "external_tags")
         if os.path.exists(external_tags_path):
             local_source_tags = os.listdir(external_tags_path)

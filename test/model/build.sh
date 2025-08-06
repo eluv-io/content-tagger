@@ -1,0 +1,1 @@
+podman build . --format docker -t dummy_gpu --network host

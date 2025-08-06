@@ -139,7 +139,7 @@ class Tagger():
             jobs = set(active_jobs[qhit].keys()) | set(inactive_jobs[qhit].keys())
             if len(jobs) == 0:
                 raise MissingResourceError(
-                    f"No jobs started for {qhit}. Please start a tagging job first."
+                    f"No jobs started for {qhit}"
                 )
             res = defaultdict(dict)
             for job in jobs:
@@ -267,7 +267,7 @@ class Tagger():
             return
         total_media_files = len(media_files)
         if not job.replace:
-            media_files = self._filter_tagged_files(media_files, job.q, job.run_config.stream, job.feature)
+            media_files = self._filter_tagged_media_files(media_files, job.q, job.run_config.stream, job.feature)
         logger.debug(f"Tag status for {job.q.qhit}: {job.feature} on {job.run_config.stream}")
         logger.debug(f"Total media files: {total_media_files}, Media files to tag: {len(media_files)}, Media files already tagged: {total_media_files - len(media_files)}")
         if len(media_files) == 0:
@@ -355,7 +355,7 @@ class Tagger():
         self.job_store.inactive_jobs[qhit][(stream, feature)] = job
         del self.job_store.active_jobs[qhit][(stream, feature)]
 
-    def _filter_tagged_files(
+    def _filter_tagged_media_files(
             self,
             media_files: list[str], 
             q: Content,
@@ -386,6 +386,38 @@ class Tagger():
             filename = os.path.basename(media_file)
             if filename not in tagged:
                 untagged.append(media_file)
+        return untagged
+
+
+    def _filter_tagged_files(
+            self,
+            tagfiles: list[str], 
+            q: Content,
+            stream: str, 
+            feature: str
+        ) -> list[str]:
+        """
+        Args:
+            media_files (List[str]): list of media files to filter
+            qhit (str): content object, hash, or write token that files belong to
+            stream (str): stream name
+            feature (str): model name
+
+        Returns:
+            List[str]: list of media files that have not been tagged, filtered subset of media_files
+        """
+        try:
+            if stream == "image":
+                remote_files = q.list_files(path=f"image_tags/{feature}")
+            else:
+                remote_files = q.list_files(path=f"video_tags/{stream}/{feature}")
+        except HTTPError:
+            # if the folder doesn't exist, then no files have been tagged
+            return tagfiles[:]
+        untagged = []
+        for tagfile in tagfiles:
+            if not os.path.basename(tagfile) in remote_files:
+                untagged.append(tagfile)
         return untagged
 
     def _source_from_tag_file(self, tagged_file: str) -> str:

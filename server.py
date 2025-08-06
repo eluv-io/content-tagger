@@ -36,7 +36,7 @@ def configure_routes(app: Flask) -> None:
     def handle_bad_request(e):
         tb = traceback.format_exc()
         logger.error(f"Bad request: {e}\n{tb}")
-        return jsonify({'message': e.message}), 400
+        return jsonify({'error': e.message}), 400
 
     @app.errorhandler(HTTPError)
     def handle_http_error(e):
