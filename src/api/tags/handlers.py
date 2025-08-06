@@ -82,6 +82,8 @@ def _finalize_internal(qhit: str, args: FinalizeArgs, upload_local_tags = True) 
 
     content_args = parse_qhit(qwt)
 
+    q_source = Content(qhit, authorization)
+
     q = Content(qwt, authorization)
 
     filesystem_lock = current_app.config["state"]["filesystem_lock"]

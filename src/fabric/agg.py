@@ -31,7 +31,7 @@ def format_asset_tags(q: Content, tags_path: str) -> None:
     for r in res:
         if r is not None:
             raise r
-        
+
     file_to_tags = defaultdict(dict)
     for model in os.listdir(image_tags_path):
         for tag in os.listdir(os.path.join(image_tags_path, model)):
@@ -75,9 +75,12 @@ def format_video_tags(q: Content, interval: int, tags_path: str) -> None:
         video_streams = q.list_files(path="/video_tags")
         video_streams = [path.split("/")[0] for path in video_streams if path.endswith("/") and path[:-1] != "image"]
     except HTTPError:
-        logger.debug("No tagged video streams found on fabric.")
+        video_streams = []
+
+    if len(video_streams) == 0:
+        logger.warning("No video tags found")
         return
-        
+
     all_frame_tags, all_video_tags = {}, {}
     custom_labels = {}
 
