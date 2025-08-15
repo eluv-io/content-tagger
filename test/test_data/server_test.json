@@ -5,12 +5,12 @@
         },
         {
             "video": {
-                "shot": {
+                "dummy_gpu": {
                     "status": "Completed",
                     "error": null,
                     "failed": []
                 },
-                "dummy_gpu": {
+                "shot": {
                     "status": "Completed",
                     "error": null,
                     "failed": []
@@ -19,17 +19,17 @@
         },
         {
             "video": {
-                "shot": {
-                    "status": "Completed",
-                    "error": null,
-                    "failed": []
-                },
                 "dummy_cpu": {
                     "status": "Completed",
                     "error": null,
                     "failed": []
                 },
                 "dummy_gpu": {
+                    "status": "Completed",
+                    "error": null,
+                    "failed": []
+                },
+                "shot": {
                     "status": "Completed",
                     "error": null,
                     "failed": []

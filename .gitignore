@@ -12,3 +12,5 @@ configs
 logs
 .aux
 work
+content_specs
+.env

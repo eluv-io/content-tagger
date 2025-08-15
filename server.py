@@ -71,12 +71,7 @@ def configure_routes(app: Flask) -> None:
     
     @app.route('/<qhit>/stop/<feature>', methods=['POST'])
     def stop(qhit: str, feature: str) -> Response:
-        return handle_stop(qhit, feature)
-    
-    @app.route('/<qhit>/upload_tags', methods=['POST'])
-    def upload(qhit: str) -> Response:
-        return handle_upload(qhit)
-    
+        return handle_stop(qhit, feature)    
 
     @app.route('/<qhit>/write', methods=['POST'])
     @app.route('/<qhit>/finalize', methods=['POST'])
