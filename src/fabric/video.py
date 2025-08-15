@@ -23,7 +23,7 @@ def download_stream(
         end_time: Optional[int]=None, 
         replace: bool=False, 
         exit_event: Optional[threading.Event]=None
-    ) -> list[str]:
+    ) -> tuple[list[str], list[str]]:
     if start_time is None:
         start_time = 0
     if end_time is None:
@@ -203,9 +203,9 @@ def _download_parts(
             continue
         else:
             logger.info(f"Downloading part {part_hash} for {q.qhit}")
+        tmpfile = os.path.join(tmp_path, f"{idx}_{part_hash}")
+        save_path = os.path.join(output_path, f"{idx}_{part_hash}.mp4")
         try:
-            tmpfile = os.path.join(tmp_path, f"{idx}_{part_hash}")
-            save_path = os.path.join(output_path, f"{idx}_{part_hash}.mp4")
             q.download_part(save_path=tmpfile, part_hash=part_hash)
             if codec_type == "video":
                 unfrag_video(tmpfile, save_path)

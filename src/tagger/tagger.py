@@ -18,6 +18,7 @@ from src.api.tagging.format import TagArgs, ImageTagArgs
 from src.tagger.containers import list_services
 from src.api.errors import MissingResourceError, BadRequestError
 from src.tagger.jobs import Job
+from src.tagger.tagsdb import check_qid, load_tag_file, upload_tags
 from src.fabric.video import download_stream, StreamNotFoundError
 from src.fabric.assets import fetch_assets, AssetsNotFoundException
 
@@ -575,15 +576,26 @@ class Tagger():
             job: Job, 
             tags: List[str]
         ) -> None:
+        # TODO: check inodes instead of skipping last tag
         if len(tags) == 0:
             return
         qhit, stream, feature = job.q.qhit, job.run_config.stream, job.feature
-        tags_path = os.path.join(config["storage"]["tags"], qhit, stream, feature)
+        tags_path = os.path.join(config["storage"]["tags"], qhit, str(stream), feature)
         os.makedirs(tags_path, exist_ok=True)
+        tagrows = []
         for tag in tags:
             if os.path.exists(os.path.join(tags_path, os.path.basename(tag))):
                 continue
             shutil.copyfile(tag, os.path.join(tags_path, os.path.basename(tag)))
+            # format for tags schema
+            tagrows += load_tag_file(qhit, feature, os.path.join(tags_path, os.path.basename(tag)))
+        
+        if len(tagrows) > 0 and check_qid(qhit):
+            # upload tags to the database only if tagging is against a qid
+            try:
+                upload_tags(qhit, tagrows)
+            except Exception as e:
+                logger.exception(f"Error uploading tags for {qhit}/{feature}: {e}")
 
     def _startup(self) -> None:
         threading.Thread(target=self._job_watcher, daemon=True).start()

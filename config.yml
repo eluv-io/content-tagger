@@ -6,6 +6,8 @@ storage:
   images: data/images
   tmp: data/tmp
   logs: logs
+tags:
+  url: http://localhost:8088
 fabric:
   # used for downloading parts (requires special build)
   parts_url: http://192.168.96.203/config?self&qspace=main
