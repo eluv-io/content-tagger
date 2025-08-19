@@ -4,12 +4,13 @@ from collections import defaultdict
 import time
 import os
 from typing import List, Optional, Literal, Any
-from dataclasses import dataclass, field, asdict
-from requests import HTTPError
+from dataclasses import dataclass, asdict
 import shutil
 import traceback
 
 from loguru import logger
+from podman.domain.containers import Container
+from requests import HTTPError
 
 from src.tagger.jobs import JobsStore
 from src.tagger.resource_manager import ResourceManager, NoResourceAvailable
@@ -24,24 +25,37 @@ from src.fabric.assets import fetch_assets, AssetsNotFoundException
 
 from config import config
 
+JobState = Literal[
+    "Starting",
+    "Fetching content",
+    "Waiting for resources",
+    "Tagging content",
+    "Completed",
+    "Failed",
+    "Stopped"
+]
+
 @dataclass
 class JobStatus():
     # JobStatus represents the status of a job returned by the /status endpoint
-    status: Literal["Starting", 
-                    "Fetching content",
-                    "Waiting to be assigned GPU", 
-                    "Tagging content",
-                    "Completed", 
-                    "Failed", 
-                    "Stopped"]
+    status: JobState
     # time running (in seconds)
     time_running: float
     tagging_progress: str
-    tag_job_id: Optional[str]=None
-    error: Optional[str]=None
-    failed: List[str]=field(default_factory=list)
+    error: str | None
+    failed: list[str]
 
-class Tagger():
+@dataclass
+class JobID():
+    # unique id for the job
+    qhit: str
+    feature: str
+    stream: str
+
+class FabricTagger():
+    """
+    Handles the flow of downloading data from fabric and tagging it while maintaining the necessary state. 
+    """
     def __init__(
             self, 
             job_store: JobsStore,
@@ -67,6 +81,9 @@ class Tagger():
 
         # controls the number of concurrent downloads
         self.dl_sem = threading.Semaphore(config["fabric"]["max_downloads"])
+
+        # map qid -> token
+        self.tokens = {}
         
         self.shutdown_signal = threading.Event()
 
@@ -255,7 +272,7 @@ class Tagger():
         if self._check_exit(job):
             return [], []
         return media_files, failed
-    
+
     def _submit_tag_job(self, job: Job) -> None:
         if self._check_exit(job):
             return
@@ -289,6 +306,7 @@ class Tagger():
                 job.media_files = media_files
                 job.status = "Waiting for CPU resource"
             self.cpu_queue.put(job)
+        self._watch_job(job)
 
     def _check_exit(self, job: Job) -> bool:
         """
@@ -437,7 +455,7 @@ class Tagger():
             return tagged_file.split("_tags.json")[0]
 
         raise ValueError(f"Unknown tag file format: {tagged_file}")
-    
+
     def _job_starter(
             self, 
             job_type: Literal["cpu"] | Literal["gpu"], 
@@ -499,62 +517,47 @@ class Tagger():
                 with self.store_lock:
                     self._set_stop_status(job, "Failed", str(e))
 
-    def _job_watcher(self) -> None:
-        active_jobs = self.job_store.active_jobs
+    def watch_job(self, job: Job) -> None:
         while True:
-            try:
-                for qhit in active_jobs:
-                    for (stream, feature), job in list(active_jobs[qhit].items()):
-                        if not job.status == "Tagging content":
-                            continue
-                        if job.stop_event.is_set():
-                            self.manager.stop(job.tag_job_id)
-                            with self.store_lock:
-                                self._set_stop_status(job, "Stopped")
-                            continue
-                        try:
-                            status = self.manager.status(job.tag_job_id)
-                        except Exception as e:
-                            logger.error(f"Error getting status for job {job.q.qhit}/{job.feature}: {e}")
-                            with self.store_lock:
-                                self._set_stop_status(job, "Failed", f"Error getting job status: {str(e)}")
-                            continue
-                        
-                        try:
-                            with self.filesystem_lock:
-                                # move outputted tags to their correct place
-                                # lock in case of race condition with status or finalize calls
-                                self._copy_new_files(job, status.tags)
-                        except Exception as e:
-                            logger.error(f"Error copying files for job {job.q.qhit}/{job.feature}: {e}")
-                            # Don't fail the job for copy errors, just log and continue
-                        
-                        if status.status == "Running":
-                            continue
-                        # otherwise the job has finished: either successfully or with an error
-                        if status.status == "Completed":
-                            logger.success(f"Finished running {job.feature} on {job.q.qhit}")
-                            try:
-                                with self.filesystem_lock:
-                                    # move outputted tags to their correct place
-                                    # lock in case of race condition with status or finalize calls
-                                    self._move_files(job, status.tags)
-                            except Exception as e:
-                                logger.error(f"Error moving files for job {job.qhit}/{job.feature}: {e}")
-                                # Still mark as completed even if file move failed
-                        
-                        job.status = status.status
-                        if status.status == "Failed":
-                            job.error = "An error occurred while running model container"
-                        job.time_ended = time.time()
-                        with self.store_lock:
-                            # move job to inactive_jobs
-                            self.job_store.inactive_jobs[qhit][(stream, feature)] = job
-                            del active_jobs[qhit][(stream, feature)]
-            except Exception as e:
-                logger.error(f"Unexpected error in job watcher: {e}")
-                # Continue the loop even if there was an error
             time.sleep(config["watcher"]["sleep"])
+
+            if job.stop_event.is_set():
+                self.manager.stop(job.tag_job_id)
+                with self.store_lock:
+                    self._set_stop_status(job, "Stopped")
+                break
+
+            status = self.manager.status(job.tag_job_id)
+
+            try:
+                with self.filesystem_lock:
+                    self._copy_new_files(job, status.tags)
+            except Exception as e:
+                logger.exception(f"Error copying files for job {job.q.qhit}/{job.feature}: {e}")
+                with self.store_lock:
+                    self._set_stop_status(job, "Failed", str(e))
+            
+            if status.status == "Running":
+                continue
+
+            if status.status == "Completed":
+                logger.success(f"Finished running {job.feature} on {job.q.qhit}")
+                try:
+                    with self.filesystem_lock:
+                        # move outputted tags to their correct place
+                        # lock in case of race condition with status or finalize calls
+                        self._move_files(job, status.tags)
+                except Exception as e:
+                    logger.exception(f"Error moving files for job {job.q.qhit}/{job.feature}: {e}")
+
+            job.status = status.status
+            if status.status == "Failed":
+                job.error = "An error occurred while running model container"
+            job.time_ended = time.time()
+            with self.store_lock:
+                # move job to inactive_jobs
+                self.job_store.inactive_jobs[qhit][(stream, feature)] = job
+                del active_jobs[qhit][(stream, feature)]
 
     def _move_files(
             self, 
@@ -598,6 +601,5 @@ class Tagger():
                 logger.exception(f"Error uploading tags for {qhit}/{feature}: {e}")
 
     def _startup(self) -> None:
-        threading.Thread(target=self._job_watcher, daemon=True).start()
         threading.Thread(target=self._job_starter, args=("gpu", self.gpu_queue), daemon=True).start()
         threading.Thread(target=self._job_starter, args=("cpu", self.cpu_queue), daemon=True).start()

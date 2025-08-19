@@ -1,4 +1,4 @@
-from typing import List, Optional, Literal
+from typing import Literal
 from dataclasses import dataclass, field
 import threading
 from collections import defaultdict
@@ -13,29 +13,31 @@ class RunConfig():
     # stream name to run the model on, None to use the default stream. "image" is a special case which will tag image assets
     stream: str | None=None
 
+StatusType = Literal["Starting", 
+                "Fetching content",
+                "Waiting to be assigned GPU", 
+                "Waiting for CPU resource", 
+                "Completed", 
+                "Failed", 
+                "Stopped"]
+
 @dataclass
 class Job:
-    status: Literal["Starting", 
-                    "Fetching content",
-                    "Waiting to be assigned GPU", 
-                    "Waiting for CPU resource", 
-                    "Completed", 
-                    "Failed", 
-                    "Stopped"]
+    status: StatusType
     q: Content
     feature: str
     run_config: RunConfig
     stop_event: threading.Event
-    media_files: List[str]
+    media_files: list[str]
     replace: bool
     time_started: float
-    failed: List[str]
-    allowed_gpus: List[str]
-    allowed_cpus: List[str]
-    time_ended: Optional[float]=None
+    failed: list[str]
+    allowed_gpus: list[str]
+    allowed_cpus: list[str]
+    time_ended: float | None=None
     # tag_job_id is the job id returned by the manager, will be None until the tagging starts (status is "Running")
-    tag_job_id: Optional[str]=None
-    error: Optional[str]=None
+    tag_job_id: str | None=None
+    error: str | None=None
     ## wall clock time of the last time this job was "put back" on the queue
     reput_time: int = 0
 

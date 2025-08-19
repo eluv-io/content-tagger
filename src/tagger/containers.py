@@ -1,30 +1,76 @@
+
+from dataclasses import dataclass
 from podman import PodmanClient
 from podman.domain.containers import Container
+from loguru import logger
 import json
 import os
-from typing import List, Optional
-from loguru import logger
+from typing import List
 
-from config import config
+@dataclass
+class ContainerSpec:
+    image: str
+    volumes: list[dict]
+    command: list[str]
+    logfile: str
 
-def list_services() -> List[str]:
-    with PodmanClient() as podman_client:
-        images = sum([image.tags for image in podman_client.images.list() if image.tags], [])
+class TagContainer:
+    def __init__(self, cspec: ContainerSpec):
+        self.cspec = cspec
+        self.container: Container | None = None
 
-    res = []
-    for service in config['services']:
-        if config['services'][service]['image'] in images:
-            res.append(service)
-        else:
-            logger.error(f"Image {config['services'][service]['image']} not found")
-    return res
+    def start(self, pclient: PodmanClient, gpu_idx: int | None) -> None:
+        kwargs = {
+            "image": self.cspec.image,
+            "command": self.cspec.command,
+            "mounts": self.cspec.volumes,
+            "remove": True,
+            "network_mode": "host",
+            "log_config": {
+                "type": "file",
+                "path": self.cspec.logfile,
+            }
+        }
+        if gpu_idx is not None:
+            kwargs["devices"] = [f"nvidia.com/gpu={gpu_idx}"]
+        container = pclient.containers.create(**kwargs)
+        container.start()
+        self.container = container
 
-# Run a container with the given feature and files
-# Outputs list of tag files
-def create_container(client: PodmanClient, feature: str, save_path: str, files: List[str], run_config: dict, device_idx: Optional[int], out: str="/dev/null") -> Container:
+    def stop(self) -> None:
+        if not self.container:
+            return
+        if self.container.status == "running":
+            # podman client will kill if it doesn't stop within the timeout limit
+            self.container.stop(timeout=5)
+        self.container.reload()
+        if self.container.status == "running":
+            logger.error(f"Container status is still \"running\" after stop. Please check the container and stop it manually.")
+
+class PodmanConfig:
+    client: PodmanClient
+    cachepath: str
+
+def list_images(pclient: PodmanClient) -> List[str]:
+    with pclient as podman_client:
+        return sum([image.tags for image in podman_client.images.list() if image.tags], [])
+
+def create_container(
+        cfg: PodmanConfig,
+        # name of the image to use
+        image: str,
+        save_path: str,
+        fileargs: list[str],
+        config: dict,
+        device_idx: int | None,
+        logfile: str
+    ) -> ContainerSpec:
+    """
+    Creates a tagger container
+    """
+
     os.makedirs(save_path, exist_ok=True)
-    if len(files) == 0:
-        raise ValueError("No files provided")
+
     volumes = [
         {
             "source": save_path,
@@ -33,34 +79,31 @@ def create_container(client: PodmanClient, feature: str, save_path: str, files: 
             "type": "bind",
         },
         {
-            "source": config["storage"]["container_cache"],
+            "source": cfg.cachepath,
             # convention for python modules to store cache in /root/.cache
             "target": "/root/.cache",
             "type": "bind",
             "read_only": False
         }
     ]
-    for file in files:
-        if not os.path.exists(file):
-            raise FileNotFoundError(f"File {file} not found")
-        elif not os.path.isfile(file):
-            raise IsADirectoryError(f"{file} is a directory")
-        elif not os.path.isabs(file):
-            raise ValueError(f"{file} must be an absolute path")
+
+    for f in fileargs:
+        if not os.path.exists(f):
+            raise FileNotFoundError(f"File {f} not found")
+        elif not os.path.isfile(f):
+            raise IsADirectoryError(f"{f} is a directory")
+        elif not os.path.isabs(f):
+            raise ValueError(f"{f} must be an absolute path")
         # mount the file
         volumes.append({
-            "source": file,
-            "target": f"/elv/{os.path.basename(file)}",
+            "source": f,
+            "target": f"/elv/{os.path.basename(f)}",
             "type": "bind",
             "read_only": True
         })
-    kwargs = {"image": config["services"][feature]["image"],
-            "command": [f"{os.path.basename(p)}" for p in files] + ["--config", f"{json.dumps(run_config)}"], 
-            "mounts": volumes, 
-            "remove": True, 
-            "network_mode": "host", 
-        }
-    if device_idx is not None:
-        kwargs["devices"] = [f"nvidia.com/gpu={device_idx}"]
-    container = client.containers.create(**kwargs)
-    return container
+    return ContainerSpec(
+        image=image,
+        command=[f"{os.path.basename(f)}" for f in fileargs] + ["--config", f"{json.dumps(config)}"],
+        volumes=volumes,
+        logfile=logfile
+    )
