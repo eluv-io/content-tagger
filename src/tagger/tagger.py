@@ -3,22 +3,18 @@ from queue import Queue
 from collections import defaultdict
 import time
 import os
-from typing import List, Optional, Literal, Any
-from dataclasses import dataclass, asdict
+from typing import List, Literal
+from dataclasses import dataclass, asdict, field
 import shutil
 import traceback
 
 from loguru import logger
-from podman.domain.containers import Container
 from requests import HTTPError
 
-from src.tagger.jobs import JobsStore
-from src.tagger.resource_manager import ResourceManager, NoResourceAvailable
+from src.tagger.resource_manager import  NoResourceAvailable, SystemTagger
 from src.fabric.content import Content
 from src.api.tagging.format import TagArgs, ImageTagArgs
-from src.tagger.containers import list_services
 from src.api.errors import MissingResourceError, BadRequestError
-from src.tagger.jobs import Job
 from src.tagger.tagsdb import check_qid, load_tag_file, upload_tags
 from src.fabric.video import download_stream, StreamNotFoundError
 from src.fabric.assets import fetch_assets, AssetsNotFoundException
@@ -36,46 +32,63 @@ JobState = Literal[
 ]
 
 @dataclass
-class JobStatus():
-    # JobStatus represents the status of a job returned by the /status endpoint
+class JobStatus:
     status: JobState
-    # time running (in seconds)
-    time_running: float
+    time_started: float
+    time_ended: float | None
     tagging_progress: str
     error: str | None
     failed: list[str]
 
 @dataclass
-class JobID():
-    # unique id for the job
+class RunConfig:
+    # model config, used to overwrite the model level config
+    model: dict
+    # stream name to run the model on, None to use the default stream. "image" is a special case which will tag image assets
+    stream: str
+
+@dataclass
+class JobArgs:
+    q: Content
+    feature: str
+    runconfig: RunConfig
+    start_time: int | None
+    end_time: int | None
+
+@dataclass
+class Job:
+    args: JobArgs
+    status: JobStatus
+    taghandle: str
+
+@dataclass
+class JobID:
     qhit: str
     feature: str
     stream: str
 
-class FabricTagger():
+@dataclass
+class JobStore:
+    active_jobs: dict[str, Job] = field(default_factory=dict)
+    inactive_jobs: dict[str, Job] = field(default_factory=dict)
+
+class FabricTagger:
+
     """
-    Handles the flow of downloading data from fabric and tagging it while maintaining the necessary state. 
+    Handles the flow of downloading data from fabric, tagging, and uploading
     """
+
     def __init__(
             self, 
-            job_store: JobsStore,
-            manager: ResourceManager,
-            filesystem_lock: Any
+            manager: SystemTagger
         ):
-        self.job_store = job_store
         self.manager = manager
 
-        self.cpu_queue = Queue()
-        self.gpu_queue = Queue()
-
-        self.filesystem_lock = filesystem_lock
-        if filesystem_lock is None:
-            self.filesystem_lock = threading.Lock()
+        self.dblock = threading.Lock()
 
         self.store_lock = threading.Lock()
-        self.job_store = job_store
+        self.jobstore = JobStore()
 
-        # make sure no two streams are being downloaded at the same time. 
         # maps (qhit, stream) -> lock
         self.download_lock = defaultdict(threading.Lock)
 
@@ -87,12 +100,12 @@ class FabricTagger():
         
         self.shutdown_signal = threading.Event()
 
-        self._startup()
+    def _validate_args(self, args: TagArgs | ImageTagArgs) -> None:
+        """
+        Raises error if args are bad
+        """
 
-    def tag(self, q: Content, args: TagArgs | ImageTagArgs) -> None:
-        tagging_images = isinstance(args, ImageTagArgs)
-
-        services = list_services()
+        services = list_services()  
 
         invalid_features = [feature for feature in args.features if feature not in services]
 
@@ -100,47 +113,75 @@ class FabricTagger():
             raise MissingResourceError(
                 f"Invalid features: {', '.join(invalid_features)}. Available features: {', '.join(services)}"
             )
-        
-        if tagging_images:
-            for feature, run_config in args.features.items():
-                if not config["services"][feature].get("frame_level", False):
+
+        if isinstance(args, ImageTagArgs):
+            for feat in args.features.keys():
+                if not config["services"][feat].get("frame_level", False):
                     raise MissingResourceError(
-                        f"Image tagging for {feature} is not supported"
+                        f"Image tagging for {feat} is not supported"
                     )
-        
+
+    def tag(self, q: Content, args: TagArgs | ImageTagArgs) -> None:
+        self._validate_args(args)
+
         with self.store_lock:
             if self.shutdown_signal.is_set():
                 raise RuntimeError("Tagger is shutting down, cannot start new jobs")
-            for feature, run_config in args.features.items():
-                if run_config.stream is None:
+            for feat, rconfig in args.features.items():
+                if rconfig.stream is None:
                     # if stream name is not provided, we pick stream based on whether the model is audio/video based
-                    run_config.stream = config["services"][feature]["type"]
-                if (run_config.stream, feature) in self.job_store.active_jobs[q.qhit]:
+                    rconfig.stream = config["services"][feat]["type"]
+                if (rconfig.stream, feat) in self.jobstore.active_jobs[q.qhit]:
                     raise BadRequestError(
-                        f"{feature} tagging is already in progress for {q.qhit} on {run_config.stream}"
+                        f"{feat} tagging is already in progress for {q.qhit} on {rconfig.stream}"
                     )
-            for feature, run_config in args.features.items():
-                # get the subset of GPUs that the model can run on, default to all of them
-                allowed_gpus = config["services"][feature].get("allowed_gpus", list(range(self.manager.num_devices)))
-                allowed_cpus = config["services"][feature].get("cpu_slots", [])
-                job = Job(
-                    q=q, 
-                    run_config=run_config, 
-                    feature=feature, 
-                    media_files=[], 
-                    failed=[], 
-                    replace=args.replace, 
-                    status="Starting", 
-                    stop_event=threading.Event(), 
-                    time_started=time.time(), 
-                    allowed_gpus=allowed_gpus, 
-                    allowed_cpus=allowed_cpus
-                )
-                self.job_store.active_jobs[q.qhit][(run_config.stream, feature)] = job
-                if tagging_images:
+            for feat, rconfig in args.features.items():
+                self.jobstore.active_jobs[q.qhit][(rconfig.stream, feat)] = job
+
+                if isinstance(args, ImageTagArgs):
                     threading.Thread(target=self._image_tag, args=(job, args.assets)).start()
                 else:
                     threading.Thread(target=self._video_tag, args=(job, args.start_time, args.end_time)).start()
+
+            job.status = JobStatus(
+                "Starting",
+                time.time(),
+                None,
+                "",
+                None,
+                []
+            )
+
+    def _start_job(self, job: Job) -> None:
+        with self.store_lock:
+            jobid = JobID(qhit=job.args.q.qhit, feature=job.args.feature, stream=job.args.runconfig.stream)
+
+            if jobid in self.jobstore.active_jobs:
+                raise BadRequestError(f"Job {jobid} is already running")
+
+            self.jobstore.active_jobs[jobid] = job
+
+            threading.Thread(target=self._run_job, args=(job,)).start()
+
+    def _run_job(self, job: Job) -> None:
+        # 1. download
+        job.status.status = "Fetching content"
+        try:
+            media_files, failed = self._download_content(job, start_time=job.args.start_time, end_time=job.args.end_time)
+        except Exception:
+            self._set_stop_status(job, "Failed", f"Unknown error occurred while fetching stream {stream} for {qhit}: {str(e)}")
+        job.status.failed += failed
+
+        # 2. tag
+        container, reqresources = get_container(job.args.feature, media_files)
+        taggingdone = threading.Event()
+        uuid = self.manager.start(container, reqresources, taggingdone)
+        job.taghandle = uuid
+        job.status.status = "Tagging content"
+        taggingdone.wait()
+
+        # 3. upload
+        self._upload_content(job, media_files)
 
     def status(self, qhit: str) -> dict[str, dict[str, JobStatus]]:
         """
@@ -172,7 +213,7 @@ class FabricTagger():
                 res[stream][feature] = asdict(res[stream][feature])
 
         return res
-    
+
     def stop(self, qhit: str, feature: str) -> None:
         active_jobs = self.job_store.active_jobs
         with self.store_lock:
@@ -257,18 +298,6 @@ class FabricTagger():
                     else:
                         media_files, failed =  download_stream(job.q, stream, save_path, **kwargs, exit_event=job.stop_event)
             logger.debug(f"got list of media files {media_files}")
-        except (StreamNotFoundError, AssetsNotFoundException):
-            logger.exception(f"Content for stream {stream} was not found for {qhit}")
-            with self.store_lock:
-                self._set_stop_status(job, "Failed", f"Content for stream {stream} was not found for {qhit}")
-        except HTTPError as e:
-            logger.exception(f"HTTPError occurred while fetching stream {stream} for {qhit}: {e}")
-            with self.store_lock:
-                self._set_stop_status(job, "Failed", f"Failed to fetch stream {stream} for {qhit}: {str(e)}. Make sure authorization token hasn't expired.")
-        except Exception as e:
-            logger.exception(f"Unknown error occurred while fetching stream {stream} for {qhit}: {e}")
-            with self.store_lock:
-                self._set_stop_status(job, "Failed", f"Unknown error occurred while fetching stream {stream} for {qhit}: {str(e)}")
         if self._check_exit(job):
             return [], []
         return media_files, failed
@@ -599,7 +628,3 @@ class FabricTagger():
                 upload_tags(qhit, tagrows)
             except Exception as e:
                 logger.exception(f"Error uploading tags for {qhit}/{feature}: {e}")
-
-    def _startup(self) -> None:
-        threading.Thread(target=self._job_starter, args=("gpu", self.gpu_queue), daemon=True).start()
-        threading.Thread(target=self._job_starter, args=("cpu", self.cpu_queue), daemon=True).start()

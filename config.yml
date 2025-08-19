@@ -6,97 +6,99 @@ storage:
   images: data/images
   tmp: data/tmp
   logs: logs
-tags:
-  url: http://localhost:8088
-fabric:
-  # used for downloading parts (requires special build)
+
+hosts:
   parts_url: http://192.168.96.203/config?self&qspace=main
-  # for all other fabric interaction
   config_url: https://host-154-14-185-98.contentfabric.io/config?self&qspace=main
+  tagsdb: http://localhost:8088
+
+system:
+  resources: {
+    "ollama": 2,
+    "cpu": 100,
+    "gpu": 4
+  },
+  gpu: ["gpu", "disabled", "gpu", "gpu", "gpu"],
   max_downloads: 16
+
 services:
   llava:
     image: "localhost/llava:latest"
     type: "video"
     frame_level: true
-    # force to run on cpu
-    allowed_gpus: []
-    cpu_slots: []
-  llava_brief:
-    image: "localhost/llava_brief:latest"
-    type: "video"
-    frame_level: true
-    # force to run on cpu
-    allowed_gpus: []
-  helmet:
-    image: "localhost/helmet:latest"
-    type: "video"
-    frame_level: true
-    # force to run on cpu
-    allowed_gpus: []
+    resources: {
+      "ollama": 1
+    }
   asr: 
     image: "localhost/hungarian:latest"
     type: "audio"
-    allowed_gpus: [] 
+    resources: {
+      "cpu": 25
+    }
   french_asr: 
     image: "localhost/multilingual:latest"
     type: "audio"
+    resources: {
+      "gpu": 1
+    }
   caption:
     image: "localhost/caption:latest"
     type: "video"
     frame_level: true
+    resources: {
+      "gpu": 1
+    }
   shot:
     image: "localhost/shot:latest"
     type: "video"
     frame_level: false
-    allowed_gpus: [0, 2, 3, 4]
+    resources: {
+      "gpu": 1
+    }
   celeb:
     image: "localhost/celeb:latest"
     type: "video"
     frame_level: true
-    allowed_gpus: [0, 2]
+    resources: {
+      "gpu": 1,
+      "cpu": 35
+    }
   ocr:
     image: "localhost/ocr:latest"
     type: "video"
     frame_level: true
+    resources: {
+      "gpu": 1
+    }
   logo:
     image: "localhost/logo:latest"
     type: "video"
     frame_level: true
-  player:
-    image: "localhost/player:latest"
-    type: "video"
-    frame_level: true
-    # NOTE: this depends on the host machine
-    # device ids which don't exist on the host will be ignored when scheduling jobs
-    allowed_gpus: [0, 2, 3, 4]
-  windmill:
-    image: "localhost/breakdance:latest"
-    type: "video"
-    allowed_gpus: [2]
-  # Used for testing
+    resources: {
+      "gpu": 1
+    }
   dummy_gpu:
     image: "localhost/dummy_gpu:latest"
     type: "video"
     frame_level: true
+    resources: {
+      "gpu": 1
+    }
   dummy_cpu:
     image: "localhost/dummy_cpu:latest"
     type: "video"
     frame_level: true
-    allowed_gpus: []
+    resources: {
+      "cpu": 25
+    }
   test_slow:
     image: "localhost/slow_model_test:latest"
     type: "video"
     frame_level: true
-    allowed_gpus: []
-devices: 
-  # if true, then tagger will run on gpus even if they are used by a foreign process
-  # TODO: implement this, it is currently disabled to make life easier
-  allow_in_use_gpus: false
-  wait_for_gpu_sleep: 5
-  default_cpu_slots: ["cpu1", "cpu2", "cpu3", "cpu4"]
-watcher:
-  sleep: 5
+    resources: {
+      "cpu": 25
+    }
+
 agg:
   interval: 10
   ## if a feature is in this list, don't allow more than one tag per shot (in shot tags)

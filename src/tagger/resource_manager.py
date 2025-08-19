@@ -31,8 +31,9 @@ class ContainerJob:
     # resource requirements for the job
     reqs: SystemResources
     jobstatus: JobStatus
-    stop_event: threading.Event
     gpus_used: list[int]
+    # trigger downstream tasks
+    finished: threading.Event | None
 
 @dataclass 
 class sysConfig:
@@ -97,7 +98,8 @@ class SystemTagger:
     def start(
         self, 
         container: TagContainer,
-        required_resources: SystemResources
+        required_resources: SystemResources,
+        finished: threading.Event | None = None
     ) -> str:
 
         """
@@ -110,7 +112,7 @@ class SystemTagger:
         job_id = str(uuid.uuid4())
         job_status = JobStatus(status="Queued", time_started=time.time(), time_ended=None, error=None)
         with self.cond:
-            self.jobs[job_id] = ContainerJob(container=container, reqs=required_resources, jobstatus=job_status, stop_event=threading.Event(), gpus_used=[])
+            self.jobs[job_id] = ContainerJob(container=container, reqs=required_resources, jobstatus=job_status, gpus_used=[], finished=finished)
             self.q.append(job_id)
             self.cond.notify_all()
 
@@ -203,6 +205,9 @@ class SystemTagger:
         with self.cond:
             if jobid in self.q:
                 self.q.remove(jobid)
+
+        if cj.finished:
+            cj.finished.set()
 
     def stop(self, jobid: str) -> JobStatus:
         self._stop_job(jobid, "Stopped")
