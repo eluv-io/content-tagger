@@ -70,6 +70,7 @@ class Job:
     status: JobStatus
     taghandle: str
     lock: threading.Lock
+    stopevent: threading.Event
 
     def get_id(self) -> 'JobID':
         return JobID(qhit=self.args.q.qhit, feature=self.args.feature, stream=self.args.runconfig.stream)
@@ -154,7 +155,8 @@ class FabricTagger:
                 ),
                 status=JobStatus.starting(),
                 taghandle="",
-                lock=threading.Lock()
+                lock=threading.Lock(),
+                stopevent=threading.Event()
             )
             err = self._start_job(job)
             if err:
@@ -204,15 +206,23 @@ class FabricTagger:
             self._stop_job(jobid, "Failed", e)
             return
 
+        if job.stopevent.is_set():
+            return
+
         job.status.failed += failed
 
         # 2. tag
-        container, reqresources = get_container(job.args.feature, media_files)
-        taggingdone = threading.Event()
-        uuid = self.manager.start(container, reqresources, taggingdone)
-        job.taghandle = uuid
-        job.status.status = "Tagging content"
+        with self.storelock: # TODO: better way?
+            container, reqresources = get_container(job.args.feature, media_files)
+            taggingdone = threading.Event()
+            uuid = self.manager.start(container, reqresources, taggingdone)
+            job.taghandle = uuid
+            job.status.status = "Tagging content"
+
         taggingdone.wait()
+
+        if job.stopevent.is_set():
+            return
 
         # 3. upload
         self._upload_content(job, media_files)
@@ -243,7 +253,7 @@ class FabricTagger:
                 stream, feature = job.args.runconfig.stream, job.args.feature
                 res[stream][feature] = self._summarize_status(job.status)
 
-        return res
+        return dict(res)
 
     def _summarize_status(self, status: JobStatus) -> dict:
         end = time.time()
@@ -257,173 +267,52 @@ class FabricTagger:
         }
 
     def stop(self, qhit: str, feature: str) -> None:
-        active_jobs = self.job_store.active_jobs
-        with self.store_lock:
-            job_keys = active_jobs[qhit].keys()
-            feature_job_keys = [job_key for job_key in job_keys if job_key[1] == feature]
-            
-            if len(feature_job_keys) == 0:
+        active_jobs = self.jobstore.active_jobs
+        with self.storelock:
+            jobids = {jobid for jobid in active_jobs.keys() if jobid.qhit == qhit and jobid.feature == feature}
+
+            if len(jobids) == 0:
                 raise MissingResourceError(
                     f"No job running for {feature} on {qhit}"
                 )
-            
-            jobs = [active_jobs[qhit][job_key] for job_key in feature_job_keys]
+
+            jobs = [active_jobs[jid] for jid in jobids]
             for job in jobs:
-                job.stop_event.set()
-        
+                job.stopevent.set()
+
+                if job.taghandle:
+                    try:
+                        self.manager.stop(job.taghandle)
+                    except Exception as e:
+                        logger.error(f"Error stopping job {job.get_id()}: {e}")
+
     def cleanup(self) -> None:
         self.shutdown_signal.set()
         self.manager.shutdown()
 
-    def _video_tag(
-            self, 
-            job: Job, 
-            start_time: int | None, 
-            end_time: int | None
-        ) -> None:
-        media_files, failed = self._download_content(job, start_time=start_time, end_time=end_time)
-        job.media_files = media_files
-        job.failed = failed
-        self._submit_tag_job(job)
-
-    def _image_tag(
-            self,
-            job: Job,
-            assets: list[str] | None
-        ) -> None:
-        images, failed = self._download_content(job, assets=assets)
-        deduped = list(set(images))
-        if len(deduped) > 0:
-            logger.warning(f"Found {len(images) - len(deduped)} duplicate images.")
-        job.media_files = deduped
-        job.failed = failed
-        self._submit_tag_job(job)
-
     def _download_content(self, job: Job, **kwargs) -> tuple[list[str], list[str]]:
         media_files, failed = [], []
-        stream = job.run_config.stream
-        qhit = job.q.qhit
+        stream = job.args.runconfig.stream
+        qhit = job.args.q.qhit
 
         if stream == "image":
             save_path = os.path.join(config["storage"]["images"], qhit, stream)
         else:
             save_path = os.path.join(config["storage"]["parts"], qhit, stream)
 
-        try:
-            # TODO: if waiting for lock, and stop_event is set, it will keep waiting and stop only after the lock is acquired.
-            with self.download_lock[(qhit, stream)]:
-                job.status = "Fetching content"
-                with self.dl_sem:
-                    # if fetching finished while waiting for lock, this will return immediately
-                    if stream == "image":
-                        media_files, failed = fetch_assets(job.q, save_path,  **kwargs)
-                    else:
-                        media_files, failed =  download_stream(job.q, stream, save_path, **kwargs, exit_event=job.stop_event)
-            logger.debug(f"got list of media files {media_files}")
-        if self._check_exit(job):
-            return [], []
-        return media_files, failed
-
-    def _submit_tag_job(self, job: Job) -> None:
-        if self._check_exit(job):
-            return
-        media_files = job.media_files
-        if len(media_files) == 0:
-            with self.store_lock:
-                if self._is_job_stopped(job):
-                    return
-                self._set_stop_status(job, "Failed", f"No media files found for {job.q.qhit}")
-            return
-        total_media_files = len(media_files)
-        if not job.replace:
-            media_files = self._filter_tagged_media_files(media_files, job.q, job.run_config.stream, job.feature)
-        logger.debug(f"Tag status for {job.q.qhit}: {job.feature} on {job.run_config.stream}")
-        logger.debug(f"Total media files: {total_media_files}, Media files to tag: {len(media_files)}, Media files already tagged: {total_media_files - len(media_files)}")
-        if len(media_files) == 0:
-            with self.store_lock:
-                if self._is_job_stopped(job):
-                    return
-                self._set_stop_status(job, "Completed", f"Tagging already complete for {job.feature} on {job.q.qhit}")
-            return
-        if len(job.allowed_gpus) > 0:
-            # model will run on a gpu
-            with self.store_lock:
-                # TODO: Probably don't need lock
-                job.media_files = media_files
-                job.status = "Waiting to be assigned GPU"
-            self.gpu_queue.put(job)
-        else:
-            with self.store_lock:
-                job.media_files = media_files
-                job.status = "Waiting for CPU resource"
-            self.cpu_queue.put(job)
-        self._watch_job(job)
-
-    def _check_exit(self, job: Job) -> bool:
-        """
-        Returns True if the job has received a stop signal, False otherwise. 
-        Also, sets the status of the job to "Stopped" if it has been stopped.
-
-        Args:
-            job (Job): Job to check
-
-        Returns:
-            bool: True if the job has been stopped, False
-        """
-        if job.stop_event.is_set():
-            with self.store_lock:
-                if self._is_job_stopped(job):
-                    return True
-                self._set_stop_status(job, "Stopped")
-            return True
-        return False
-    
-    def _get_job_status(self, job: Job) -> JobStatus:
-        if job.time_ended is None:
-            time_running = time.time() - job.time_started
-        else:
-            time_running = job.time_ended - job.time_started
+        # TODO: if waiting for lock, and stop_event is set, it will keep waiting and stop only after the lock is acquired.
         
-        if job.status == "Tagging content":
-            with self.filesystem_lock:
-                # read how many files have been tagged
-                tag_dir = os.path.join(config["storage"]["tmp"], job.feature, job.tag_job_id)
-                if not os.path.exists(tag_dir):
-                    tagged_files = 0
+        with self.download_lock[(qhit, stream)]:
+            with self.dl_sem:
+                if stream == "image":
+                    media_files, failed = fetch_assets(job.args.q, save_path,  **kwargs)
                 else:
-                    tagged_files = len(os.listdir(tag_dir))
-            if job.run_config.stream != "image" and config["services"][job.feature].get("frame_level", False):
-                # for frame level tagging on video we have two tag files per part, so we need to divide by two.
-                tagged_files = tagged_files // 2
-            to_tag = len(job.media_files)
-            progress = f"{tagged_files}/{to_tag}"
-        elif job.status == "Completed":
-            tagged_files = len(job.media_files)
-            progress = f"{tagged_files}/{tagged_files}"
-        else:
-            progress = ""
+                    media_files, failed =  download_stream(job.args.q, stream, save_path, **kwargs, exit_event=job.stopevent)
 
-        return JobStatus(status=job.status, time_running=time_running, tagging_progress=progress, tag_job_id=job.tag_job_id, error=job.error, failed=job.failed)
+        if job.stopevent.is_set():
+            return [], []
 
-    def _is_job_stopped(self, job: Job) -> bool:
-        # not thread safe, call with lock
-        return job.status == "Stopped" or job.status == "Failed"
-    
-    def _set_stop_status(
-            self, 
-            job: Job, 
-            status: str, 
-            error: str | None=None
-        ) -> None:
-        # Not thread safe
-        # Should be called with lock
-        qhit, stream, feature = job.q.qhit, job.run_config.stream, job.feature
-        job = self.job_store.active_jobs[qhit][(stream, feature)]
-        job.status = status
-        job.error = error
-        job.time_ended = time.time()
-        self.job_store.inactive_jobs[qhit][(stream, feature)] = job
-        del self.job_store.active_jobs[qhit][(stream, feature)]
+        return media_files, failed
 
     def _filter_tagged_media_files(
             self,
@@ -506,109 +395,6 @@ class FabricTagger:
             return tagged_file.split("_tags.json")[0]
 
         raise ValueError(f"Unknown tag file format: {tagged_file}")
-
-    def _job_starter(
-            self, 
-            job_type: Literal["cpu"] | Literal["gpu"], 
-            tag_queue: Queue
-        ) -> None:
-        """
-        Args:
-            wait_for_gpu (bool): if True, then the job starter will wait for a GPU to be available before starting the job
-            tag_queue (Queue): queue for jobs waiting to be submitted
-        """
-        while True:
-            # blocks until a job is available
-            job = tag_queue.get()
-            if self._check_exit(job):
-                continue
-
-            def wait_for_resource():
-                # wait for a GPU to be available
-                if job_type == "gpu":
-                    return self.manager.await_gpu(timeout=config["devices"]["wait_for_gpu_sleep"])
-                elif job_type == "cpu":
-                    return self.manager.await_cpu(timeout=config["devices"]["wait_for_gpu_sleep"])
-                else:
-                    raise ValueError(f"Unknown job type: {job_type}")
-
-            stopped = False
-            while not wait_for_resource():
-                # check if the job has been stopped, if not then we go back to waiting for a GPU
-                if self._check_exit(job):
-                    stopped = True
-                    break
-            if stopped:
-                continue
-
-            try:
-                job_id = self.manager.run(job.feature, job.run_config.model, job.media_files, job.allowed_gpus, job.allowed_cpus, logs_subpath=job.q.qhit)
-                with self.store_lock:
-                    if self._is_job_stopped(job):
-                        # if the job has been stopped while the container was starting
-                        self.manager.stop(job.tag_job_id)
-                        continue
-                    job.tag_job_id = job_id
-                    job.status = "Tagging content"
-                logger.success(f"Started running {job.feature} on {job.q.qhit}")
-            except NoResourceAvailable as e:
-                # This error can happen if the model can only run on a subset of GPUs. 
-                job.error = "Tried to assign GPU or CPU slot, but no suitable one was found. The job was placed back on the queue."
-                # if no CPU slot or GPU is available, then we put the job back on the queue
-                now = time.time()
-                if (now - job.reput_time) < config["devices"]["wait_for_gpu_sleep"]:
-                    # if the job was put back on the queue too recently, then we wait for a bit before putting it back
-                    time.sleep(config["devices"]["wait_for_gpu_sleep"] - (now - job.reput_time))
-                job.reput_time = now
-                tag_queue.put(job)
-                continue
-            except Exception as e:
-                # handle the unexpected
-                logger.error(f"{traceback.format_exc()}")
-                with self.store_lock:
-                    self._set_stop_status(job, "Failed", str(e))
-
-    def watch_job(self, job: Job) -> None:
-        while True:
-            time.sleep(config["watcher"]["sleep"])
-
-            if job.stop_event.is_set():
-                self.manager.stop(job.tag_job_id)
-                with self.store_lock:
-                    self._set_stop_status(job, "Stopped")
-                break
-
-            status = self.manager.status(job.tag_job_id)
-
-            try:
-                with self.filesystem_lock:
-                    self._copy_new_files(job, status.tags)
-            except Exception as e:
-                logger.exception(f"Error copying files for job {job.q.qhit}/{job.feature}: {e}")
-                with self.store_lock:
-                    self._set_stop_status(job, "Failed", str(e))
-            
-            if status.status == "Running":
-                continue
-
-            if status.status == "Completed":
-                logger.success(f"Finished running {job.feature} on {job.q.qhit}")
-                try:
-                    with self.filesystem_lock:
-                        # move outputted tags to their correct place
-                        # lock in case of race condition with status or finalize calls
-                        self._move_files(job, status.tags)
-                except Exception as e:
-                    logger.exception(f"Error moving files for job {job.q.qhit}/{job.feature}: {e}")
-
-            job.status = status.status
-            if status.status == "Failed":
-                job.error = "An error occurred while running model container"
-            job.time_ended = time.time()
-            with self.store_lock:
-                # move job to inactive_jobs
-                self.job_store.inactive_jobs[qhit][(stream, feature)] = job
-                del active_jobs[qhit][(stream, feature)]
 
     def _move_files(
             self, 
