@@ -37,7 +37,6 @@ class JobStatus:
     time_started: float
     time_ended: float | None
     tagging_progress: str
-    error: str | None
     failed: list[str]
 
     @staticmethod
@@ -47,7 +46,6 @@ class JobStatus:
             time_started=time.time(),
             time_ended=None,
             tagging_progress="0%",
-            error=None,
             failed=[]
         )
 
@@ -73,11 +71,17 @@ class Job:
     taghandle: str
     lock: threading.Lock
 
+    def get_id(self) -> 'JobID':
+        return JobID(qhit=self.args.q.qhit, feature=self.args.feature, stream=self.args.runconfig.stream)
+
 @dataclass
 class JobID:
     qhit: str
     feature: str
     stream: str
+
+    def __hash__(self):
+        return hash((self.qhit, self.feature, self.stream))
 
 @dataclass
 class JobStore:
@@ -152,12 +156,16 @@ class FabricTagger:
                 taghandle="",
                 lock=threading.Lock()
             )
-            status[feature] = self._start_job(job)
+            err = self._start_job(job)
+            if err:
+                status[feature] = str(err)
+            else:
+                status[feature] = "Job started successfully"
         return status
 
     def _start_job(self, job: Job) -> Exception | None:
         with self.storelock:
-            jobid = JobID(qhit=job.args.q.qhit, feature=job.args.feature, stream=job.args.runconfig.stream)
+            jobid = job.get_id()
 
             if jobid in self.jobstore.active_jobs:
                 return BadRequestError(f"Job {jobid} is already running")
@@ -165,28 +173,37 @@ class FabricTagger:
             self.jobstore.active_jobs[jobid] = job
 
             if isinstance(job.args, ImageTagArgs):
-                threading.Thread(target=self._image_tag, args=(job, job.args.assets)).start()
+                raise NotImplementedError("Image tagging is not implemented yet")
             else:
-                threading.Thread(target=self._video_tag, args=(job, job.args.start_time, job.args.end_time)).start()
+                threading.Thread(target=self._run_job, args=(job, )).start()
 
         return None
 
-    def _stop_job(self, jobid: str, status: str, error: str | None = None) -> None:
+    def _stop_job(self, jobid: JobID, status: JobState, error: Exception | None) -> None:
+        logger.exception(error)
         with self.storelock:
             if jobid in self.jobstore.active_jobs:
                 job = self.jobstore.active_jobs[jobid]
+
                 job.status.status = status
-                job.status.error = error
+                job.status.time_ended = time.time()
+
                 self.jobstore.inactive_jobs[jobid] = job
                 del self.jobstore.active_jobs[jobid]
+            else:
+                logger.warning(f"Tried to stop an inactive job: {jobid}")
 
     def _run_job(self, job: Job) -> None:
+        jobid = job.get_id()
+
         # 1. download
         job.status.status = "Fetching content"
         try:
             media_files, failed = self._download_content(job, start_time=job.args.start_time, end_time=job.args.end_time)
-        except Exception:
-            self._stop_job(job, "Failed", f"Error occurred while fetching content")
+        except Exception as e:
+            self._stop_job(jobid, "Failed", e)
+            return
+
         job.status.failed += failed
 
         # 2. tag
@@ -208,28 +225,36 @@ class FabricTagger:
             dict[str, dict[str, JobStatus]]: a dictionary mapping stream -> feature -> JobStatus
         """
 
-        active_jobs = self.job_store.active_jobs
-        inactive_jobs = self.job_store.inactive_jobs
+        active_jobs = self.jobstore.active_jobs
+        inactive_jobs = self.jobstore.inactive_jobs
 
-        with self.store_lock:
-            jobs = set(active_jobs[qhit].keys()) | set(inactive_jobs[qhit].keys())
-            if len(jobs) == 0:
+        with self.storelock:
+            jobids = {jobid for jobid in active_jobs.keys() if jobid.qhit == qhit}
+            jobids |= {jobid for jobid in inactive_jobs.keys() if jobid.qhit == qhit}
+
+            if len(jobids) == 0:
                 raise MissingResourceError(
                     f"No jobs started for {qhit}"
                 )
-            res = defaultdict(dict)
-            for job in jobs:
-                stream, feature = job
-                if job in active_jobs[qhit]:
-                    res[stream][feature] = self._get_job_status(active_jobs[qhit][job])
-                else:
-                    res[stream][feature] = self._get_job_status(inactive_jobs[qhit][job])
 
-        for stream in sorted(res.keys()):
-            for feature in sorted(res[stream].keys()):
-                res[stream][feature] = asdict(res[stream][feature])
+            res = defaultdict(dict)
+            for jid in jobids:
+                job = active_jobs.get(jid, inactive_jobs[jid])
+                stream, feature = job.args.runconfig.stream, job.args.feature
+                res[stream][feature] = self._summarize_status(job.status)
 
         return res
+
+    def _summarize_status(self, status: JobStatus) -> dict:
+        end = time.time()
+        if status.time_ended:
+            end = status.time_ended
+        return {
+            "status": status.status,
+            "time_running": end - status.time_started,
+            "tagging_progress": status.tagging_progress,
+            "failed": status.failed,
+        }
 
     def stop(self, qhit: str, feature: str) -> None:
         active_jobs = self.job_store.active_jobs
@@ -245,30 +270,10 @@ class FabricTagger:
             jobs = [active_jobs[qhit][job_key] for job_key in feature_job_keys]
             for job in jobs:
                 job.stop_event.set()
-
-    def get_running_jobs(self, qhit: str) -> list[Job]:
-        with self.store_lock:
-            return list(self.job_store.active_jobs[qhit].values())
         
     def cleanup(self) -> None:
         self.shutdown_signal.set()
-        active_jobs = self.job_store.active_jobs
-        to_stop = []
-        with self.store_lock:
-            for qhit in active_jobs:
-                for job in active_jobs[qhit].values():
-                    to_stop.append(job)
-                    job.stop_event.set()
-            logger.info(f"Stopping {len(to_stop)} jobs")
-        while True:
-            exit = True
-            for job in to_stop:
-                if not self._is_job_stopped(job):
-                    exit = False
-            if exit:
-                # quit loop and finish
-                break
-            time.sleep(1)
+        self.manager.shutdown()
 
     def _video_tag(
             self, 
