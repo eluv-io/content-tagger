@@ -1,4 +1,7 @@
 from collections import defaultdict
+from concurrent.futures import thread
+from copy import deepcopy
+from shutil import copy
 import time
 import os
 import uuid
@@ -32,7 +35,7 @@ class ContainerJob:
     container: TagContainer
     # resource requirements for the job
     reqs: SystemResources
-    JobStatus: JobStatus
+    jobstatus: JobStatus
     stop_event: threading.Event
     gpu_indices: list[int]
 
@@ -81,7 +84,6 @@ class SystemTagger:
         self.cond = threading.Condition()
         self.exit = threading.Event()
 
-        
         self.jobs: dict[str, ContainerJob] = {}
         self.joblocks = defaultdict(threading.Lock)
 
@@ -150,23 +152,28 @@ class SystemTagger:
 
     def _run_job(self, jobid: str) -> None:
 
+        error = None
         with self.joblocks[jobid]:
             cj = self.jobs[jobid]
-            if cj.JobStatus.time_ended:
+            if cj.jobstatus.time_ended:
+                # user stopped it
                 return
 
             gpu_indices = self._reserve_resources(cj)
 
-            cj.JobStatus.status = "Running"
+            cj.jobstatus.status = "Running"
             cj.gpu_indices = gpu_indices
 
-        try:
-            if len(gpu_indices) > 1:
-                # TODO: implement
-                raise NotImplementedError("Multi-GPU tagging for one container is not implemented yet.")
-            cj.container.start(self.pclient, gpu_indices[0])
-        except Exception as e:
-            self._stop_job(jobid, "Failed", e)
+            try:
+                if len(gpu_indices) > 1:
+                    # TODO: implement
+                    raise NotImplementedError("Multi-GPU tagging for one container is not implemented yet.")
+                cj.container.start(self.pclient, gpu_indices[0])
+            except Exception as e:
+                error = e
+
+        if error:
+            self._stop_job(jobid, "Failed", error)
 
     def _stop_job(self, jobid: str, status: JobState, error: Exception | None = None) -> None:
         """
@@ -176,15 +183,15 @@ class SystemTagger:
         with self.joblocks[jobid]:
             cj = self.jobs[jobid]
 
-            if cj.JobStatus.time_ended:
+            if cj.jobstatus.time_ended:
                 return
 
             if error:
                 logger.exception(error)
 
-            cj.JobStatus.status = status
-            cj.JobStatus.error = error
-            cj.JobStatus.time_ended = time.time()
+            cj.jobstatus.status = status
+            cj.jobstatus.error = error
+            cj.jobstatus.time_ended = time.time()
 
             cj.container.stop()
 
@@ -193,6 +200,14 @@ class SystemTagger:
         with self.cond:
             self.q.remove(cj)
             self.cond.notify_all()
+
+    def stop(self, jobid: str) -> JobStatus:
+        self._stop_job(jobid, "Stopped")
+        return self.status(jobid)
+
+    def status(self, jobid: str) -> JobStatus:
+        with self.joblocks[jobid]:
+            return deepcopy(self.jobs[jobid].jobstatus)
 
     def _free_resources(self, cj: ContainerJob) -> None:
         """
@@ -212,6 +227,8 @@ class SystemTagger:
 
         while not self.exit.is_set():
             with self.cond:
+                self._clear_stopped_jobs()
+
                 pop_idx = None
                 for i, jobid in enumerate(self.q):
                     cj = self.jobs[jobid]
@@ -225,124 +242,26 @@ class SystemTagger:
 
                 self.cond.wait()
 
-    def _is_container_active(self, status: str) -> bool:
-        return status == "running" or status == "created"
+    def _stop_jobs(self):
+        while not self.exit.is_set():
+            for jobid, job in self.jobs.items():
+                if not job.jobstatus.status == "Running":
+                    continue
+                if job.container.is_running():
+                    continue
+                assert job.container.container is not None
+                exit_code = job.container.container.attrs["State"]["ExitCode"]
+                if exit_code != 0:
+                    self._stop_job(jobid, "Failed", RuntimeError("Container encountered runtime error"))
+                    return
+                logger.info(f"Job {jobid} completed")
+            time.sleep(2)
 
-    # main function for watching and finalizing the job which is running in a container
-    def _watch_job(self, jobid: str) -> None:
-        # because we aren't deleting keys, we don't need to lock
-        job = self.jobs[jobid]
-        logger.info(f"Watching job {jobid}")
-
-        with open(job.logs_out, "w") as fout:
-            try:
-                ts = 0
-                while not job.stop_event.is_set() and self._is_container_active(job.container.status):
-                    # refresh status
-                    job.container.reload()
-
-                    # redirect logs
-                    logs = job.container.logs(stream=False, stderr=True, stdout=True, since=ts)
-                    ts = int(time.time())
-                    for log in logs:
-                        fout.write(log.decode("utf-8"))
-
-                    tags = os.listdir(job.save_path)
-
-                    if len(tags) > 0:
-                        # remove the tag with the most recent write time
-                        latest_idx = max(range(len(tags)), key=lambda i: os.path.getmtime(os.path.join(job.save_path, tags[i])))
-                        tags.pop(latest_idx)
-                        job.tags = [os.path.join(job.save_path, tag) for tag in tags]
-
-                    time.sleep(1)
-            except Exception as e:
-                logger.error(f"Error while watching job {jobid}: {e}")
-                with self.lock:
-                    self._cleanup_job(jobid, "Failed")
-                return
-            finally:
-                # capture remaining logs
-                logs = job.container.logs(stream=False, stderr=True, stdout=True, since=ts)
-                for log in logs:
-                    fout.write(log.decode("utf-8"))
-
-        if job.stop_event.is_set():
-            with self.lock:
-                self._cleanup_job(jobid, "Stopped")
-            return
-
-        exit_code = job.container.attrs["State"]["ExitCode"]
-        if exit_code != 0:
-            logger.error(f"Job {jobid} failed to complete")
-            with self.lock:
-                self._cleanup_job(jobid, "Failed")
-            return
-        logger.info(f"Job {jobid} completed")
-            
-        with self.lock:
-            self.jobs[jobid].tags = tags
-            self._cleanup_job(jobid, "Completed")
-
-    def stop(self, jobid: str) -> None:
-        job = self.jobs[jobid]
-        if job.status != "Running":
-            return
-        job.stop_event.set()
-        while job.status == "Running":
-            time.sleep(1)
-        logger.info(f"Job {jobid} stopped")
-
-    def await_gpu(self, timeout: Optional[int]=None) -> bool:
-        return self.gpu_available.wait(timeout=timeout)
-
-    def await_cpu(self, timeout: Optional[int]=None) -> bool:
-        return self.cpu_available.wait(timeout=timeout)
-
-    # cleanup job resources
-    # NOTE: NOT THREAD SAFE, must be called with lock
-    def _cleanup_job(self, jobid: str, status: str) -> None:
-        job = self.jobs[jobid]
-        job.time_ended = time.time()
-        job.status = status
-        self._stop_container(job.container)
-        for f in job.media_files:
-            self.files_tagging.remove((f, job.feature))
-
-        if job.device is not None:
-            # free the gpu slot
-            if is_gpu_in_use(job.device):
-                # this implies a foreign process started while the job was running, so we don't free the gpu
-                if job.device not in self.foreign_gpus:
-                    self.foreign_gpus.append(job.device)
-            else:
-                self.device_status[job.device] = False
-                self.gpu_available.set()
-        else:
-            # free the cpu slot
-            self.cpuslots[job.cpu_slot] = False
-            self.cpu_available.set()
-
-    @dataclass
-    class TagJobStatus:
-        status: str # from TagJob.status
-        tags: List[str]
-        time_elapsed: Optional[float]
-
-    def status(self, jobid: str) -> TagJobStatus:
-        with self.lock:
-            job = self.jobs[jobid]
-            if job.time_ended is not None:
-                return ResourceManager.TagJobStatus(job.status, tags=job.tags, time_elapsed=(job.time_ended - job.time_started))
-            else:
-                return ResourceManager.TagJobStatus(job.status, tags=job.tags, \
-                        time_elapsed=time.time() - job.time_started) 
-
-    def shutdown(self):
-        """
-        Stop all running jobs and close the podman client.
-        """
-        for jobid, job in self.jobs.items():
-            if job.status == "Running":
-                self.stop(jobid)
-        self.client.close()
+    def _clear_stopped_jobs(self) -> None:
+        # clean the queue of stopped jobs
+        newq = []
+        for jobid in self.q:
+            with self.joblocks[jobid]:
+                if self.jobs[jobid].jobstatus.status == "Queued":
+                    newq.append(jobid)
+        self.q = newq

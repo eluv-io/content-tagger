@@ -47,6 +47,9 @@ class TagContainer:
         if self.container.status == "running":
             logger.error(f"Container status is still \"running\" after stop. Please check the container and stop it manually.")
 
+    def is_running(self) -> bool:
+        return self.container.status == "running" or self.container.status == "created"
+
 class PodmanConfig:
     client: PodmanClient
     cachepath: str
