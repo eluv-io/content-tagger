@@ -48,6 +48,9 @@ class TagContainer:
             logger.error(f"Container status is still \"running\" after stop. Please check the container and stop it manually.")
 
     def is_running(self) -> bool:
+        if self.container is None:
+            return False
+        self.container.reload()
         return self.container.status == "running" or self.container.status == "created"
 
 class PodmanConfig:
@@ -65,7 +68,6 @@ def create_container(
         save_path: str,
         fileargs: list[str],
         config: dict,
-        device_idx: int | None,
         logfile: str
     ) -> ContainerSpec:
     """

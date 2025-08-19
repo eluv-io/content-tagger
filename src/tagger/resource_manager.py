@@ -1,20 +1,15 @@
 from collections import defaultdict
-from concurrent.futures import thread
 from copy import deepcopy
-from shutil import copy
 import time
-import os
 import uuid
 import threading
 from dataclasses import dataclass
-from typing import List, Optional, Literal
+from typing import Literal
 
 import podman
 from loguru import logger
 
-from src.tagger.containers import TagContainer, create_container
-
-from config import config
+from src.tagger.containers import TagContainer
 
 class NoResourceAvailable(Exception):
     pass
@@ -37,7 +32,7 @@ class ContainerJob:
     reqs: SystemResources
     jobstatus: JobStatus
     stop_event: threading.Event
-    gpu_indices: list[int]
+    gpus_used: list[int]
 
 @dataclass 
 class sysConfig:
@@ -45,7 +40,7 @@ class sysConfig:
     gpus: list[str]
     cpu_juice: int
 
-def load_system_resouces(cfg: sysConfig) -> SystemResources:
+def load_system_resources(cfg: sysConfig) -> SystemResources:
     """
     Get currently available system resources
     """
@@ -78,16 +73,18 @@ class SystemTagger:
         self.sys_config = cfg
 
         self.resource_lock = threading.Lock()
-        self.resources = load_system_resouces(cfg)
-        self.device_status = [False] * len(cfg.gpus)
+        self.active_resources = load_system_resources(cfg)
+        self.gpu_status = [False] * len(cfg.gpus)
+
+        self.total_resources = deepcopy(self.active_resources)
 
         self.cond = threading.Condition()
+        self.q = []
+
         self.exit = threading.Event()
 
-        self.jobs: dict[str, ContainerJob] = {}
         self.joblocks = defaultdict(threading.Lock)
-
-        self.q = []
+        self.jobs: dict[str, ContainerJob] = {}
 
         self.starter = threading.Thread(target=self._start_jobs, daemon=True)
         self.starter.start()
@@ -102,53 +99,59 @@ class SystemTagger:
         container: TagContainer,
         required_resources: SystemResources
     ) -> str:
+
         """
-        Starts the tagging job and returns uuid
+        Runs the container, bookkeeps system resources, and returns uuid
         """
+
+        if not self._can_start(required_resources, self.total_resources):
+            raise NoResourceAvailable("Insufficient resources available to start job on this system.")
+
         job_id = str(uuid.uuid4())
         job_status = JobStatus(status="Queued", time_started=time.time(), time_ended=None, error=None)
-        self.jobs[job_id] = ContainerJob(container=container, reqs=required_resources, JobStatus=job_status, stop_event=threading.Event(), gpu_indices=[])
         with self.cond:
+            self.jobs[job_id] = ContainerJob(container=container, reqs=required_resources, jobstatus=job_status, stop_event=threading.Event(), gpus_used=[])
             self.q.append(job_id)
             self.cond.notify_all()
 
         return job_id
 
-    def _can_start(self, job: ContainerJob) -> bool:
+    def _can_start(self, jobreqs: SystemResources, sys_resources: SystemResources) -> bool:
+
+        """
+        Can we start the container given the resources.
+        """
 
         with self.resource_lock:
-            for resource, required in job.reqs.items():
-                if self.resources.get(resource, 0) < required:
+            for resr, req in jobreqs.items():
+                if sys_resources.get(resr, 0) < req:
                     return False
 
         return True
 
-    def _reserve_resources(self, job: ContainerJob) -> list[int]:
+    def _reserve_resources(self, job: ContainerJob) -> None:
         """
-        Reserves the resources for the job and returns the list of reserved GPU indices if any.
-
-        Errors if resources are not available. This should not happen.
+        Reserves the resources for the job and updates the job's GPU allocation.
         """
 
         with self.resource_lock:
             gpu_resources = set(self.sys_config.gpus)
 
             reserved_gpus = []
-            for resource, required in job.reqs.items():
-                self.resources[resource] -= required
-                assert self.resources[resource] >= 0
-                if resource not in gpu_resources:
+            for resr, req in job.reqs.items():
+                self.active_resources[resr] -= req
+                assert self.active_resources[resr] >= 0
+                if resr not in gpu_resources:
                     continue
-                for _ in range(required):
+                for _ in range(req):
                     for gpuidx, type in enumerate(self.sys_config.gpus):
-                        if type == required and not self.device_status[gpuidx]:
-                            # reserve the gpu
-                            self.device_status[gpuidx] = True
+                        if type == resr and not self.gpu_status[gpuidx]:
+                            self.gpu_status[gpuidx] = True
                             reserved_gpus.append(gpuidx)
                             break
-                assert len(reserved_gpus) == required
+                assert len(reserved_gpus) == req
 
-            return reserved_gpus
+            job.gpus_used = reserved_gpus
 
     def _run_job(self, jobid: str) -> None:
 
@@ -159,16 +162,15 @@ class SystemTagger:
                 # user stopped it
                 return
 
-            gpu_indices = self._reserve_resources(cj)
+            self._reserve_resources(cj)
 
             cj.jobstatus.status = "Running"
-            cj.gpu_indices = gpu_indices
 
             try:
-                if len(gpu_indices) > 1:
+                if len(cj.gpus_used) > 1:
                     # TODO: implement
                     raise NotImplementedError("Multi-GPU tagging for one container is not implemented yet.")
-                cj.container.start(self.pclient, gpu_indices[0])
+                cj.container.start(self.pclient, cj.gpus_used[0] if cj.gpus_used else None)
             except Exception as e:
                 error = e
 
@@ -176,6 +178,7 @@ class SystemTagger:
             self._stop_job(jobid, "Failed", error)
 
     def _stop_job(self, jobid: str, status: JobState, error: Exception | None = None) -> None:
+
         """
         Stops the job and cleans up resources.
         """
@@ -198,8 +201,8 @@ class SystemTagger:
         self._free_resources(cj)
 
         with self.cond:
-            self.q.remove(cj)
-            self.cond.notify_all()
+            if jobid in self.q:
+                self.q.remove(jobid)
 
     def stop(self, jobid: str) -> JobStatus:
         self._stop_job(jobid, "Stopped")
@@ -210,17 +213,25 @@ class SystemTagger:
             return deepcopy(self.jobs[jobid].jobstatus)
 
     def _free_resources(self, cj: ContainerJob) -> None:
+
         """
         Frees the resources allocated for the job.
         """
+
+        gpu_resources = set(self.sys_config.gpus)
+
         with self.resource_lock:
-            for resource, required in cj.reqs.items():
-                self.resources[resource] += required
-                if resource == "gpu":
-                    for gpu_idx in cj.gpu_indices:
-                        self.device_status[gpu_idx] = False
+            for resr, req in cj.reqs.items():
+                self.active_resources[resr] += req
+                if resr in gpu_resources:
+                    for gpu_idx in cj.gpus_used:
+                        self.gpu_status[gpu_idx] = False
+
+        with self.cond:
+            self.cond.notify_all()
 
     def _start_jobs(self):
+
         """
         Polls jobs from queue and starts them.
         """
@@ -232,7 +243,7 @@ class SystemTagger:
                 pop_idx = None
                 for i, jobid in enumerate(self.q):
                     cj = self.jobs[jobid]
-                    if self._can_start(cj):
+                    if self._can_start(cj.reqs, self.active_resources):
                         self._run_job(jobid)
                         pop_idx = i
                         break
@@ -243,18 +254,26 @@ class SystemTagger:
                 self.cond.wait()
 
     def _stop_jobs(self):
+
+        """
+        Checks for jobs which have stopped and cleans up resources.
+        """
+
         while not self.exit.is_set():
-            for jobid, job in self.jobs.items():
-                if not job.jobstatus.status == "Running":
-                    continue
-                if job.container.is_running():
-                    continue
-                assert job.container.container is not None
-                exit_code = job.container.container.attrs["State"]["ExitCode"]
-                if exit_code != 0:
-                    self._stop_job(jobid, "Failed", RuntimeError("Container encountered runtime error"))
-                    return
-                logger.info(f"Job {jobid} completed")
+            with self.cond:
+                for jobid, job in self.jobs.items():
+                    if job.jobstatus.status != "Running":
+                        continue
+                    if job.container.is_running():
+                        continue
+                    assert job.container.container is not None
+                    exit_code = job.container.container.attrs["State"]["ExitCode"]
+                    if exit_code != 0:
+                        self._stop_job(jobid, "Failed", RuntimeError("Container encountered runtime error"))
+                        continue
+                    else:
+                        self._stop_job(jobid, "Completed")
+                    logger.info(f"Job {jobid} completed")
             time.sleep(2)
 
     def _clear_stopped_jobs(self) -> None:
