@@ -40,6 +40,17 @@ class JobStatus:
     error: str | None
     failed: list[str]
 
+    @staticmethod
+    def starting() -> 'JobStatus':
+        return JobStatus(
+            status="Starting",
+            time_started=time.time(),
+            time_ended=None,
+            tagging_progress="0%",
+            error=None,
+            failed=[]
+        )
+
 @dataclass
 class RunConfig:
     # model config, used to overwrite the model level config
@@ -60,6 +71,7 @@ class Job:
     args: JobArgs
     status: JobStatus
     taghandle: str
+    lock: threading.Lock
 
 @dataclass
 class JobID:
@@ -69,8 +81,8 @@ class JobID:
 
 @dataclass
 class JobStore:
-    active_jobs: dict[str, Job] = field(default_factory=dict)
-    inactive_jobs: dict[str, Job] = field(default_factory=dict)
+    active_jobs: dict[JobID, Job] = field(default_factory=dict)
+    inactive_jobs: dict[JobID, Job] = field(default_factory=dict)
 
 class FabricTagger:
 
@@ -86,7 +98,7 @@ class FabricTagger:
 
         self.dblock = threading.Lock()
 
-        self.store_lock = threading.Lock()
+        self.storelock = threading.Lock()
         self.jobstore = JobStore()
 
         # maps (qhit, stream) -> lock
@@ -121,47 +133,52 @@ class FabricTagger:
                         f"Image tagging for {feat} is not supported"
                     )
 
-    def tag(self, q: Content, args: TagArgs | ImageTagArgs) -> None:
+    def tag(self, q: Content, args: TagArgs | ImageTagArgs) -> dict:
         self._validate_args(args)
-
-        with self.store_lock:
-            if self.shutdown_signal.is_set():
-                raise RuntimeError("Tagger is shutting down, cannot start new jobs")
-            for feat, rconfig in args.features.items():
-                if rconfig.stream is None:
-                    # if stream name is not provided, we pick stream based on whether the model is audio/video based
-                    rconfig.stream = config["services"][feat]["type"]
-                if (rconfig.stream, feat) in self.jobstore.active_jobs[q.qhit]:
-                    raise BadRequestError(
-                        f"{feat} tagging is already in progress for {q.qhit} on {rconfig.stream}"
-                    )
-            for feat, rconfig in args.features.items():
-                self.jobstore.active_jobs[q.qhit][(rconfig.stream, feat)] = job
-
-                if isinstance(args, ImageTagArgs):
-                    threading.Thread(target=self._image_tag, args=(job, args.assets)).start()
-                else:
-                    threading.Thread(target=self._video_tag, args=(job, args.start_time, args.end_time)).start()
-
-            job.status = JobStatus(
-                "Starting",
-                time.time(),
-                None,
-                "",
-                None,
-                []
+        # TODO: handle image
+        if not isinstance(args, TagArgs):
+            raise NotImplementedError("Image tagging is not implemented yet")
+        status = {}
+        for feature in args.features:
+            job = Job(
+                args=JobArgs(
+                    q=q,
+                    feature=feature,
+                    runconfig=args.features[feature],
+                    start_time=args.start_time,
+                    end_time=args.end_time
+                ),
+                status=JobStatus.starting(),
+                taghandle="",
+                lock=threading.Lock()
             )
+            status[feature] = self._start_job(job)
+        return status
 
-    def _start_job(self, job: Job) -> None:
-        with self.store_lock:
+    def _start_job(self, job: Job) -> Exception | None:
+        with self.storelock:
             jobid = JobID(qhit=job.args.q.qhit, feature=job.args.feature, stream=job.args.runconfig.stream)
 
             if jobid in self.jobstore.active_jobs:
-                raise BadRequestError(f"Job {jobid} is already running")
+                return BadRequestError(f"Job {jobid} is already running")
 
             self.jobstore.active_jobs[jobid] = job
 
-            threading.Thread(target=self._run_job, args=(job,)).start()
+            if isinstance(job.args, ImageTagArgs):
+                threading.Thread(target=self._image_tag, args=(job, job.args.assets)).start()
+            else:
+                threading.Thread(target=self._video_tag, args=(job, job.args.start_time, job.args.end_time)).start()
+
+        return None
+
+    def _stop_job(self, jobid: str, status: str, error: str | None = None) -> None:
+        with self.storelock:
+            if jobid in self.jobstore.active_jobs:
+                job = self.jobstore.active_jobs[jobid]
+                job.status.status = status
+                job.status.error = error
+                self.jobstore.inactive_jobs[jobid] = job
+                del self.jobstore.active_jobs[jobid]
 
     def _run_job(self, job: Job) -> None:
         # 1. download
@@ -169,7 +186,7 @@ class FabricTagger:
         try:
             media_files, failed = self._download_content(job, start_time=job.args.start_time, end_time=job.args.end_time)
         except Exception:
-            self._set_stop_status(job, "Failed", f"Unknown error occurred while fetching stream {stream} for {qhit}: {str(e)}")
+            self._stop_job(job, "Failed", f"Error occurred while fetching content")
         job.status.failed += failed
 
         # 2. tag
