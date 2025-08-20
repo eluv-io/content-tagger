@@ -1,25 +1,22 @@
 import threading
-from queue import Queue
 from collections import defaultdict
 import time
 import os
-from typing import List, Literal
-from dataclasses import dataclass, asdict, field
+from typing import Literal
+from dataclasses import dataclass, field
 import shutil
-import traceback
+import tempfile
 
 from loguru import logger
 from requests import HTTPError
 
-from src.tagger.resource_manager import  NoResourceAvailable, SystemTagger
+from src.tagger.containers import ContainerRegistry, TagContainer
+from src.tagger.resource_manager import  SystemTagger
 from src.fabric.content import Content
 from src.api.tagging.format import TagArgs, ImageTagArgs
-from src.api.errors import MissingResourceError, BadRequestError
-from src.tagger.tagsdb import check_qid, load_tag_file, upload_tags
-from src.fabric.video import download_stream, StreamNotFoundError
-from src.fabric.assets import fetch_assets, AssetsNotFoundException
-
-from config import config
+from src.api.errors import MissingResourceError
+from src.fabric.video import download_stream
+from src.fabric.assets import fetch_assets
 
 JobState = Literal[
     "Starting",
@@ -71,6 +68,7 @@ class Job:
     taghandle: str
     lock: threading.Lock
     stopevent: threading.Event
+    container: TagContainer | None
 
     def get_id(self) -> 'JobID':
         return JobID(qhit=self.args.q.qhit, feature=self.args.feature, stream=self.args.runconfig.stream)
@@ -89,6 +87,13 @@ class JobStore:
     active_jobs: dict[JobID, Job] = field(default_factory=dict)
     inactive_jobs: dict[JobID, Job] = field(default_factory=dict)
 
+@dataclass
+class TaggerConfig:
+    max_downloads: int
+    tagspath: str
+    partspath: str
+
+
 class FabricTagger:
 
     """
@@ -97,9 +102,14 @@ class FabricTagger:
 
     def __init__(
             self, 
-            manager: SystemTagger
+            manager: SystemTagger,
+            cregistry: ContainerRegistry,
+            tconfig: TaggerConfig
         ):
+
         self.manager = manager
+        self.cregistry = cregistry
+        self.tconfig = tconfig
 
         self.dblock = threading.Lock()
 
@@ -110,7 +120,7 @@ class FabricTagger:
         self.download_lock = defaultdict(threading.Lock)
 
         # controls the number of concurrent downloads
-        self.dl_sem = threading.Semaphore(config["fabric"]["max_downloads"])
+        self.dl_sem = threading.Semaphore(tconfig.max_downloads)
 
         # map qid -> token
         self.tokens = {}
@@ -122,21 +132,25 @@ class FabricTagger:
         Raises error if args are bad
         """
 
-        services = list_services()  
+        services = self.cregistry.services()
 
-        invalid_features = [feature for feature in args.features if feature not in services]
+        modconfigs = self.cregistry.cfg.modconfigs
 
-        if len(invalid_features) > 0:
-            raise MissingResourceError(
-                f"Invalid features: {', '.join(invalid_features)}. Available features: {', '.join(services)}"
-            )
+        for feature in args.features:
+            if feature not in services:
+                raise MissingResourceError(
+                    f"Invalid feature: {feature}. Available features: {', '.join(services)}"
+                )
 
-        if isinstance(args, ImageTagArgs):
-            for feat in args.features.keys():
-                if not config["services"][feat].get("frame_level", False):
-                    raise MissingResourceError(
-                        f"Image tagging for {feat} is not supported"
-                    )
+            if isinstance(args, TagArgs):
+                continue
+
+            modeltype = modconfigs[feature].type
+
+            if modeltype != "frame":
+                raise MissingResourceError(
+                    f"{feature} is not frame-level"
+                )
 
     def tag(self, q: Content, args: TagArgs | ImageTagArgs) -> dict:
         self._validate_args(args)
@@ -151,35 +165,36 @@ class FabricTagger:
                     feature=feature,
                     runconfig=args.features[feature],
                     start_time=args.start_time,
-                    end_time=args.end_time
+                    end_time=args.end_time,
                 ),
                 status=JobStatus.starting(),
                 taghandle="",
                 lock=threading.Lock(),
-                stopevent=threading.Event()
+                stopevent=threading.Event(),
+                container=None
             )
             err = self._start_job(job)
             if err:
-                status[feature] = str(err)
+                status[feature] = err
             else:
                 status[feature] = "Job started successfully"
         return status
 
-    def _start_job(self, job: Job) -> Exception | None:
+    def _start_job(self, job: Job) -> str:
         with self.storelock:
             jobid = job.get_id()
 
             if jobid in self.jobstore.active_jobs:
-                return BadRequestError(f"Job {jobid} is already running")
+                return f"Job {jobid} is already running"
 
             self.jobstore.active_jobs[jobid] = job
 
             if isinstance(job.args, ImageTagArgs):
-                raise NotImplementedError("Image tagging is not implemented yet")
+                return "Image tagging is not implemented yet"
             else:
                 threading.Thread(target=self._run_job, args=(job, )).start()
 
-        return None
+        return ""
 
     def _stop_job(self, jobid: JobID, status: JobState, error: Exception | None) -> None:
         logger.exception(error)
@@ -213,9 +228,11 @@ class FabricTagger:
 
         # 2. tag
         with self.storelock: # TODO: better way?
-            container, reqresources = get_container(job.args.feature, media_files)
+            container = self.cregistry.get(job.args.feature, media_files, job.args.runconfig.model)
+            reqresources = self.cregistry.get_model_resources(job.args.feature)
             taggingdone = threading.Event()
             uuid = self.manager.start(container, reqresources, taggingdone)
+            job.container = container
             job.taghandle = uuid
             job.status.status = "Tagging content"
 
@@ -286,6 +303,22 @@ class FabricTagger:
                     except Exception as e:
                         logger.error(f"Error stopping job {job.get_id()}: {e}")
 
+    def _job_watcher(self) -> None:
+        while True:
+            try:
+                with self.storelock:
+                    self._check_jobs()
+            except Exception as e:
+                logger.exception(f"Unexpected error in job watcher: {e}")
+            time.sleep(0.2)
+
+    def _check_jobs(self) -> None:
+        for jobid, job in self.jobstore.active_jobs.items():
+            if not job.status == "Tagging content":
+                continue
+
+            self._copy_new_files(job)
+
     def cleanup(self) -> None:
         self.shutdown_signal.set()
         self.manager.shutdown()
@@ -295,19 +328,16 @@ class FabricTagger:
         stream = job.args.runconfig.stream
         qhit = job.args.q.qhit
 
-        if stream == "image":
-            save_path = os.path.join(config["storage"]["images"], qhit, stream)
-        else:
-            save_path = os.path.join(config["storage"]["parts"], qhit, stream)
+        save_path = os.path.join(self.tconfig.partspath, qhit, stream)
 
         # TODO: if waiting for lock, and stop_event is set, it will keep waiting and stop only after the lock is acquired.
-        
+
         with self.download_lock[(qhit, stream)]:
             with self.dl_sem:
                 if stream == "image":
                     media_files, failed = fetch_assets(job.args.q, save_path,  **kwargs)
                 else:
-                    media_files, failed =  download_stream(job.args.q, stream, save_path, **kwargs, exit_event=job.stopevent)
+                    media_files, failed = download_stream(job.args.q, stream, save_path, **kwargs, exit_event=job.stopevent)
 
         if job.stopevent.is_set():
             return [], []
@@ -320,7 +350,7 @@ class FabricTagger:
             q: Content,
             stream: str, 
             feature: str
-        ) -> List[str]:
+    ) -> list[str]:
         """
         Args:
             media_files (List[str]): list of media files to filter
@@ -346,7 +376,6 @@ class FabricTagger:
             if filename not in tagged:
                 untagged.append(media_file)
         return untagged
-
 
     def _filter_tagged_files(
             self,
@@ -396,43 +425,39 @@ class FabricTagger:
 
         raise ValueError(f"Unknown tag file format: {tagged_file}")
 
-    def _move_files(
-            self, 
-            job: Job, 
-            tags: List[str]
-        ) -> None:
-        if len(tags) == 0:
-            return
-        qhit, stream, feature = job.q.qhit, job.run_config.stream, job.feature
-        tags_path = os.path.join(config["storage"]["tags"], qhit, stream, feature)
-        os.makedirs(tags_path, exist_ok=True)
-        for tag in tags:
-            shutil.move(tag, os.path.join(tags_path, os.path.basename(tag)))
-        tag_dir = os.path.dirname(tags[0])
-        shutil.rmtree(tag_dir, ignore_errors=True)
-
     def _copy_new_files(
             self, 
-            job: Job, 
-            tags: List[str]
+            job: Job,
         ) -> None:
-        # TODO: check inodes instead of skipping last tag
-        if len(tags) == 0:
+        destpath = os.path.join(self.tconfig.tagspath, job.args.q.qhit, job.args.runconfig.stream, job.args.feature)
+        os.makedirs(destpath, exist_ok=True)
+
+        if not job.container:
             return
-        qhit, stream, feature = job.q.qhit, job.run_config.stream, job.feature
-        tags_path = os.path.join(config["storage"]["tags"], qhit, str(stream), feature)
-        os.makedirs(tags_path, exist_ok=True)
-        tagrows = []
+
+        tags = job.container.tags()
+
+
         for tag in tags:
-            if os.path.exists(os.path.join(tags_path, os.path.basename(tag))):
+            dest_file = os.path.join(destpath, os.path.basename(tag))
+            
+            if os.path.exists(dest_file):
                 continue
-            shutil.copyfile(tag, os.path.join(tags_path, os.path.basename(tag)))
-            # format for tags schema
-            tagrows += load_tag_file(qhit, feature, os.path.join(tags_path, os.path.basename(tag)))
-        
-        if len(tagrows) > 0 and check_qid(qhit):
-            # upload tags to the database only if tagging is against a qid
+            
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.tmp') as temp_file:
+                temp_path = temp_file.name
+            
             try:
-                upload_tags(qhit, tagrows)
+                shutil.copyfile(tag, temp_path)
+                # Atomic move to final destination
+                shutil.move(temp_path, dest_file)
             except Exception as e:
-                logger.exception(f"Error uploading tags for {qhit}/{feature}: {e}")
+                logger.exception(f"Failed to copy {tag} to {dest_file}: {e}")
+            finally:
+                # Clean up temp file if copy failed
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except OSError:
+                        pass  # Best effort cleanup
+                
