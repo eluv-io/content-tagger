@@ -6,7 +6,7 @@ from src.api.tagging.format import TagArgs, ImageTagArgs
 from src.api.errors import BadRequestError
 from src.api.auth import get_authorization
 from src.fabric.content import Content
-from src.tagger.tagger import Tagger
+from src.tagger.fabric_tagging.tagger import Tagger
 
 from config import config
 
@@ -60,6 +60,7 @@ def handle_status(qhit: str) -> Response:
     res = tagger.status(q.qhit)
 
     return Response(response=json.dumps(res), status=200, mimetype='application/json')
+
 
 def handle_stop(
         qhit: str, 

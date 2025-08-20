@@ -2,16 +2,14 @@ import threading
 from collections import defaultdict
 import time
 import os
-from typing import Literal
-from dataclasses import dataclass, field
 import shutil
 import tempfile
 
 from loguru import logger
 from requests import HTTPError
 
-from src.tagger.model_containers.containers import ContainerRegistry, TagContainer
-from src.tagger.sytem_tagging.resource_manager import  SystemTagger
+from src.tagger.model_containers.containers import ContainerRegistry
+from src.tagger.system_tagging.resource_manager import SystemTagger
 from src.fabric.content import Content
 from src.api.tagging.format import TagArgs, ImageTagArgs
 from src.api.errors import MissingResourceError
