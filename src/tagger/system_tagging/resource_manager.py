@@ -3,59 +3,12 @@ from copy import deepcopy
 import time
 import uuid
 import threading
-from dataclasses import dataclass
-from typing import Literal
 
-import podman
 from loguru import logger
 
-from src.tagger.containers import TagContainer
-
-class NoResourceAvailable(Exception):
-    pass
-
-SystemResources = dict[str, int]
-
-JobState = Literal["Queued", "Running", "Completed", "Failed", "Stopped"]
-
-@dataclass
-class JobStatus:
-    status: JobState
-    time_started: float
-    time_ended: float | None
-    error: Exception | None
-
-@dataclass
-class ContainerJob:
-    container: TagContainer
-    # resource requirements for the job
-    reqs: SystemResources
-    jobstatus: JobStatus
-    gpus_used: list[int]
-    # trigger downstream tasks
-    finished: threading.Event | None
-
-@dataclass 
-class sysConfig:
-    # map gpu idx -> gpu type
-    gpus: list[str]
-    cpu_juice: int
-
-def load_system_resources(cfg: sysConfig) -> SystemResources:
-    """
-    Get currently available system resources
-    """
-
-    resources = defaultdict(int)
-
-    for device_idx in range(len(cfg.gpus)):
-        if cfg.gpus[device_idx] == "disabled":
-            continue
-        resources[cfg.gpus[device_idx]] += 1
-
-    resources["cpu_juice"] = cfg.cpu_juice
-
-    return dict(resources)
+from src.api.errors import MissingResourceError
+from src.tagger.model_containers.containers import TagContainer
+from src.tagger.system_tagging.types import *
 
 class SystemTagger:
 
@@ -64,9 +17,8 @@ class SystemTagger:
     """
 
     def __init__(
-            self, 
-            cfg: sysConfig
-
+        self, 
+        cfg: SysConfig
     ):
         self.sys_config = cfg
 
@@ -104,7 +56,7 @@ class SystemTagger:
         """
 
         if not self._can_start(required_resources, self.total_resources):
-            raise NoResourceAvailable("Insufficient resources available to start job on this system.")
+            raise MissingResourceError("Insufficient resources available to start job on this system.")
 
         job_id = str(uuid.uuid4())
         job_status = JobStatus(status="Queued", time_started=time.time(), time_ended=None, error=None)
@@ -295,3 +247,19 @@ class SystemTagger:
                 if self.jobs[jobid].jobstatus.status == "Queued":
                     newq.append(jobid)
         self.q = newq
+
+def load_system_resources(cfg: SysConfig) -> SystemResources:
+    """
+    Get currently available system resources
+    """
+
+    resources = defaultdict(int)
+
+    for device_idx in range(len(cfg.gpus)):
+        if cfg.gpus[device_idx] == "disabled":
+            continue
+        resources[cfg.gpus[device_idx]] += 1
+
+    resources["cpu_juice"] = cfg.cpu_juice
+
+    return dict(resources)

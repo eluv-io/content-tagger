@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing_extensions import Literal
 
-from src.tagger.resource_manager import SystemResources
+from src.tagger.system_tagging.resource_manager import SystemResources
 
 @dataclass
 class ContainerSpec:
