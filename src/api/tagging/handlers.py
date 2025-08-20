@@ -60,7 +60,7 @@ def handle_status(qhit: str) -> Response:
     res = tagger.status(q.qhit)
 
     return Response(response=json.dumps(res), status=200, mimetype='application/json')
-    
+
 def handle_stop(
         qhit: str, 
         feature: str
