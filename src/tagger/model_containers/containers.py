@@ -8,7 +8,7 @@ import psutil
 
 from src.common.errors import MissingResourceError
 from src.tagger.system_tagging.resource_manager import SystemResources
-from src.tagger.model_containers.types import ContainerSpec, RegistryConfig
+from src.tagger.model_containers.types import ContainerSpec, RegistryConfig, ModelOutput
 
 class TagContainer:
 
@@ -92,7 +92,7 @@ class TagContainer:
         self.container.reload()
         return self.container.status == "running" or self.container.status == "created"
 
-    def tags(self) -> list[str]:
+    def tags(self) -> list[ModelOutput]:
         """
         Get set of files currently open for writing by this container
         """
@@ -118,7 +118,32 @@ class TagContainer:
                 # TODO: check that it's full path.
                 tags.remove(open_file.path)
 
-        return tags
+        out = []
+        for tag in tags:
+            out.append(self._output_from_tag_file(tag))
+
+        return out
+
+    def _output_from_tag_file(self, tagged_file: str) -> ModelOutput | None:
+
+        tag_type = None
+
+        if tagged_file.endswith("_imagetags.json"):
+            tag_type = "image"
+        if tagged_file.endswith("_frametags.json"):
+            tag_type = "frame"
+        if tagged_file.endswith("_tags.json"):
+            tag_type = "video"
+
+        if tag_type is None:
+            return None
+
+        return ModelOutput(
+            source=tagged_file.split("_")[1],
+            filepath=tagged_file,
+            tag_type=tag_type
+        )
+
 
 class ContainerRegistry:
     """

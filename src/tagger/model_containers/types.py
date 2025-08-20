@@ -25,3 +25,9 @@ class RegistryConfig:
     logspath: str
     tagspath: str
     cachepath: str
+
+@dataclass
+class ModelOutput:
+    source: str
+    filepath: str
+    tag_type: Literal["video", "frame", "image"]
