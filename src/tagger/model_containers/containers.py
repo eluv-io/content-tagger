@@ -1,24 +1,14 @@
 
 from copy import deepcopy
-from dataclasses import dataclass
 from podman import PodmanClient
 from loguru import logger
 import json
 import os
 import psutil
-from typing import Literal
 
 from src.api.errors import MissingResourceError
 from src.tagger.resource_manager import SystemResources
-
-@dataclass
-class ContainerSpec:
-    image: str
-    cachepath: str
-    logspath: str
-    tagspath: str
-    fileargs: list[str]
-    runconfig: dict
+from src.tagger.model_containers.types import ContainerSpec, RegistryConfig
 
 class TagContainer:
 
@@ -92,9 +82,9 @@ class TagContainer:
         if self.container.status == "running":
             # podman client will kill if it doesn't stop within the timeout limit
             self.container.stop(timeout=5)
-        self.container.reload()
-        if self.container.status == "running":
-            logger.error(f"Container status is still \"running\" after stop. Please check the container and stop it manually.")
+        if self.is_running():
+            logger.warning(f"Container {self.container.id} did not stop in time, killing it")
+            self.container.kill()
 
     def is_running(self) -> bool:
         if self.container is None:
@@ -130,20 +120,6 @@ class TagContainer:
 
         return tags
 
-@dataclass
-class ModelConfig:
-    name: str
-    image: str
-    type: Literal["video", "audio", "frame"]
-    resources: SystemResources
-
-@dataclass
-class RegistryConfig:
-    modconfigs: dict[str, ModelConfig]
-    logspath: str
-    tagspath: str
-    cachepath: str
-
 class ContainerRegistry:
     """
     Get runnable containers through identifier
@@ -161,7 +137,7 @@ class ContainerRegistry:
         logspath = os.path.join(self.cfg.logspath, model)
         cachepath = os.path.join(self.cfg.cachepath, model)
 
-        modelcfg = self.cfg.registry.get(model)
+        modelcfg = self.cfg.modconfigs.get(model)
         if not modelcfg:
             raise MissingResourceError(f"Model {model} not found")
 
@@ -177,11 +153,11 @@ class ContainerRegistry:
         return TagContainer(self.pclient, ccfg)
 
     def get_model_resources(self, model: str) -> SystemResources:
-        return deepcopy(self.cfg.registry[model].resources)
+        return deepcopy(self.cfg.modconfigs[model].resources)
 
     def services(self) -> list[str]:
         """
         Returns a list of available services
         """
         # TODO: check if the image exists
-        return list(self.cfg.registry.keys())
+        return list(self.cfg.modconfigs.keys())

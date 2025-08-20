@@ -7,7 +7,7 @@ from elv_client_py import ElvClient
 from src.fabric.content import Content
 from loguru import logger
 
-from src.fabric.video import fetch_stream_metadata
+from src.fabric.fetch_video import fetch_stream_metadata
 from common_ml.tags import VideoTag
 from common_ml.utils import nested_update
 from common_ml.utils.metrics import timeit
