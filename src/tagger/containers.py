@@ -1,9 +1,11 @@
 
+from copy import deepcopy
 from dataclasses import dataclass
 from podman import PodmanClient
 from loguru import logger
 import json
 import os
+import psutil
 from typing import Literal
 
 from src.api.errors import MissingResourceError
@@ -100,6 +102,35 @@ class TagContainer:
         self.container.reload()
         return self.container.status == "running" or self.container.status == "created"
 
+    def tags(self) -> list[str]:
+        """
+        Get set of files currently open for writing by this container
+        """
+        if not self.is_running():
+            return []
+
+        assert self.container is not None
+
+        try:
+            # Get the container's main process PID
+            container_info = self.container.inspect()
+            pid = container_info.get("State", {}).get("Pid")
+            
+            if not pid:
+                return []
+
+            # Get the process and its open files
+            process = psutil.Process(pid)
+            open_files = []
+            for open_file in process.open_files():
+                open_files.append(open_file.path)
+            
+            return open_files
+            
+        except (psutil.NoSuchProcess, psutil.AccessDenied, AttributeError):
+            # If we can't get process info, assume all files might be in use
+            return []
+
 @dataclass
 class ModelConfig:
     name: str
@@ -146,8 +177,12 @@ class ContainerRegistry:
 
         return TagContainer(self.pclient, ccfg)
 
+    def get_model_resources(self, model: str) -> SystemResources:
+        return deepcopy(self.cfg.registry[model].resources)
+
     def services(self) -> list[str]:
         """
         Returns a list of available services
         """
+        # TODO: check if the image exists
         return list(self.cfg.registry.keys())
