@@ -6,7 +6,7 @@ from requests.exceptions import HTTPError
 from common_ml.utils.files import get_file_type, encode_path
 from common_ml.utils.metrics import timeit
 
-from src.fabric.content import Content
+from src.common.content import Content
 
 class AssetsNotFoundException(Exception):
     pass

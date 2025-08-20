@@ -6,7 +6,7 @@ import json
 import os
 import psutil
 
-from src.api.errors import MissingResourceError
+from src.common.errors import MissingResourceError
 from src.tagger.system_tagging.resource_manager import SystemResources
 from src.tagger.model_containers.types import ContainerSpec, RegistryConfig
 

@@ -1,6 +1,6 @@
 import os
 from loguru import logger
-from src.fabric.content import Content
+from src.common.content import Content
 
 def _download_missing(q: Content, save_path: str, fabric_path: str) -> list[ValueError | None]:
     """Recursively downloads the given fabric path into save_path only if there is a difference"""

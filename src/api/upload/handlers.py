@@ -11,10 +11,10 @@ from elv_client_py import ElvClient
 from common_ml.utils.metrics import timeit
 
 from src.api.upload.format import FinalizeArgs, UploadArgs
-from src.api.errors import BadRequestError, MissingResourceError
+from src.common.errors import BadRequestError, MissingResourceError
 from src.api.auth import get_authorization, parse_qhit, get_client
 from src.tagger.fabric_tagging.tagger import Tagger
-from src.fabric.content import Content
+from src.common.content import Content
 from src.tags.legacy.agg import format_video_tags, format_asset_tags
 
 from config import config

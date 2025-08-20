@@ -6,7 +6,7 @@ from elv_client_py import ElvClient
 from flask import Request, Response, make_response
 from requests.exceptions import HTTPError
 
-from src.api.errors import BadRequestError
+from src.common.errors import BadRequestError
 
 
 def authenticate(client: ElvClient, qhit: str) -> None:

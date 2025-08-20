@@ -18,12 +18,12 @@ from config import config, reload_config
 from src.tagger.jobs import JobsStore
 
 from src.api.tagging.handlers import handle_tag, handle_image_tag, handle_status, handle_stop
-from src.api.tags.handlers import handle_finalize, handle_aggregate
-from src.tagger.containers import list_services
-from src.api.errors import BadRequestError, MissingResourceError
+from src.api.upload.handlers import handle_finalize, handle_aggregate
+from src.tagger.model_containers.containers import list_services
+from src.common.errors import BadRequestError, MissingResourceError
 
-from src.tagger.tagger import Tagger
-from src.tagger.resource_manager import ResourceManager
+from src.tagger.fabric_tagging.tagger import Tagger
+from src.tagger.sytem_tagging.resource_manager import ResourceManager
 
     
 ## for debugging, keep the last tmpdir (only if set)

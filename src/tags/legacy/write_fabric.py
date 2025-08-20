@@ -4,7 +4,7 @@ from collections import defaultdict
 from typing import List
 from requests import HTTPError
 from elv_client_py import ElvClient
-from src.fabric.content import Content
+from src.common.content import Content
 from loguru import logger
 
 from src.fabric.fetch_video import fetch_stream_metadata

@@ -8,8 +8,8 @@ from common_ml.video_processing import unfrag_video
 from config import config
 from loguru import logger
 
-from src.fabric.content import Content
-from src.api.errors import MissingResourceError, BadRequestError
+from src.common.content import Content
+from src.common.errors import MissingResourceError, BadRequestError
 
 class StreamNotFoundError(RuntimeError):
     """Custom exception for specific error conditions."""

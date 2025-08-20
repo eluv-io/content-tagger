@@ -4,7 +4,7 @@ from typing import Literal
 import time
 import threading
 
-from src.fabric.content import Content
+from src.common.content import Content
 from src.tagger.model_containers.containers import TagContainer
 
 JobState = Literal[

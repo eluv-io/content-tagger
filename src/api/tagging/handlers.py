@@ -3,9 +3,9 @@ import json
 from flask import Response, request, current_app
 
 from src.api.tagging.format import TagArgs, ImageTagArgs
-from src.api.errors import BadRequestError
+from src.common.errors import BadRequestError
 from src.api.auth import get_authorization
-from src.fabric.content import Content
+from src.common.content import Content
 from src.tagger.fabric_tagging.tagger import Tagger
 
 from config import config
