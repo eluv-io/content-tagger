@@ -9,7 +9,7 @@ from loguru import logger
 from common_ml.tags import AggTag
 from common_ml.tags import VideoTag, FrameTag
 
-from src.tags.labels import feature_to_label, label_to_track
+from src.tags.legacy.labels import feature_to_label, label_to_track
 
 from config import config
 

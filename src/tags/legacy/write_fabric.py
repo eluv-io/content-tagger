@@ -12,7 +12,7 @@ from common_ml.tags import VideoTag
 from common_ml.utils import nested_update
 from common_ml.utils.metrics import timeit
 from common_ml.utils.files import get_file_type, encode_path
-from src.tags.agg import (
+from src.tags.legacy.agg import (
     aggregate_video_tags, 
     format_tracks, format_overlay, 
     merge_frame_tag_files, 
@@ -20,8 +20,8 @@ from src.tags.agg import (
     _parse_external_tags, 
     _get_sentence_intervals
 )
-from src.tags.fetch_tags import _download_missing
-from src.tags.labels import label_to_track, feature_to_label
+from src.tags.legacy.fetch_tags import _download_missing
+from src.tags.legacy.labels import label_to_track, feature_to_label
 
 
 def format_asset_tags(q: Content, tags_path: str) -> None:
