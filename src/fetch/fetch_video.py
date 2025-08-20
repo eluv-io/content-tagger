@@ -1,3 +1,4 @@
+from collections import defaultdict
 from requests.exceptions import HTTPError
 import os
 import threading
@@ -22,7 +23,10 @@ class Fetcher:
     ):
         self.config = config
         self.tagstore = tagstore
+        # sem to keep total IO reasonable
         self.dl_sem = threading.Semaphore(config.max_downloads)
+        # maps (qhit, stream) to lock to prevent unnecessary stream download duplication
+        self.stream_locks = defaultdict(threading.Lock)
 
     def download_stream(
         self,
@@ -30,8 +34,11 @@ class Fetcher:
         req: VodDownloadRequest,
         exit_event: threading.Event | None = None,
     ) -> DownloadResult:
+        stream_key = (q.qhit, req.stream_name)
+
         with self.dl_sem:
-            return self._download_stream(q, req, exit_event)
+            with self.stream_locks[stream_key]:
+                return self._download_stream(q, req, exit_event)
 
     def _download_stream(
         self,

@@ -1,22 +1,18 @@
 import threading
 from collections import defaultdict
 import time
-import os
-import shutil
-import tempfile
+import uuid
 
 from loguru import logger
-from requests import HTTPError
 
 from src.tagger.model_containers.containers import ContainerRegistry
 from src.tagger.system_tagging.resource_manager import SystemTagger
-from src.tagger.fabric_tagging.types import Job, JobArgs, JobStatus, JobState, TaggerConfig, JobStore, JobID
+from src.tagger.fabric_tagging.types import Job, JobArgs, JobStatus, JobState, JobStore, JobID
 from src.common.content import Content
 from src.api.tagging.format import TagArgs, ImageTagArgs
 from src.common.errors import MissingResourceError
-from src.fetch.fetch_video import download_stream
-from src.fetch.fetch_assets import fetch_assets
-
+from src.fetch.fetch_video import Fetcher
+from src.tags.tagstore import FilesystemTagStore, Job as TagJob
 
 class FabricTagger:
 
@@ -28,23 +24,19 @@ class FabricTagger:
             self, 
             manager: SystemTagger,
             cregistry: ContainerRegistry,
-            tconfig: TaggerConfig
+            tagstore: FilesystemTagStore,
+            fetcher: Fetcher
         ):
 
         self.manager = manager
         self.cregistry = cregistry
-        self.tconfig = tconfig
+        self.tagstore = tagstore
+        self.fetcher = fetcher
 
         self.dblock = threading.Lock()
 
         self.storelock = threading.Lock()
         self.jobstore = JobStore()
-
-        # maps (qhit, stream) -> lock
-        self.download_lock = defaultdict(threading.Lock)
-
-        # controls the number of concurrent downloads
-        self.dl_sem = threading.Semaphore(tconfig.max_downloads)
 
         # map qid -> token
         self.tokens = {}
@@ -137,6 +129,17 @@ class FabricTagger:
     def _run_job(self, job: Job) -> None:
         jobid = job.get_id()
 
+        tsjob = TagJob(
+            id=str(uuid.uuid4()),
+            qhit=job.args.q.qhit,
+            feature=job.args.feature,
+            stream=job.args.runconfig.stream,
+            timestamp=time.time(),
+            author="tagger"
+        )
+
+        self.tagstore.start_job(tsjob)
+
         # 1. download
         job.status.status = "Fetching content"
         try:
@@ -155,9 +158,9 @@ class FabricTagger:
             container = self.cregistry.get(job.args.feature, media_files, job.args.runconfig.model)
             reqresources = self.cregistry.get_model_resources(job.args.feature)
             taggingdone = threading.Event()
-            uuid = self.manager.start(container, reqresources, taggingdone)
+            uid = self.manager.start(container, reqresources, taggingdone)
             job.container = container
-            job.taghandle = uuid
+            job.taghandle = uid
             job.status.status = "Tagging content"
 
         taggingdone.wait()
@@ -242,147 +245,15 @@ class FabricTagger:
             if not job.status == "Tagging content":
                 continue
 
-            self._copy_new_files(job)
+            self._upload_tags(job)
 
     def cleanup(self) -> None:
         self.shutdown_signal.set()
         self.manager.shutdown()
 
-    def _download_content(self, job: Job, **kwargs) -> tuple[list[str], list[str]]:
-        media_files, failed = [], []
-        stream = job.args.runconfig.stream
-        qhit = job.args.q.qhit
-
-        save_path = os.path.join(self.tconfig.partspath, qhit, stream)
-
-        # TODO: if waiting for lock, and stop_event is set, it will keep waiting and stop only after the lock is acquired.
-
-        with self.download_lock[(qhit, stream)]:
-            with self.dl_sem:
-                if stream == "image":
-                    media_files, failed = fetch_assets(job.args.q, save_path,  **kwargs)
-                else:
-                    media_files, failed = download_stream(job.args.q, stream, save_path, **kwargs, exit_event=job.stopevent)
-
-        if job.stopevent.is_set():
-            return [], []
-
-        return media_files, failed
-
-    def _filter_tagged_media_files(
-            self,
-            media_files: list[str], 
-            q: Content,
-            stream: str, 
-            feature: str
-    ) -> list[str]:
-        """
-        Args:
-            media_files (List[str]): list of media files to filter
-            qhit (str): content object, hash, or write token that files belong to
-            stream (str): stream name
-            feature (str): model name
-
-        Returns:
-            List[str]: list of media files that have not been tagged, filtered subset of media_files
-        """
-        try:
-            if stream == "image":
-                tag_files = q.list_files(path=f"image_tags/{feature}")
-            else:
-                tag_files = q.list_files(path=f"video_tags/{stream}/{feature}")
-        except HTTPError:
-            # if the folder doesn't exist, then no files have been tagged
-            return media_files[:]
-        tagged = set(self._source_from_tag_file(tag) for tag in tag_files)
-        untagged = []
-        for media_file in media_files:
-            filename = os.path.basename(media_file)
-            if filename not in tagged:
-                untagged.append(media_file)
-        return untagged
-
-    def _filter_tagged_files(
-            self,
-            tagfiles: list[str], 
-            q: Content,
-            stream: str, 
-            feature: str
-        ) -> list[str]:
-        """
-        Args:
-            media_files (List[str]): list of media files to filter
-            qhit (str): content object, hash, or write token that files belong to
-            stream (str): stream name
-            feature (str): model name
-
-        Returns:
-            List[str]: list of media files that have not been tagged, filtered subset of media_files
-        """
-        try:
-            if stream == "image":
-                remote_files = q.list_files(path=f"image_tags/{feature}")
-            else:
-                remote_files = q.list_files(path=f"video_tags/{stream}/{feature}")
-        except HTTPError:
-            # if the folder doesn't exist, then no files have been tagged
-            return tagfiles[:]
-        untagged = []
-        for tagfile in tagfiles:
-            if not os.path.basename(tagfile) in remote_files:
-                untagged.append(tagfile)
-        return untagged
-
-    def _source_from_tag_file(self, tagged_file: str) -> str:
-        """
-        Args:
-            tagged_file (str): a tag file name, generated by tagger
-
-        Returns:
-            str: the source file name that the tag file was generated from
-        """
-        if tagged_file.endswith("_imagetags.json"):
-            return tagged_file.split("_imagetags.json")[0]
-        if tagged_file.endswith("_frametags.json"):
-            return tagged_file.split("_frametags.json")[0]
-        if tagged_file.endswith("_tags.json"):
-            return tagged_file.split("_tags.json")[0]
-
-        raise ValueError(f"Unknown tag file format: {tagged_file}")
-
     def _copy_new_files(
             self, 
             job: Job,
         ) -> None:
-        destpath = os.path.join(self.tconfig.tagspath, job.args.q.qhit, job.args.runconfig.stream, job.args.feature)
-        os.makedirs(destpath, exist_ok=True)
-
-        if not job.container:
-            return
-
-        tags = job.container.tags()
-
-
-        for tag in tags:
-            dest_file = os.path.join(destpath, os.path.basename(tag))
-            
-            if os.path.exists(dest_file):
-                continue
-            
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.tmp') as temp_file:
-                temp_path = temp_file.name
-            
-            try:
-                shutil.copyfile(tag, temp_path)
-                # Atomic move to final destination
-                shutil.move(temp_path, dest_file)
-            except Exception as e:
-                logger.exception(f"Failed to copy {tag} to {dest_file}: {e}")
-            finally:
-                # Clean up temp file if copy failed
-                if os.path.exists(temp_path):
-                    try:
-                        os.remove(temp_path)
-                    except OSError:
-                        pass  # Best effort cleanup
+        
                 

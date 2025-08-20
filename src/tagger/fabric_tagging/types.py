@@ -75,9 +75,3 @@ class JobID:
 class JobStore:
     active_jobs: dict[JobID, Job] = field(default_factory=dict)
     inactive_jobs: dict[JobID, Job] = field(default_factory=dict)
-
-@dataclass
-class TaggerConfig:
-    max_downloads: int
-    tagspath: str
-    partspath: str
