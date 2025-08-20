@@ -1,39 +1,86 @@
 
 from dataclasses import dataclass
 from podman import PodmanClient
-from podman.domain.containers import Container
 from loguru import logger
 import json
 import os
-from typing import List
+from typing import Literal
+
+from src.api.errors import MissingResourceError
+from src.tagger.resource_manager import SystemResources
 
 @dataclass
 class ContainerSpec:
     image: str
-    volumes: list[dict]
-    command: list[str]
-    logfile: str
+    cachepath: str
+    logspath: str
+    tagspath: str
+    fileargs: list[str]
+    runconfig: dict
 
 class TagContainer:
-    def __init__(self, cspec: ContainerSpec):
-        self.cspec = cspec
-        self.container: Container | None = None
 
-    def start(self, pclient: PodmanClient, gpu_idx: int | None) -> None:
+    def __init__(
+        self,
+        pclient: PodmanClient,
+        cfg: ContainerSpec
+    ):
+        self.cfg = cfg
+        self.pclient = pclient
+        self.container = None
+
+    def start(
+        self, 
+        gpuidx: int,
+    ) -> None:
+
+        volumes = [
+            {
+                "source": self.cfg.tagspath,
+                # convention for containers to store tags in /elv/tags
+                "target": "/elv/tags",
+                "type": "bind",
+            },
+            {
+                "source": self.cfg.cachepath,
+                # convention for python modules to store cache in /root/.cache
+                "target": "/root/.cache",
+                "type": "bind",
+                "read_only": False
+            }
+        ]
+
+        for f in self.cfg.fileargs:
+            if not os.path.exists(f):
+                raise FileNotFoundError(f"File {f} not found")
+            elif not os.path.isfile(f):
+                raise IsADirectoryError(f"{f} is a directory")
+            elif not os.path.isabs(f):
+                raise ValueError(f"{f} must be an absolute path")
+            # mount the file
+            volumes.append({
+                "source": f,
+                "target": f"/elv/{os.path.basename(f)}",
+                "type": "bind",
+                "read_only": True
+            })
+
         kwargs = {
-            "image": self.cspec.image,
-            "command": self.cspec.command,
-            "mounts": self.cspec.volumes,
+            "image": self.cfg.image,
+            "command": [f"{os.path.basename(f)}" for f in self.cfg.fileargs] + ["--config", f"{json.dumps(self.cfg.runconfig)}"],
+            "mounts": volumes,
             "remove": True,
             "network_mode": "host",
             "log_config": {
                 "type": "file",
-                "path": self.cspec.logfile,
+                "path": self.cfg.logspath,
             }
         }
-        if gpu_idx is not None:
-            kwargs["devices"] = [f"nvidia.com/gpu={gpu_idx}"]
-        container = pclient.containers.create(**kwargs)
+
+        if gpuidx is not None:
+            kwargs["devices"] = [f"nvidia.com/gpu={gpuidx}"]
+
+        container = self.pclient.containers.create(**kwargs)
         container.start()
         self.container = container
 
@@ -53,62 +100,54 @@ class TagContainer:
         self.container.reload()
         return self.container.status == "running" or self.container.status == "created"
 
-class PodmanConfig:
-    client: PodmanClient
+@dataclass
+class ModelConfig:
+    name: str
+    image: str
+    type: Literal["video", "audio", "frame"]
+    resources: SystemResources
+
+@dataclass
+class RegistryConfig:
+    registry: dict[str, ModelConfig]
+    logspath: str
+    tagspath: str
     cachepath: str
 
-def list_images(pclient: PodmanClient) -> List[str]:
-    with pclient as podman_client:
-        return sum([image.tags for image in podman_client.images.list() if image.tags], [])
-
-def create_container(
-        cfg: PodmanConfig,
-        # name of the image to use
-        image: str,
-        save_path: str,
-        fileargs: list[str],
-        config: dict,
-        logfile: str
-    ) -> ContainerSpec:
+class ContainerRegistry:
     """
-    Creates a tagger container
+    Get runnable containers through identifier
     """
 
-    os.makedirs(save_path, exist_ok=True)
+    def __init__(self, cfg: RegistryConfig):
+        self.pclient = PodmanClient()
+        self.cfg = cfg
+        os.makedirs(self.cfg.logspath, exist_ok=True)
+        os.makedirs(self.cfg.tagspath, exist_ok=True)
+        os.makedirs(self.cfg.cachepath, exist_ok=True)
 
-    volumes = [
-        {
-            "source": save_path,
-            # convention for containers to store tags in /elv/tags
-            "target": "/elv/tags",
-            "type": "bind",
-        },
-        {
-            "source": cfg.cachepath,
-            # convention for python modules to store cache in /root/.cache
-            "target": "/root/.cache",
-            "type": "bind",
-            "read_only": False
-        }
-    ]
+    def get(self, model: str, fileargs: list[str], runconfig: dict) -> TagContainer:
+        tagspath = os.path.join(self.cfg.tagspath, model)
+        logspath = os.path.join(self.cfg.logspath, model)
+        cachepath = os.path.join(self.cfg.cachepath, model)
 
-    for f in fileargs:
-        if not os.path.exists(f):
-            raise FileNotFoundError(f"File {f} not found")
-        elif not os.path.isfile(f):
-            raise IsADirectoryError(f"{f} is a directory")
-        elif not os.path.isabs(f):
-            raise ValueError(f"{f} must be an absolute path")
-        # mount the file
-        volumes.append({
-            "source": f,
-            "target": f"/elv/{os.path.basename(f)}",
-            "type": "bind",
-            "read_only": True
-        })
-    return ContainerSpec(
-        image=image,
-        command=[f"{os.path.basename(f)}" for f in fileargs] + ["--config", f"{json.dumps(config)}"],
-        volumes=volumes,
-        logfile=logfile
-    )
+        modelcfg = self.cfg.registry.get(model)
+        if not modelcfg:
+            raise MissingResourceError(f"Model {model} not found")
+
+        ccfg = ContainerSpec(
+            image=modelcfg.image,
+            fileargs=fileargs,
+            runconfig=runconfig,
+            logspath=logspath,
+            cachepath=cachepath,
+            tagspath=tagspath
+        )
+
+        return TagContainer(self.pclient, ccfg)
+
+    def services(self) -> list[str]:
+        """
+        Returns a list of available services
+        """
+        return list(self.cfg.registry.keys())
