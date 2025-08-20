@@ -15,8 +15,8 @@ from src.tagger.resource_manager import  SystemTagger
 from src.fabric.content import Content
 from src.api.tagging.format import TagArgs, ImageTagArgs
 from src.api.errors import MissingResourceError
-from src.fabric.video import download_stream
-from src.fabric.assets import fetch_assets
+from src.fabric.fetch_video import download_stream
+from src.fabric.fetch_assets import fetch_assets
 
 JobState = Literal[
     "Starting",
@@ -242,7 +242,8 @@ class FabricTagger:
             return
 
         # 3. upload
-        self._upload_content(job, media_files)
+        self._stop_job(jobid, "Completed", None)
+        #self._upload_content(job, media_files)
 
     def status(self, qhit: str) -> dict[str, dict[str, JobStatus]]:
         """
