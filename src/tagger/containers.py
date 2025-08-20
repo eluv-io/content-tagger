@@ -106,31 +106,30 @@ class TagContainer:
         """
         Get set of files currently open for writing by this container
         """
+
+        tags = os.listdir(self.cfg.tagspath)
+
         if not self.is_running():
-            return []
+            return tags
 
         assert self.container is not None
 
-        try:
-            # Get the container's main process PID
-            container_info = self.container.inspect()
-            pid = container_info.get("State", {}).get("Pid")
-            
-            if not pid:
-                return []
-
-            # Get the process and its open files
-            process = psutil.Process(pid)
-            open_files = []
-            for open_file in process.open_files():
-                open_files.append(open_file.path)
-            
-            return open_files
-            
-        except (psutil.NoSuchProcess, psutil.AccessDenied, AttributeError):
-            # If we can't get process info, assume all files might be in use
-            return []
+        # Get the container's main process PID
+        container_info = self.container.inspect()
+        pid = container_info.get("State", {}).get("Pid")
         
+        if not pid:
+            return tags
+
+        # Get the process and its open files
+        process = psutil.Process(pid)
+        for open_file in process.open_files():
+            if open_file.path in tags:
+                # TODO: check that it's full path.
+                tags.remove(open_file.path)
+
+        return tags
+
 @dataclass
 class ModelConfig:
     name: str
