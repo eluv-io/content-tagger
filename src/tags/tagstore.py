@@ -174,35 +174,14 @@ class FilesystemTagStore:
         
         return job_ids
 
-    def get_tags_by_source(self, job_id: str, source: str) -> list[Tag]:
+    def list_tagged_sources(self) -> list[str]:
         """
-        Get tags for a specific job and source
+        List all sources where author is "tagger" from any job
         """
-        tags_path = self._get_tags_path(job_id, source)
-        
-        if not os.path.exists(tags_path):
-            return []
-        
-        try:
-            with open(tags_path, 'r') as f:
-                tags_data = json.load(f)
-                return [Tag(**tag_data) for tag_data in tags_data]
-        except Exception:
-            return []
 
-    def list_sources(self, job_id: str) -> list[str]:
-        """
-        List all available sources for a job
-        """
-        job_dir = self._get_job_dir(job_id)
-        
-        if not os.path.exists(job_dir):
-            return []
-        
-        sources = []
-        for filename in os.listdir(job_dir):
-            if filename.endswith('.json') and filename != 'jobmetadata.json':
-                source = filename[:-5]  # Remove .json extension
-                sources.append(source)
-        
-        return sources
+        tagged_sources = set()
+
+        for job_id in self.get_jobs(auth="tagger"):
+            tagged_sources |= {tag.source for tag in self.get_tags(job_id)}
+
+        return list(tagged_sources)
