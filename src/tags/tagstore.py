@@ -174,14 +174,16 @@ class FilesystemTagStore:
         
         return job_ids
 
-    def list_tagged_sources(self) -> list[str]:
+    def list_tagged_sources(self, qhit: str) -> list[str]:
         """
         List all sources where author is "tagger" from any job
         """
 
         tagged_sources = set()
 
-        for job_id in self.get_jobs(auth="tagger"):
+        jobids = self.get_jobs(qhit=qhit, auth="tagger")
+
+        for job_id in jobids:
             tagged_sources |= {tag.source for tag in self.get_tags(job_id)}
 
         return list(tagged_sources)

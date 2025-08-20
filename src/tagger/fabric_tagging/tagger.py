@@ -10,11 +10,12 @@ from requests import HTTPError
 
 from src.tagger.model_containers.containers import ContainerRegistry
 from src.tagger.system_tagging.resource_manager import SystemTagger
+from src.tagger.fabric_tagging.types import Job, JobArgs, JobStatus, JobState, TaggerConfig, JobStore, JobID
 from src.common.content import Content
 from src.api.tagging.format import TagArgs, ImageTagArgs
 from src.common.errors import MissingResourceError
-from src.fabric.fetch_video import download_stream
-from src.fabric.fetch_assets import fetch_assets
+from src.fetch.fetch_video import download_stream
+from src.fetch.fetch_assets import fetch_assets
 
 
 class FabricTagger:
