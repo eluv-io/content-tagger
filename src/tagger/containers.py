@@ -33,7 +33,7 @@ class TagContainer:
 
     def start(
         self, 
-        gpuidx: int,
+        gpuidx: int | None,
     ) -> None:
 
         volumes = [
@@ -130,7 +130,7 @@ class TagContainer:
         except (psutil.NoSuchProcess, psutil.AccessDenied, AttributeError):
             # If we can't get process info, assume all files might be in use
             return []
-
+        
 @dataclass
 class ModelConfig:
     name: str
@@ -140,7 +140,7 @@ class ModelConfig:
 
 @dataclass
 class RegistryConfig:
-    registry: dict[str, ModelConfig]
+    modconfigs: dict[str, ModelConfig]
     logspath: str
     tagspath: str
     cachepath: str

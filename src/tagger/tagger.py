@@ -304,7 +304,7 @@ class FabricTagger:
                         logger.error(f"Error stopping job {job.get_id()}: {e}")
 
     def _job_watcher(self) -> None:
-        while True:
+        while not self.shutdown_signal.is_set():
             try:
                 with self.storelock:
                     self._check_jobs()

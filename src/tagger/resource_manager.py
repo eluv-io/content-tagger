@@ -68,9 +68,6 @@ class SystemTagger:
             cfg: sysConfig
 
     ):
-
-        self.pclient = podman.PodmanClient()
-
         self.sys_config = cfg
 
         self.resource_lock = threading.Lock()
@@ -117,6 +114,10 @@ class SystemTagger:
             self.cond.notify_all()
 
         return job_id
+
+    def shutdown(self) -> None:
+        self.exit.set()
+        self._terminate_containers()
 
     def _can_start(self, jobreqs: SystemResources, sys_resources: SystemResources) -> bool:
 
@@ -172,7 +173,7 @@ class SystemTagger:
                 if len(cj.gpus_used) > 1:
                     # TODO: implement
                     raise NotImplementedError("Multi-GPU tagging for one container is not implemented yet.")
-                cj.container.start(self.pclient, cj.gpus_used[0] if cj.gpus_used else None)
+                cj.container.start(cj.gpus_used[0] if cj.gpus_used else None)
             except Exception as e:
                 error = e
 
@@ -280,6 +281,11 @@ class SystemTagger:
                         self._stop_job(jobid, "Completed")
                     logger.info(f"Job {jobid} completed")
             time.sleep(2)
+
+    def _terminate_containers(self):
+        for job in self.jobs.values():
+            if job.container.is_running():
+                job.container.stop()
 
     def _clear_stopped_jobs(self) -> None:
         # clean the queue of stopped jobs
