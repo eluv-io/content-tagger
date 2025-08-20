@@ -99,24 +99,21 @@ class TagContainer:
 
         tags = os.listdir(self.cfg.tagspath)
 
-        if not self.is_running():
-            return tags
+        pid = None
+        if self.is_running():
+            try:
+                container_info = self.container.inspect()
+                pid = container_info.get("State", {}).get("Pid")
+            except Exception as e:
+                logger.error(f"Error getting container PID: {e}")
 
-        assert self.container is not None
-
-        # Get the container's main process PID
-        container_info = self.container.inspect()
-        pid = container_info.get("State", {}).get("Pid")
-        
-        if not pid:
-            return tags
-
-        # Get the process and its open files
-        process = psutil.Process(pid)
-        for open_file in process.open_files():
-            if open_file.path in tags:
-                # TODO: check that it's full path.
-                tags.remove(open_file.path)
+        if pid:
+            # Get the process and its open files
+            process = psutil.Process(pid)
+            for open_file in process.open_files():
+                if open_file.path in tags:
+                    # TODO: check that it's full path.
+                    tags.remove(open_file.path)
 
         out = []
         for tag in tags:
