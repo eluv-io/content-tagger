@@ -41,7 +41,8 @@ def fetcher_config(temp_dir: str) -> FetcherConfig:
     
     return FetcherConfig(
         max_downloads=2,
-        parts_path=parts_path
+        parts_path=parts_path,
+        author="tagger"
     )
 
 
@@ -105,7 +106,7 @@ def test_download_with_replace_true(
         stream_name="video",
         start_time=0,
         end_time=60,
-        replace_track="track"
+        preserve_track="track"
     )
     
     # Download once
@@ -147,7 +148,7 @@ def test_download_with_replace_true(
         stream_name="video",
         start_time=0,
         end_time=60,
-        replace_track="track2"
+        preserve_track="track2"
     )
 
     # shouldn't replace track2
@@ -155,12 +156,12 @@ def test_download_with_replace_true(
     assert len(result3.successful_sources) == 2
     assert len(result3.failed) == 0
 
-    # don't set replace_track
+    # don't set preserve_track
     req = VodDownloadRequest(
         stream_name="video",
         start_time=0,
         end_time=60,
-        replace_track=""
+        preserve_track=""
     )
 
     result4 = fetcher.download_stream(vod_content, req)
@@ -172,7 +173,7 @@ def test_download_with_replace_true(
         stream_name="stereo",
         start_time=0,
         end_time=60,
-        replace_track="track"
+        preserve_track="track"
     )
 
     try:
@@ -182,16 +183,16 @@ def test_download_with_replace_true(
     except MissingResourceError:
         pass
 
-def test_fetch_assets_with_replace_track(
+def test_fetch_assets_with_preserve_track(
     fetcher: Fetcher, 
-    vod_content: Content
+    assets_content: Content
 ):
     req1 = AssetDownloadRequest(
         assets=None,
-        replace_track=""
+        preserve_track=""
     )
     
-    result1 = fetcher.fetch_assets(vod_content, req1)
+    result1 = fetcher.fetch_assets(assets_content, req1)
     assert len(result1.successful_sources) > 0, "Should have downloaded some assets"
     assert len(result1.failed) == 0, "Should have no failed downloads initially"
     
@@ -200,10 +201,10 @@ def test_fetch_assets_with_replace_track(
     
     req2 = AssetDownloadRequest(
         assets=selected_assets,
-        replace_track=""
+        preserve_track=""
     )
     
-    result2 = fetcher.fetch_assets(vod_content, req2)
+    result2 = fetcher.fetch_assets(assets_content, req2)
     assert len(result2.successful_sources) == len(selected_assets), "Should return all requested assets"
     assert len(result2.failed) == 0, "Should have no failed downloads"
     
@@ -211,16 +212,16 @@ def test_fetch_assets_with_replace_track(
     returned_asset_names = [source.name for source in result2.successful_sources]
     assert set(returned_asset_names) == set(selected_assets), "Returned assets should match requested assets"
     
-    # Third test: Add tags for some assets and test replace_track functionality
+    # Third test: Add tags for some assets and test preserve_track functionality
     tagstore = fetcher.tagstore
     
     jobid = "asset_test_job"
     job = Job(
         id=jobid,
-        qhit=vod_content.qhit,
-        stream="image",
+        qhit=assets_content.qhit,
+        stream="assets",
         timestamp=time.time(),
-        author="tagger",
+        author=fetcher.config.author,
         track="asset_track"
     )
     tagstore.start_job(job)
@@ -243,48 +244,75 @@ def test_fetch_assets_with_replace_track(
     
     req3 = AssetDownloadRequest(
         assets=selected_assets,
-        replace_track="asset_track"
+        preserve_track="asset_track"
     )
     
-    result3 = fetcher.fetch_assets(vod_content, req3)
+    result3 = fetcher.fetch_assets(assets_content, req3)
     returned_asset_names_after_tagging = [source.name for source in result3.successful_sources]
     
     for tagged_asset in assets_to_tag:
-        assert tagged_asset not in returned_asset_names_after_tagging, f"Tagged asset {tagged_asset} should be excluded when replace_track is set"
+        assert tagged_asset not in returned_asset_names_after_tagging, f"Tagged asset {tagged_asset} should be excluded when preserve_track is set"
     
     # Should still return untagged assets
     untagged_assets = [asset for asset in selected_assets if asset not in assets_to_tag]
     for untagged_asset in untagged_assets:
         assert untagged_asset in returned_asset_names_after_tagging, f"Untagged asset {untagged_asset} should still be returned"
     
-    # Fifth test: fetch assets with different replace_track - should return all assets
+    # Fifth test: fetch assets with different preserve_track - should return all assets
     req4 = AssetDownloadRequest(
         assets=selected_assets,
-        replace_track="different_track"
+        preserve_track="different_track"
     )
-    
-    result4 = fetcher.fetch_assets(vod_content, req4)
+
+    result4 = fetcher.fetch_assets(assets_content, req4)
     returned_asset_names_different_track = [source.name for source in result4.successful_sources]
-    assert set(returned_asset_names_different_track) == set(selected_assets), "Should return all assets when replace_track doesn't match"
+    assert set(returned_asset_names_different_track) == set(selected_assets), "Should return all assets when preserve_track doesn't match"
     
     # Upload tags to selected tags with author="user" and track="another track", check that downloading again
     # returns all the selected assets (tagger author is special)
 
     new_job = Job(
         id="asset_test_job_2",
-        qhit=vod_content.qhit,
-        stream="image",
+        qhit=assets_content.qhit,
+        stream="assets",
         timestamp=time.time(),
         author="user",
         track="another_track"
     )
 
+    tagstore.start_job(new_job)
+
+    newtags = []
     for asset in selected_assets:
         tag = Tag(
             start_time=0,
             end_time=1,
-            text="test asset tag",
+            text="asset_track",
             additional_info={},
             source=asset,
-            jobid=jobid
+            jobid=new_job.id
         )
+        newtags.append(tag)
+    tagstore.upload_tags(newtags, new_job.id)
+
+    # Verify that the tags were uploaded correctly
+    uploaded_tags = tagstore.get_tags(new_job.id)
+    assert len(uploaded_tags) == len(newtags), "Not all tags were uploaded"
+    for tag in newtags:
+        assert tag in uploaded_tags, f"Tag {tag} was not found in uploaded tags"
+
+    req5 = AssetDownloadRequest(
+        assets=selected_assets,
+        preserve_track="asset_track"
+    )
+
+    result5 = fetcher.fetch_assets(assets_content, req5)
+    returned_asset_names_after_tagging = [source.name for source in result5.successful_sources]
+
+    assert len(returned_asset_names_after_tagging) >= 1
+
+    for assetname in returned_asset_names_after_tagging:
+        assert assetname in selected_assets, f"Asset {assetname} should be in the selected assets after tagging"
+        # tagged before
+        assert assetname not in assets_to_tag
+        assert assetname in untagged_assets
