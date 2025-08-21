@@ -434,3 +434,30 @@ def test_tag_appending(tag_store, sample_job):
     all_tags = tag_store.find_tags(job_id=sample_job.id, sources=["llava"])
     assert len(all_tags) == 2
     assert {tag.text for tag in all_tags} == {"person", "car"}
+
+
+def test_source_with_slash_encoding(tag_store, sample_job):
+    """Test that sources with slashes are properly base64 encoded"""
+    tag_store.start_job(sample_job)
+    
+    # Create tags with sources containing slashes
+    tags_with_slashes = [
+        Tag(100, 200, "person", {}, "video/segment_1", sample_job.id),
+        Tag(300, 400, "car", {}, "audio/track_2", sample_job.id),
+        Tag(500, 600, "building", {}, "normal_source", sample_job.id),  # No slash
+    ]
+    
+    tag_store.upload_tags(tags_with_slashes, sample_job.id)
+    
+    # Verify we can retrieve all tags correctly
+    all_tags = tag_store.get_tags(sample_job.id)
+    assert len(all_tags) == 3
+    
+    # Verify original source names are preserved in the tag data
+    sources = {tag.source for tag in all_tags}
+    assert sources == {"video/segment_1", "audio/track_2", "normal_source"}
+    
+    # Test filtering by source names with slashes works
+    video_tags = tag_store.find_tags(sources=["video/segment_1"])
+    assert len(video_tags) == 1
+    assert video_tags[0].text == "person"

@@ -1,6 +1,7 @@
 from dataclasses import dataclass, asdict
 import json
 import os
+import base64
 from typing import List
 
 @dataclass
@@ -26,6 +27,22 @@ class FilesystemTagStore:
         self.base_path = base_path
         os.makedirs(base_path, exist_ok=True)
 
+    def _encode_source_for_filename(self, source: str) -> str:
+        """Encode source name for safe filesystem usage"""
+        if '/' in source:
+            # Base64 encode sources with slashes
+            encoded = base64.b64encode(source.encode('utf-8')).decode('ascii')
+            return f"b64_{encoded}"
+        return source
+
+    def _decode_source_from_filename(self, filename: str) -> str:
+        """Decode source name from filesystem filename"""
+        if filename.startswith('b64_'):
+            # Remove b64_ prefix and decode
+            encoded = filename[4:]  # Remove 'b64_' prefix
+            return base64.b64decode(encoded.encode('ascii')).decode('utf-8')
+        return filename
+
     def _get_job_dir(self, job_id: str) -> str:
         """Get the directory path for a specific job"""
         return os.path.join(self.base_path, job_id)
@@ -36,7 +53,8 @@ class FilesystemTagStore:
 
     def _get_tags_path(self, job_id: str, source: str) -> str:
         """Get the path to tags file for a specific source"""
-        return os.path.join(self._get_job_dir(job_id), f"{source}.json")
+        encoded_source = self._encode_source_for_filename(source)
+        return os.path.join(self._get_job_dir(job_id), f"{encoded_source}.json")
 
     def start_job(self, job: Job) -> None:
         """
