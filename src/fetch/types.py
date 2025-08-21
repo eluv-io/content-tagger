@@ -22,7 +22,7 @@ class VodDownloadRequest:
     stream_name: str
     start_time: int | None
     end_time: int | None
-    replace_track: str
+    preserve_track: str
 
 @dataclass
 class StreamMetadata:
@@ -34,4 +34,4 @@ class StreamMetadata:
 @dataclass
 class AssetDownloadRequest:
     assets: list[str] | None
-    replace_track: str
+    preserve_track: str

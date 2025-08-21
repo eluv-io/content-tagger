@@ -286,9 +286,17 @@ class Fetcher:
         successful_sources = []
         failed_parts = []
 
+        tagged_parts = []
+        if req.preserve_track:
+            existing_tags = self.tagstore.find_tags(author=self.config.author, qhit=q.qhit, stream=req.stream_name, track=req.preserve_track)
+            tagged_parts = [tag.source for tag in existing_tags]
+
         for idx, part_hash in enumerate(stream_metadata.parts):
             if exit_event is not None and exit_event.is_set():
                 break
+
+            if part_hash in tagged_parts:
+                continue
 
             pstart = idx * stream_metadata.part_duration
             pend = (idx + 1) * stream_metadata.part_duration
@@ -343,11 +351,6 @@ class Fetcher:
 
         shutil.rmtree(tmp_path, ignore_errors=True)
 
-        if req.replace_track:
-            tagged_parts = self.tagstore.list_tagged_sources(q.qhit, track=req.replace_track, stream=req.stream_name)
-            successful_sources = [source for source in successful_sources if source.name not in tagged_parts]
-            failed_parts = [part for part in failed_parts if part not in tagged_parts]
-
         return DownloadResult(
             successful_sources=successful_sources, failed=failed_parts
         )
@@ -384,6 +387,9 @@ class Fetcher:
             req: AssetDownloadRequest
     ) -> DownloadResult:
         output_path = os.path.join(self.config.parts_path, q.qhit, "assets")
+        if not os.path.exists(output_path):
+            os.makedirs(output_path)
+
         if req.assets is None:
             assets_meta = q.content_object_metadata(metadata_subtree='assets')
             assets_meta = list(assets_meta.values())
@@ -399,16 +405,21 @@ class Fetcher:
 
         total_assets = len(assets)
         assets = [asset for asset in assets if get_file_type(asset) == "image"]
+        logger.info(f"Found {len(assets)} image assets out of {total_assets} assets for {q.qhit}")
         if len(assets) == 0:
             raise MissingResourceError(f"No image assets found in {q.qhit}")
-        logger.info(f"Found {len(assets)} image assets out of {total_assets} assets for {q.qhit}")
-        if not os.path.exists(output_path):
-            os.makedirs(output_path)
+
+        tagged_assets = []
+        if req.preserve_track:
+            existing_tags = self.tagstore.find_tags(author=self.config.author, qhit=q.qhit, stream="assets", track=req.preserve_track)
+            tagged_assets = [tag.source for tag in existing_tags]
+
+        assets = [asset for asset in assets if asset not in tagged_assets]
+
         to_download = []
         for asset in assets:
             asset_id = encode_path(asset)
-            if req.replace_track or not os.path.exists(os.path.join(output_path, asset_id)):
-                to_download.append(asset)
+            to_download.append(asset)
         if len(to_download) != len(set(to_download)):
             raise ValueError(f"Duplicate assets found for {q.qhit}")
         if len(to_download) < len(assets):
