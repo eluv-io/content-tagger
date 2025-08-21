@@ -46,6 +46,7 @@ class RunConfig:
 class JobArgs:
     q: Content
     feature: str
+    replace: bool
     runconfig: RunConfig
     start_time: int | None
     end_time: int | None
@@ -57,6 +58,7 @@ class Job:
     taghandle: str
     lock: threading.Lock
     stopevent: threading.Event
+    uploaded_sources: list[str]
     container: TagContainer | None
 
     def get_id(self) -> 'JobID':

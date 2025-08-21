@@ -1,3 +1,4 @@
+import json
 import threading
 from collections import defaultdict
 import time
@@ -5,14 +6,15 @@ import uuid
 
 from loguru import logger
 
+from src.fetch.types import VodDownloadRequest
 from src.tagger.model_containers.containers import ContainerRegistry
 from src.tagger.system_tagging.resource_manager import SystemTagger
 from src.tagger.fabric_tagging.types import Job, JobArgs, JobStatus, JobState, JobStore, JobID
 from src.common.content import Content
 from src.api.tagging.format import TagArgs, ImageTagArgs
 from src.common.errors import MissingResourceError
-from src.fetch.fetch_video import Fetcher
-from src.tags.tagstore import FilesystemTagStore, Job as TagJob
+from src.fetch.fetch_video import Fetcher, VodDownloadRequest
+from src.tags.tagstore import FilesystemTagStore, Job as TagJob, Tag
 
 class FabricTagger:
 
@@ -79,6 +81,7 @@ class FabricTagger:
                 args=JobArgs(
                     q=q,
                     feature=feature,
+                    replace=args.replace,
                     runconfig=args.features[feature],
                     start_time=args.start_time,
                     end_time=args.end_time,
@@ -87,7 +90,8 @@ class FabricTagger:
                 taghandle="",
                 lock=threading.Lock(),
                 stopevent=threading.Event(),
-                container=None
+                container=None,
+                uploaded_sources=[]
             )
             err = self._start_job(job)
             if err:
@@ -130,7 +134,7 @@ class FabricTagger:
         jobid = job.get_id()
 
         tsjob = TagJob(
-            id=str(uuid.uuid4()),
+            id=job.taghandle,
             qhit=job.args.q.qhit,
             feature=job.args.feature,
             stream=job.args.runconfig.stream,
@@ -141,9 +145,15 @@ class FabricTagger:
         self.tagstore.start_job(tsjob)
 
         # 1. download
+        dl_req = VodDownloadRequest(
+            stream_name=job.args.runconfig.stream,
+            start_time=job.args.start_time,
+            end_time=job.args.end_time,
+            replace=job.args.replace,
+        )
         job.status.status = "Fetching content"
         try:
-            media_files, failed = self._download_content(job, start_time=job.args.start_time, end_time=job.args.end_time)
+            dl_res = self.fetcher.download_stream(job.args.q, dl_req, exit_event=job.stopevent)
         except Exception as e:
             self._stop_job(jobid, "Failed", e)
             return
@@ -151,7 +161,11 @@ class FabricTagger:
         if job.stopevent.is_set():
             return
 
-        job.status.failed += failed
+        dl_res = self.fetcher.download_stream(job.args.q, dl_req, exit_event=job.stopevent)
+
+        job.status.failed += dl_res.failed_part_hashes
+
+        media_files = [s.filepath for s in dl_res.successful_sources]
 
         # 2. tag
         with self.storelock: # TODO: better way?
@@ -240,6 +254,7 @@ class FabricTagger:
                 logger.exception(f"Unexpected error in job watcher: {e}")
             time.sleep(0.2)
 
+    # TODO: might miss tags at the end of the job
     def _check_jobs(self) -> None:
         for jobid, job in self.jobstore.active_jobs.items():
             if not job.status == "Tagging content":
@@ -247,13 +262,33 @@ class FabricTagger:
 
             self._upload_tags(job)
 
-    def cleanup(self) -> None:
-        self.shutdown_signal.set()
-        self.manager.shutdown()
-
-    def _copy_new_files(
+    def _upload_tags(
             self, 
             job: Job,
         ) -> None:
-        
-                
+        if job.container is None:
+            return
+        outputs = job.container.tags()
+        outputs = [out for out in outputs if out.source not in job.uploaded_sources]
+
+        tags2upload = []
+        for out in outputs:
+            with open(out.filepath, 'r') as f:
+                tagdata = json.load(f)
+            tags2upload.append(
+                Tag(
+                    start_time=tagdata.get("start_time"),
+                    end_time=tagdata.get("end_time"),
+                    text=tagdata.get("text"),
+                    additional_info={},
+                    source=out.source,
+                    jobid=job.taghandle,
+                )
+            )
+
+        job.uploaded_sources.extend(out.source for out in outputs)
+        self.tagstore.upload_tags(tags2upload, job.taghandle)
+
+    def cleanup(self) -> None:
+        self.shutdown_signal.set()
+        self.manager.shutdown()
