@@ -5,7 +5,7 @@ import time
 import threading
 
 from src.common.content import Content
-from src.tagger.model_containers.containers import TagContainer
+from src.tag_containers.containers import TagContainer
 
 JobState = Literal[
     "Starting",

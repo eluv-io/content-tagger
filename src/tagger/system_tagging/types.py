@@ -2,7 +2,7 @@ from typing import Literal
 from dataclasses import dataclass
 import threading
 
-from src.tagger.model_containers.containers import TagContainer
+from src.tag_containers.containers import TagContainer
 
 SystemResources = dict[str, int]
 

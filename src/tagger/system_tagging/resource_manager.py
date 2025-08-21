@@ -7,7 +7,7 @@ import threading
 from loguru import logger
 
 from src.common.errors import MissingResourceError
-from src.tagger.model_containers.containers import TagContainer
+from src.tag_containers.containers import TagContainer
 from src.tagger.system_tagging.types import *
 
 class SystemTagger:

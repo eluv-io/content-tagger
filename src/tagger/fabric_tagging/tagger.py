@@ -2,12 +2,11 @@ import json
 import threading
 from collections import defaultdict
 import time
-import uuid
 
 from loguru import logger
 
 from src.fetch.types import VodDownloadRequest
-from src.tagger.model_containers.containers import ContainerRegistry
+from src.tag_containers.containers import ContainerRegistry
 from src.tagger.system_tagging.resource_manager import SystemTagger
 from src.tagger.fabric_tagging.types import Job, JobArgs, JobStatus, JobState, JobStore, JobID
 from src.common.content import Content
