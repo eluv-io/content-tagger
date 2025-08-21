@@ -4,6 +4,7 @@ from dataclasses import dataclass
 class FetcherConfig:
     max_downloads: int
     parts_path: str
+    author: str
 
 @dataclass
 class Source:
@@ -14,7 +15,7 @@ class Source:
 @dataclass
 class DownloadResult:
     successful_sources: list[Source]
-    failed_part_hashes: list[str]
+    failed: list[str]
 
 @dataclass
 class VodDownloadRequest:
@@ -29,3 +30,8 @@ class StreamMetadata:
     part_duration: float
     fps: float | None
     codec_type: str
+
+@dataclass
+class AssetDownloadRequest:
+    assets: list[str] | None
+    replace_track: str

@@ -7,7 +7,7 @@ from typing import Generator
 import time
 
 from src.fetch.fetch_video import Fetcher
-from src.fetch.types import FetcherConfig, VodDownloadRequest
+from src.fetch.types import FetcherConfig, VodDownloadRequest, AssetDownloadRequest
 from src.tags.tagstore import FilesystemTagStore, Tag, Job
 from src.common.content import Content
 from src.common.errors import MissingResourceError
@@ -17,6 +17,7 @@ load_dotenv()
 
 VOD_QHIT = "iq__3C58dDYxsn5KKSWGYrfYr44ykJRm"
 LEGACY_VOD_QHIT = "hq__3B47zhoJbyiwqWUq8DNJJQXHg1GZitfQBXpsGkV2tQLpHzp2McAk7xAFJwKSJ99mgjzZjqRdHU"
+ASSETS_QHIT = "hq__3B47zhoJbyiwqWUq8DNJJQXHg1GZitfQBXpsGkV2tQLpHzp2McAk7xAFJwKSJ99mgjzZjqRdHU"
 
 @pytest.fixture
 def temp_dir() -> Generator[str, None, None]:
@@ -52,10 +53,10 @@ def fetcher(fetcher_config: FetcherConfig, tag_store: FilesystemTagStore) -> Fet
 
 @pytest.fixture
 def legacy_vod_content() -> Content:
-    auth_token = os.getenv("LEGACY_VOD_AUTH")
+    auth_token = os.getenv("TEST_AUTH")
     
     if not auth_token:
-        pytest.skip("LEGACY_VOD_AUTH not set in environment")
+        pytest.skip("TEST_AUTH not set in environment")
     
     try:
         return Content(qhit=LEGACY_VOD_QHIT, auth=auth_token)
@@ -65,15 +66,28 @@ def legacy_vod_content() -> Content:
 
 @pytest.fixture
 def vod_content() -> Content:
-    auth_token = os.getenv("VOD_AUTH")
+    auth_token = os.getenv("TEST_AUTH")
     
     if not auth_token:
-        pytest.skip("VOD_AUTH not set in environment")
+        pytest.skip("TEST_AUTH not set in environment")
     
     try:
         return Content(qhit=VOD_QHIT, auth=auth_token)
     except Exception as e:
         pytest.skip(f"Failed to create modern VOD content: {e}")
+
+@pytest.fixture
+def assets_content() -> Content:
+    auth_token = os.getenv("TEST_AUTH")
+
+    if not auth_token:
+        pytest.skip("TEST_AUTH not set in environment")
+
+    try:
+        return Content(qhit=ASSETS_QHIT, auth=auth_token)
+    except Exception as e:
+        pytest.skip(f"Failed to create assets content: {e}")
+
 
 @pytest.mark.parametrize("content_fixture", ["vod_content", "legacy_vod_content"])
 def test_download_with_replace_true(
@@ -97,8 +111,8 @@ def test_download_with_replace_true(
     # Download once
     result1 = fetcher.download_stream(vod_content, req)
     assert len(result1.successful_sources) == 2
-    assert len(result1.failed_part_hashes) == 0
-    
+    assert len(result1.failed) == 0
+
     tagstore = fetcher.tagstore
 
     jobid = "abc"
@@ -127,7 +141,7 @@ def test_download_with_replace_true(
 
     result2 = fetcher.download_stream(vod_content, req)
     assert len(result2.successful_sources) == 1
-    assert len(result2.failed_part_hashes) == 0
+    assert len(result2.failed) == 0
 
     req = VodDownloadRequest(
         stream_name="video",
@@ -139,7 +153,7 @@ def test_download_with_replace_true(
     # shouldn't replace track2
     result3 = fetcher.download_stream(vod_content, req)
     assert len(result3.successful_sources) == 2
-    assert len(result3.failed_part_hashes) == 0
+    assert len(result3.failed) == 0
 
     # don't set replace_track
     req = VodDownloadRequest(
@@ -151,7 +165,7 @@ def test_download_with_replace_true(
 
     result4 = fetcher.download_stream(vod_content, req)
     assert len(result4.successful_sources) == 2
-    assert len(result4.failed_part_hashes) == 0
+    assert len(result4.failed) == 0
 
     # audio instead
     req = VodDownloadRequest(
@@ -164,6 +178,113 @@ def test_download_with_replace_true(
     try:
         result5 = fetcher.download_stream(vod_content, req)
         assert len(result5.successful_sources) == 2
-        assert len(result5.failed_part_hashes) == 0
+        assert len(result5.failed) == 0
     except MissingResourceError:
         pass
+
+def test_fetch_assets_with_replace_track(
+    fetcher: Fetcher, 
+    vod_content: Content
+):
+    req1 = AssetDownloadRequest(
+        assets=None,
+        replace_track=""
+    )
+    
+    result1 = fetcher.fetch_assets(vod_content, req1)
+    assert len(result1.successful_sources) > 0, "Should have downloaded some assets"
+    assert len(result1.failed) == 0, "Should have no failed downloads initially"
+    
+    all_asset_names = [source.name for source in result1.successful_sources]
+    selected_assets = all_asset_names[:3]
+    
+    req2 = AssetDownloadRequest(
+        assets=selected_assets,
+        replace_track=""
+    )
+    
+    result2 = fetcher.fetch_assets(vod_content, req2)
+    assert len(result2.successful_sources) == len(selected_assets), "Should return all requested assets"
+    assert len(result2.failed) == 0, "Should have no failed downloads"
+    
+    # Verify the returned assets match what we requested
+    returned_asset_names = [source.name for source in result2.successful_sources]
+    assert set(returned_asset_names) == set(selected_assets), "Returned assets should match requested assets"
+    
+    # Third test: Add tags for some assets and test replace_track functionality
+    tagstore = fetcher.tagstore
+    
+    jobid = "asset_test_job"
+    job = Job(
+        id=jobid,
+        qhit=vod_content.qhit,
+        stream="image",
+        timestamp=time.time(),
+        author="tagger",
+        track="asset_track"
+    )
+    tagstore.start_job(job)
+    
+    # Tag the first two assets
+    assets_to_tag = selected_assets[:2] if len(selected_assets) >= 2 else selected_assets
+    tags = []
+    for asset_name in assets_to_tag:
+        tag = Tag(
+            start_time=0,
+            end_time=1,
+            text="test asset tag",
+            additional_info={},
+            source=asset_name,
+            jobid=jobid
+        )
+        tags.append(tag)
+    
+    tagstore.upload_tags(tags, jobid)
+    
+    req3 = AssetDownloadRequest(
+        assets=selected_assets,
+        replace_track="asset_track"
+    )
+    
+    result3 = fetcher.fetch_assets(vod_content, req3)
+    returned_asset_names_after_tagging = [source.name for source in result3.successful_sources]
+    
+    for tagged_asset in assets_to_tag:
+        assert tagged_asset not in returned_asset_names_after_tagging, f"Tagged asset {tagged_asset} should be excluded when replace_track is set"
+    
+    # Should still return untagged assets
+    untagged_assets = [asset for asset in selected_assets if asset not in assets_to_tag]
+    for untagged_asset in untagged_assets:
+        assert untagged_asset in returned_asset_names_after_tagging, f"Untagged asset {untagged_asset} should still be returned"
+    
+    # Fifth test: fetch assets with different replace_track - should return all assets
+    req4 = AssetDownloadRequest(
+        assets=selected_assets,
+        replace_track="different_track"
+    )
+    
+    result4 = fetcher.fetch_assets(vod_content, req4)
+    returned_asset_names_different_track = [source.name for source in result4.successful_sources]
+    assert set(returned_asset_names_different_track) == set(selected_assets), "Should return all assets when replace_track doesn't match"
+    
+    # Upload tags to selected tags with author="user" and track="another track", check that downloading again
+    # returns all the selected assets (tagger author is special)
+
+    new_job = Job(
+        id="asset_test_job_2",
+        qhit=vod_content.qhit,
+        stream="image",
+        timestamp=time.time(),
+        author="user",
+        track="another_track"
+    )
+
+    for asset in selected_assets:
+        tag = Tag(
+            start_time=0,
+            end_time=1,
+            text="test asset tag",
+            additional_info={},
+            source=asset,
+            jobid=jobid
+        )

@@ -1,4 +1,5 @@
 from collections import defaultdict
+import timeit
 from requests.exceptions import HTTPError
 import os
 import threading
@@ -6,11 +7,13 @@ import tempfile
 import shutil
 from copy import deepcopy
 from common_ml.video_processing import unfrag_video
+from common_ml.utils.files import get_file_type, encode_path
+from common_ml.utils.metrics import timeit
 from loguru import logger
 
 from src.common.content import Content
 from src.common.errors import MissingResourceError, BadRequestError
-from src.fetch.types import VodDownloadRequest, Source, StreamMetadata
+from src.fetch.types import AssetDownloadRequest, VodDownloadRequest, Source, StreamMetadata
 from src.fetch.types import FetcherConfig, DownloadResult
 from src.tags.tagstore import FilesystemTagStore
 
@@ -54,10 +57,10 @@ class Fetcher:
         if req.end_time is None:
             req.end_time = float("inf")
 
-        stream_metadata = self.fetch_stream_metadata(q, req.stream_name)
+        stream_metadata = self._fetch_stream_metadata(q, req.stream_name)
         return self._download_parts(q, req, stream_metadata, exit_event)
 
-    def fetch_stream_metadata(self, q: Content, stream_name: str) -> StreamMetadata:
+    def _fetch_stream_metadata(self, q: Content, stream_name: str) -> StreamMetadata:
         """Fetches metadata for a stream based on content type."""
         if self._is_live(q):
             return self._fetch_livestream_metadata(q, stream_name)
@@ -274,11 +277,11 @@ class Fetcher:
             DownloadResult containing successful_sources and failed_part_hashes
         """
 
-        output_path = self.config.parts_path
-
-        tmp_path = tempfile.mkdtemp()
+        output_path = os.path.join(self.config.parts_path, q.qhit, req.stream_name)
         if not os.path.exists(output_path):
             os.makedirs(output_path)
+
+        tmp_path = tempfile.mkdtemp()
 
         successful_sources = []
         failed_parts = []
@@ -346,7 +349,7 @@ class Fetcher:
             failed_parts = [part for part in failed_parts if part not in tagged_parts]
 
         return DownloadResult(
-            successful_sources=successful_sources, failed_part_hashes=failed_parts
+            successful_sources=successful_sources, failed=failed_parts
         )
 
     def _is_live(self, q: Content) -> bool:
@@ -374,3 +377,52 @@ class Fetcher:
             num, den = rat.split("/")
             return float(num) / float(den)
         return float(rat)
+    
+    def fetch_assets(
+            self, 
+            q: Content, 
+            req: AssetDownloadRequest
+    ) -> DownloadResult:
+        output_path = os.path.join(self.config.parts_path, q.qhit, "assets")
+        if req.assets is None:
+            assets_meta = q.content_object_metadata(metadata_subtree='assets')
+            assets_meta = list(assets_meta.values())
+            assets = []
+            for ameta in assets_meta:
+                filepath = ameta.get("file")["/"]
+                assert filepath.startswith("./files/")
+                # strip leading term
+                filepath = filepath[8:]
+                assets.append(filepath)
+        else:
+            assets = req.assets
+
+        total_assets = len(assets)
+        assets = [asset for asset in assets if get_file_type(asset) == "image"]
+        if len(assets) == 0:
+            raise MissingResourceError(f"No image assets found in {q.qhit}")
+        logger.info(f"Found {len(assets)} image assets out of {total_assets} assets for {q.qhit}")
+        if not os.path.exists(output_path):
+            os.makedirs(output_path)
+        to_download = []
+        for asset in assets:
+            asset_id = encode_path(asset)
+            if req.replace_track or not os.path.exists(os.path.join(output_path, asset_id)):
+                to_download.append(asset)
+        if len(to_download) != len(set(to_download)):
+            raise ValueError(f"Duplicate assets found for {q.qhit}")
+        if len(to_download) < len(assets):
+            logger.info(f"{len(assets) - len(to_download)} assets already retrieved for {q.qhit}")
+        logger.info(f"{len(to_download)} assets need to be downloaded for {q.qhit}")
+        new_assets = self._download_concurrent(q, to_download, output_path)
+        bad_assets = set(to_download) - set(new_assets)
+        assets = [asset for asset in assets if asset not in bad_assets]
+        successful_sources = [Source(name=asset, filepath=os.path.join(output_path, encode_path(asset)), offset=0) for asset in new_assets]
+        failed = list(bad_assets)
+        return DownloadResult(successful_sources=successful_sources, failed=failed)
+
+    def _download_concurrent(self, q: Content, files: list[str], output_path: str) -> list[str]:
+        file_jobs = [(asset, encode_path(asset)) for asset in files]
+        with timeit("Downloading assets"):
+            status = q.download_files(dest_path=output_path, file_jobs=file_jobs)
+        return [asset for (asset, _), error in zip(file_jobs, status) if error is None]
