@@ -9,7 +9,7 @@ class FetcherConfig:
 class Source:
     name: str
     filepath: str
-    offset: float | None
+    offset: float
 
 @dataclass
 class DownloadResult:
@@ -21,7 +21,7 @@ class VodDownloadRequest:
     stream_name: str
     start_time: int | None
     end_time: int | None
-    replace: bool
+    replace_track: str
 
 @dataclass
 class StreamMetadata:

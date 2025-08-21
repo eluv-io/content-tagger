@@ -16,7 +16,7 @@ class Job:
     id: str
     qhit: str
     stream: str | None
-    feature: str
+    track: str
     timestamp: float
     author: str
 
@@ -135,7 +135,7 @@ class FilesystemTagStore:
     def get_jobs(
         self,
         qhit: str | None = None,
-        feature: str | None = None, 
+        track: str | None = None, 
         stream: str | None = None,
         auth: str | None = None
     ) -> list[str]:
@@ -163,7 +163,7 @@ class FilesystemTagStore:
             # Apply filters
             if qhit is not None and job.qhit != qhit:
                 continue
-            if feature is not None and job.feature != feature:
+            if track is not None and job.track != track :
                 continue
             if stream is not None and job.stream != stream:
                 continue
@@ -174,14 +174,15 @@ class FilesystemTagStore:
         
         return job_ids
 
-    def list_tagged_sources(self, qhit: str) -> list[str]:
+    # TODO: better way of querying this than 3 args
+    def list_tagged_sources(self, qhit: str, track: str, stream: str) -> list[str]:
         """
         List all sources where author is "tagger" from any job
         """
 
         tagged_sources = set()
 
-        jobids = self.get_jobs(qhit=qhit, auth="tagger")
+        jobids = self.get_jobs(qhit=qhit, auth="tagger", track=track, stream=stream)
 
         for job_id in jobids:
             tagged_sources |= {tag.source for tag in self.get_tags(job_id)}

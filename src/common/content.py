@@ -14,11 +14,11 @@ class Content():
 
     def __init__(self, qhit: str, auth: str):
         client = ElvClient.from_configuration_url(
-            config["fabric"]["config_url"], static_token=auth)
+            config["hosts"]["config_url"], static_token=auth)
         
         parts_client = ElvClient.from_configuration_url(
-            config["fabric"]["parts_url"], static_token=auth)
-        
+            config["hosts"]["parts_url"], static_token=auth)
+
         # will raise HTTPError if auth is invalid or qhit is not found
         qinfo = client.content_object(**parse_qhit(qhit))
 

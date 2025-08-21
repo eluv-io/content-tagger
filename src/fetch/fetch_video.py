@@ -274,11 +274,6 @@ class Fetcher:
             DownloadResult containing successful_sources and failed_part_hashes
         """
 
-        stream_metadata = deepcopy(stream_metadata)
-
-        if not req.replace:
-            stream_metadata.parts = self._filter_parts(q, stream_metadata.parts)
-
         output_path = self.config.parts_path
 
         tmp_path = tempfile.mkdtemp()
@@ -308,7 +303,7 @@ class Fetcher:
             # Skip if file exists and not replacing
             if os.path.exists(save_path):
                 source = Source(
-                    name=filename,
+                    name=part_hash,
                     filepath=save_path,
                     offset=pstart,
                 )
@@ -327,7 +322,7 @@ class Fetcher:
                     shutil.move(tmpfile, save_path)
 
                 source = Source(
-                    name=filename,
+                    name=part_hash,
                     filepath=save_path,
                     offset=pstart,
                 )
@@ -344,13 +339,15 @@ class Fetcher:
                 continue
 
         shutil.rmtree(tmp_path, ignore_errors=True)
+
+        if req.replace_track:
+            tagged_parts = self.tagstore.list_tagged_sources(q.qhit, track=req.replace_track, stream=req.stream_name)
+            successful_sources = [source for source in successful_sources if source.name not in tagged_parts]
+            failed_parts = [part for part in failed_parts if part not in tagged_parts]
+
         return DownloadResult(
             successful_sources=successful_sources, failed_part_hashes=failed_parts
         )
-
-    def _filter_parts(self, q: Content, parts: list[str]) -> list[str]:
-        tagged_parts = self.tagstore.list_tagged_sources(q.qhit)
-        return [part for part in parts if part not in tagged_parts]
 
     def _is_live(self, q: Content) -> bool:
         """Check if content is a live stream."""
