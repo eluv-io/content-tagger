@@ -28,7 +28,7 @@ def sample_job():
         id="test-job-123",
         qhit="content-456",
         stream="video",
-        feature="llava",
+        track="llava",
         timestamp=time.time(),
         author="test-user"
     )
@@ -97,7 +97,7 @@ def test_start_job_creates_directory_and_metadata(tag_store, sample_job):
     assert metadata['id'] == sample_job.id
     assert metadata['qhit'] == sample_job.qhit
     assert metadata['stream'] == sample_job.stream
-    assert metadata['feature'] == sample_job.feature
+    assert metadata['track'] == sample_job.track
     assert metadata['author'] == sample_job.author
 
 
@@ -111,7 +111,7 @@ def test_get_job_returns_correct_job(tag_store, sample_job):
     assert retrieved_job.id == sample_job.id
     assert retrieved_job.qhit == sample_job.qhit
     assert retrieved_job.stream == sample_job.stream
-    assert retrieved_job.feature == sample_job.feature
+    assert retrieved_job.track == sample_job.track
     assert retrieved_job.author == sample_job.author
 
 
@@ -202,7 +202,7 @@ def test_get_tags_nonexistent_job_returns_empty(tag_store):
     assert tags == []
 
 
-def test_get_jobs_no_filters(tag_store, sample_job):
+def test_find_jobs_no_filters(tag_store, sample_job):
     """Test getting all jobs without filters"""
     tag_store.start_job(sample_job)
     
@@ -210,12 +210,12 @@ def test_get_jobs_no_filters(tag_store, sample_job):
     job2 = Job("job-456", "content-789", "audio", "asr", time.time(), "user2")
     tag_store.start_job(job2)
     
-    job_ids = tag_store.get_jobs()
+    job_ids = tag_store.find_jobs()
     
     assert set(job_ids) == {sample_job.id, job2.id}
 
 
-def test_get_jobs_with_qhit_filter(tag_store, sample_job):
+def test_find_jobs_with_qhit_filter(tag_store, sample_job):
     """Test getting jobs filtered by qhit"""
     tag_store.start_job(sample_job)
     
@@ -223,35 +223,35 @@ def test_get_jobs_with_qhit_filter(tag_store, sample_job):
     job2 = Job("job-456", "different-content", "audio", "asr", time.time(), "user2")
     tag_store.start_job(job2)
     
-    job_ids = tag_store.get_jobs(qhit=sample_job.qhit)
+    job_ids = tag_store.find_jobs(qhit=sample_job.qhit)
     
     assert job_ids == [sample_job.id]
 
 
-def test_get_jobs_with_feature_filter(tag_store, sample_job):
-    """Test getting jobs filtered by feature"""
+def test_find_jobs_with_track_filter(tag_store, sample_job):
+    """Test getting jobs filtered by track"""
     tag_store.start_job(sample_job)
     
-    # Create job with different feature
+    # Create job with different track
     job2 = Job("job-456", "content-789", "audio", "asr", time.time(), "user2")
     tag_store.start_job(job2)
     
-    job_ids = tag_store.get_jobs(feature="llava")
+    job_ids = tag_store.find_jobs(track="llava")
     
     assert job_ids == [sample_job.id]
 
 
-def test_get_jobs_with_multiple_filters(tag_store, sample_job):
+def test_find_jobs_with_multiple_filters(tag_store, sample_job):
     """Test getting jobs with multiple filters"""
     tag_store.start_job(sample_job)
     
     # Create jobs that match some but not all filters
     job2 = Job("job-456", sample_job.qhit, "audio", "asr", time.time(), "user2")
-    job3 = Job("job-789", "different-content", sample_job.stream, sample_job.feature, time.time(), sample_job.author)
+    job3 = Job("job-789", "different-content", sample_job.stream, sample_job.track, time.time(), sample_job.author)
     tag_store.start_job(job2)
     tag_store.start_job(job3)
     
-    job_ids = tag_store.get_jobs(qhit=sample_job.qhit, feature=sample_job.feature, auth=sample_job.author)
+    job_ids = tag_store.find_jobs(qhit=sample_job.qhit, track=sample_job.track, auth=sample_job.author)
     
     assert job_ids == [sample_job.id]
 
@@ -280,3 +280,157 @@ def test_upload_tags_handles_missing_job_directory(tag_store, sample_tags):
         assert False
     except Exception:
         pass
+
+
+def test_start_job_and_upload_tags(tag_store, sample_job, sample_tags):
+    """Test basic job creation and tag upload functionality"""
+    tag_store.start_job(sample_job)
+    tag_store.upload_tags(sample_tags, sample_job.id)
+    
+    # Check that source files were created
+    llava_path = tag_store._get_tags_path(sample_job.id, "llava")
+    asr_path = tag_store._get_tags_path(sample_job.id, "asr")
+    caption_path = tag_store._get_tags_path(sample_job.id, "caption")
+    
+    assert os.path.exists(llava_path)
+    assert os.path.exists(asr_path)
+    assert os.path.exists(caption_path)
+    
+    # Verify all tags are retrievable
+    all_tags = tag_store.get_tags(sample_job.id)
+    assert len(all_tags) == 4
+
+
+def test_find_tags_basic_filters(tag_store, sample_job, sample_tags):
+    """Test basic tag filtering functionality"""
+    tag_store.start_job(sample_job)
+    tag_store.upload_tags(sample_tags, sample_job.id)
+    
+    # Test filtering by qhit
+    tags = tag_store.find_tags(qhit=sample_job.qhit)
+    assert len(tags) == 4
+    
+    # Test filtering by source
+    tags = tag_store.find_tags(sources=["llava"])
+    assert len(tags) == 2
+    assert all(tag.source == "llava" for tag in tags)
+    
+    # Test filtering by text content
+    tags = tag_store.find_tags(text_contains="hello")
+    assert len(tags) == 1
+    assert tags[0].text == "hello world"
+
+
+def test_find_tags_time_range_filters(tag_store, sample_job, sample_tags):
+    """Test time range filtering"""
+    tag_store.start_job(sample_job)
+    tag_store.upload_tags(sample_tags, sample_job.id)
+    
+    # Test start_time filters
+    tags = tag_store.find_tags(start_time_gte=300)
+    assert len(tags) == 3  # Should exclude the first tag (start_time=100)
+    
+    tags = tag_store.find_tags(start_time_lte=500)
+    assert len(tags) == 3  # Should exclude the last tag (start_time=700)
+
+
+def test_find_jobs_with_filters(tag_store):
+    """Test job filtering functionality"""
+    # Create multiple jobs
+    job1 = Job("job-1", "content-a", "video", "llava", 1000.0, "user1")
+    job2 = Job("job-2", "content-b", "audio", "asr", 2000.0, "user2")
+    job3 = Job("job-3", "content-a", "video", "caption", 3000.0, "user1")
+    
+    tag_store.start_job(job1)
+    tag_store.start_job(job2)
+    tag_store.start_job(job3)
+    
+    # Test filtering by qhit
+    job_ids = tag_store.find_jobs(qhit="content-a")
+    assert set(job_ids) == {"job-1", "job-3"}
+    
+    # Test filtering by author
+    job_ids = tag_store.find_jobs(author="user1")
+    assert set(job_ids) == {"job-1", "job-3"}
+    
+    # Test filtering by stream
+    job_ids = tag_store.find_jobs(stream="video")
+    assert set(job_ids) == {"job-1", "job-3"}
+    
+    # Test multiple filters
+    job_ids = tag_store.find_jobs(qhit="content-a", author="user1")
+    assert set(job_ids) == {"job-1", "job-3"}
+
+
+def test_pagination(tag_store, sample_job, sample_tags):
+    """Test pagination functionality"""
+    tag_store.start_job(sample_job)
+    tag_store.upload_tags(sample_tags, sample_job.id)
+    
+    # Test limit
+    tags = tag_store.find_tags(limit=2)
+    assert len(tags) == 2
+    
+    # Test offset
+    tags = tag_store.find_tags(offset=2)
+    assert len(tags) == 2
+    
+    # Test limit + offset
+    tags = tag_store.find_tags(limit=1, offset=1)
+    assert len(tags) == 1
+
+
+def test_count_methods(tag_store, sample_job, sample_tags):
+    """Test counting without loading full data"""
+    tag_store.start_job(sample_job)
+    tag_store.upload_tags(sample_tags, sample_job.id)
+    
+    # Count all tags
+    count = tag_store.count_tags()
+    assert count == 4
+    
+    # Count with filters
+    count = tag_store.count_tags(sources=["llava"])
+    assert count == 2
+    
+    # Count jobs
+    count = tag_store.count_jobs()
+    assert count == 1
+
+
+def test_error_handling(tag_store, sample_tags):
+    """Test error handling for edge cases"""
+    # Test uploading tags without starting job
+    with pytest.raises(ValueError):
+        tag_store.upload_tags(sample_tags, "nonexistent-job")
+    
+    # Test empty tags upload
+    job = Job("empty-job", "content", "video", "track", time.time(), "user")
+    tag_store.start_job(job)
+    tag_store.upload_tags([], job.id)  # Should not raise error
+    
+    # Test getting nonexistent job
+    result = tag_store.get_job("nonexistent")
+    assert result is None
+    
+    # Test getting tags for nonexistent job
+    tags = tag_store.get_tags("nonexistent")
+    assert tags == []
+
+
+def test_tag_appending(tag_store, sample_job):
+    """Test that tags are properly appended to existing files"""
+    tag_store.start_job(sample_job)
+    
+    # Upload initial tags
+    initial_tags = [Tag(100, 200, "person", {}, "llava", sample_job.id)]
+    tag_store.upload_tags(initial_tags, sample_job.id)
+    
+    # Upload additional tags
+    additional_tags = [Tag(300, 400, "car", {}, "llava", sample_job.id)]
+    tag_store.upload_tags(additional_tags, sample_job.id)
+    
+    # Check that both tags are present
+    all_tags = tag_store.find_tags(job_id=sample_job.id, sources=["llava"])
+    assert len(all_tags) == 2
+    assert {tag.text for tag in all_tags} == {"person", "car"}

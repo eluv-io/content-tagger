@@ -1,6 +1,7 @@
 from dataclasses import dataclass, asdict
 import json
 import os
+from typing import List
 
 @dataclass
 class Tag:
@@ -96,6 +97,154 @@ class FilesystemTagStore:
                     os.remove(temp_path)
                 raise e
 
+    def find_tags(self, **filters) -> List[Tag]:
+        """
+        Find tags with flexible filtering.
+        
+        Supported filters:
+        - qhit: str
+        - stream: str  
+        - track: str
+        - job_id: str
+        - sources: List[str] (tags with source in this list)
+        - start_time_gte: float
+        - start_time_lte: float
+        - text_contains: str
+        - author: str
+        - limit: int
+        - offset: int
+        """
+        all_tags = []
+        
+        # First, get all jobs that match job-level filters
+        job_filters = {}
+        if 'qhit' in filters:
+            job_filters['qhit'] = filters['qhit']
+        if 'stream' in filters:
+            job_filters['stream'] = filters['stream']
+        if 'track' in filters:
+            job_filters['track'] = filters['track']
+        if 'author' in filters:
+            job_filters['author'] = filters['author']
+        
+        if 'job_id' in filters:
+            # If specific job_id requested, only check that job
+            job_ids = [filters['job_id']]
+        else:
+            # Get all matching jobs
+            job_ids = self.find_jobs(**job_filters)
+        
+        # Collect tags from matching jobs
+        for job_id in job_ids:
+            tags = self.get_tags(job_id)
+            all_tags.extend(tags)
+        
+        # Apply tag-level filters
+        filtered_tags = []
+        for tag in all_tags:
+            # Source filter
+            if 'sources' in filters:
+                if tag.source not in filters['sources']:
+                    continue
+            
+            # Time range filters
+            if 'start_time_gte' in filters:
+                if tag.start_time < filters['start_time_gte']:
+                    continue
+            
+            if 'start_time_lte' in filters:
+                if tag.start_time > filters['start_time_lte']:
+                    continue
+            
+            # Text search
+            if 'text_contains' in filters:
+                if filters['text_contains'].lower() not in tag.text.lower():
+                    continue
+            
+            filtered_tags.append(tag)
+        
+        # Apply pagination
+        if 'offset' in filters:
+            offset = filters['offset']
+            filtered_tags = filtered_tags[offset:]
+        
+        if 'limit' in filters:
+            limit = filters['limit']
+            filtered_tags = filtered_tags[:limit]
+        
+        return filtered_tags
+
+    def find_jobs(self, **filters) -> List[str]:
+        """
+        Find job IDs with flexible filtering.
+        
+        Supported filters:
+        - qhit: str
+        - stream: str
+        - track: str 
+        - author: str
+        - timestamp_gte: float
+        - timestamp_lte: float
+        - limit: int
+        - offset: int
+        """
+        job_ids = []
+        
+        # Iterate through all directories in base_path
+        if not os.path.exists(self.base_path):
+            return job_ids
+        
+        for job_id in os.listdir(self.base_path):
+            job_dir = os.path.join(self.base_path, job_id)
+            
+            # Skip if not a directory
+            if not os.path.isdir(job_dir):
+                continue
+            
+            # Get job metadata to check filters
+            job = self.get_job(job_id)
+            if job is None:
+                continue
+            
+            # Apply filters
+            if 'qhit' in filters and job.qhit != filters['qhit']:
+                continue
+            if 'track' in filters and job.track != filters['track']:
+                continue
+            if 'stream' in filters and job.stream != filters['stream']:
+                continue
+            if 'author' in filters and job.author != filters['author']:
+                continue
+            if 'timestamp_gte' in filters and job.timestamp < filters['timestamp_gte']:
+                continue
+            if 'timestamp_lte' in filters and job.timestamp > filters['timestamp_lte']:
+                continue
+            
+            job_ids.append(job_id)
+        
+        # Apply pagination
+        if 'offset' in filters:
+            offset = filters['offset']
+            job_ids = job_ids[offset:]
+        
+        if 'limit' in filters:
+            limit = filters['limit']
+            job_ids = job_ids[:limit]
+        
+        return job_ids
+
+    def count_tags(self, **filters) -> int:
+        """Count tags matching the given filters without loading all data"""
+        return len(self.find_tags(**filters))
+
+    def count_jobs(self, **filters) -> int:
+        """Count jobs matching the given filters"""
+        return len(self.find_jobs(**filters))
+
+    def get_tags_for_job(self, job_id: str) -> List[Tag]:
+        """Get all tags for a specific job"""
+        return self.find_tags(job_id=job_id)
+
     def get_job(self, job_id: str) -> Job | None:
         """
         Get job metadata
@@ -131,60 +280,3 @@ class FilesystemTagStore:
                     all_tags.extend(tags)
 
         return all_tags
-
-    def get_jobs(
-        self,
-        qhit: str | None = None,
-        track: str | None = None, 
-        stream: str | None = None,
-        auth: str | None = None
-    ) -> list[str]:
-        """
-        Get jobids based on the filters
-        """
-        job_ids = []
-        
-        # Iterate through all directories in base_path
-        if not os.path.exists(self.base_path):
-            return job_ids
-        
-        for job_id in os.listdir(self.base_path):
-            job_dir = os.path.join(self.base_path, job_id)
-            
-            # Skip if not a directory
-            if not os.path.isdir(job_dir):
-                continue
-            
-            # Get job metadata to check filters
-            job = self.get_job(job_id)
-            if job is None:
-                continue
-            
-            # Apply filters
-            if qhit is not None and job.qhit != qhit:
-                continue
-            if track is not None and job.track != track :
-                continue
-            if stream is not None and job.stream != stream:
-                continue
-            if auth is not None and job.author != auth:
-                continue
-            
-            job_ids.append(job_id)
-        
-        return job_ids
-
-    # TODO: better way of querying this than 3 args
-    def list_tagged_sources(self, qhit: str, track: str, stream: str) -> list[str]:
-        """
-        List all sources where author is "tagger" from any job
-        """
-
-        tagged_sources = set()
-
-        jobids = self.get_jobs(qhit=qhit, auth="tagger", track=track, stream=stream)
-
-        for job_id in jobids:
-            tagged_sources |= {tag.source for tag in self.get_tags(job_id)}
-
-        return list(tagged_sources)
