@@ -2,9 +2,8 @@ from typing import Literal
 from dataclasses import dataclass
 import threading
 
+from src.common.resources import SystemResources
 from src.tag_containers.containers import TagContainer
-
-SystemResources = dict[str, int]
 
 JobState = Literal["Queued", "Running", "Completed", "Failed", "Stopped"]
 

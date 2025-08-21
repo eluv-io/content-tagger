@@ -1,0 +1,2 @@
+
+SystemResources = dict[str, int]

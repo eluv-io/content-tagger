@@ -7,6 +7,7 @@ import threading
 from loguru import logger
 
 from src.common.errors import MissingResourceError
+from src.common.resources import SystemResources
 from src.tag_containers.containers import TagContainer
 from src.tagger.system_tagging.types import *
 
@@ -66,6 +67,14 @@ class SystemTagger:
             self.cond.notify_all()
 
         return job_id
+    
+    def stop(self, jobid: str) -> JobStatus:
+        self._stop_job(jobid, "Stopped")
+        return self.status(jobid)
+
+    def status(self, jobid: str) -> JobStatus:
+        with self.joblocks[jobid]:
+            return deepcopy(self.jobs[jobid].jobstatus)
 
     def shutdown(self) -> None:
         self.exit.set()
@@ -162,14 +171,6 @@ class SystemTagger:
         if cj.finished:
             cj.finished.set()
 
-    def stop(self, jobid: str) -> JobStatus:
-        self._stop_job(jobid, "Stopped")
-        return self.status(jobid)
-
-    def status(self, jobid: str) -> JobStatus:
-        with self.joblocks[jobid]:
-            return deepcopy(self.jobs[jobid].jobstatus)
-
     def _free_resources(self, cj: ContainerJob) -> None:
 
         """
@@ -232,7 +233,7 @@ class SystemTagger:
                     else:
                         self._stop_job(jobid, "Completed")
                     logger.info(f"Job {jobid} completed")
-            time.sleep(2)
+            time.sleep(0.2)
 
     def _terminate_containers(self):
         for job in self.jobs.values():
