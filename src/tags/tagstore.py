@@ -3,24 +3,7 @@ import json
 import os
 import base64
 from typing import List
-
-@dataclass
-class Tag:
-    start_time: int
-    end_time: int
-    text: str
-    additional_info: dict
-    source: str
-    jobid: str
-
-@dataclass
-class Job:
-    id: str
-    qhit: str
-    stream: str | None
-    track: str
-    timestamp: float
-    author: str
+from src.common.schema import Tag, Job
 
 class FilesystemTagStore:
     def __init__(self, base_path: str):
