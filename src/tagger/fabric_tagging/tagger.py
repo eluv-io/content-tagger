@@ -1,10 +1,12 @@
-import json
+
 import threading
 from collections import defaultdict
 import time
+import uuid
 
 from loguru import logger
 
+from src.common.schema import Tag
 from src.fetch.types import VodDownloadRequest
 from src.tag_containers.containers import ContainerRegistry
 from src.tagger.system_tagging.resource_manager import SystemTagger
@@ -13,7 +15,8 @@ from src.common.content import Content
 from src.api.tagging.format import TagArgs, ImageTagArgs
 from src.common.errors import MissingResourceError
 from src.fetch.fetch_video import Fetcher, VodDownloadRequest
-from src.tags.tagstore import FilesystemTagStore, Job as TagJob, Tag
+from src.fetch.types import Source, StreamMetadata
+from src.tags.tagstore import FilesystemTagStore, Job as TagJob
 
 class FabricTagger:
 
@@ -89,6 +92,7 @@ class FabricTagger:
                 taghandle="",
                 lock=threading.Lock(),
                 stopevent=threading.Event(),
+                media=None,
                 container=None,
                 uploaded_sources=[]
             )
@@ -133,9 +137,9 @@ class FabricTagger:
         jobid = job.get_id()
 
         tsjob = TagJob(
-            id=job.taghandle,
+            id=str(uuid.uuid4()),
             qhit=job.args.q.qhit,
-            feature=job.args.feature,
+            track=job.args.feature,
             stream=job.args.runconfig.stream,
             timestamp=time.time(),
             author="tagger"
@@ -148,7 +152,7 @@ class FabricTagger:
             stream_name=job.args.runconfig.stream,
             start_time=job.args.start_time,
             end_time=job.args.end_time,
-            replace=job.args.replace,
+            preserve_track=job.args.feature if job.args.replace else "",
         )
         job.status.status = "Fetching content"
         try:
@@ -159,10 +163,9 @@ class FabricTagger:
 
         if job.stopevent.is_set():
             return
-
-        dl_res = self.fetcher.download_stream(job.args.q, dl_req, exit_event=job.stopevent)
-
-        job.status.failed += dl_res.failed_part_hashes
+        
+        job.media = dl_res
+        job.status.failed += dl_res.failed
 
         media_files = [s.filepath for s in dl_res.successful_sources]
 
@@ -183,7 +186,6 @@ class FabricTagger:
 
         # 3. upload
         self._stop_job(jobid, "Completed", None)
-        #self._upload_content(job, media_files)
 
     def status(self, qhit: str) -> dict[str, dict[str, JobStatus]]:
         """
@@ -256,7 +258,7 @@ class FabricTagger:
     # TODO: might miss tags at the end of the job
     def _check_jobs(self) -> None:
         for jobid, job in self.jobstore.active_jobs.items():
-            if not job.status == "Tagging content":
+            if not job.status.status == "Tagging content":
                 continue
 
             self._upload_tags(job)
@@ -267,26 +269,51 @@ class FabricTagger:
         ) -> None:
         if job.container is None:
             return
+        assert job.media is not None
+        media_to_source = {s.filepath: s for s in job.media.successful_sources}
         outputs = job.container.tags()
-        outputs = [out for out in outputs if out.source not in job.uploaded_sources]
+        outputs = [out for out in outputs if out.source_media not in job.uploaded_sources]
 
         tags2upload = []
         for out in outputs:
-            with open(out.filepath, 'r') as f:
-                tagdata = json.load(f)
-            tags2upload.append(
-                Tag(
-                    start_time=tagdata.get("start_time"),
-                    end_time=tagdata.get("end_time"),
-                    text=tagdata.get("text"),
-                    additional_info={},
-                    source=out.source,
-                    jobid=job.taghandle,
-                )
-            )
+            original_src = media_to_source[out.source_media]
+            for tag in out.tags:
+                tags2upload.append(self._correct_tag(tag, original_src, job.media.stream_meta))
 
-        job.uploaded_sources.extend(out.source for out in outputs)
+        job.uploaded_sources.extend(out.source_media for out in outputs)
         self.tagstore.upload_tags(tags2upload, job.taghandle)
+
+    def _correct_tag(self, tag: Tag, source: Source, meta: StreamMetadata | None) -> Tag:
+        if tag.start_time is not None:
+            tag.start_time += int(source.offset * 1000) # convert to ms
+        if tag.end_time is not None:
+            tag.end_time += int(source.offset * 1000)
+        tag.source = source.name
+        if "frame_tags" in tag.additional_info:
+            assert meta is not None
+            assert meta.fps is not None
+            tag = self._correct_frame_indices(tag, source, meta.fps)
+        return tag
+
+    def _correct_frame_indices(self, tag: Tag, source: Source, fps: float) -> Tag:
+        if "frame_tags" not in tag.additional_info:
+            return tag
+
+        frame_tags = tag.additional_info["frame_tags"]
+        frame_offset = int(tag.start_time / 1000 * fps) + int(source.offset * fps)
+
+        adjusted = {}
+        for frame_idx, label in frame_tags.items():
+            try:
+                frame_idx = int(frame_idx)
+            except ValueError:
+                logger.exception(f"Invalid frame index: {tag}")
+                continue
+            adjusted[frame_idx + frame_offset] = label
+
+        tag.additional_info["frame_tags"] = adjusted
+
+        return tag
 
     def cleanup(self) -> None:
         self.shutdown_signal.set()

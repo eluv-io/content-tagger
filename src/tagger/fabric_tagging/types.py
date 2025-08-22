@@ -6,6 +6,7 @@ import threading
 
 from src.common.content import Content
 from src.tag_containers.containers import TagContainer
+from src.fetch.fetch_video import DownloadResult
 
 JobState = Literal[
     "Starting",
@@ -59,6 +60,7 @@ class Job:
     lock: threading.Lock
     stopevent: threading.Event
     uploaded_sources: list[str]
+    media: DownloadResult | None
     container: TagContainer | None
 
     def get_id(self) -> 'JobID':
