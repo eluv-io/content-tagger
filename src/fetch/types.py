@@ -13,11 +13,6 @@ class Source:
     offset: float
 
 @dataclass
-class DownloadResult:
-    successful_sources: list[Source]
-    failed: list[str]
-
-@dataclass
 class VodDownloadRequest:
     stream_name: str
     start_time: int | None
@@ -28,10 +23,16 @@ class VodDownloadRequest:
 class StreamMetadata:
     parts: list[str]
     part_duration: float
-    fps: float | None
+    fps: float
     codec_type: str
 
 @dataclass
 class AssetDownloadRequest:
     assets: list[str] | None
     preserve_track: str
+
+@dataclass
+class DownloadResult:
+    successful_sources: list[Source]
+    failed: list[str]
+    stream_meta: StreamMetadata | None

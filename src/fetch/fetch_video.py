@@ -6,7 +6,7 @@ import threading
 import tempfile
 import shutil
 from copy import deepcopy
-from common_ml.video_processing import unfrag_video
+from common_ml.video_processing import unfrag_video, get_video_length
 from common_ml.utils.files import get_file_type, encode_path
 from common_ml.utils.metrics import timeit
 from loguru import logger
@@ -292,6 +292,8 @@ class Fetcher:
             tagged_parts = [tag.source for tag in existing_tags]
 
         for idx, part_hash in enumerate(stream_metadata.parts):
+            last_part = idx == len(stream_metadata.parts) - 1
+
             if exit_event is not None and exit_event.is_set():
                 break
 
@@ -349,10 +351,15 @@ class Fetcher:
                 )
                 continue
 
+            # check that length of the file is equal to the part length
+            if not last_part:
+                actual_duration = get_video_length(save_path)
+                assert actual_duration == stream_metadata.part_duration
+
         shutil.rmtree(tmp_path, ignore_errors=True)
 
         return DownloadResult(
-            successful_sources=successful_sources, failed=failed_parts
+            successful_sources=successful_sources, failed=failed_parts, stream_meta=stream_metadata
         )
 
     def _is_live(self, q: Content) -> bool:
