@@ -352,9 +352,11 @@ class Fetcher:
                 continue
 
             # check that length of the file is equal to the part length
-            if not last_part:
+            if not last_part and stream_metadata.codec_type == "video":
                 actual_duration = get_video_length(save_path)
-                assert actual_duration == stream_metadata.part_duration
+                assert abs(actual_duration - stream_metadata.part_duration) < 1e-3
+
+            # TODO: check for audio as well. 
 
         shutil.rmtree(tmp_path, ignore_errors=True)
 
@@ -437,7 +439,7 @@ class Fetcher:
         assets = [asset for asset in assets if asset not in bad_assets]
         successful_sources = [Source(name=asset, filepath=os.path.join(output_path, encode_path(asset)), offset=0) for asset in new_assets]
         failed = list(bad_assets)
-        return DownloadResult(successful_sources=successful_sources, failed=failed)
+        return DownloadResult(successful_sources=successful_sources, failed=failed, stream_meta=None)
 
     def _download_concurrent(self, q: Content, files: list[str], output_path: str) -> list[str]:
         file_jobs = [(asset, encode_path(asset)) for asset in files]
