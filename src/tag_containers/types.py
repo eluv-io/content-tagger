@@ -1,23 +1,25 @@
 from dataclasses import dataclass
 from typing_extensions import Literal
 
-from src.tagger.system_tagging.resource_manager import SystemResources
+from src.common.resources import SystemResources
+from src.common.schema import Tag
 
-@dataclass
-class ContainerSpec:
-    image: str
-    cachepath: str
-    logspath: str
-    tagspath: str
-    fileargs: list[str]
-    runconfig: dict
 
 @dataclass
 class ModelConfig:
     name: str
     image: str
-    type: Literal["video", "audio", "frame"]
+    type: Literal["video", "frame"]
     resources: SystemResources
+
+@dataclass
+class ContainerSpec:
+    cachepath: str
+    logspath: str
+    tagspath: str
+    fileargs: list[str]
+    runconfig: dict
+    model_config: ModelConfig 
 
 @dataclass
 class RegistryConfig:
@@ -28,6 +30,5 @@ class RegistryConfig:
 
 @dataclass
 class ModelOutput:
-    source: str
-    filepath: str
-    tag_type: Literal["video", "frame", "image"]
+    source_media: str
+    tags: list[Tag]
