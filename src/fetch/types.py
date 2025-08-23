@@ -23,7 +23,7 @@ class VodDownloadRequest:
 class StreamMetadata:
     parts: list[str]
     part_duration: float
-    fps: float
+    fps: float | None
     codec_type: str
 
 @dataclass

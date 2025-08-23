@@ -72,8 +72,7 @@ class SystemTagger:
         """
         Checks if the system has enough resources to start a job.
         """
-        with self.resource_lock:
-            return self._can_start(required_resources, self.total_resources)
+        return self._can_start(required_resources, self.total_resources)
 
     def stop(self, jobid: str) -> JobStatus:
         self._stop_job(jobid, "Stopped")
@@ -243,7 +242,9 @@ class SystemTagger:
             time.sleep(0.2)
 
     def _terminate_containers(self):
+        logger.info("Shutting down system tagger...")
         for job in self.jobs.values():
+            logger.info("Killing job")
             if job.container.is_running():
                 job.container.stop()
 

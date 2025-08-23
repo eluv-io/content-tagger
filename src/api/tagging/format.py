@@ -1,6 +1,6 @@
 
 from dataclasses import dataclass
-from src.tagger.jobs import RunConfig
+from src.tagger.fabric_tagging.types import RunConfig
 
 from common_ml.types import Data
 
