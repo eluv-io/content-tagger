@@ -47,30 +47,7 @@ class FabricTagger:
         
         self.shutdown_signal = threading.Event()
 
-    def _validate_args(self, args: TagArgs | ImageTagArgs) -> None:
-        """
-        Raises error if args are bad
-        """
-
-        services = self.cregistry.services()
-
-        modconfigs = self.cregistry.cfg.modconfigs
-
-        for feature in args.features:
-            if feature not in services:
-                raise MissingResourceError(
-                    f"Invalid feature: {feature}. Available features: {', '.join(services)}"
-                )
-
-            if isinstance(args, TagArgs):
-                continue
-
-            modeltype = modconfigs[feature].type
-
-            if modeltype != "frame":
-                raise MissingResourceError(
-                    f"{feature} is not frame-level"
-                )
+        threading.Thread(target=self._job_watcher, daemon=True).start()
 
     def tag(self, q: Content, args: TagArgs | ImageTagArgs) -> dict:
         self._validate_args(args)
@@ -102,13 +79,90 @@ class FabricTagger:
             else:
                 status[feature] = "Job started successfully"
         return status
+    
+    def status(self, qhit: str) -> dict[str, dict[str, JobStatus]]:
+        """
+        Args:
+            qhit (str): content object, hash, or write token that files belong to
+        Returns:
+            dict[str, dict[str, JobStatus]]: a dictionary mapping stream -> feature -> JobStatus
+        """
+
+        active_jobs = self.jobstore.active_jobs
+        inactive_jobs = self.jobstore.inactive_jobs
+
+        with self.storelock:
+            jobids = {jobid for jobid in active_jobs.keys() if jobid.qhit == qhit}
+            jobids |= {jobid for jobid in inactive_jobs.keys() if jobid.qhit == qhit}
+
+            if len(jobids) == 0:
+                raise MissingResourceError(
+                    f"No jobs started for {qhit}"
+                )
+
+            res = defaultdict(dict)
+            for jid in jobids:
+                job = active_jobs.get(jid, inactive_jobs[jid])
+                stream, feature = job.args.runconfig.stream, job.args.feature
+                res[stream][feature] = self._summarize_status(job.status)
+
+        return dict(res)
+
+    def stop(self, qhit: str, feature: str) -> None:
+        active_jobs = self.jobstore.active_jobs
+        with self.storelock:
+            jobids = {jobid for jobid in active_jobs.keys() if jobid.qhit == qhit and jobid.feature == feature}
+
+            if len(jobids) == 0:
+                raise MissingResourceError(
+                    f"No job running for {feature} on {qhit}"
+                )
+
+            jobs = [active_jobs[jid] for jid in jobids]
+            for job in jobs:
+                job.stopevent.set()
+
+                if job.taghandle:
+                    try:
+                        self.manager.stop(job.taghandle)
+                    except Exception as e:
+                        logger.error(f"Error stopping job {job.get_id()}: {e}")
+
+    def cleanup(self) -> None:
+        self.shutdown_signal.set()
+        self.manager.shutdown()
+
+    def _validate_args(self, args: TagArgs | ImageTagArgs) -> None:
+        """
+        Raises error if args are bad
+        """
+
+        services = self.cregistry.services()
+
+        modconfigs = self.cregistry.cfg.modconfigs
+
+        for feature in args.features:
+            if feature not in services:
+                raise MissingResourceError(
+                    f"Invalid feature: {feature}. Available features: {', '.join(services)}"
+                )
+
+            if isinstance(args, TagArgs):
+                continue
+
+            modeltype = modconfigs[feature].type
+
+            if modeltype != "frame":
+                raise MissingResourceError(
+                    f"{feature} is not frame-level"
+                )
 
     def _start_job(self, job: Job) -> str:
         with self.storelock:
             jobid = job.get_id()
 
             if jobid in self.jobstore.active_jobs:
-                return f"Job {jobid} is already running"
+                return f"Job {(jobid.qhit, jobid.feature, jobid.stream)} is already running"
 
             self.jobstore.active_jobs[jobid] = job
 
@@ -187,34 +241,6 @@ class FabricTagger:
         # 3. upload
         self._stop_job(jobid, "Completed", None)
 
-    def status(self, qhit: str) -> dict[str, dict[str, JobStatus]]:
-        """
-        Args:
-            qhit (str): content object, hash, or write token that files belong to
-        Returns:
-            dict[str, dict[str, JobStatus]]: a dictionary mapping stream -> feature -> JobStatus
-        """
-
-        active_jobs = self.jobstore.active_jobs
-        inactive_jobs = self.jobstore.inactive_jobs
-
-        with self.storelock:
-            jobids = {jobid for jobid in active_jobs.keys() if jobid.qhit == qhit}
-            jobids |= {jobid for jobid in inactive_jobs.keys() if jobid.qhit == qhit}
-
-            if len(jobids) == 0:
-                raise MissingResourceError(
-                    f"No jobs started for {qhit}"
-                )
-
-            res = defaultdict(dict)
-            for jid in jobids:
-                job = active_jobs.get(jid, inactive_jobs[jid])
-                stream, feature = job.args.runconfig.stream, job.args.feature
-                res[stream][feature] = self._summarize_status(job.status)
-
-        return dict(res)
-
     def _summarize_status(self, status: JobStatus) -> dict:
         end = time.time()
         if status.time_ended:
@@ -226,33 +252,15 @@ class FabricTagger:
             "failed": status.failed,
         }
 
-    def stop(self, qhit: str, feature: str) -> None:
-        active_jobs = self.jobstore.active_jobs
-        with self.storelock:
-            jobids = {jobid for jobid in active_jobs.keys() if jobid.qhit == qhit and jobid.feature == feature}
-
-            if len(jobids) == 0:
-                raise MissingResourceError(
-                    f"No job running for {feature} on {qhit}"
-                )
-
-            jobs = [active_jobs[jid] for jid in jobids]
-            for job in jobs:
-                job.stopevent.set()
-
-                if job.taghandle:
-                    try:
-                        self.manager.stop(job.taghandle)
-                    except Exception as e:
-                        logger.error(f"Error stopping job {job.get_id()}: {e}")
-
     def _job_watcher(self) -> None:
         while not self.shutdown_signal.is_set():
-            try:
-                with self.storelock:
+            if self.storelock.acquire(timeout=1):
+                try:
                     self._check_jobs()
-            except Exception as e:
-                logger.exception(f"Unexpected error in job watcher: {e}")
+                except Exception as e:
+                    logger.exception(f"Unexpected error in job watcher: {e}")
+                finally:
+                    self.storelock.release()
             time.sleep(0.2)
 
     # TODO: might miss tags at the end of the job
@@ -314,7 +322,3 @@ class FabricTagger:
         tag.additional_info["frame_tags"] = adjusted
 
         return tag
-
-    def cleanup(self) -> None:
-        self.shutdown_signal.set()
-        self.manager.shutdown()
