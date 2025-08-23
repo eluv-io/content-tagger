@@ -56,7 +56,7 @@ class SystemTagger:
         Runs the container, bookkeeps system resources, and returns uuid
         """
 
-        if not self._can_start(required_resources, self.total_resources):
+        if not self.check_capacity(required_resources):
             raise MissingResourceError("Insufficient resources available to start job on this system.")
 
         job_id = str(uuid.uuid4())
@@ -67,7 +67,14 @@ class SystemTagger:
             self.cond.notify_all()
 
         return job_id
-    
+
+    def check_capacity(self, required_resources: SystemResources) -> bool:
+        """
+        Checks if the system has enough resources to start a job.
+        """
+        with self.resource_lock:
+            return self._can_start(required_resources, self.total_resources)
+
     def stop(self, jobid: str) -> JobStatus:
         self._stop_job(jobid, "Stopped")
         return self.status(jobid)
