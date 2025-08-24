@@ -1,3 +1,4 @@
+import threading
 import pytest
 import tempfile
 import shutil
@@ -89,20 +90,75 @@ def system_tagger():
 @pytest.fixture
 def fake_container_registry(temp_dir, fake_media_files):
     """Create a fake ContainerRegistry that returns mock containers with fake tags"""
-    
+
     class FakeTagContainer:
-        def __init__(self, fileargs, feature):
+        """Fake TagContainer that simulates work and asynchronous behavior."""
+        
+        def __init__(self, fileargs, feature, work_duration: float = 0.1):
+            """
+            Initialize the FakeTagContainer.
+
+            Args:
+                fileargs (list[str]): List of file paths to process.
+                feature (str): The feature being tagged.
+                work_duration (float): Time in seconds to simulate work.
+            """
             self.fileargs = fileargs
             self.feature = feature
+            self.work_duration = work_duration
+            self.is_started = False
+            self.is_stopped = False
+            self.container = Mock()
+            self.container.attrs = {"State": {"ExitCode": 0}}
             self.tag_call_count = 0
+            self.worker_thread = None
+
+        def start(self, gpu_idx: int | None = None) -> None:
+            """
+            Start the container and simulate work in a background thread.
+
+            Args:
+                gpu_idx (int | None): GPU index to use (if applicable).
+            """
             
+            self.gpu_idx = gpu_idx
+
+            # Simulate work in a background thread
+            def work():
+                self.is_started = True
+                time.sleep(self.work_duration)
+                self.is_stopped = True
+
+            self.worker_thread = threading.Thread(target=work, daemon=True)
+            self.worker_thread.start()
+
+        def stop(self) -> None:
+            """
+            Stop the container and terminate the work.
+            """
+            self.is_stopped = True
+
+        def is_running(self) -> bool:
+            """
+            Check if the container is still running.
+
+            Returns:
+                bool: True if the container is running, False otherwise.
+            """
+            return self.is_started and not self.is_stopped
+
         def tags(self) -> list[ModelOutput]:
-            """Return fake tags for the media files"""
+            """
+            Return fake tags for the media files.
+
+            Returns:
+                list[ModelOutput]: List of fake tags for each file.
+            """
             self.tag_call_count += 1
-            
+
             outputs = []
             for i, filepath in enumerate(self.fileargs):
-                # Create fake tags based on feature
+                # Create fake tags based on the feature
                 fake_tags = [
                     Tag(
                         start_time=0,
@@ -121,13 +177,13 @@ def fake_container_registry(temp_dir, fake_media_files):
                         jobid=""
                     )
                 ]
-                
+
                 output = ModelOutput(
                     source_media=filepath,
                     tags=fake_tags
                 )
                 outputs.append(output)
-            
+
             return outputs
     
     class FakeContainerRegistry:
@@ -141,10 +197,7 @@ def fake_container_registry(temp_dir, fake_media_files):
             return self.containers[container_key]
         
         def get_model_resources(self, feature: str) -> SystemResources:
-            return SystemResources(
-                memory_mb=1024,
-                vcpus=2
-            )
+            return {"gpu": 1, "cpu_juice": 5}
         
         def services(self) -> list[str]:
             return ["object_detection", "speech_recognition", "scene_analysis"]

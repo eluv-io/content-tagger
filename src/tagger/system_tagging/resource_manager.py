@@ -84,7 +84,7 @@ class SystemTagger:
 
     def shutdown(self) -> None:
         self.exit.set()
-        self._terminate_containers()
+        self._terminate_all_jobs()
 
     def _can_start(self, jobreqs: SystemResources, sys_resources: SystemResources) -> bool:
 
@@ -166,7 +166,7 @@ class SystemTagger:
             cj.jobstatus.error = error
             cj.jobstatus.time_ended = time.time()
 
-            cj.container.stop()
+            cj.container.stop() # TODO: handle container failed to stop
 
         self._free_resources(cj)
 
@@ -241,12 +241,12 @@ class SystemTagger:
                     logger.info(f"Job {jobid} completed")
             time.sleep(0.2)
 
-    def _terminate_containers(self):
+    def _terminate_all_jobs(self):
         logger.info("Shutting down system tagger...")
-        for job in self.jobs.values():
-            logger.info("Killing job")
-            if job.container.is_running():
-                job.container.stop()
+        active_jobids = list(self.jobs)
+        for jobid in active_jobids:
+            logger.info(f"Killing job {jobid}")
+            self._stop_job(jobid, "Stopped")
 
     def _clear_stopped_jobs(self) -> None:
         # clean the queue of stopped jobs
