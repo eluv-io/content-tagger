@@ -4,7 +4,7 @@ import shutil
 import os
 import json
 import time
-from src.tags.tagstore import FilesystemTagStore, Tag, Job
+from src.tags.tagstore import FilesystemTagStore, Tag, UploadJob
 
 
 @pytest.fixture
@@ -24,7 +24,7 @@ def tag_store(temp_dir):
 @pytest.fixture
 def sample_job():
     """Create a sample job for testing"""
-    return Job(
+    return UploadJob(
         id="test-job-123",
         qhit="content-456",
         stream="video",
@@ -207,7 +207,7 @@ def test_find_jobs_no_filters(tag_store, sample_job):
     tag_store.start_job(sample_job)
     
     # Create another job
-    job2 = Job("job-456", "content-789", "audio", "asr", time.time(), "user2")
+    job2 = UploadJob("job-456", "content-789", "audio", "asr", time.time(), "user2")
     tag_store.start_job(job2)
     
     job_ids = tag_store.find_jobs()
@@ -220,7 +220,7 @@ def test_find_jobs_with_qhit_filter(tag_store, sample_job):
     tag_store.start_job(sample_job)
     
     # Create job with different qhit
-    job2 = Job("job-456", "different-content", "audio", "asr", time.time(), "user2")
+    job2 = UploadJob("job-456", "different-content", "audio", "asr", time.time(), "user2")
     tag_store.start_job(job2)
     
     job_ids = tag_store.find_jobs(qhit=sample_job.qhit)
@@ -233,7 +233,7 @@ def test_find_jobs_with_track_filter(tag_store, sample_job):
     tag_store.start_job(sample_job)
     
     # Create job with different track
-    job2 = Job("job-456", "content-789", "audio", "asr", time.time(), "user2")
+    job2 = UploadJob("job-456", "content-789", "audio", "asr", time.time(), "user2")
     tag_store.start_job(job2)
     
     job_ids = tag_store.find_jobs(track="llava")
@@ -246,8 +246,8 @@ def test_find_jobs_with_multiple_filters(tag_store, sample_job):
     tag_store.start_job(sample_job)
     
     # Create jobs that match some but not all filters
-    job2 = Job("job-456", sample_job.qhit, "audio", "asr", time.time(), "user2")
-    job3 = Job("job-789", "different-content", sample_job.stream, sample_job.track, time.time(), sample_job.author)
+    job2 = UploadJob("job-456", sample_job.qhit, "audio", "asr", time.time(), "user2")
+    job3 = UploadJob("job-789", "different-content", sample_job.stream, sample_job.track, time.time(), sample_job.author)
     tag_store.start_job(job2)
     tag_store.start_job(job3)
     
@@ -258,7 +258,7 @@ def test_find_jobs_with_multiple_filters(tag_store, sample_job):
 
 def test_start_job_creates_directory_with_existing_dir(tag_store):
     """Test that starting a job works even if directory exists"""
-    job = Job("test-job", "content", "video", "llava", time.time(), "user")
+    job = UploadJob("test-job", "content", "video", "llava", time.time(), "user")
     
     # Create the directory first
     job_dir = tag_store._get_job_dir(job.id)
@@ -337,10 +337,10 @@ def test_find_tags_time_range_filters(tag_store, sample_job, sample_tags):
 def test_find_jobs_with_filters(tag_store):
     """Test job filtering functionality"""
     # Create multiple jobs
-    job1 = Job("job-1", "content-a", "video", "llava", 1000.0, "user1")
-    job2 = Job("job-2", "content-b", "audio", "asr", 2000.0, "user2")
-    job3 = Job("job-3", "content-a", "video", "caption", 3000.0, "user1")
-    
+    job1 = UploadJob("job-1", "content-a", "video", "llava", 1000.0, "user1")
+    job2 = UploadJob("job-2", "content-b", "audio", "asr", 2000.0, "user2")
+    job3 = UploadJob("job-3", "content-a", "video", "caption", 3000.0, "user1")
+
     tag_store.start_job(job1)
     tag_store.start_job(job2)
     tag_store.start_job(job3)
@@ -405,7 +405,7 @@ def test_error_handling(tag_store, sample_tags):
         tag_store.upload_tags(sample_tags, "nonexistent-job")
     
     # Test empty tags upload
-    job = Job("empty-job", "content", "video", "track", time.time(), "user")
+    job = UploadJob("empty-job", "content", "video", "track", time.time(), "user")
     tag_store.start_job(job)
     tag_store.upload_tags([], job.id)  # Should not raise error
     

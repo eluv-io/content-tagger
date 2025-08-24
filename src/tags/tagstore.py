@@ -1,9 +1,9 @@
-from dataclasses import dataclass, asdict
+from dataclasses import asdict
 import json
 import os
 import base64
 from typing import List
-from src.common.schema import Tag, Job
+from src.common.schema import Tag, UploadJob
 
 class FilesystemTagStore:
     def __init__(self, base_path: str):
@@ -39,7 +39,7 @@ class FilesystemTagStore:
         encoded_source = self._encode_source_for_filename(source)
         return os.path.join(self._get_job_dir(job_id), f"{encoded_source}.json")
 
-    def start_job(self, job: Job) -> None:
+    def start_job(self, job: UploadJob) -> None:
         """
         Starts a new job with provided metadata
         """
@@ -246,7 +246,7 @@ class FilesystemTagStore:
         """Get all tags for a specific job"""
         return self.find_tags(job_id=job_id)
 
-    def get_job(self, job_id: str) -> Job | None:
+    def get_job(self, job_id: str) -> UploadJob | None:
         """
         Get job metadata
         """
@@ -257,7 +257,7 @@ class FilesystemTagStore:
         
         with open(metadata_path, 'r') as f:
             job_data = json.load(f)
-            return Job(**job_data)
+            return UploadJob(**job_data)
 
     def get_tags(self, job_id: str) -> list[Tag]:
         """

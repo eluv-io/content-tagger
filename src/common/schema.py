@@ -10,7 +10,7 @@ class Tag:
     jobid: str
 
 @dataclass
-class Job:
+class UploadJob:
     id: str
     qhit: str
     stream: str | None

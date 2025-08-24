@@ -10,13 +10,16 @@ from src.common.schema import Tag
 from src.fetch.types import VodDownloadRequest
 from src.tag_containers.containers import ContainerRegistry
 from src.tagger.system_tagging.resource_manager import SystemTagger
-from src.tagger.fabric_tagging.types import Job, JobArgs, JobStatus, JobState, JobStore, JobID
+from src.tagger.fabric_tagging.types import TagJob, JobArgs, JobStatus, JobState, JobStore, JobID
 from src.common.content import Content
 from src.api.tagging.format import TagArgs, ImageTagArgs
 from src.common.errors import MissingResourceError
 from src.fetch.fetch_video import Fetcher, VodDownloadRequest
 from src.fetch.types import Source, StreamMetadata
-from src.tags.tagstore import FilesystemTagStore, Job as TagJob
+from src.tags.tagstore import FilesystemTagStore, UploadJob
+
+import faulthandler, signal
+faulthandler.register(signal.SIGUSR1)
 
 class FabricTagger:
 
@@ -37,13 +40,8 @@ class FabricTagger:
         self.tagstore = tagstore
         self.fetcher = fetcher
 
-        self.dblock = threading.Lock()
-
         self.storelock = threading.Lock()
         self.jobstore = JobStore()
-
-        # map qid -> token
-        self.tokens = {}
         
         self.shutdown_signal = threading.Event()
 
@@ -56,7 +54,18 @@ class FabricTagger:
             raise NotImplementedError("Image tagging is not implemented yet")
         status = {}
         for feature in args.features:
-            job = Job(
+            tsjob = UploadJob(
+                id=str(uuid.uuid4()),
+                qhit=q.qhit,
+                track=feature,
+                stream=args.features[feature].stream,
+                timestamp=time.time(),
+                author="tagger"
+            )
+
+            job = TagJob(
+                status=JobStatus.starting(),
+                taghandle="",
                 args=JobArgs(
                     q=q,
                     feature=feature,
@@ -65,13 +74,12 @@ class FabricTagger:
                     start_time=args.start_time,
                     end_time=args.end_time,
                 ),
-                status=JobStatus.starting(),
-                taghandle="",
                 lock=threading.Lock(),
                 stopevent=threading.Event(),
                 media=None,
                 container=None,
-                uploaded_sources=[]
+                uploaded_sources=[],
+                upload_job=tsjob
             )
             err = self._start_job(job)
             if err:
@@ -129,6 +137,7 @@ class FabricTagger:
                         logger.error(f"Error stopping job {job.get_id()}: {e}")
 
     def cleanup(self) -> None:
+        logger.info("Shutting down fabric tagger...")
         self.shutdown_signal.set()
         self.manager.shutdown()
 
@@ -157,7 +166,7 @@ class FabricTagger:
                     f"{feature} is not frame-level"
                 )
 
-    def _start_job(self, job: Job) -> str:
+    def _start_job(self, job: TagJob) -> str:
         with self.storelock:
             jobid = job.get_id()
 
@@ -187,19 +196,10 @@ class FabricTagger:
             else:
                 logger.warning(f"Tried to stop an inactive job: {jobid}")
 
-    def _run_job(self, job: Job) -> None:
+    def _run_job(self, job: TagJob) -> None:
         jobid = job.get_id()
 
-        tsjob = TagJob(
-            id=str(uuid.uuid4()),
-            qhit=job.args.q.qhit,
-            track=job.args.feature,
-            stream=job.args.runconfig.stream,
-            timestamp=time.time(),
-            author="tagger"
-        )
-
-        self.tagstore.start_job(tsjob)
+        self.tagstore.start_job(job.upload_job)
 
         # 1. download
         dl_req = VodDownloadRequest(
@@ -273,7 +273,7 @@ class FabricTagger:
 
     def _upload_tags(
             self, 
-            job: Job,
+            job: TagJob,
         ) -> None:
         if job.container is None:
             return
@@ -289,7 +289,7 @@ class FabricTagger:
                 tags2upload.append(self._correct_tag(tag, original_src, job.media.stream_meta))
 
         job.uploaded_sources.extend(out.source_media for out in outputs)
-        self.tagstore.upload_tags(tags2upload, job.taghandle)
+        self.tagstore.upload_tags(tags2upload, job.upload_job.id)
 
     def _correct_tag(self, tag: Tag, source: Source, meta: StreamMetadata | None) -> Tag:
         if tag.start_time is not None:

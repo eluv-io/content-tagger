@@ -5,6 +5,7 @@ import time
 import threading
 
 from src.common.content import Content
+from src.common.schema import UploadJob
 from src.tag_containers.containers import TagContainer
 from src.fetch.fetch_video import DownloadResult
 
@@ -53,13 +54,14 @@ class JobArgs:
     end_time: int | None
 
 @dataclass
-class Job:
+class TagJob:
     args: JobArgs
     status: JobStatus
     taghandle: str
     lock: threading.Lock
     stopevent: threading.Event
     uploaded_sources: list[str]
+    upload_job: UploadJob
     media: DownloadResult | None
     container: TagContainer | None
 
@@ -77,5 +79,5 @@ class JobID:
 
 @dataclass
 class JobStore:
-    active_jobs: dict[JobID, Job] = field(default_factory=dict)
-    inactive_jobs: dict[JobID, Job] = field(default_factory=dict)
+    active_jobs: dict[JobID, TagJob] = field(default_factory=dict)
+    inactive_jobs: dict[JobID, TagJob] = field(default_factory=dict)

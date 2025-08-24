@@ -60,7 +60,7 @@ class SystemTagger:
             raise MissingResourceError("Insufficient resources available to start job on this system.")
 
         job_id = str(uuid.uuid4())
-        job_status = JobStatus(status="Queued", time_started=time.time(), time_ended=None, error=None)
+        job_status = ContainerJobStatus(status="Queued", time_started=time.time(), time_ended=None, error=None)
         with self.cond:
             self.jobs[job_id] = ContainerJob(container=container, reqs=required_resources, jobstatus=job_status, gpus_used=[], finished=finished)
             self.q.append(job_id)
@@ -74,11 +74,11 @@ class SystemTagger:
         """
         return self._can_start(required_resources, self.total_resources)
 
-    def stop(self, jobid: str) -> JobStatus:
+    def stop(self, jobid: str) -> ContainerJobStatus:
         self._stop_job(jobid, "Stopped")
         return self.status(jobid)
 
-    def status(self, jobid: str) -> JobStatus:
+    def status(self, jobid: str) -> ContainerJobStatus:
         with self.joblocks[jobid]:
             return deepcopy(self.jobs[jobid].jobstatus)
 
@@ -174,7 +174,7 @@ class SystemTagger:
             if jobid in self.q:
                 self.q.remove(jobid)
 
-        if cj.finished:
+        if cj.finished is not None:
             cj.finished.set()
 
     def _free_resources(self, cj: ContainerJob) -> None:

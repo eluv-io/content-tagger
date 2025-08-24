@@ -8,7 +8,7 @@ from src.tag_containers.containers import TagContainer
 JobState = Literal["Queued", "Running", "Completed", "Failed", "Stopped"]
 
 @dataclass
-class JobStatus:
+class ContainerJobStatus:
     status: JobState
     time_started: float
     time_ended: float | None
@@ -19,7 +19,7 @@ class ContainerJob:
     container: TagContainer
     # resource requirements for the job
     reqs: SystemResources
-    jobstatus: JobStatus
+    jobstatus: ContainerJobStatus
     gpus_used: list[int]
     # trigger downstream tasks
     finished: threading.Event | None
