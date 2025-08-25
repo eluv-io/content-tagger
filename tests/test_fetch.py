@@ -8,7 +8,7 @@ import time
 
 from src.fetch.fetch_video import Fetcher
 from src.fetch.types import FetcherConfig, VodDownloadRequest, AssetDownloadRequest
-from src.tags.tagstore import FilesystemTagStore, Tag, Job
+from src.tags.tagstore import FilesystemTagStore, Tag, UploadJob
 from src.common.content import Content
 from src.common.errors import MissingResourceError
 
@@ -117,7 +117,7 @@ def test_download_with_replace_true(
     tagstore = fetcher.tagstore
 
     jobid = "abc"
-    job = Job(
+    job = UploadJob(
         id=jobid,
         qhit=vod_content.qhit,
         stream="video",
@@ -216,7 +216,7 @@ def test_fetch_assets_with_preserve_track(
     tagstore = fetcher.tagstore
     
     jobid = "asset_test_job"
-    job = Job(
+    job = UploadJob(
         id=jobid,
         qhit=assets_content.qhit,
         stream="assets",
@@ -271,7 +271,7 @@ def test_fetch_assets_with_preserve_track(
     # Upload tags to selected tags with author="user" and track="another track", check that downloading again
     # returns all the selected assets (tagger author is special)
 
-    new_job = Job(
+    new_job = UploadJob(
         id="asset_test_job_2",
         qhit=assets_content.qhit,
         stream="assets",

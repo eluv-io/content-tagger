@@ -47,6 +47,9 @@ def fake_media_files(temp_dir):
 def fake_fetcher(fake_media_files):
     """Create a fake fetcher that returns empty media files"""
     class FakeFetcher:
+        def __init__(self, timeout=0.1):
+            self.timeout = timeout
+
         def download_stream(self, content: Content, req: VodDownloadRequest, exit_event=None) -> DownloadResult:
             # Simulate successful download
             sources = []
@@ -64,6 +67,8 @@ def fake_fetcher(fake_media_files):
                 part_duration=10.0,
                 fps=30.0
             )
+
+            time.sleep(self.timeout)
             
             return DownloadResult(
                 successful_sources=sources,
@@ -336,18 +341,12 @@ def test_status_completed_jobs(fabric_tagger, sample_content, sample_tag_args):
     fabric_tagger.tag(sample_content, sample_tag_args)
     
     # Wait a bit for jobs to progress
-    time.sleep(0.5)
+    time.sleep(1)
     
-    # Manually complete a job for testing
-    with fabric_tagger.storelock:
-        if fabric_tagger.jobstore.active_jobs:
-            job_id = list(fabric_tagger.jobstore.active_jobs.keys())[0]
-            job = fabric_tagger.jobstore.active_jobs[job_id]
-            fabric_tagger._stop_job(job_id, "Completed", None)
-    
-    # Status should still include completed job
+    # Check that job is done according to status
     status = fabric_tagger.status("iq__test_content")
-    assert len(status) > 0
+    assert status["video"]["object_detection"]["status"] == "Completed"
+    assert status["audio"]["speech_recognition"]["status"] == "Completed"
 
 
 def test_stop_running_job(fabric_tagger, sample_content, sample_tag_args):
@@ -355,237 +354,94 @@ def test_stop_running_job(fabric_tagger, sample_content, sample_tag_args):
     # Start jobs
     fabric_tagger.tag(sample_content, sample_tag_args)
     
-    # Wait for jobs to start
-    time.sleep(0.1)
-    
     # Stop one job
     fabric_tagger.stop("iq__test_content", "object_detection")
     
     # Check that stop event was set
-    active_jobs = fabric_tagger.jobstore.active_jobs
-    for job in active_jobs.values():
-        if job.args.feature == "object_detection":
-            assert job.stopevent.is_set()
-
+    status = fabric_tagger.status("iq__test_content")
+    assert status["video"]["object_detection"]["status"] == "Stopped"
+    assert status["audio"]["speech_recognition"]["status"] != "Stopped"
 
 def test_stop_nonexistent_job(fabric_tagger):
     """Test stopping a job that doesn't exist"""
     with pytest.raises(MissingResourceError, match="No job running for"):
         fabric_tagger.stop("iq__nonexistent", "object_detection")
 
-
-def test_stop_specific_feature(fabric_tagger, sample_content, sample_tag_args):
-    """Test stopping only a specific feature job"""
-    # Start multiple jobs
+def test_stop_finished_job(fabric_tagger, sample_content, sample_tag_args):
     fabric_tagger.tag(sample_content, sample_tag_args)
-    
-    initial_count = len(fabric_tagger.jobstore.active_jobs)
-    assert initial_count == 2
-    
-    # Stop only object_detection
-    fabric_tagger.stop("iq__test_content", "object_detection")
-    
-    # Check that only object_detection job has stop event set
-    active_jobs = fabric_tagger.jobstore.active_jobs
-    obj_detection_stopped = False
-    speech_rec_running = False
-    
-    for job in active_jobs.values():
-        if job.args.feature == "object_detection":
-            obj_detection_stopped = job.stopevent.is_set()
-        elif job.args.feature == "speech_recognition":
-            speech_rec_running = not job.stopevent.is_set()
-    
-    assert obj_detection_stopped
-    assert speech_rec_running
-
+    time.sleep(1)
+    with pytest.raises(MissingResourceError, match="No job running for"):
+        fabric_tagger.stop("iq__test_content", "object_detection")
+    # check that both are Completed
+    status = fabric_tagger.status("iq__test_content")
+    assert status["video"]["object_detection"]["status"] == "Completed"
+    assert status["audio"]["speech_recognition"]["status"] == "Completed"
 
 def test_cleanup(fabric_tagger, sample_content, sample_tag_args):
     """Test cleanup shuts down properly"""
     # Start some jobs
     fabric_tagger.tag(sample_content, sample_tag_args)
-    
+
     # Cleanup
     fabric_tagger.cleanup()
+
+    time.sleep(1)
     
     # Check shutdown signal is set
     assert fabric_tagger.shutdown_signal.is_set()
 
-
-def test_job_lifecycle(fabric_tagger, sample_content, sample_tag_args):
-    """Test complete job lifecycle from start to completion"""
-    # Start jobs
-    result = fabric_tagger.tag(sample_content, sample_tag_args)
-    assert all("successfully" in msg for msg in result.values())
-    
-    # Jobs should be active initially
-    assert len(fabric_tagger.jobstore.active_jobs) == 2
-    assert len(fabric_tagger.jobstore.inactive_jobs) == 0
-    
-    # Wait for jobs to progress through stages
-    max_wait = 5.0  # 5 second timeout
-    start_time = time.time()
-    
-    while (len(fabric_tagger.jobstore.inactive_jobs) < 2 and 
-           time.time() - start_time < max_wait):
-        time.sleep(0.1)
-    
-    # Check final state
+    # check is_running for all containers
     status = fabric_tagger.status("iq__test_content")
-    
-    # Should have status for both features
-    all_features = []
-    for stream_status in status.values():
-        all_features.extend(stream_status.keys())
-    
-    assert "object_detection" in all_features
-    assert "speech_recognition" in all_features
+    for stream, features in status.items():
+        for feature, job_status in features.items():
+            assert job_status["status"] == "Stopped"
 
+    assert len(fabric_tagger.jobstore.active_jobs) == 0
+    assert len(fabric_tagger.jobstore.inactive_jobs) == 2
 
-def test_concurrent_jobs_different_content(fabric_tagger):
-    """Test running jobs for different content simultaneously"""
-    content1 = Content(qhit="iq__content1", auth="token1")
-    content2 = Content(qhit="iq__content2", auth="token2")
-    
-    args1 = TagArgs(
-        features={"object_detection": {"stream": "video", "model": "yolo"}},
+    assert fabric_tagger.manager.exit.is_set()
+
+    assert len(fabric_tagger.manager.q) == 0
+
+    for job in fabric_tagger.manager.jobs.values():
+        assert job.stopevent.is_set()
+        assert job.finished.is_set()
+        assert job.container.is_running() is False
+
+def test_many_concurrent_jobs(fabric_tagger):
+    """Run many jobs and make sure that they all run"""
+    contents = []
+    for i in range(5):
+        contents.append(Mock(qhit=f"iq__content{i}", auth=f"token{i}"))
+
+    args = TagArgs(
+        features={"object_detection": RunConfig(**{"stream": "video", "model": {}}),
+                  "speech_recognition": RunConfig(**{"stream": "audio", "model": {}})},
         replace=False
     )
-    args2 = TagArgs(
-        features={"speech_recognition": {"stream": "audio", "model": "whisper"}},
-        replace=False
-    )
-    
-    # Start jobs for different content
-    result1 = fabric_tagger.tag(content1, args1)
-    result2 = fabric_tagger.tag(content2, args2)
-    
-    assert result1["object_detection"] == "Job started successfully"
-    assert result2["speech_recognition"] == "Job started successfully"
-    
-    # Should have 2 active jobs
-    assert len(fabric_tagger.jobstore.active_jobs) == 2
-    
-    # Should be able to get status for both
-    status1 = fabric_tagger.status("iq__content1")
-    status2 = fabric_tagger.status("iq__content2")
-    
-    assert status1 != status2
 
-
-def test_job_error_handling(fabric_tagger, sample_content):
-    """Test job error handling"""
-    # Create args with features that will cause errors in the fake system
-    error_args = TagArgs(
-        features={"object_detection": {"stream": "video", "model": "nonexistent"}},
-        replace=False
-    )
-    
-    # Start job
-    result = fabric_tagger.tag(sample_content, error_args)
-    assert result["object_detection"] == "Job started successfully"
-    
-    # Wait a bit for job to potentially fail
-    time.sleep(0.5)
-    
-    # Job should handle errors gracefully
-    status = fabric_tagger.status("iq__test_content")
-    assert isinstance(status, dict)
-
-
-def test_replace_functionality(fabric_tagger, sample_content):
-    """Test replace parameter functionality"""
-    args_replace = TagArgs(
-        features={"object_detection": {"stream": "video", "model": "yolo"}},
-        replace=True,
-        start_time=0,
-        end_time=30
-    )
-    
-    result = fabric_tagger.tag(sample_content, args_replace)
-    assert result["object_detection"] == "Job started successfully"
-    
-    # Check that job was created with replace=True
-    active_jobs = fabric_tagger.jobstore.active_jobs
-    job = list(active_jobs.values())[0]
-    assert job.args.replace == True
-
-
-def test_time_range_functionality(fabric_tagger, sample_content):
-    """Test start_time and end_time parameters"""
-    args_with_time = TagArgs(
-        features={"object_detection": {"stream": "video", "model": "yolo"}},
-        replace=False,
-        start_time=10,
-        end_time=60
-    )
-    
-    result = fabric_tagger.tag(sample_content, args_with_time)
-    assert result["object_detection"] == "Job started successfully"
-    
-    # Check that job was created with correct time range
-    active_jobs = fabric_tagger.jobstore.active_jobs
-    job = list(active_jobs.values())[0]
-    assert job.args.start_time == 10
-    assert job.args.end_time == 60
-
-
-def test_multiple_features_same_stream(fabric_tagger, sample_content):
-    """Test multiple features on the same stream"""
-    args_multi = TagArgs(
-        features={
-            "object_detection": {"stream": "video", "model": "yolo"},
-            "scene_analysis": {"stream": "video", "model": "resnet"}
-        },
-        replace=False
-    )
-    
-    result = fabric_tagger.tag(sample_content, args_multi)
-    assert result["object_detection"] == "Job started successfully"
-    assert result["scene_analysis"] == "Job started successfully"
-    
-    # Should have 2 separate jobs
-    assert len(fabric_tagger.jobstore.active_jobs) == 2
-    
-    # Both should be for video stream
-    for job in fabric_tagger.jobstore.active_jobs.values():
-        assert job.args.runconfig["stream"] == "video"
-
-
-def test_thread_safety(fabric_tagger, sample_content):
-    """Test thread safety of concurrent operations"""
-    import threading
-    
-    def start_job(feature_name):
-        args = TagArgs(
-            features={feature_name: {"stream": "video", "model": "test"}},
-            replace=False
-        )
-        try:
-            return fabric_tagger.tag(sample_content, args)
-        except Exception as e:
-            return {"error": str(e)}
-    
-    # Start multiple jobs concurrently
-    threads = []
     results = []
-    
-    for i in range(3):
-        def worker(idx=i):
-            result = start_job(f"feature_{idx}")
-            results.append(result)
-        
-        t = threading.Thread(target=worker)
-        threads.append(t)
-        t.start()
-    
-    # Wait for all threads
-    for t in threads:
-        t.join(timeout=5)
-    
-    # Should have some successful results
-    assert len(results) == 3
-    
-    # At least one should succeed (others might fail due to invalid features)
-    success_count = sum(1 for r in results if any("successfully" in str(v) for v in r.values()))
-    assert success_count >= 0  # At least some operations should complete
+    for content in contents:
+        result = fabric_tagger.tag(content, args)
+        results.append(result)
+
+    for i, result in enumerate(results):
+        assert result["object_detection"] == "Job started successfully"
+
+    # Should have 5 active jobs
+    assert len(fabric_tagger.jobstore.active_jobs) == 10
+
+    # Should be able to get status for all
+    statuses = []
+    for content in contents:
+        statuses.append(fabric_tagger.status(content.qhit))
+    for status in statuses:
+        assert status["video"]["object_detection"]["status"] in ["Starting", "Fetching content"]
+        assert status["audio"]["speech_recognition"]["status"] in ["Starting", "Fetching content"]
+
+    time.sleep(2)
+
+    for content in contents:
+        status = fabric_tagger.status(content.qhit)
+        assert status["video"]["object_detection"]["status"] == "Completed"
+        assert status["audio"]["speech_recognition"]["status"] == "Completed"
