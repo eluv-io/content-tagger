@@ -205,16 +205,12 @@ class SystemTagger:
             with self.cond:
                 self._clear_stopped_jobs()
 
-                pop_idx = None
                 for i, jobid in enumerate(self.q):
                     cj = self.jobs[jobid]
                     if self._can_start(cj.reqs, self.active_resources):
                         self._run_job(jobid)
-                        pop_idx = i
+                        self.q.pop(i)
                         break
-
-                if pop_idx is not None:
-                    self.q.pop(pop_idx)
 
                 self.cond.wait()
 
