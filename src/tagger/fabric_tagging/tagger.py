@@ -319,7 +319,7 @@ class FabricTagger:
             return tag
 
         frame_tags = tag.additional_info["frame_tags"]
-        frame_offset = int(tag.start_time / 1000 * fps) + int(source.offset * fps)
+        frame_offset = int(source.offset * fps)
 
         adjusted = {}
         for frame_idx, label in frame_tags.items():
