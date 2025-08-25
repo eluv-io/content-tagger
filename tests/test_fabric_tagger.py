@@ -274,7 +274,7 @@ def test_tag_success(fabric_tagger, sample_content, sample_tag_args):
         job = active_jobs[job_id]
         assert job_id.qhit == "iq__test_content"
         assert job.args.feature in ["object_detection", "speech_recognition"]
-        assert job.status.status in ["Starting", "Fetching content"]
+        assert job.state.status.status in ["Starting", "Fetching content"]
 
 
 def test_tag_invalid_feature(fabric_tagger, sample_content):

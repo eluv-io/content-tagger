@@ -1,9 +1,9 @@
 
-import sys
 import threading
 from collections import defaultdict
 import time
 import uuid
+from copy import deepcopy
 
 from loguru import logger
 
@@ -11,20 +11,13 @@ from src.common.schema import Tag
 from src.fetch.types import VodDownloadRequest
 from src.tag_containers.containers import ContainerRegistry
 from src.tagger.system_tagging.resource_manager import SystemTagger
-from src.tagger.fabric_tagging.types import TagJob, JobArgs, JobStatus, JobState, JobStore, JobID
+from src.tagger.fabric_tagging.types import TagJob, JobArgs, JobStatus, JobState, JobStore, JobID, JobStateDescription
 from src.common.content import Content
 from src.api.tagging.format import TagArgs, ImageTagArgs
 from src.common.errors import MissingResourceError
 from src.fetch.fetch_video import Fetcher, VodDownloadRequest
 from src.fetch.types import Source, StreamMetadata
 from src.tags.tagstore import FilesystemTagStore, UploadJob
-
-import faulthandler, signal
-# Enable traceback logging
-faulthandler.enable()
-
-# Dump stack trace on SIGUSR1 (or SIGTERM if Flask is catching it)
-signal.signal(signal.SIGUSR1, lambda sig, frame: faulthandler.dump_traceback(sys.stderr))
     
 class FabricTagger:
 
@@ -60,17 +53,22 @@ class FabricTagger:
         status = {}
         for feature in args.features:
             tsjob = UploadJob(
-                id=str(uuid.uuid4()),
+                id=str(uuid.uuid4()), # TODO: should be set in db instead of here
                 qhit=q.qhit,
                 track=feature,
                 stream=args.features[feature].stream,
-                timestamp=time.time(),
+                timestamp=time.time(), # TODO: same
                 author="tagger"
             )
 
             job = TagJob(
-                status=JobStatus.starting(),
-                taghandle="",
+                state=JobState(
+                    status=JobStatus.starting(),
+                    taghandle="",
+                    uploaded_sources=[],
+                    media=None,
+                    container=None
+                ),
                 args=JobArgs(
                     q=q,
                     feature=feature,
@@ -79,18 +77,16 @@ class FabricTagger:
                     start_time=args.start_time,
                     end_time=args.end_time,
                 ),
-                lock=threading.Lock(),
                 stopevent=threading.Event(),
-                media=None,
-                container=None,
-                uploaded_sources=[],
                 upload_job=tsjob
             )
+
             err = self._start_job(job)
             if err:
                 status[feature] = err
             else:
                 status[feature] = "Job started successfully"
+
         return status
     
     def status(self, qhit: str) -> dict[str, dict[str, JobStatus]]:
@@ -116,7 +112,7 @@ class FabricTagger:
             for jid in jobids:
                 job = active_jobs.get(jid) or inactive_jobs[jid]
                 stream, feature = job.args.runconfig.stream, job.args.feature
-                res[stream][feature] = self._summarize_status(job.status)
+                res[stream][feature] = self._summarize_status(job.state.status)
 
         return dict(res)
 
@@ -134,9 +130,9 @@ class FabricTagger:
             for job in jobs:
                 job.stopevent.set()
 
-                if job.taghandle:
+                if job.state.taghandle:
                     try:
-                        self.manager.stop(job.taghandle)
+                        self.manager.stop(job.state.taghandle)
                     except Exception as e:
                         logger.error(f"Error stopping job {job.get_id()}: {e}")
 
@@ -177,38 +173,24 @@ class FabricTagger:
                 )
 
     def _start_job(self, job: TagJob) -> str:
+        # Check if job is running else start it up in new thread
+
         with self.storelock:
             jobid = job.get_id()
 
             if jobid in self.jobstore.active_jobs:
                 return f"Job {(jobid.qhit, jobid.feature, jobid.stream)} is already running"
+            
+            if isinstance(job.args, ImageTagArgs):
+                return "Image tagging is not implemented yet"
 
             self.jobstore.active_jobs[jobid] = job
 
-            if isinstance(job.args, ImageTagArgs):
-                return "Image tagging is not implemented yet"
-            else:
-                threading.Thread(target=self._run_job, args=(job, )).start()
+            threading.Thread(target=self._run_job, args=(job, )).start()
 
         return ""
 
-    def _set_stop_state(self, jobid: JobID, status: JobState, error: Exception | None) -> None:
-        logger.exception(error)
-        with self.storelock:
-            if jobid in self.jobstore.active_jobs:
-                job = self.jobstore.active_jobs[jobid]
-
-                job.status.status = status
-                job.status.time_ended = time.time()
-
-                self.jobstore.inactive_jobs[jobid] = job
-                del self.jobstore.active_jobs[jobid]
-            else:
-                logger.warning(f"Tried to stop an inactive job: {jobid}")
-
     def _run_job(self, job: TagJob) -> None:
-        jobid = job.get_id()
-
         self.tagstore.start_job(job.upload_job)
 
         # 1. download
@@ -218,10 +200,13 @@ class FabricTagger:
             end_time=job.args.end_time,
             preserve_track=job.args.feature if job.args.replace else "",
         )
+
         with self.storelock:
             if job.stopevent.is_set():
                 return
-            job.status.status = "Fetching content"
+            job.state.status.status = "Fetching content"
+
+        jobid = job.get_id()
 
         try:
             dl_res = self.fetcher.download_stream(job.args.q, dl_req, exit_event=job.stopevent)
@@ -230,38 +215,51 @@ class FabricTagger:
             return
 
         # 2. tag
-        with self.storelock: # TODO: better way?
+        with self.storelock:
             if job.stopevent.is_set():
                 return
-            job.media = dl_res
-            job.status.failed += dl_res.failed
+            job.state.media = dl_res
+            job.state.status.failed += dl_res.failed
             media_files = [s.filepath for s in dl_res.successful_sources]
             container = self.cregistry.get(job.args.feature, media_files, job.args.runconfig.model)
-            reqresources = self.cregistry.get_model_resources(job.args.feature)
+            reqresources = self.cregistry.get_model_resources(job.args.feature) # TODO: should be combined with container
             taggingdone = threading.Event()
             uid = self.manager.start(container, reqresources, taggingdone)
-            job.container = container
-            job.taghandle = uid
-            job.status.status = "Tagging content"
+            job.state.container = container
+            job.state.taghandle = uid
+            job.state.status.status = "Tagging content"
 
         taggingdone.wait()
-
-        if job.stopevent.is_set():
-            return
 
         # 3. upload
         self._set_stop_state(jobid, "Completed", None)
 
+    def _set_stop_state(self, jobid: JobID, status: JobStateDescription, error: Exception | None) -> None:
+        logger.exception(error)
+        with self.storelock:
+            if jobid in self.jobstore.active_jobs:
+                job = self.jobstore.active_jobs[jobid]
+
+                job.state.status.status = status
+                job.state.status.time_ended = time.time()
+
+                self.jobstore.inactive_jobs[jobid] = job
+                del self.jobstore.active_jobs[jobid]
+            else:
+                logger.warning(f"Tried to stop an inactive job: {jobid}")
+
     def _summarize_status(self, status: JobStatus) -> dict:
-        end = time.time()
-        if status.time_ended:
-            end = status.time_ended
-        return {
-            "status": status.status,
-            "time_running": end - status.time_started,
-            "tagging_progress": status.tagging_progress,
-            "failed": status.failed,
-        }
+        with self.storelock:
+            status = deepcopy(status)
+            end = time.time()
+            if status.time_ended:
+                end = status.time_ended
+            return {
+                "status": status.status,
+                "time_running": end - status.time_started,
+                "tagging_progress": status.tagging_progress,
+                "failed": status.failed,
+            }
 
     def _job_watcher(self) -> None:
         while not self.shutdown_signal.is_set():
@@ -278,7 +276,7 @@ class FabricTagger:
     def _check_jobs(self) -> None:
         with self.storelock:
             for job in self.jobstore.active_jobs.values():
-                if not job.status.status == "Tagging content":
+                if not job.state.status.status == "Tagging content":
                     continue
 
                 self._upload_tags(job)
@@ -287,21 +285,22 @@ class FabricTagger:
             self, 
             job: TagJob,
         ) -> None:
-        if job.container is None:
-            return
-        assert job.media is not None
-        media_to_source = {s.filepath: s for s in job.media.successful_sources}
-        outputs = job.container.tags()
-        outputs = [out for out in outputs if out.source_media not in job.uploaded_sources]
+        with self.storelock:
+            if job.state.container is None:
+                return
+            assert job.state.media is not None
+            media_to_source = {s.filepath: s for s in job.state.media.successful_sources}
+            outputs = job.state.container.tags()
+            outputs = [out for out in outputs if out.source_media not in job.state.uploaded_sources]
 
-        tags2upload = []
-        for out in outputs:
-            original_src = media_to_source[out.source_media]
-            for tag in out.tags:
-                tags2upload.append(self._correct_tag(tag, original_src, job.media.stream_meta))
+            tags2upload = []
+            for out in outputs:
+                original_src = media_to_source[out.source_media]
+                for tag in out.tags:
+                    tags2upload.append(self._correct_tag(tag, original_src, job.state.media.stream_meta))
 
-        job.uploaded_sources.extend(out.source_media for out in outputs)
-        self.tagstore.upload_tags(tags2upload, job.upload_job.id)
+            job.state.uploaded_sources.extend(out.source_media for out in outputs)
+            self.tagstore.upload_tags(tags2upload, job.upload_job.id)
 
     def _correct_tag(self, tag: Tag, source: Source, meta: StreamMetadata | None) -> Tag:
         if tag.start_time is not None:

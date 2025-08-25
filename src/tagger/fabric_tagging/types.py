@@ -9,7 +9,7 @@ from src.common.schema import UploadJob
 from src.tag_containers.containers import TagContainer
 from src.fetch.fetch_video import DownloadResult
 
-JobState = Literal[
+JobStateDescription = Literal[
     "Starting",
     "Fetching content",
     "Waiting for resources",
@@ -21,7 +21,7 @@ JobState = Literal[
 
 @dataclass
 class JobStatus:
-    status: JobState
+    status: JobStateDescription
     time_started: float
     time_ended: float | None
     tagging_progress: str
@@ -54,16 +54,20 @@ class JobArgs:
     end_time: int | None
 
 @dataclass
-class TagJob:
-    args: JobArgs
+class JobState:
+    # everything that might change during the job
     status: JobStatus
     taghandle: str
-    lock: threading.Lock
-    stopevent: threading.Event
     uploaded_sources: list[str]
-    upload_job: UploadJob
     media: DownloadResult | None
     container: TagContainer | None
+
+@dataclass
+class TagJob:
+    args: JobArgs
+    state: JobState
+    stopevent: threading.Event
+    upload_job: UploadJob
 
     def get_id(self) -> 'JobID':
         return JobID(qhit=self.args.q.qhit, feature=self.args.feature, stream=self.args.runconfig.stream)
