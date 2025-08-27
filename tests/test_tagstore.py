@@ -3,8 +3,8 @@ import tempfile
 import shutil
 import os
 import json
-import time
 from src.tags.tagstore.tagstore import FilesystemTagStore, Tag, UploadJob
+from src.tags.tagstore.types import TagStoreConfig
 
 
 @pytest.fixture
@@ -18,7 +18,7 @@ def temp_dir():
 @pytest.fixture
 def tag_store(temp_dir):
     """Create a FilesystemTagStore instance for testing"""
-    return FilesystemTagStore(temp_dir)
+    return FilesystemTagStore(TagStoreConfig(base_path=os.path.join(temp_dir, "tagstore")))
 
 
 @pytest.fixture
@@ -48,7 +48,7 @@ def test_init_creates_base_directory(temp_dir):
     base_path = os.path.join(temp_dir, "new_dir")
     assert not os.path.exists(base_path)
     
-    store = FilesystemTagStore(base_path)
+    store = FilesystemTagStore(TagStoreConfig(base_path=base_path))
     assert os.path.exists(base_path)
     assert os.path.isdir(base_path)
 

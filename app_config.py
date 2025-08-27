@@ -8,7 +8,6 @@ from src.tag_containers.types import RegistryConfig
 from src.tagger.system_tagging.types import SysConfig
 from src.tags.conversion import TagConverterConfig 
 from src.tags.tagstore.types import TagStoreConfig
-from src.tagger.system_tagging
 
 @dataclass
 class AppConfig:

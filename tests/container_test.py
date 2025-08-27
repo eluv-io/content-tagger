@@ -57,11 +57,11 @@ def container_spec_video(temp_dir, video_files):
     os.makedirs(tags_dir, exist_ok=True)
     
     return ContainerSpec(
-        fileargs=video_files,
-        runconfig={},
-        logspath=os.path.join(temp_dir, "logs"),
-        cachepath=os.path.join(temp_dir, "cache"), 
-        tagspath=tags_dir,
+        file_args=video_files,
+        run_config={},
+        logs_path=os.path.join(temp_dir, "logs"),
+        cache_path=os.path.join(temp_dir, "cache"),
+        tags_path=tags_dir,
         model_config=ModelConfig(
             type="video",
             name="test",
@@ -78,11 +78,11 @@ def container_spec_image(temp_dir, image_files):
     os.makedirs(tags_dir, exist_ok=True)
     
     return ContainerSpec(
-        fileargs=image_files,
-        runconfig={},
-        logspath=os.path.join(temp_dir, "logs"),
-        cachepath=os.path.join(temp_dir, "cache"),
-        tagspath=tags_dir,
+        file_args=image_files,
+        run_config={},
+        logs_path=os.path.join(temp_dir, "logs"),
+        cache_path=os.path.join(temp_dir, "cache"),
+        tags_path=tags_dir,
         model_config=ModelConfig(
             type="frame",
             name="test",
@@ -133,7 +133,7 @@ def create_image_tags_file(tags_dir: str, basename: str, tags_data: list[dict]):
 
 def test_tags_video_only_video_tags(video_tag_container):
     """Test tags() with only video tags (no frame tags)"""
-    tags_dir = video_tag_container.cfg.tagspath
+    tags_dir = video_tag_container.cfg.tags_path
     
     # Create video tags files
     video_tags_data = [
@@ -177,7 +177,7 @@ def test_tags_video_only_video_tags(video_tag_container):
 
 def test_tags_video_with_frame_tags(video_tag_container):
     """Test tags() with both video and frame tags"""
-    tags_dir = video_tag_container.cfg.tagspath
+    tags_dir = video_tag_container.cfg.tags_path
     
     # Create video tags
     video_tags_data = [
@@ -236,7 +236,7 @@ def test_tags_video_with_frame_tags(video_tag_container):
 
 def test_tags_video_multiple_sources(video_tag_container):
     """Test tags() with multiple video sources"""
-    tags_dir = video_tag_container.cfg.tagspath
+    tags_dir = video_tag_container.cfg.tags_path
     
     # Create tags for video1
     video1_tags = [{"start_time": 0, "end_time": 5, "text": "scene1"}]
@@ -264,7 +264,7 @@ def test_tags_video_multiple_sources(video_tag_container):
 
 def test_tags_image_files(image_tag_container):
     """Test tags() with image files"""
-    tags_dir = image_tag_container.cfg.tagspath
+    tags_dir = image_tag_container.cfg.tags_path
     
     # Create image tags
     image_tags_data = [
@@ -310,7 +310,7 @@ def test_tags_no_files(video_tag_container):
 
 def test_tags_frame_tags_no_text_match(video_tag_container):
     """Test tags() when frame tags don't match video tag text"""
-    tags_dir = video_tag_container.cfg.tagspath
+    tags_dir = video_tag_container.cfg.tags_path
     
     video_tags_data = [
         {
@@ -343,7 +343,7 @@ def test_tags_frame_tags_no_text_match(video_tag_container):
 
 def test_tags_invalid_json_file(video_tag_container):
     """Test tags() handles invalid JSON gracefully"""
-    tags_dir = video_tag_container.cfg.tagspath
+    tags_dir = video_tag_container.cfg.tags_path
     
     # Create invalid JSON file
     invalid_file = os.path.join(tags_dir, "video1_tags.json")
@@ -356,7 +356,7 @@ def test_tags_invalid_json_file(video_tag_container):
 
 def test_tags_missing_video_tags_file(video_tag_container):
     """Test tags() when video tags file is missing but frame tags exist"""
-    tags_dir = video_tag_container.cfg.tagspath
+    tags_dir = video_tag_container.cfg.tags_path
     
     frame_tags_data = {30: {"text": "test", "confidence": 0.9}}
     create_frame_tags_file(tags_dir, "video1", frame_tags_data)
@@ -385,7 +385,7 @@ def test_source_from_tag_file(video_tag_container, image_tag_container):
 
 def test_tags_frame_tags_only_overlapping_frames(video_tag_container):
     """Test that only frame tags within video tag time range are included"""
-    tags_dir = video_tag_container.cfg.tagspath
+    tags_dir = video_tag_container.cfg.tags_path
     
     video_tags_data = [
         {
@@ -440,7 +440,7 @@ def test_tags_frame_tags_only_overlapping_frames(video_tag_container):
 
 def test_tags_case_insensitive_text_matching(video_tag_container):
     """Test that frame tag text matching is case insensitive"""
-    tags_dir = video_tag_container.cfg.tagspath
+    tags_dir = video_tag_container.cfg.tags_path
     
     video_tags_data = [
         {

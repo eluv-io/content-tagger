@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 ## Config
 
+@dataclass
 class TagStoreConfig:
     base_path: str
 

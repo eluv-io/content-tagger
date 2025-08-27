@@ -72,7 +72,7 @@ class TagContainer:
             })
 
         kwargs = {
-            "command": [f"{os.path.basename(f)}" for f in self.cfg.file_args] + ["--config", f"{json.dumps(self.cfg.runconfig)}"],
+            "command": [f"{os.path.basename(f)}" for f in self.cfg.file_args] + ["--config", f"{json.dumps(self.cfg.run_config)}"],
             "mounts": volumes,
             "remove": True,
             "network_mode": "host",

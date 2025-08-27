@@ -8,8 +8,9 @@ from typing import Generator
 from src.fetch.fetch_video import Fetcher
 from src.fetch.types import AssetScope, DownloadRequest, FetcherConfig, VideoScope
 from src.tags.tagstore.tagstore import FilesystemTagStore, Tag
-from src.common.content import Content
+from src.common.content import Content, ContentConfig, ContentFactory
 from src.common.errors import MissingResourceError
+from src.tags.tagstore.types import TagStoreConfig
 
 # Load environment variables from .env file
 load_dotenv()
@@ -29,7 +30,7 @@ def temp_dir() -> Generator[str, None, None]:
 @pytest.fixture
 def tag_store(temp_dir: str) -> FilesystemTagStore:
     """Create a FilesystemTagStore for testing"""
-    return FilesystemTagStore(temp_dir)
+    return FilesystemTagStore(TagStoreConfig(base_path=temp_dir))
 
 
 @pytest.fixture
@@ -44,47 +45,53 @@ def fetcher_config(temp_dir: str) -> FetcherConfig:
         author="tagger"
     )
 
-
 @pytest.fixture
 def fetcher(fetcher_config: FetcherConfig, tag_store: FilesystemTagStore) -> Fetcher:
     """Create a Fetcher instance for testing"""
     return Fetcher(config=fetcher_config, tagstore=tag_store)
 
+@pytest.fixture
+def qfactory():
+    cfg = ContentConfig(
+        content_url="https://host-154-14-185-98.contentfabric.io/config?self&qspace=main", 
+        parts_url="http://192.168.96.203/config?self&qspace=main"
+    )
+    return ContentFactory(cfg=cfg)
 
 @pytest.fixture
-def legacy_vod_content() -> Content:
+def legacy_vod_content(qfactory) -> Content:
     auth_token = os.getenv("TEST_AUTH")
     
     if not auth_token:
         pytest.skip("TEST_AUTH not set in environment")
     
     try:
-        return Content(qhit=LEGACY_VOD_QHIT, auth=auth_token)
+        return qfactory.create_content(qhit=LEGACY_VOD_QHIT, auth=auth_token)
     except Exception as e:
         pytest.skip(f"Failed to create legacy VOD content: {e}")
 
 
 @pytest.fixture
-def vod_content() -> Content:
+def vod_content(qfactory) -> Content:
     auth_token = os.getenv("TEST_AUTH")
     
     if not auth_token:
         pytest.skip("TEST_AUTH not set in environment")
     
     try:
-        return Content(qhit=VOD_QHIT, auth=auth_token)
+        return qfactory.create_content(qhit=VOD_QHIT, auth=auth_token)
     except Exception as e:
         pytest.skip(f"Failed to create modern VOD content: {e}")
 
 @pytest.fixture
-def assets_content() -> Content:
+def assets_content(qfactory) -> Content:
     auth_token = os.getenv("TEST_AUTH")
 
     if not auth_token:
         pytest.skip("TEST_AUTH not set in environment")
 
     try:
-        return Content(qhit=ASSETS_QHIT, auth=auth_token)
+        return qfactory.create_content(qhit=ASSETS_QHIT, auth=auth_token)
     except Exception as e:
         pytest.skip(f"Failed to create assets content: {e}")
 

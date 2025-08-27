@@ -14,7 +14,7 @@ from src.tagger.fabric_tagging.types import RunConfig, TagArgs
 from src.tags.tagstore.tagstore import FilesystemTagStore
 from src.fetch.types import DownloadRequest, DownloadResult, Source, StreamMetadata, VideoScope
 from src.common.content import Content
-from src.tags.tagstore.types import Tag
+from src.tags.tagstore.types import Tag, TagStoreConfig
 from src.common.errors import MissingResourceError
 
 
@@ -81,7 +81,7 @@ def fake_fetcher(fake_media_files):
 def tag_store(temp_dir):
     """Create a real FilesystemTagStore for testing"""
     tagstore_dir = os.path.join(temp_dir, "tagstore")
-    return FilesystemTagStore(tagstore_dir)
+    return FilesystemTagStore(TagStoreConfig(base_path=tagstore_dir))
 
 
 @pytest.fixture
@@ -228,7 +228,7 @@ def fake_container_registry(temp_dir, fake_media_files):
 def fabric_tagger(system_tagger, fake_container_registry, tag_store, fake_fetcher):
     """Create a FabricTagger instance for testing"""
     tagger = FabricTagger(
-        manager=system_tagger,
+        system_tagger=system_tagger,
         cregistry=fake_container_registry,
         tagstore=tag_store,
         fetcher=fake_fetcher
@@ -402,11 +402,11 @@ def test_cleanup(fabric_tagger, sample_content, sample_tag_args):
     assert len(fabric_tagger.jobstore.active_jobs) == 0
     assert len(fabric_tagger.jobstore.inactive_jobs) == 2
 
-    assert fabric_tagger.manager.exit.is_set()
+    assert fabric_tagger.system_tagger.exit.is_set()
 
-    assert len(fabric_tagger.manager.q) == 0
+    assert len(fabric_tagger.system_tagger.q) == 0
 
-    for job in fabric_tagger.manager.jobs.values():
+    for job in fabric_tagger.system_tagger.jobs.values():
         assert job.stopevent.is_set()
         assert job.finished.is_set()
         assert job.container.is_running() is False
