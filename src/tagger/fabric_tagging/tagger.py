@@ -2,12 +2,11 @@
 import threading
 from collections import defaultdict
 import time
-import uuid
 from copy import deepcopy
 
 from loguru import logger
 
-from src.common.schema import Tag
+from src.tags.tagstore.types import Tag
 from src.fetch.types import VodDownloadRequest
 from src.tag_containers.containers import ContainerRegistry
 from src.tagger.system_tagging.resource_manager import SystemTagger
@@ -17,7 +16,7 @@ from src.api.tagging.format import TagArgs, ImageTagArgs
 from src.common.errors import MissingResourceError
 from src.fetch.fetch_video import Fetcher, VodDownloadRequest
 from src.fetch.types import Source, StreamMetadata
-from src.tags.tagstore import FilesystemTagStore, UploadJob
+from src.tags.tagstore.tagstore import FilesystemTagStore
     
 class FabricTagger:
 
@@ -43,7 +42,7 @@ class FabricTagger:
         
         self.shutdown_signal = threading.Event()
 
-        threading.Thread(target=self._job_watcher, daemon=True).start()
+        threading.Thread(target=self._uploader, daemon=True).start()
 
     def tag(self, q: Content, args: TagArgs | ImageTagArgs) -> dict:
         self._validate_args(args)
@@ -52,23 +51,15 @@ class FabricTagger:
             raise NotImplementedError("Image tagging is not implemented yet")
         status = {}
         for feature in args.features:
-            tsjob = UploadJob(
-                id=str(uuid.uuid4()), # TODO: should be set in db instead of here
+            tsjob = self.tagstore.start_job(
                 qhit=q.qhit,
                 track=feature,
                 stream=args.features[feature].stream,
-                timestamp=time.time(), # TODO: same
                 author="tagger"
             )
 
             job = TagJob(
-                state=JobState(
-                    status=JobStatus.starting(),
-                    taghandle="",
-                    uploaded_sources=[],
-                    media=None,
-                    container=None
-                ),
+                state=JobState.starting(),
                 args=JobArgs(
                     q=q,
                     feature=feature,
@@ -78,7 +69,7 @@ class FabricTagger:
                     end_time=args.end_time,
                 ),
                 stopevent=threading.Event(),
-                upload_job=tsjob
+                upload_job=tsjob.id
             )
 
             err = self._start_job(job)
@@ -129,14 +120,16 @@ class FabricTagger:
             jobs = [active_jobs[jid] for jid in jobids]
             for job in jobs:
                 job.stopevent.set()
-
-                if job.state.taghandle:
-                    try:
-                        self.manager.stop(job.state.taghandle)
-                    except Exception as e:
-                        logger.error(f"Error stopping job {job.get_id()}: {e}")
-
                 self._set_stop_state(job.get_id(), "Stopped", None)
+
+        for job in jobs:
+            if job.state.taghandle is None:
+                continue
+            
+            try:
+                self.manager.stop(job.state.taghandle)
+            except Exception as e:
+                logger.error(f"Error stopping job {job.get_id()}: {e}")
 
     def cleanup(self) -> None:
         logger.info("Shutting down fabric tagger...")
@@ -222,7 +215,7 @@ class FabricTagger:
             job.state.status.failed += dl_res.failed
             media_files = [s.filepath for s in dl_res.successful_sources]
             container = self.cregistry.get(job.args.feature, media_files, job.args.runconfig.model)
-            reqresources = self.cregistry.get_model_resources(job.args.feature) # TODO: should be combined with container
+            reqresources = self.cregistry.get_model_config(job.args.feature).resources # TODO: should be combined with container
             taggingdone = threading.Event()
             uid = self.manager.start(container, reqresources, taggingdone)
             job.state.container = container
@@ -261,7 +254,7 @@ class FabricTagger:
                 "failed": status.failed,
             }
 
-    def _job_watcher(self) -> None:
+    def _uploader(self) -> None:
         while not self.shutdown_signal.is_set():
             if self.storelock.acquire(timeout=1):
                 try:
