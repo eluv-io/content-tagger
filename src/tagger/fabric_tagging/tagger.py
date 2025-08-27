@@ -25,13 +25,13 @@ class FabricTagger:
 
     def __init__(
             self, 
-            manager: SystemTagger,
+            system_tagger: SystemTagger,
             cregistry: ContainerRegistry,
             tagstore: FilesystemTagStore,
             fetcher: Fetcher
         ):
 
-        self.manager = manager
+        self.system_tagger = system_tagger
         self.cregistry = cregistry
         self.tagstore = tagstore
         self.fetcher = fetcher
@@ -124,7 +124,7 @@ class FabricTagger:
                 continue
             
             try:
-                self.manager.stop(job.state.taghandle)
+                self.system_tagger.stop(job.state.taghandle)
             except Exception as e:
                 logger.error(f"Error stopping job {job.get_id()}: {e}")
 
@@ -135,7 +135,7 @@ class FabricTagger:
             for job in active_jobs:
                 self.stop(job.qhit, job.feature)
         self.shutdown_signal.set()
-        self.manager.shutdown()
+        self.system_tagger.shutdown()
 
     def _validate_args(self, args: TagArgs) -> None:
         """
@@ -144,7 +144,7 @@ class FabricTagger:
 
         services = self.cregistry.services()
 
-        modconfigs = self.cregistry.cfg.modconfigs
+        modconfigs = self.cregistry.cfg.model_configs
 
         for feature in args.features:
             if feature not in services:
@@ -212,7 +212,7 @@ class FabricTagger:
             reqresources = self.cregistry.get_model_config(job.args.feature).resources
             taggingdone = threading.Event()
             # TODO: holding storelock while container is starting.
-            uid = self.manager.start(container, reqresources, taggingdone)
+            uid = self.system_tagger.start(container, reqresources, taggingdone)
             job.state.container = container
             job.state.taghandle = uid
             job.state.status.status = "Tagging content"

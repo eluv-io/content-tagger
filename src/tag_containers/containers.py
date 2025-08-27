@@ -22,15 +22,15 @@ class TagContainer:
         cfg: ContainerSpec
     ):
         self.cfg = cfg
-        file_types = [get_file_type(f) for f in self.cfg.fileargs]
+        file_types = [get_file_type(f) for f in self.cfg.file_args]
         if len(set(file_types)) > 1:
             raise BadRequestError("All files must be of the same type")
         self.file_type = file_types[0]
         if self.file_type not in ["video", "frame", "image"]:
             raise BadRequestError(f"Unsupported file type: {self.file_type}")
         # check that no file has the same basename
-        self.basename_to_source = {os.path.splitext(os.path.basename(f))[0]: f for f in self.cfg.fileargs}
-        if len(self.basename_to_source) != len(self.cfg.fileargs):
+        self.basename_to_source = {os.path.splitext(os.path.basename(f))[0]: f for f in self.cfg.file_args}
+        if len(self.basename_to_source) != len(self.cfg.file_args):
             raise BadRequestError("Files must have unique basenames")
         self.pclient = pclient
         self.container = None
@@ -42,13 +42,13 @@ class TagContainer:
 
         volumes = [
             {
-                "source": self.cfg.tagspath,
+                "source": self.cfg.tags_path,
                 # convention for containers to store tags in /elv/tags
                 "target": "/elv/tags",
                 "type": "bind",
             },
             {
-                "source": self.cfg.cachepath,
+                "source": self.cfg.cache_path,
                 # convention for python modules to store cache in /root/.cache
                 "target": "/root/.cache",
                 "type": "bind",
@@ -56,7 +56,7 @@ class TagContainer:
             }
         ]
 
-        for f in self.cfg.fileargs:
+        for f in self.cfg.file_args:
             if not os.path.exists(f):
                 raise FileNotFoundError(f"File {f} not found")
             elif not os.path.isfile(f):
@@ -72,13 +72,13 @@ class TagContainer:
             })
 
         kwargs = {
-            "command": [f"{os.path.basename(f)}" for f in self.cfg.fileargs] + ["--config", f"{json.dumps(self.cfg.runconfig)}"],
+            "command": [f"{os.path.basename(f)}" for f in self.cfg.file_args] + ["--config", f"{json.dumps(self.cfg.runconfig)}"],
             "mounts": volumes,
             "remove": True,
             "network_mode": "host",
             "log_config": {
                 "type": "file",
-                "path": self.cfg.logspath,
+                "path": self.cfg.logs_path,
             }
         }
 
@@ -111,8 +111,8 @@ class TagContainer:
         """
 
         tag_files = []
-        for fpath in os.listdir(self.cfg.tagspath):
-            tag_files.append(os.path.join(self.cfg.tagspath, fpath))
+        for fpath in os.listdir(self.cfg.tags_path):
+            tag_files.append(os.path.join(self.cfg.tags_path, fpath))
 
         tag_files = self._filter_open_fd(tag_files)
         return self._files_to_tags(tag_files)
@@ -291,36 +291,36 @@ class ContainerRegistry:
     def __init__(self, cfg: RegistryConfig):
         self.pclient = PodmanClient()
         self.cfg = cfg
-        os.makedirs(self.cfg.logspath, exist_ok=True)
-        os.makedirs(self.cfg.tagspath, exist_ok=True)
-        os.makedirs(self.cfg.cachepath, exist_ok=True)
+        os.makedirs(self.cfg.logs_path, exist_ok=True)
+        os.makedirs(self.cfg.tags_path, exist_ok=True)
+        os.makedirs(self.cfg.cache_path, exist_ok=True)
 
     def get(self, model: str, fileargs: list[str], runconfig: dict) -> TagContainer:
-        tagspath = os.path.join(self.cfg.tagspath, model)
-        logspath = os.path.join(self.cfg.logspath, model)
-        cachepath = os.path.join(self.cfg.cachepath, model)
+        tags_path = os.path.join(self.cfg.tags_path, model)
+        logs_path = os.path.join(self.cfg.logs_path, model)
+        cache_path = os.path.join(self.cfg.cache_path, model)
 
-        modelcfg = self.cfg.modconfigs.get(model)
+        modelcfg = self.cfg.model_configs.get(model)
         if not modelcfg:
             raise MissingResourceError(f"Model {model} not found")
 
         ccfg = ContainerSpec(
-            fileargs=fileargs,
-            runconfig=runconfig,
-            logspath=logspath,
-            cachepath=cachepath,
-            tagspath=tagspath,
+            file_args=fileargs,
+            run_config=runconfig,
+            logs_path=logs_path,
+            cache_path=cache_path,
+            tags_path=tags_path,
             model_config=modelcfg
         )
 
         return TagContainer(self.pclient, ccfg)
 
     def get_model_config(self, model: str) -> ModelConfig:
-        return deepcopy(self.cfg.modconfigs[model])
+        return deepcopy(self.cfg.model_configs[model])
 
     def services(self) -> list[str]:
         """
         Returns a list of available services
         """
         # TODO: check if the image exists
-        return list(self.cfg.modconfigs.keys())
+        return list(self.cfg.model_configs.keys())

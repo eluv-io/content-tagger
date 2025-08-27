@@ -1,1 +1,0 @@
-podman build . --format docker -t slow_model_test --network host
