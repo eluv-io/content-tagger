@@ -40,9 +40,9 @@ class JobStatus:
 @dataclass
 class RunConfig:
     # model config, used to overwrite the model level config
-    model: dict
-    # stream name to run the model on, None to use the default stream. "image" is a special case which will tag image assets
-    stream: str
+    model: dict = field(default_factory=dict)
+    # stream name to run the model on, None to use the default stream. "assets" is a special case which will tag image assets
+    stream: str | None = None
 
 @dataclass
 class JobArgs:

@@ -19,7 +19,7 @@ from src.common.content import ContentFactory
 from src.tag_containers.containers import ContainerRegistry
 
 from src.api.tagging.handlers import handle_tag, handle_image_tag, handle_status, handle_stop
-from src.api.upload.handlers import handle_finalize, handle_aggregate
+#from src.api.upload.handlers import handle_finalize, handle_aggregate
 from src.common.errors import BadRequestError, MissingResourceError
 from app_config import AppConfig
 
@@ -43,11 +43,6 @@ def configure_routes(app: Flask) -> None:
         logger.exception(f"Missing resource: {e}")
         return jsonify({'message': e.message}), 404
 
-    @app.route('/list', methods=['GET'])
-    def list() -> Response:
-        res = list_services()
-        return Response(response=json.dumps(res), status=200, mimetype='application/json')
-
     @app.route('/<qhit>/tag', methods=['POST'])
     def tag(qhit: str) -> Response:
         return handle_tag(qhit)
@@ -64,14 +59,14 @@ def configure_routes(app: Flask) -> None:
     def stop(qhit: str, feature: str) -> Response:
         return handle_stop(qhit, feature)    
 
-    @app.route('/<qhit>/write', methods=['POST'])
-    @app.route('/<qhit>/finalize', methods=['POST'])
-    def finalize(qhit: str) -> Response:
-        return handle_finalize(qhit)
-
-    @app.route('/<qhit>/aggregate', methods=['POST'])
-    def aggregate(qhit: str) -> Response:
-        return handle_aggregate(qhit)
+    #@app.route('/<qhit>/write', methods=['POST'])
+    #@app.route('/<qhit>/finalize', methods=['POST'])
+    #def finalize(qhit: str) -> Response:
+    #    return handle_finalize(qhit)
+#
+    #@app.route('/<qhit>/aggregate', methods=['POST'])
+    #def aggregate(qhit: str) -> Response:
+    #    return handle_aggregate(qhit)
 
 def boot_state(app: Flask, cfg: AppConfig) -> None:
     app_state = {}
@@ -99,7 +94,6 @@ def configure_lifecycle(app: Flask) -> None:
         logger.info("Cleaning up resources...")
         app_state = app.config["state"]
         app_state["tagger"].cleanup()
-        app_state["internal_tagger"].shutdown()
         logger.info("Cleanup completed.")
         os._exit(0)
 

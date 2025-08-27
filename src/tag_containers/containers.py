@@ -5,6 +5,7 @@ from loguru import logger
 import json
 import os
 import psutil
+import uuid
 
 from common_ml.utils.files import get_file_type
 from common_ml.video_processing import get_fps
@@ -29,7 +30,7 @@ class TagContainer:
         if self.file_type not in ["video", "frame", "image"]:
             raise BadRequestError(f"Unsupported file type: {self.file_type}")
         # check that no file has the same basename
-        self.basename_to_source = {os.path.splitext(os.path.basename(f))[0]: f for f in self.cfg.file_args}
+        self.basename_to_source = {os.path.basename(f): f for f in self.cfg.file_args}
         if len(self.basename_to_source) != len(self.cfg.file_args):
             raise BadRequestError("Files must have unique basenames")
         self.pclient = pclient
@@ -72,6 +73,7 @@ class TagContainer:
             })
 
         kwargs = {
+            "image": self.cfg.model_config.image,
             "command": [f"{os.path.basename(f)}" for f in self.cfg.file_args] + ["--config", f"{json.dumps(self.cfg.run_config)}"],
             "mounts": volumes,
             "remove": True,
@@ -190,7 +192,7 @@ class TagContainer:
                 outputs.append(self._output_from_tags(source_media, tag_files))
 
         return outputs
-    
+
     def _output_from_tags(self, source_video: str, tag_files: list[str]) -> ModelOutput | None:
         fps = get_fps(source_video)
 
@@ -250,18 +252,17 @@ class TagContainer:
         """
         Extract the source from the tag file name.
         """
-        basename = os.path.splitext(os.path.basename(tagfile))[0]
+        basename = os.path.basename(tagfile)
         # remove _tags, _frametags, or _imagetags suffix
-        if basename.endswith("_tags"):
-            basename = basename[:-5]
-        elif basename.endswith("_frametags"):
-            basename = basename[:-10]
-        elif basename.endswith("_imagetags"):
-            basename = basename[:-10]
-        else:
-            raise ValueError(f"Invalid tag file name: {tagfile}")
+        path_parts = basename.split("_")
+        if len(path_parts) < 2:
+            raise ValueError(f"Invalid tag file name: {basename}")
+        suffix = path_parts[-1]
+        if suffix not in ["tags.json", "frametags.json", "imagetags.json"]:
+            raise ValueError(f"Invalid tag file suffix: {suffix}")
+        original_filebase = "_".join(path_parts[:-1])
         
-        return self.basename_to_source[basename]
+        return self.basename_to_source[original_filebase]
     
     def _find_overlapping_frame_tags(
         self, 
@@ -296,9 +297,11 @@ class ContainerRegistry:
         os.makedirs(self.cfg.cache_path, exist_ok=True)
 
     def get(self, model: str, fileargs: list[str], runconfig: dict) -> TagContainer:
-        tags_path = os.path.join(self.cfg.tags_path, model)
-        logs_path = os.path.join(self.cfg.logs_path, model)
-        cache_path = os.path.join(self.cfg.cache_path, model)
+        tags_path = os.path.join(self.cfg.tags_path, model, str(uuid.uuid4()))
+        logs_path = os.path.join(tags_path, "logs.out")
+        os.makedirs(tags_path, exist_ok=True)
+
+        cache_path = self.cfg.cache_path
 
         modelcfg = self.cfg.model_configs.get(model)
         if not modelcfg:

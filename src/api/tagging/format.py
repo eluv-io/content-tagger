@@ -41,7 +41,7 @@ class ImageTagAPIArgs(Data):
 
     @staticmethod
     def from_dict(data: dict) -> 'ImageTagAPIArgs':
-        features = {feature: RunConfig(stream='image', **cfg) for feature, cfg in data['features'].items()}
+        features = {feature: RunConfig(stream='assets', **cfg) for feature, cfg in data['features'].items()}
         return ImageTagAPIArgs(features=features, assets=data.get('assets', None), replace=data.get('replace', False))
 
     def to_tag_args(self) -> TagArgs:

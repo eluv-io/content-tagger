@@ -6,14 +6,12 @@ from src.common.content import ContentConfig
 from src.fetch.types import FetcherConfig
 from src.tag_containers.types import RegistryConfig
 from src.tagger.system_tagging.types import SysConfig
-from src.tags.conversion import TagConverterConfig 
 from src.tags.tagstore.types import TagStoreConfig
 
 @dataclass
 class AppConfig:
     content: ContentConfig
     tagstore: TagStoreConfig
-    tag_converter: TagConverterConfig
     system: SysConfig
     fetcher: FetcherConfig
     container_registry: RegistryConfig

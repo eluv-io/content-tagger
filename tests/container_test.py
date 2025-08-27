@@ -64,7 +64,6 @@ def container_spec_video(temp_dir, video_files):
         tags_path=tags_dir,
         model_config=ModelConfig(
             type="video",
-            name="test",
             image="test/model:latest",
             resources={}
         )
@@ -85,7 +84,6 @@ def container_spec_image(temp_dir, image_files):
         tags_path=tags_dir,
         model_config=ModelConfig(
             type="frame",
-            name="test",
             image="test/model:latest", 
             resources=SystemResources(memory_mb=1024, vcpus=1)
         )
@@ -151,7 +149,7 @@ def test_tags_video_only_video_tags(video_tag_container):
         }
     ]
     
-    create_video_tags_file(tags_dir, "video1", video_tags_data)
+    create_video_tags_file(tags_dir, "video1.mp4", video_tags_data)
     
     with patch('src.tag_containers.containers.get_fps', return_value=30.0):
         outputs = video_tag_container.tags()
@@ -208,8 +206,8 @@ def test_tags_video_with_frame_tags(video_tag_container):
         }
     }
     
-    create_video_tags_file(tags_dir, "video1", video_tags_data)
-    create_frame_tags_file(tags_dir, "video1", frame_tags_data)
+    create_video_tags_file(tags_dir, "video1.mp4", video_tags_data)
+    create_frame_tags_file(tags_dir, "video1.mp4", frame_tags_data)
     
     with patch('src.tag_containers.containers.get_fps', return_value=30.0):
         outputs = video_tag_container.tags()
@@ -240,12 +238,12 @@ def test_tags_video_multiple_sources(video_tag_container):
     
     # Create tags for video1
     video1_tags = [{"start_time": 0, "end_time": 5, "text": "scene1"}]
-    create_video_tags_file(tags_dir, "video1", video1_tags)
+    create_video_tags_file(tags_dir, "video1.mp4", video1_tags)
     
     # Create tags for video2  
     video2_tags = [{"start_time": 0, "end_time": 3, "text": "scene2"}]
-    create_video_tags_file(tags_dir, "video2", video2_tags)
-    
+    create_video_tags_file(tags_dir, "video2.mp4", video2_tags)
+
     with patch('src.tag_containers.containers.get_fps', return_value=30.0):
         outputs = video_tag_container.tags()
         
@@ -279,9 +277,9 @@ def test_tags_image_files(image_tag_container):
             "box": [200, 200, 300, 300]
         }
     ]
-    
-    create_image_tags_file(tags_dir, "image1", image_tags_data)
-    
+
+    create_image_tags_file(tags_dir, "image1.jpg", image_tags_data)
+
     outputs = image_tag_container.tags()
     
     assert len(outputs) == 1
@@ -327,10 +325,10 @@ def test_tags_frame_tags_no_text_match(video_tag_container):
             "box": [100, 100, 200, 200]
         }
     }
-    
-    create_video_tags_file(tags_dir, "video1", video_tags_data)
-    create_frame_tags_file(tags_dir, "video1", frame_tags_data)
-    
+
+    create_video_tags_file(tags_dir, "video1.mp4", video_tags_data)
+    create_frame_tags_file(tags_dir, "video1.mp4", frame_tags_data)
+
     with patch('src.tag_containers.containers.get_fps', return_value=30.0):
         outputs = video_tag_container.tags()
         
@@ -359,7 +357,7 @@ def test_tags_missing_video_tags_file(video_tag_container):
     tags_dir = video_tag_container.cfg.tags_path
     
     frame_tags_data = {30: {"text": "test", "confidence": 0.9}}
-    create_frame_tags_file(tags_dir, "video1", frame_tags_data)
+    create_frame_tags_file(tags_dir, "video1.mp4", frame_tags_data)
     
     with patch('src.tag_containers.containers.get_fps', return_value=30.0):
         # Should handle gracefully - either return empty or skip this source
@@ -371,15 +369,15 @@ def test_tags_missing_video_tags_file(video_tag_container):
 def test_source_from_tag_file(video_tag_container, image_tag_container):
     """Test _source_from_tag_file method"""
     # Test video tags file
-    source = video_tag_container._source_from_tag_file("video1_tags.json")
+    source = video_tag_container._source_from_tag_file("video1.mp4_tags.json")
     assert source.endswith("video1.mp4")
     
     # Test frame tags file
-    source = video_tag_container._source_from_tag_file("video1_frametags.json") 
+    source = video_tag_container._source_from_tag_file("video1.mp4_frametags.json") 
     assert source.endswith("video1.mp4")
     
     # Test image file
-    source = image_tag_container._source_from_tag_file("image1_imagetags.json")
+    source = image_tag_container._source_from_tag_file("image1.jpg_imagetags.json")
     assert source.endswith("image1.jpg")
 
 
@@ -418,8 +416,8 @@ def test_tags_frame_tags_only_overlapping_frames(video_tag_container):
         }
     }
     
-    create_video_tags_file(tags_dir, "video1", video_tags_data)
-    create_frame_tags_file(tags_dir, "video1", frame_tags_data)
+    create_video_tags_file(tags_dir, "video1.mp4", video_tags_data)
+    create_frame_tags_file(tags_dir, "video1.mp4", frame_tags_data)
     
     with patch('src.tag_containers.containers.get_fps', return_value=30.0):
         outputs = video_tag_container.tags()
@@ -461,8 +459,8 @@ def test_tags_case_insensitive_text_matching(video_tag_container):
         }
     }
     
-    create_video_tags_file(tags_dir, "video1", video_tags_data)
-    create_frame_tags_file(tags_dir, "video1", frame_tags_data)
+    create_video_tags_file(tags_dir, "video1.mp4", video_tags_data)
+    create_frame_tags_file(tags_dir, "video1.mp4", frame_tags_data)
     
     with patch('src.tag_containers.containers.get_fps', return_value=30.0):
         outputs = video_tag_container.tags()

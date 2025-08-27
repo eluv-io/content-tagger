@@ -7,7 +7,6 @@ from src.tags.tagstore.types import Tag
 
 @dataclass
 class ModelConfig:
-    name: str
     image: str
     type: Literal["audio", "video", "frame"]
     resources: SystemResources

@@ -48,6 +48,7 @@ class FabricTagger:
         # TODO: handle image
         if not isinstance(args, TagArgs):
             raise NotImplementedError("Image tagging is not implemented yet")
+        args = self._assign_default_streams(args)
         status = {}
         for feature in args.features:
             tsjob = self.tagstore.start_job(
@@ -77,7 +78,7 @@ class FabricTagger:
                 status[feature] = "Job started successfully"
 
         return status
-    
+
     def status(self, qhit: str) -> dict[str, dict[str, JobStatus]]:
         """
         Args:
@@ -126,7 +127,7 @@ class FabricTagger:
             try:
                 self.system_tagger.stop(job.state.taghandle)
             except Exception as e:
-                logger.error(f"Error stopping job {job.get_id()}: {e}")
+                logger.exception(f"Error stopping job {job.get_id()}: {e}")
 
     def cleanup(self) -> None:
         logger.info("Shutting down fabric tagger...")
@@ -204,6 +205,24 @@ class FabricTagger:
         with self.storelock:
             if job.stopevent.is_set():
                 return
+            try:
+                taggingdone = self._start_tagging_phase(job, dl_res)
+            except Exception as e:
+                self._set_stop_state(jobid, "Failed", e)
+                return
+
+        taggingdone.wait()
+
+        try:
+            self._upload_tags(job)
+        except Exception as e:
+            self._set_stop_state(jobid, "Failed", e)
+            return
+
+        self._set_stop_state(jobid, "Completed", None)
+
+    def _start_tagging_phase(self, job: TagJob, dl_res: DownloadResult) -> threading.Event:
+        with self.storelock:
             # set tagging state
             job.state.media = dl_res
             job.state.status.failed += dl_res.failed
@@ -216,12 +235,7 @@ class FabricTagger:
             job.state.container = container
             job.state.taghandle = uid
             job.state.status.status = "Tagging content"
-
-        taggingdone.wait()
-
-        self._upload_tags(job)
-
-        self._set_stop_state(jobid, "Completed", None)
+            return taggingdone
 
     def _set_stop_state(self, jobid: JobID, status: JobStateDescription, error: Exception | None) -> None:
         if error:
@@ -324,3 +338,15 @@ class FabricTagger:
         tag.additional_info["frame_tags"] = adjusted
 
         return tag
+    
+    def _assign_default_streams(self, args: TagArgs) -> TagArgs:
+        for feature, config in args.features.items():
+            if config.stream is None:
+                model_config = self.cregistry.get_model_config(feature)
+                model_type = model_config.type
+                if model_type in ("video", "frame"):
+                    stream = "video"
+                else:
+                    stream = "audio"
+                config.stream = stream
+        return args

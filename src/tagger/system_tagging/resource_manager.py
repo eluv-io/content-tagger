@@ -175,18 +175,15 @@ class SystemTagger:
 
             cj.container.stop() # TODO: handle container failed to stop
 
-        with self.cond:
             self._free_resources(cj)
-            if jobid in self.q:
-                self.q.remove(jobid)
 
         if cj.finished is not None:
             cj.finished.set()
 
     def _free_resources(self, cj: ContainerJob) -> None:
 
-        """
-        Frees the resources allocated for the job.
+        """`
+        Frees the resources allocated for the job and notifies any waiting threads.
         """
 
         gpu_resources = set(self.sys_config.gpus)
@@ -227,20 +224,19 @@ class SystemTagger:
         """
 
         while not self.exit.is_set():
-            with self.cond:
-                for jobid, job in self.jobs.items():
-                    if job.jobstatus.status != "Running":
-                        continue
-                    if job.container.is_running():
-                        continue
-                    assert job.container.container is not None
-                    exit_code = job.container.container.attrs["State"]["ExitCode"]
-                    if exit_code != 0:
-                        self._stop_job(jobid, "Failed", RuntimeError("Container encountered runtime error"))
-                        continue
-                    else:
-                        self._stop_job(jobid, "Completed")
-                    logger.info(f"Job {jobid} completed")
+            for jobid, job in self.jobs.items():
+                if job.jobstatus.status != "Running":
+                    continue
+                if job.container.is_running():
+                    continue
+                assert job.container.container is not None
+                exit_code = job.container.container.attrs["State"]["ExitCode"]
+                if exit_code != 0:
+                    self._stop_job(jobid, "Failed", RuntimeError("Container encountered runtime error"))
+                    continue
+                else:
+                    self._stop_job(jobid, "Completed")
+                logger.info(f"Job {jobid} completed")
             time.sleep(0.2)
 
     def _terminate_all_jobs(self):
@@ -253,12 +249,13 @@ class SystemTagger:
 
     def _clear_stopped_jobs(self) -> None:
         # clean the queue of stopped jobs
-        newq = []
-        for jobid in self.q:
-            with self.jobslock:
-                if self.jobs[jobid].jobstatus.status == "Queued":
-                    newq.append(jobid)
-        self.q = newq
+        with self.cond:
+            newq = []
+            for jobid in self.q:
+                with self.jobslock:
+                    if self.jobs[jobid].jobstatus.status == "Queued":
+                        newq.append(jobid)
+            self.q = newq
 
 def load_system_resources(cfg: SysConfig) -> SystemResources:
     """
