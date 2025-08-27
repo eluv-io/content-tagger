@@ -15,7 +15,6 @@ from src.tags.tagstore.tagstore import FilesystemTagStore
 from src.fetch.types import VodDownloadRequest, DownloadResult, Source, StreamMetadata
 from src.common.content import Content
 from src.tags.tagstore.types import Tag
-from src.common.resources import SystemResources
 from src.api.tagging.format import TagArgs
 from src.common.errors import MissingResourceError
 
@@ -475,11 +474,13 @@ def test_tags_uploaded_during_and_after_job(
             for feature in st[stream]:
                 tag_count = fabric_tagger.tagstore.count_tags(track=feature, stream=stream)
                 status = st[stream][feature]
-                if status["status"] is not "Completed":
+                if status["status"] != "Completed":
                     end = False
                 job_statuses.add(status["status"])
                 if status["status"] == "Fetching Content":
                     assert tag_count == 0
+                if tag_count == 2:
+                    assert status["tagging_progress"] == '50%'
                 if status["status"] == "Completed":
                     assert status["tagging_progress"] == '100%'
                     assert tag_count == 4

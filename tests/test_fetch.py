@@ -116,16 +116,12 @@ def test_download_with_replace_true(
 
     tagstore = fetcher.tagstore
 
-    jobid = "abc"
-    job = UploadJob(
-        id=jobid,
+    job = tagstore.start_job(
         qhit=vod_content.qhit,
         stream="video",
-        timestamp=time.time(),
         author="tagger",
         track="track"
     )
-    tagstore.start_job(job)
 
     first_source = result1.successful_sources[0].name
 
@@ -135,10 +131,10 @@ def test_download_with_replace_true(
         text="hello",
         additional_info={},
         source=first_source,
-        jobid=jobid
+        jobid=job.id
     )
 
-    tagstore.upload_tags([tag], jobid)
+    tagstore.upload_tags([tag], job.id)
 
     result2 = fetcher.download_stream(vod_content, req)
     assert len(result2.successful_sources) == 1
@@ -215,16 +211,13 @@ def test_fetch_assets_with_preserve_track(
     # Third test: Add tags for some assets and test preserve_track functionality
     tagstore = fetcher.tagstore
     
-    jobid = "asset_test_job"
-    job = UploadJob(
-        id=jobid,
+    job = tagstore.start_job(
         qhit=assets_content.qhit,
         stream="assets",
-        timestamp=time.time(),
         author=fetcher.config.author,
         track="asset_track"
     )
-    tagstore.start_job(job)
+    jobid = job.id
     
     # Tag the first two assets
     assets_to_tag = selected_assets[:2] if len(selected_assets) >= 2 else selected_assets
@@ -271,16 +264,12 @@ def test_fetch_assets_with_preserve_track(
     # Upload tags to selected tags with author="user" and track="another track", check that downloading again
     # returns all the selected assets (tagger author is special)
 
-    new_job = UploadJob(
-        id="asset_test_job_2",
+    new_job = tagstore.start_job(
         qhit=assets_content.qhit,
         stream="assets",
-        timestamp=time.time(),
         author="user",
         track="another_track"
     )
-
-    tagstore.start_job(new_job)
 
     newtags = []
     for asset in selected_assets:
