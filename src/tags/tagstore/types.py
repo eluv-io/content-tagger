@@ -1,6 +1,11 @@
 
 from dataclasses import dataclass
 
+## Config
+
+class TagStoreConfig:
+    base_path: str
+
 ## Schema
 
 @dataclass

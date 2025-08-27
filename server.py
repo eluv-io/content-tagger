@@ -12,49 +12,37 @@ import atexit
 import setproctitle
 import sys
 from waitress import serve
-import traceback
 
-from config import config, reload_config
-from src.tagger.jobs import JobsStore
+from src.tagger.fabric_tagging.types import JobStore
 
 from src.api.tagging.handlers import handle_tag, handle_image_tag, handle_status, handle_stop
 from src.api.upload.handlers import handle_finalize, handle_aggregate
-from src.tagger.model_containers.containers import list_services
 from src.common.errors import BadRequestError, MissingResourceError
-
-from src.tagger.fabric_tagging.tagger import Tagger
-from src.tagger.sytem_tagging.resource_manager import ResourceManager
-
-    
-## for debugging, keep the last tmpdir (only if set)
-last_tmpdir = None
+from app_config import AppConfig
 
 def configure_routes(app: Flask) -> None:
     # Configure the Flask app with the routes defined in this module.
 
     @app.errorhandler(BadRequestError)
     def handle_bad_request(e):
-        tb = traceback.format_exc()
-        logger.error(f"Bad request: {e}\n{tb}")
+        logger.exception(f"Bad request: {e}")
         return jsonify({'error': e.message}), 400
 
     @app.errorhandler(HTTPError)
     def handle_http_error(e):
-        tb = traceback.format_exc()
-        logger.error(f"Bad request:\n{tb}")
+        logger.exception(f"HTTP error: {e}")
         status_code = e.response.status_code
         error_resp = json.loads(e.response.text)
         return jsonify({'message': 'Fabric API error', 'error': error_resp}), status_code
 
     @app.errorhandler(MissingResourceError)
     def handle_missing_resource(e):
-        tb = traceback.format_exc()
-        logger.error(f"Missing resource: {e}\n{tb}")
+        logger.exception(f"Missing resource: {e}")
         return jsonify({'message': e.message}), 404
 
     @app.route('/list', methods=['GET'])
     def list() -> Response:
-        res = list_services()    
+        res = list_services()
         return Response(response=json.dumps(res), status=200, mimetype='application/json')
 
     @app.route('/<qhit>/tag', methods=['POST'])
@@ -91,7 +79,7 @@ def boot_state(app: Flask) -> None:
 
     app_state["resource_manager"] = ResourceManager()
 
-    app_state["jobs_store"] = JobsStore()
+    app_state["jobs_store"] = JobStore()
 
     app_state["tagger"] = Tagger(
         job_store=app_state["jobs_store"],
@@ -116,7 +104,7 @@ def configure_lifecycle(app: Flask) -> None:
     signal.signal(signal.SIGINT, lambda signum, frame: _cleanup())
     signal.signal(signal.SIGTERM, lambda signum, frame: _cleanup())
 
-def create_app() -> Flask:
+def create_app(config: AppConfig) -> Flask:
     """Main entry point for the server."""
     app = Flask(__name__)
     boot_state(app)
@@ -125,20 +113,10 @@ def create_app() -> Flask:
     CORS(app)
     return app
 
-LOCAL_CONFIG = "tagger-config.yml"
 def main():
-    if args.directory:
-        os.chdir(args.directory)
-        logger.info(f"changed directory to {args.directory}")
-        
-        if not os.path.exists(LOCAL_CONFIG):
-            logger.error(f"You have specified directory {args.directory} but no {LOCAL_CONFIG} file was found there. This is probably an error.")
-            sys.exit(1)
-    if os.path.exists(LOCAL_CONFIG):
-        reload_config(LOCAL_CONFIG)
-
     logger.info("Python interpreter version: " + sys.version)
-    app = create_app()
+    cfg = AppConfig.from_yaml(args.config)
+    app = create_app(cfg)
 
     serve(app, host=args.host, port=args.port)
 
@@ -147,6 +125,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=8086)
     parser.add_argument('--host', type=str, default="127.0.0.1")
-    parser.add_argument('--directory', type=str)
+    parser.add_argument('--config', type=str, default="config.yml")
     args = parser.parse_args()
     main()

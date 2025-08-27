@@ -1,103 +1,108 @@
-storage:
-  # paths are relative to src code root unless prefixed with "/"
-  tags: data/tags
-  container_cache: data/cache
-  parts: data/parts
-  images: data/images
-  tmp: data/tmp
-  logs: logs
-
-hosts:
+content:
   parts_url: http://192.168.96.203/config?self&qspace=main
   config_url: https://host-154-14-185-98.contentfabric.io/config?self&qspace=main
-  tagsdb: http://localhost:8088
+
+tagstore:
+  tags_path: data/tags
+
+tag_converter:
+  mapping:
+    asr: Speech to Text
+    caption: Object Detection
+    celeb: Celebrity Detection
+    logo: Logo Detection
+    music: Music Detection
+    ocr: Optical Character Recognition
+    shot: Shot Detection
+    llava: LLAVA Caption
+  interval: 10
 
 system:
   resources: {
     "ollama": 2,
     "cpu": 100,
-    "gpu": 4
-  },
-  gpu: ["gpu", "disabled", "gpu", "gpu", "gpu"],
-  max_downloads: 16
+    "gpu-weak": 1,
+    "gpu-good": 3
+  }
+  gpu_indices: ["gpu", "disabled", "gpu", "gpu", "gpu"]
 
-services:
-  llava:
-    image: "localhost/llava:latest"
-    type: "video"
-    frame_level: true
-    resources: {
-      "ollama": 1
-    }
-  asr: 
-    image: "localhost/hungarian:latest"
-    type: "audio"
-    resources: {
-      "cpu": 25
-    }
-  french_asr: 
-    image: "localhost/multilingual:latest"
-    type: "audio"
-    resources: {
-      "gpu": 1
-    }
-  caption:
-    image: "localhost/caption:latest"
-    type: "video"
-    frame_level: true
-    resources: {
-      "gpu": 1
-    }
-  shot:
-    image: "localhost/shot:latest"
-    type: "video"
-    frame_level: false
-    resources: {
-      "gpu": 1
-    }
-  celeb:
-    image: "localhost/celeb:latest"
-    type: "video"
-    frame_level: true
-    resources: {
-      "gpu": 1,
-      "cpu": 35
-    }
-  ocr:
-    image: "localhost/ocr:latest"
-    type: "video"
-    frame_level: true
-    resources: {
-      "gpu": 1
-    }
-  logo:
-    image: "localhost/logo:latest"
-    type: "video"
-    frame_level: true
-    resources: {
-      "gpu": 1
-    }
-  dummy_gpu:
-    image: "localhost/dummy_gpu:latest"
-    type: "video"
-    frame_level: true
-    resources: {
-      "gpu": 1
-    }
-  dummy_cpu:
-    image: "localhost/dummy_cpu:latest"
-    type: "video"
-    frame_level: true
-    resources: {
-      "cpu": 25
-    }
-  test_slow:
-    image: "localhost/slow_model_test:latest"
-    type: "video"
-    frame_level: true
-    resources: {
-      "cpu": 25
-    }
+fetcher:
+  max_downloads: 16
+  parts_path: data/parts
+  author: tagger
+
+containers:
+  logs_path: data/logs
+  tags_path: data/tags
+  cache_path: data/cache
+  model_configs:
+    llava:
+      image: "localhost/llava:latest"
+      type: "frame"
+      resources: {
+        "ollama": 1
+      }
+    asr: 
+      image: "localhost/hungarian:latest"
+      type: "audio"
+      resources: {
+        "cpu": 25
+      }
+    french_asr: 
+      image: "localhost/multilingual:latest"
+      type: "audio"
+      resources: {
+        "gpu": 1
+      }
+    caption:
+      image: "localhost/caption:latest"
+      type: "frame"
+      resources: {
+        "gpu": 1
+      }
+    shot:
+      image: "localhost/shot:latest"
+      type: "video"
+      resources: {
+        "gpu": 1
+      }
+    celeb:
+      image: "localhost/celeb:latest"
+      type: "video"
+      resources: {
+        "gpu": 1,
+        "cpu": 35
+      }
+    ocr:
+      image: "localhost/ocr:latest"
+      type: "video"
+      resources: {
+        "gpu": 1
+      }
+    logo:
+      image: "localhost/logo:latest"
+      type: "video"
+      resources: {
+        "gpu": 1
+      }
+    dummy_gpu:
+      image: "localhost/dummy_gpu:latest"
+      type: "video"
+      resources: {
+        "gpu": 1
+      }
+    dummy_cpu:
+      image: "localhost/dummy_cpu:latest"
+      type: "video"
+      resources: {
+        "cpu": 25
+      }
+    test_slow:
+      image: "localhost/slow_model_test:latest"
+      type: "video"
+      resources: {
+        "cpu": 25
+      }
 
 agg:
   interval: 10

@@ -9,24 +9,24 @@ from src.tags.tagstore.types import Tag
 class ModelConfig:
     name: str
     image: str
-    type: Literal["video", "frame"]
+    type: Literal["audio", "video", "frame"]
     resources: SystemResources
 
 @dataclass
 class ContainerSpec:
-    cachepath: str
-    logspath: str
-    tagspath: str
-    fileargs: list[str]
-    runconfig: dict
-    model_config: ModelConfig 
+    cache_path: str
+    logs_path: str
+    tags_path: str
+    file_args: list[str]
+    run_config: dict
+    model_config: ModelConfig
 
 @dataclass
 class RegistryConfig:
-    modconfigs: dict[str, ModelConfig]
-    logspath: str
-    tagspath: str
-    cachepath: str
+    model_configs: dict[str, ModelConfig]
+    logs_path: str
+    tags_path: str
+    cache_path: str
 
 @dataclass
 class ModelOutput:

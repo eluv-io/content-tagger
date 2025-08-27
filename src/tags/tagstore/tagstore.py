@@ -5,12 +5,12 @@ import base64
 import uuid
 import time
 
-from src.tags.tagstore.types import UploadJob, Tag, CreateJobArgs
+from src.tags.tagstore.types import *
 
 class FilesystemTagStore:
-    def __init__(self, base_path: str):
-        self.base_path = base_path
-        os.makedirs(base_path, exist_ok=True)
+    def __init__(self, cfg: TagStoreConfig):
+        self.base_path = cfg.base_path
+        os.makedirs(self.base_path, exist_ok=True)
 
     def start_job(self,
         qhit: str,
