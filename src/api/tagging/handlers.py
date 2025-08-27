@@ -2,7 +2,7 @@ import json
 
 from flask import Response, request, current_app
 
-from src.api.tagging.format import TagArgs, ImageTagArgs
+from src.api.tagging.format import TagAPIArgs, ImageTagAPIArgs
 from src.common.errors import BadRequestError
 from src.api.auth import get_authorization
 from src.common.content import Content
@@ -14,7 +14,7 @@ def handle_tag(qhit: str) -> Response:
     q = Content(qhit, auth)
 
     try:
-        args = TagArgs.from_dict(request.json)
+        args = TagAPIArgs.from_dict(request.json)
     except BadRequestError as e:
         raise e
     except Exception as e:
@@ -23,7 +23,7 @@ def handle_tag(qhit: str) -> Response:
 
     tagger: FabricTagger = current_app.config["state"]["tagger"]
 
-    status = tagger.tag(q, args)
+    status = tagger.tag(q, args.to_tag_args())
 
     return Response(response=json.dumps(status), status=200, mimetype='application/json')
 
@@ -33,7 +33,7 @@ def handle_image_tag(qhit: str) -> Response:
     q = Content(qhit, auth)
 
     try:
-        args = ImageTagArgs.from_dict(request.json)
+        args = ImageTagAPIArgs.from_dict(request.json)
     except TypeError as e:
         return Response(response=json.dumps({'error': str(e)}), status=400, mimetype='application/json')
 
@@ -44,7 +44,7 @@ def handle_image_tag(qhit: str) -> Response:
 
     tagger: FabricTagger = current_app.config["state"]["tagger"]
 
-    status = tagger.tag(q, args)
+    status = tagger.tag(q, args.to_tag_args())
 
     return Response(response=json.dumps(status), status=200, mimetype='application/json')
 

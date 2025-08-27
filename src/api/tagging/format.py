@@ -1,8 +1,8 @@
 
 from dataclasses import dataclass
-from src.tagger.fabric_tagging.types import RunConfig
-
 from common_ml.types import Data
+from src.fetch.types import AssetScope, VideoScope
+from src.tagger.fabric_tagging.types import RunConfig, TagArgs
 
 @dataclass
 class TagAPIArgs(Data):
@@ -20,6 +20,14 @@ class TagAPIArgs(Data):
         features = {feature: RunConfig(**cfg) for feature, cfg in data['features'].items()}
         return TagAPIArgs(features=features, start_time=data.get('start_time', None), end_time=data.get('end_time', None), replace=data.get('replace', False))
 
+    def to_tag_args(self) -> TagArgs:
+        return TagArgs(
+            features=self.features,
+            scope=VideoScope(start_time=self.start_time, end_time=self.end_time),
+            replace=self.replace
+        )
+
+
 @dataclass
 class ImageTagAPIArgs(Data):
     # maps feature name to RunConfig
@@ -35,3 +43,10 @@ class ImageTagAPIArgs(Data):
     def from_dict(data: dict) -> 'ImageTagAPIArgs':
         features = {feature: RunConfig(stream='image', **cfg) for feature, cfg in data['features'].items()}
         return ImageTagAPIArgs(features=features, assets=data.get('assets', None), replace=data.get('replace', False))
+
+    def to_tag_args(self) -> TagArgs:
+        return TagArgs(
+            features=self.features,
+            scope=AssetScope(assets=self.assets),
+            replace=self.replace
+        )
