@@ -7,14 +7,13 @@ from copy import deepcopy
 from loguru import logger
 
 from src.tags.tagstore.types import Tag
-from src.fetch.types import VodDownloadRequest
+from src.fetch.types import DownloadRequest
 from src.tag_containers.containers import ContainerRegistry
 from src.tagger.system_tagging.resource_manager import SystemTagger
-from src.tagger.fabric_tagging.types import TagJob, JobArgs, JobStatus, JobState, JobStore, JobID, JobStateDescription
+from src.tagger.fabric_tagging.types import *
 from src.common.content import Content
-from src.api.tagging.format import TagArgs, ImageTagArgs
 from src.common.errors import MissingResourceError
-from src.fetch.fetch_video import Fetcher, VodDownloadRequest
+from src.fetch.fetch_video import Fetcher
 from src.fetch.types import Source, StreamMetadata
 from src.tags.tagstore.tagstore import FilesystemTagStore
     
@@ -44,7 +43,7 @@ class FabricTagger:
 
         threading.Thread(target=self._uploader, daemon=True).start()
 
-    def tag(self, q: Content, args: TagArgs | ImageTagArgs) -> dict:
+    def tag(self, q: Content, args: TagArgs) -> dict:
         self._validate_args(args)
         # TODO: handle image
         if not isinstance(args, TagArgs):
@@ -65,8 +64,7 @@ class FabricTagger:
                     feature=feature,
                     replace=args.replace,
                     runconfig=args.features[feature],
-                    start_time=args.start_time,
-                    end_time=args.end_time,
+                    scope=args.scope
                 ),
                 stopevent=threading.Event(),
                 upload_job=tsjob.id
@@ -139,7 +137,7 @@ class FabricTagger:
         self.shutdown_signal.set()
         self.manager.shutdown()
 
-    def _validate_args(self, args: TagArgs | ImageTagArgs) -> None:
+    def _validate_args(self, args: TagArgs) -> None:
         """
         Raises error if args are bad
         """
@@ -172,9 +170,6 @@ class FabricTagger:
 
             if jobid in self.jobstore.active_jobs:
                 return f"Job {(jobid.qhit, jobid.feature, jobid.stream)} is already running"
-            
-            if isinstance(job.args, ImageTagArgs):
-                return "Image tagging is not implemented yet"
 
             self.jobstore.active_jobs[jobid] = job
 
@@ -192,12 +187,11 @@ class FabricTagger:
         jobid = job.get_id()
 
         try:
-            dl_res = self.fetcher.download_stream(
+            dl_res = self.fetcher.download(
                 job.args.q, 
-                VodDownloadRequest(
+                DownloadRequest(
                     stream_name=job.args.runconfig.stream,
-                    start_time=job.args.start_time,
-                    end_time=job.args.end_time,
+                    scope=job.args.scope,
                     preserve_track=job.args.feature if job.args.replace else "",
                 ),
                 exit_event=job.stopevent
@@ -215,7 +209,7 @@ class FabricTagger:
             job.state.status.failed += dl_res.failed
             media_files = [s.filepath for s in dl_res.successful_sources]
             container = self.cregistry.get(job.args.feature, media_files, job.args.runconfig.model)
-            reqresources = self.cregistry.get_model_config(job.args.feature).resources # TODO: should be combined with container
+            reqresources = self.cregistry.get_model_config(job.args.feature).resources
             taggingdone = threading.Event()
             # TODO: holding storelock while container is starting.
             uid = self.manager.start(container, reqresources, taggingdone)

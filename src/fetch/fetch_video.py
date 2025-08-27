@@ -13,7 +13,7 @@ from loguru import logger
 
 from src.common.content import Content
 from src.common.errors import MissingResourceError, BadRequestError
-from src.fetch.types import AssetDownloadRequest, VodDownloadRequest, Source, StreamMetadata
+from src.fetch.types import AssetScope, DownloadRequest, VideoScope, DownloadResult, Source, StreamMetadata
 from src.fetch.types import FetcherConfig, DownloadResult
 from src.tags.tagstore.tagstore import FilesystemTagStore
 
@@ -31,31 +31,29 @@ class Fetcher:
         # maps (qhit, stream) to lock to prevent unnecessary stream download duplication
         self.stream_locks = defaultdict(threading.Lock)
 
-    def download_stream(
+    def download(
         self,
         q: Content,
-        req: VodDownloadRequest,
+        req: DownloadRequest,
         exit_event: threading.Event | None = None,
     ) -> DownloadResult:
-        stream_key = (q.qhit, req.stream_name)
-
         with self.dl_sem:
+            stream_key = (q.qhit, req.stream_name)
             with self.stream_locks[stream_key]:
+                if req.stream_name == "assets":
+                    return self._fetch_assets(q, req)
                 return self._download_stream(q, req, exit_event)
 
     def _download_stream(
         self,
         q: Content,
-        req: VodDownloadRequest,
+        req: DownloadRequest,
         exit_event: threading.Event | None = None,
     ) -> DownloadResult:
         req = deepcopy(req)
 
-        if req.start_time is None:
-            req.start_time = 0
-
-        if req.end_time is None:
-            req.end_time = float("inf")
+        scope = req.scope
+        assert isinstance(scope, VideoScope)
 
         stream_metadata = self._fetch_stream_metadata(q, req.stream_name)
         return self._download_parts(q, req, stream_metadata, exit_event)
@@ -264,7 +262,7 @@ class Fetcher:
     def _download_parts(
         self,
         q: Content,
-        req: VodDownloadRequest,
+        req: DownloadRequest,
         stream_metadata: StreamMetadata,
         exit_event: threading.Event | None = None,
     ) -> DownloadResult:
@@ -291,6 +289,10 @@ class Fetcher:
             existing_tags = self.tagstore.find_tags(author=self.config.author, qhit=q.qhit, stream=req.stream_name, track=req.preserve_track)
             tagged_parts = [tag.source for tag in existing_tags]
 
+        scope = req.scope
+        assert isinstance(scope, VideoScope)
+        start_time, end_time = scope.start_time, scope.end_time
+
         for idx, part_hash in enumerate(stream_metadata.parts):
             last_part = idx == len(stream_metadata.parts) - 1
 
@@ -306,8 +308,8 @@ class Fetcher:
 
             # Check if part is within time range
             if not (
-                req.start_time <= pstart < req.end_time
-            ) and not (req.start_time <= pend < req.end_time):
+                start_time <= pstart < end_time
+            ) and not (start_time <= pend < end_time):
                 continue
 
             filename = f"{idx_str}_{part_hash}.mp4"
@@ -390,16 +392,19 @@ class Fetcher:
             return float(num) / float(den)
         return float(rat)
     
-    def fetch_assets(
-            self, 
-            q: Content, 
-            req: AssetDownloadRequest
+    def _fetch_assets(
+        self, 
+        q: Content, 
+        req: DownloadRequest
     ) -> DownloadResult:
         output_path = os.path.join(self.config.parts_path, q.qhit, "assets")
         if not os.path.exists(output_path):
             os.makedirs(output_path)
+    
+        scope = req.scope
+        assert isinstance(scope, AssetScope)
 
-        if req.assets is None:
+        if scope.assets is None:
             assets_meta = q.content_object_metadata(metadata_subtree='assets')
             assets_meta = list(assets_meta.values())
             assets = []
@@ -410,7 +415,7 @@ class Fetcher:
                 filepath = filepath[8:]
                 assets.append(filepath)
         else:
-            assets = req.assets
+            assets = scope.assets
 
         total_assets = len(assets)
         assets = [asset for asset in assets if get_file_type(asset) == "image"]

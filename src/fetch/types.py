@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from src.common.errors import BadRequestError
+
 @dataclass
 class FetcherConfig:
     max_downloads: int
@@ -13,11 +15,30 @@ class Source:
     offset: float
 
 @dataclass
-class VodDownloadRequest:
+class AssetScope:
+    assets: list[str] | None
+
+@dataclass
+class VideoScope:
+    start_time: int
+    end_time: int
+
+    def __post_init__(self):
+        if self.start_time is None:
+            self.start_time = 0
+        if self.end_time is None:
+            self.end_time = float("inf")
+
+@dataclass
+class DownloadRequest:
+    # asset is a special case
     stream_name: str
-    start_time: int | None
-    end_time: int | None
     preserve_track: str
+    scope: AssetScope | VideoScope
+
+    def __post_init__(self):
+        if self.stream_name == "assets" and not isinstance(self.scope, AssetScope):
+            raise BadRequestError("Invalid scope type for assets stream")
 
 @dataclass
 class StreamMetadata:
@@ -25,11 +46,6 @@ class StreamMetadata:
     part_duration: float
     fps: float | None
     codec_type: str
-
-@dataclass
-class AssetDownloadRequest:
-    assets: list[str] | None
-    preserve_track: str
 
 @dataclass
 class DownloadResult:

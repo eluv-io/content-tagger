@@ -5,7 +5,7 @@ from src.tagger.fabric_tagging.types import RunConfig
 from common_ml.types import Data
 
 @dataclass
-class TagArgs(Data):
+class TagAPIArgs(Data):
     # maps feature name to RunConfig
     features: dict[str, RunConfig]
     # start_time in milliseconds (defaults to 0)
@@ -16,12 +16,12 @@ class TagArgs(Data):
     replace: bool=False
 
     @staticmethod
-    def from_dict(data: dict) -> 'TagArgs':
+    def from_dict(data: dict) -> 'TagAPIArgs':
         features = {feature: RunConfig(**cfg) for feature, cfg in data['features'].items()}
-        return TagArgs(features=features, start_time=data.get('start_time', None), end_time=data.get('end_time', None), replace=data.get('replace', False))
-    
+        return TagAPIArgs(features=features, start_time=data.get('start_time', None), end_time=data.get('end_time', None), replace=data.get('replace', False))
+
 @dataclass
-class ImageTagArgs(Data):
+class ImageTagAPIArgs(Data):
     # maps feature name to RunConfig
     features: dict[str, RunConfig]
 
@@ -32,6 +32,6 @@ class ImageTagArgs(Data):
     replace: bool=False
 
     @staticmethod
-    def from_dict(data: dict) -> 'ImageTagArgs':
+    def from_dict(data: dict) -> 'ImageTagAPIArgs':
         features = {feature: RunConfig(stream='image', **cfg) for feature, cfg in data['features'].items()}
-        return ImageTagArgs(features=features, assets=data.get('assets', None), replace=data.get('replace', False))
+        return ImageTagAPIArgs(features=features, assets=data.get('assets', None), replace=data.get('replace', False))

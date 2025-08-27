@@ -5,6 +5,7 @@ import time
 import threading
 
 from src.common.content import Content
+from src.fetch.types import AssetScope, VideoScope
 from src.tag_containers.containers import TagContainer
 from src.fetch.fetch_video import DownloadResult
 
@@ -49,8 +50,7 @@ class JobArgs:
     feature: str
     replace: bool
     runconfig: RunConfig
-    start_time: int | None
-    end_time: int | None
+    scope: AssetScope | VideoScope
 
 @dataclass
 class JobState:
@@ -97,3 +97,9 @@ class JobID:
 class JobStore:
     active_jobs: dict[JobID, TagJob] = field(default_factory=dict)
     inactive_jobs: dict[JobID, TagJob] = field(default_factory=dict)
+
+@dataclass
+class TagArgs:
+    features: dict[str, RunConfig]
+    scope: AssetScope | VideoScope
+    replace: bool

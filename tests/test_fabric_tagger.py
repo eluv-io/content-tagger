@@ -10,12 +10,11 @@ from src.tagger.fabric_tagging.tagger import FabricTagger
 from src.tagger.system_tagging.resource_manager import SystemTagger
 from src.tag_containers.types import ModelConfig, ModelOutput
 from src.tagger.system_tagging.types import SysConfig
-from src.tagger.fabric_tagging.types import RunConfig
+from src.tagger.fabric_tagging.types import RunConfig, TagArgs
 from src.tags.tagstore.tagstore import FilesystemTagStore
-from src.fetch.types import VodDownloadRequest, DownloadResult, Source, StreamMetadata
+from src.fetch.types import DownloadRequest, DownloadResult, Source, StreamMetadata, VideoScope
 from src.common.content import Content
 from src.tags.tagstore.types import Tag
-from src.api.tagging.format import TagArgs
 from src.common.errors import MissingResourceError
 
 
@@ -49,7 +48,7 @@ def fake_fetcher(fake_media_files):
         def __init__(self, timeout=0.1):
             self.timeout = timeout
 
-        def download_stream(self, content: Content, req: VodDownloadRequest, exit_event=None) -> DownloadResult:
+        def download(self, content: Content, req: DownloadRequest, exit_event=None) -> DownloadResult:
             # Simulate successful download
             sources = []
             for i, filepath in enumerate(fake_media_files):
@@ -253,8 +252,7 @@ def sample_tag_args():
             "speech_recognition": RunConfig(stream="audio", model={})
         },
         replace=False,
-        start_time=0,
-        end_time=30
+        scope=VideoScope(start_time=0, end_time=30)
     )
 
 
@@ -285,7 +283,8 @@ def test_tag_invalid_feature(fabric_tagger, sample_content):
     """Test tagging with invalid feature"""
     invalid_args = TagArgs(
         features={"invalid_feature": RunConfig(**{"stream": "video", "model": {}})},
-        replace=False
+        replace=False,
+        scope=VideoScope(start_time=None, end_time=None)
     )
     
     with pytest.raises(MissingResourceError, match="Invalid feature: invalid_feature"):
@@ -421,7 +420,8 @@ def test_many_concurrent_jobs(fabric_tagger):
     args = TagArgs(
         features={"object_detection": RunConfig(**{"stream": "video", "model": {}}),
                   "speech_recognition": RunConfig(**{"stream": "audio", "model": {}})},
-        replace=False
+        replace=False,
+        scope=VideoScope(start_time=None, end_time=None)
     )
 
     results = []
