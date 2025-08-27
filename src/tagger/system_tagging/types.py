@@ -5,11 +5,11 @@ import threading
 from src.common.resources import SystemResources
 from src.tag_containers.containers import TagContainer
 
-JobState = Literal["Queued", "Running", "Completed", "Failed", "Stopped"]
+JobStateDescription = Literal["Queued", "Running", "Completed", "Failed", "Stopped"]
 
 @dataclass
 class ContainerJobStatus:
-    status: JobState
+    status: JobStateDescription
     time_started: float
     time_ended: float | None
     error: Exception | None

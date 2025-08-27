@@ -6,7 +6,7 @@ import threading
 
 from loguru import logger
 
-from src.common.errors import MissingResourceError
+from src.common.errors import BadRequestError
 from src.common.resources import SystemResources
 from src.tag_containers.containers import TagContainer
 from src.tagger.system_tagging.types import *
@@ -29,6 +29,7 @@ class SystemTagger:
 
         self.total_resources = deepcopy(self.active_resources)
 
+        # locks self.q and creates a notification signal when new jobs are queued and when resources are freed
         self.cond = threading.Condition()
         self.q = []
 
@@ -57,12 +58,17 @@ class SystemTagger:
         """
 
         if not self.check_capacity(required_resources):
-            raise MissingResourceError("Insufficient resources available to start job on this system.")
+            raise BadRequestError("Insufficient resources available to start job on this system.")
 
-        job_id = str(uuid.uuid4())
-        job_status = ContainerJobStatus(status="Queued", time_started=time.time(), time_ended=None, error=None)
         with self.cond:
-            self.jobs[job_id] = ContainerJob(container=container, reqs=required_resources, jobstatus=job_status, gpus_used=[], finished=finished)
+            job_id = str(uuid.uuid4())
+            self.jobs[job_id] = ContainerJob(
+                container=container, 
+                reqs=required_resources, 
+                jobstatus=ContainerJobStatus(status="Queued", time_started=time.time(), time_ended=None, error=None), 
+                gpus_used=[], 
+                finished=finished
+            )
             self.q.append(job_id)
             self.cond.notify_all()
 
@@ -125,7 +131,6 @@ class SystemTagger:
 
     def _run_job(self, jobid: str) -> None:
 
-        error = None
         with self.joblocks[jobid]:
             cj = self.jobs[jobid]
             if cj.jobstatus.time_ended:
@@ -136,18 +141,20 @@ class SystemTagger:
 
             cj.jobstatus.status = "Running"
 
-            try:
-                if len(cj.gpus_used) > 1:
-                    # TODO: implement
-                    raise NotImplementedError("Multi-GPU tagging for one container is not implemented yet.")
-                cj.container.start(cj.gpus_used[0] if cj.gpus_used else None)
-            except Exception as e:
-                error = e
+        try:
+            if len(cj.gpus_used) > 1:
+                # TODO: implement
+                raise NotImplementedError("Multi-GPU tagging for one container is not implemented yet.")
+            cj.container.start(cj.gpus_used[0] if cj.gpus_used else None)
+        except Exception as e:
+            self._stop_job(jobid, "Failed", e)
 
-        if error:
-            self._stop_job(jobid, "Failed", error)
-
-    def _stop_job(self, jobid: str, status: JobState, error: Exception | None = None) -> None:
+    def _stop_job(
+            self, 
+            jobid: str, 
+            status: JobStateDescription, 
+            error: Exception | None = None
+    ) -> None:
 
         """
         Stops the job and cleans up resources.
@@ -168,9 +175,8 @@ class SystemTagger:
 
             cj.container.stop() # TODO: handle container failed to stop
 
-        self._free_resources(cj)
-
         with self.cond:
+            self._free_resources(cj)
             if jobid in self.q:
                 self.q.remove(jobid)
 
