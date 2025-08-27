@@ -11,8 +11,7 @@ from common_ml.video_processing import get_fps
 
 from src.common.schema import Tag, FrameTag
 from src.common.errors import MissingResourceError, BadRequestError
-from src.common.resources import SystemResources
-from src.tag_containers.types import ContainerSpec, RegistryConfig, ModelOutput
+from src.tag_containers.types import ContainerSpec, RegistryConfig, ModelOutput, ModelConfig
 
 class TagContainer:
 
@@ -315,8 +314,8 @@ class ContainerRegistry:
 
         return TagContainer(self.pclient, ccfg)
 
-    def get_model_resources(self, model: str) -> SystemResources:
-        return deepcopy(self.cfg.modconfigs[model].resources)
+    def get_model_config(self, model: str) -> ModelConfig:
+        return deepcopy(self.cfg.modconfigs[model])
 
     def services(self) -> list[str]:
         """
