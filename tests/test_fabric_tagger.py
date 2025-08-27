@@ -8,13 +8,13 @@ from unittest.mock import Mock
 
 from src.tagger.fabric_tagging.tagger import FabricTagger
 from src.tagger.system_tagging.resource_manager import SystemTagger
-from src.tag_containers.types import ModelOutput
+from src.tag_containers.types import ModelConfig, ModelOutput
 from src.tagger.system_tagging.types import SysConfig
 from src.tagger.fabric_tagging.types import RunConfig
-from src.tags.tagstore import FilesystemTagStore
+from src.tags.tagstore.tagstore import FilesystemTagStore
 from src.fetch.types import VodDownloadRequest, DownloadResult, Source, StreamMetadata
 from src.common.content import Content
-from src.common.schema import Tag
+from src.tags.tagstore.types import Tag
 from src.common.resources import SystemResources
 from src.api.tagging.format import TagArgs
 from src.common.errors import MissingResourceError
@@ -162,7 +162,12 @@ def fake_container_registry(temp_dir, fake_media_files):
             self.tag_call_count += 1
 
             outputs = []
-            for i, filepath in enumerate(self.fileargs):
+            if not self.is_stopped:
+                finished_files = self.fileargs[:-1]
+            else:
+                finished_files = self.fileargs
+
+            for i, filepath in enumerate(finished_files):
                 # Create fake tags based on the feature
                 fake_tags = [
                     Tag(
@@ -201,8 +206,8 @@ def fake_container_registry(temp_dir, fake_media_files):
                 self.containers[container_key] = FakeTagContainer(fileargs, feature)
             return self.containers[container_key]
         
-        def get_model_resources(self, feature: str) -> SystemResources:
-            return {"gpu": 1, "cpu_juice": 5}
+        def get_model_config(self, feature: str) -> ModelConfig:
+            return Mock(resources={"gpu": 1, "cpu_juice": 5})
         
         def services(self) -> list[str]:
             return ["object_detection", "speech_recognition", "scene_analysis"]
@@ -445,3 +450,52 @@ def test_many_concurrent_jobs(fabric_tagger):
         status = fabric_tagger.status(content.qhit)
         assert status["video"]["object_detection"]["status"] == "Completed"
         assert status["audio"]["speech_recognition"]["status"] == "Completed"
+
+def test_tags_uploaded_during_and_after_job(
+    fabric_tagger, 
+    sample_content, 
+    sample_tag_args
+):
+    # Start jobs
+    status = fabric_tagger.tag(sample_content, sample_tag_args)
+    assert "object_detection" in status
+    assert "speech_recognition" in status
+    assert all("successfully" in msg.lower() for msg in status.values())
+    
+    tag_counts = set()
+    job_statuses = set()
+
+    timeout = 3
+    start = time.time()
+    end = False
+    while time.time() - start < timeout:
+        st = fabric_tagger.status(sample_content.qhit)
+        end = True
+        for stream in st:
+            for feature in st[stream]:
+                tag_count = fabric_tagger.tagstore.count_tags(track=feature, stream=stream)
+                status = st[stream][feature]
+                if status["status"] is not "Completed":
+                    end = False
+                job_statuses.add(status["status"])
+                if status["status"] == "Fetching Content":
+                    assert tag_count == 0
+                if status["status"] == "Completed":
+                    assert status["tagging_progress"] == '100%'
+                    assert tag_count == 4
+                tag_counts.add(tag_count)
+        if end:
+            break
+        time.sleep(0.01)
+
+    assert end
+
+    assert len(job_statuses) == 3
+    assert 'Fetching content' in job_statuses
+    assert 'Tagging content' in job_statuses
+    assert 'Completed' in job_statuses
+
+    assert len(tag_counts) == 3
+    assert 0 in tag_counts
+    assert 2 in tag_counts
+    assert 4 in tag_counts
