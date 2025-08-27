@@ -4,8 +4,6 @@ from flask_cors import CORS
 import json
 from loguru import logger
 import os
-from collections import defaultdict
-import threading
 from requests.exceptions import HTTPError
 import signal
 import atexit
@@ -13,7 +11,12 @@ import setproctitle
 import sys
 from waitress import serve
 
-from src.tagger.fabric_tagging.types import JobStore
+from src.tagger.system_tagging.resource_manager import SystemTagger
+from src.tagger.fabric_tagging.tagger import FabricTagger
+from src.tags.tagstore.tagstore import FilesystemTagStore
+from src.fetch.fetch_video import Fetcher
+from src.common.content import ContentFactory
+from src.tag_containers.containers import ContainerRegistry
 
 from src.api.tagging.handlers import handle_tag, handle_image_tag, handle_status, handle_stop
 from src.api.upload.handlers import handle_finalize, handle_aggregate
@@ -70,22 +73,22 @@ def configure_routes(app: Flask) -> None:
     def aggregate(qhit: str) -> Response:
         return handle_aggregate(qhit)
 
-def boot_state(app: Flask) -> None:
+def boot_state(app: Flask, cfg: AppConfig) -> None:
     app_state = {}
 
-    app_state["filesystem_lock"] = threading.Lock()
+    system_tagger = SystemTagger(cfg.system)
+    tagstore = FilesystemTagStore(cfg.tagstore)
+    fetcher = Fetcher(cfg.fetcher, tagstore)
+    container_registry = ContainerRegistry(cfg.container_registry)
 
-    app_state["finalize_lock"] = defaultdict(threading.Lock)
-
-    app_state["resource_manager"] = ResourceManager()
-
-    app_state["jobs_store"] = JobStore()
-
-    app_state["tagger"] = Tagger(
-        job_store=app_state["jobs_store"],
-        manager=app_state["resource_manager"],
-        filesystem_lock=app_state["filesystem_lock"],
+    app_state["tagger"] = FabricTagger(
+        system_tagger=system_tagger,
+        fetcher=fetcher,
+        cregistry=container_registry,
+        tagstore=tagstore
     )
+
+    app_state["content_factory"] = ContentFactory(cfg.content)
 
     app.config["state"] = app_state
 
@@ -96,7 +99,7 @@ def configure_lifecycle(app: Flask) -> None:
         logger.info("Cleaning up resources...")
         app_state = app.config["state"]
         app_state["tagger"].cleanup()
-        app_state["resource_manager"].shutdown()
+        app_state["internal_tagger"].shutdown()
         logger.info("Cleanup completed.")
         os._exit(0)
 
@@ -107,7 +110,7 @@ def configure_lifecycle(app: Flask) -> None:
 def create_app(config: AppConfig) -> Flask:
     """Main entry point for the server."""
     app = Flask(__name__)
-    boot_state(app)
+    boot_state(app, config)
     configure_routes(app)
     configure_lifecycle(app)
     CORS(app)
