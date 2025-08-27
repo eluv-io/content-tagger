@@ -1,23 +1,30 @@
-
+from dataclasses import dataclass
 from typing import Any, Dict
 
 from elv_client_py import ElvClient
 
 from src.api.auth import parse_qhit
-from config import config
 
-# TODO: this neeeds to work as expected for write tokens
+@dataclass
+class ContentConfig:
+    content_url: str
+    parts_url: str
 
 class Content():
     """Content object representation and API wrapper.
     """
 
-    def __init__(self, qhit: str, auth: str):
+    def __init__(
+            self, 
+            qhit: str,
+            auth: str,
+            cfg: ContentConfig
+    ):
         client = ElvClient.from_configuration_url(
-            config["hosts"]["config_url"], static_token=auth)
-        
+            cfg.content_url, static_token=auth)
+
         parts_client = ElvClient.from_configuration_url(
-            config["hosts"]["parts_url"], static_token=auth)
+            cfg.parts_url, static_token=auth)
 
         # will raise HTTPError if auth is invalid or qhit is not found
         qinfo = client.content_object(**parse_qhit(qhit))
@@ -59,3 +66,10 @@ class Content():
                 return attr(*args, library_id=self.qlib, **kwargs)
             return wrapper
         return attr
+
+class ContentFactory:
+    def __init__(self, cfg: ContentConfig):
+        self.cfg = cfg
+
+    def create_content(self, qhit: str, auth: str) -> Content:
+        return Content(qhit, auth, self.cfg)
