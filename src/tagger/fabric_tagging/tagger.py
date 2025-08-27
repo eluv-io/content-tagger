@@ -264,15 +264,14 @@ class FabricTagger:
         while not self.shutdown_signal.is_set():
             if self.storelock.acquire(timeout=1):
                 try:
-                    self._check_jobs()
+                    self._upload_all()
                 except Exception as e:
                     logger.exception(f"Unexpected error in job watcher: {e}")
                 finally:
                     self.storelock.release()
             time.sleep(0.2)
 
-    # TODO: might miss tags at the end of the job
-    def _check_jobs(self) -> None:
+    def _upload_all(self) -> None:
         with self.storelock:
             jobs = list(self.jobstore.active_jobs.values())
             jobs += list(self.jobstore.inactive_jobs.values())

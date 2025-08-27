@@ -35,7 +35,7 @@ class SystemTagger:
 
         self.exit = threading.Event()
 
-        self.joblocks = defaultdict(threading.Lock)
+        self.jobslock = threading.Lock()
         self.jobs: dict[str, ContainerJob] = {}
 
         self.starter = threading.Thread(target=self._start_jobs, daemon=True)
@@ -85,7 +85,7 @@ class SystemTagger:
         return self.status(jobid)
 
     def status(self, jobid: str) -> ContainerJobStatus:
-        with self.joblocks[jobid]:
+        with self.jobslock:
             return deepcopy(self.jobs[jobid].jobstatus)
 
     def shutdown(self) -> None:
@@ -131,7 +131,7 @@ class SystemTagger:
 
     def _run_job(self, jobid: str) -> None:
 
-        with self.joblocks[jobid]:
+        with self.jobslock:
             cj = self.jobs[jobid]
             if cj.jobstatus.time_ended:
                 # user stopped it
@@ -160,7 +160,7 @@ class SystemTagger:
         Stops the job and cleans up resources.
         """
 
-        with self.joblocks[jobid]:
+        with self.jobslock:
             cj = self.jobs[jobid]
 
             if cj.jobstatus.time_ended:
@@ -245,6 +245,7 @@ class SystemTagger:
 
     def _terminate_all_jobs(self):
         logger.info("Shutting down system tagger...")
+        # TODO: can change size during list call
         active_jobids = list(self.jobs)
         for jobid in active_jobids:
             logger.info(f"Killing job {jobid}")
@@ -254,7 +255,7 @@ class SystemTagger:
         # clean the queue of stopped jobs
         newq = []
         for jobid in self.q:
-            with self.joblocks[jobid]:
+            with self.jobslock:
                 if self.jobs[jobid].jobstatus.status == "Queued":
                     newq.append(jobid)
         self.q = newq
