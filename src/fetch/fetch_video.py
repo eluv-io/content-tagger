@@ -15,7 +15,7 @@ from src.common.content import Content
 from src.common.errors import MissingResourceError, BadRequestError
 from src.fetch.types import AssetDownloadRequest, VodDownloadRequest, Source, StreamMetadata
 from src.fetch.types import FetcherConfig, DownloadResult
-from src.tags.tagstore import FilesystemTagStore
+from src.tags.tagstore.tagstore import FilesystemTagStore
 
 
 class Fetcher:

@@ -62,18 +62,31 @@ class JobState:
     media: DownloadResult | None
     container: TagContainer | None
 
+    @staticmethod
+    def starting() -> 'JobState':
+        return JobState(
+            status=JobStatus.starting(),
+            taghandle="",
+            uploaded_sources=[],
+            media=None,
+            container=None
+        )
+
 @dataclass
 class TagJob:
     args: JobArgs
     state: JobState
     stopevent: threading.Event
-    upload_job: UploadJob
+    upload_job: str
 
     def get_id(self) -> 'JobID':
         return JobID(qhit=self.args.q.qhit, feature=self.args.feature, stream=self.args.runconfig.stream)
 
 @dataclass
 class JobID:
+    """
+    Unique identifier for a job to prevent duplication.
+    """
     qhit: str
     feature: str
     stream: str

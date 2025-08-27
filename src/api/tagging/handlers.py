@@ -6,28 +6,26 @@ from src.api.tagging.format import TagArgs, ImageTagArgs
 from src.common.errors import BadRequestError
 from src.api.auth import get_authorization
 from src.common.content import Content
-from src.tagger.fabric_tagging.tagger import Tagger
-
-from config import config
+from src.tagger.fabric_tagging.tagger import FabricTagger
 
 def handle_tag(qhit: str) -> Response:
     auth = get_authorization(request)
 
     q = Content(qhit, auth)
-    
+
     try:
         args = TagArgs.from_dict(request.json)
     except BadRequestError as e:
         raise e
     except Exception as e:
         raise BadRequestError(
-            f"Invalid search arguments. Please check your query parameters") from e
+            "Invalid search arguments. Please check your query parameters") from e
 
-    tagger: Tagger = current_app.config["state"]["tagger"]
+    tagger: FabricTagger = current_app.config["state"]["tagger"]
 
-    tagger.tag(q, args)
+    status = tagger.tag(q, args)
 
-    return Response(response=json.dumps({'message': f'Tagging started on {qhit}'}), status=200, mimetype='application/json')
+    return Response(response=json.dumps(status), status=200, mimetype='application/json')
 
 def handle_image_tag(qhit: str) -> Response:
     auth = get_authorization(request)
@@ -39,15 +37,16 @@ def handle_image_tag(qhit: str) -> Response:
     except TypeError as e:
         return Response(response=json.dumps({'error': str(e)}), status=400, mimetype='application/json')
 
-    for feature, run_config in args.features.items():
-        if not config["services"][feature].get("frame_level", False):
-            return Response(response=json.dumps({'error': f"Image tagging for {feature} is not supported"}), status=400, mimetype='application/json')
-        
-    tagger: Tagger = current_app.config["state"]["tagger"]
+    # TODO: belongs in FabricTagger
+    # for feature, run_config in args.features.items():
+    #     if not config["services"][feature].get("frame_level", False):
+    #         return Response(response=json.dumps({'error': f"Image tagging for {feature} is not supported"}), status=400, mimetype='application/json')
 
-    tagger.tag(q, args)
+    tagger: FabricTagger = current_app.config["state"]["tagger"]
 
-    return Response(response=json.dumps({'message': f'Image asset tagging started on {qhit}'}), status=200, mimetype='application/json')
+    status = tagger.tag(q, args)
+
+    return Response(response=json.dumps(status), status=200, mimetype='application/json')
 
 
 def handle_status(qhit: str) -> Response:
@@ -55,7 +54,7 @@ def handle_status(qhit: str) -> Response:
 
     q = Content(qhit, auth)
 
-    tagger: Tagger = current_app.config["state"]["tagger"]
+    tagger: FabricTagger = current_app.config["state"]["tagger"]
 
     res = tagger.status(q.qhit)
 
@@ -70,7 +69,7 @@ def handle_stop(
 
     q = Content(qhit, auth)
 
-    tagger: Tagger = current_app.config["state"]["tagger"]
+    tagger: FabricTagger = current_app.config["state"]["tagger"]
 
     tagger.stop(q.qhit, feature)
 
