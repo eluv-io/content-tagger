@@ -9,8 +9,9 @@ import psutil
 from common_ml.utils.files import get_file_type
 from common_ml.video_processing import get_fps
 
-from src.common.schema import Tag, FrameTag
+from src.common.schema import FrameTag
 from src.common.errors import MissingResourceError, BadRequestError
+from src.tags.tagstore.types import Tag
 from src.tag_containers.types import ContainerSpec, RegistryConfig, ModelOutput, ModelConfig
 
 class TagContainer:

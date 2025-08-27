@@ -4,7 +4,7 @@ import shutil
 import os
 import json
 import time
-from src.tags.tagstore import FilesystemTagStore, Tag, UploadJob
+from src.tags.tagstore.tagstore import FilesystemTagStore, Tag, UploadJob
 
 
 @pytest.fixture

@@ -7,7 +7,6 @@ from unittest.mock import Mock, patch
 
 from src.tag_containers.containers import TagContainer
 from src.tag_containers.types import ContainerSpec, ModelConfig
-from src.common.schema import Tag, FrameTag
 from src.common.resources import SystemResources
 
 

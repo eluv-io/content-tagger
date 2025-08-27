@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing_extensions import Literal
 
 from src.common.resources import SystemResources
-from src.common.schema import Tag
+from src.tags.tagstore.types import Tag
 
 
 @dataclass

@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from src.common.schema import Tag, UploadJob
 
 from common_ml.tags import VideoTag, FrameTag, AggTag
 

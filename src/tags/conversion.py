@@ -4,7 +4,7 @@ from loguru import logger
 
 from src.tags.tagstore.tagstore import FilesystemTagStore
 from common_ml.tags import FrameTag, VideoTag
-from src.common.schema import Tag
+from src.tags.tagstore.types import UploadJob, Tag
 from src.tags.legacy.agg import (
     aggregate_video_tags, 
     format_tracks, 

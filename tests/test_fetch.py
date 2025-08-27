@@ -8,7 +8,7 @@ import time
 
 from src.fetch.fetch_video import Fetcher
 from src.fetch.types import FetcherConfig, VodDownloadRequest, AssetDownloadRequest
-from src.tags.tagstore import FilesystemTagStore, Tag, UploadJob
+from src.tags.tagstore.tagstore import FilesystemTagStore, Tag, UploadJob
 from src.common.content import Content
 from src.common.errors import MissingResourceError
 
