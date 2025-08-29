@@ -123,7 +123,7 @@ class FabricTagger:
         for job in jobs:
             if not job.state.taghandle:
                 continue
-            
+
             try:
                 self.system_tagger.stop(job.state.taghandle)
             except Exception as e:
@@ -212,6 +212,14 @@ class FabricTagger:
                 return
 
         taggingdone.wait()
+
+        # check status
+        state = self.system_tagger.status(job.state.taghandle)
+        if state.status == "Failed":
+            self._set_stop_state(jobid, "Failed", RuntimeError(f"System tagger job reported failure\nError={state.error}"))
+            return
+        if state.status != "Completed":
+            self._set_stop_state(jobid, "Failed", RuntimeError("System tagger gave unexpected status: {state}"))
 
         try:
             self._upload_tags(job)
