@@ -46,7 +46,7 @@ containers:
       image: "localhost/hungarian:latest"
       type: "audio"
       resources: {
-        "cpu": 25
+        "cpu_juice": 25
       }
     french_asr: 
       image: "localhost/multilingual:latest"
@@ -71,7 +71,7 @@ containers:
       type: "video"
       resources: {
         "gpu": 1,
-        "cpu": 35
+        "cpu_juice": 35
       }
     ocr:
       image: "localhost/ocr:latest"
@@ -85,23 +85,11 @@ containers:
       resources: {
         "gpu": 1
       }
-    dummy_gpu:
-      image: "localhost/dummy_gpu:latest"
+    test:
+      image: "localhost/test:latest"
       type: "video"
       resources: {
         "gpu": 1
-      }
-    dummy_cpu:
-      image: "localhost/dummy_cpu:latest"
-      type: "video"
-      resources: {
-        "cpu": 25
-      }
-    test_slow:
-      image: "localhost/slow_model_test:latest"
-      type: "video"
-      resources: {
-        "cpu": 25
       }
 
 agg:
