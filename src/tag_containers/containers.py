@@ -121,7 +121,7 @@ class TagContainer:
     
     def _filter_open_fd(self, tag_files: list[str]) -> list[str]:
         pid = None
-        if self.is_running():
+        if self.is_running() and self.container is not None:
             try:
                 container_info = self.container.inspect()
                 pid = container_info.get("State", {}).get("Pid")
@@ -189,7 +189,7 @@ class TagContainer:
         for source_media, tag_files in source_to_tagfiles.items():
             model_out = self._output_from_tags(source_media, tag_files)
             if model_out:
-                outputs.append(self._output_from_tags(source_media, tag_files))
+                outputs.append(model_out)
 
         return outputs
 
@@ -271,16 +271,17 @@ class TagContainer:
         fps: float
     ) -> list[FrameTag]:
         overlapping_tags = []
-        for fidx, ftag_data in frame_tags_data.items():
-            frame_time = int(fidx) / fps
-            if video_tag.start_time <= frame_time <= video_tag.end_time \
-                and ftag_data.get("text", "") == video_tag.text:
-                overlapping_tags.append(FrameTag(
-                    frame_idx=fidx,
-                    confidence=ftag_data.get("confidence", 0.0),
-                    box=ftag_data.get("box", []),
-                    text=ftag_data.get("text", "")
-                ))
+        for fidx, ftags in frame_tags_data.items():
+            frame_time = (int(fidx) / fps) * 1000
+            if video_tag.start_time <= frame_time < video_tag.end_time:
+                for ftag in ftags:
+                    if ftag.get("text", "") == video_tag.text:
+                        overlapping_tags.append(FrameTag(
+                            frame_idx=fidx,
+                            confidence=ftag.get("confidence", 0.0),
+                            box=ftag.get("box", []),
+                            text=ftag.get("text", "")
+                        ))
         return overlapping_tags
 
 

@@ -3,12 +3,14 @@ import os
 import shutil
 import time
 import json
-import tempfile
 from dotenv import load_dotenv
+from loguru import logger
 
 from server import create_app
 from app_config import AppConfig
+import podman
 from src.common.content import ContentConfig
+from src.tags.tagstore.tagstore import FilesystemTagStore
 from src.tags.tagstore.types import TagStoreConfig
 from src.tagger.system_tagging.types import SysConfig
 from src.fetch.types import FetcherConfig
@@ -30,7 +32,8 @@ def get_auth() -> str:
 @pytest.fixture(scope="session")
 def temp_test_dir():
     """Create a temporary directory for test data."""
-    temp_dir = "./test-stuff"
+    temp_dir = os.path.join(__file__, "../..", "test-stuff")
+    temp_dir = os.path.abspath(temp_dir)
     shutil.rmtree(temp_dir, ignore_errors=True)
     yield temp_dir
 
@@ -56,20 +59,10 @@ def test_config(temp_test_dir):
             tags_path=os.path.join(temp_test_dir, "tags"),
             cache_path=os.path.join(temp_test_dir, "cache"),
             model_configs={
-                "dummy_gpu": ModelConfig(
+                "fake": ModelConfig(
                     type="frame",
                     resources={"gpu": 1},
-                    image="localhost/dummy_gpu:latest"
-                ),
-                "dummy_cpu": ModelConfig(
-                    type="frame",
-                    resources={"cpu_juice": 25},
-                    image="localhost/dummy_cpu:latest"
-                ),
-                "shot": ModelConfig(
-                    type="video",
-                    resources={"gpu": 1},
-                    image="localhost/shot:latest"
+                    image="localhost/test_model:latest"
                 )
             }
         )
@@ -113,8 +106,6 @@ def wait_for_jobs_completion(client, content_ids, timeout=30):
                 break
                 
             result = response.get_json()
-
-            print(json.dumps(result, indent=2))
             
             for stream in result:
                 for feature in result[stream]:
@@ -132,7 +123,16 @@ def wait_for_jobs_completion(client, content_ids, timeout=30):
     
     return False
 
+def check_skip():
+    # check if dummy_gpu & dummy_cpu are available images in podman
+    with podman.PodmanClient() as client:
+        images = sum([image.tags for image in client.images.list() if image.tags], [])
+        if "localhost/test_model:latest" not in images:
+            logger.warning("Test model image 'localhost/test_model:latest' not found.")
+            pytest.skip("Required test images not found in local podman registry")
+
 def test_video_model(client):
+    check_skip()
     """Test the complete tagging workflow."""
     # Get auth tokens
     auth = get_auth()
@@ -146,7 +146,7 @@ def test_video_model(client):
         f"/{test_objects['vod']}/tag?authorization={auth}", 
         json={
             "features": {
-                "dummy_gpu": {
+                "fake": {
                     "model": {"tags": ["hello1", "hello2"]}
                 }, 
                 #"shot": {}
@@ -155,10 +155,19 @@ def test_video_model(client):
         }
     )
     assert response.status_code == 200
-    print("Started video GPU tagging")
-    completed = wait_for_jobs_completion(client, [test_objects['vod']], timeout=10)
-    status = client.get(f"/{test_objects['vod']}/status?authorization={auth}")
-    print(json.dumps(status.get_json(), indent=2))
+    completed = wait_for_jobs_completion(client, [test_objects['vod']], timeout=25)
+    assert completed
+    tagstore: FilesystemTagStore = client.application.config["state"]["tagger"].tagstore
+    jobid = tagstore.find_jobs(qhit=test_objects['vod'], stream='video')[0]
+    tags = tagstore.get_tags(jobid)
+    tags = sorted(tags, key=lambda x: x.start_time)
+    assert len(tags) == 122
+    next_tag = 'hello1'
+    for tag in tags:
+        assert tag.text == next_tag
+        next_tag = 'hello2' if next_tag == 'hello1' else 'hello1'
+        assert 'frame_tags' in tag.additional_info
+
     assert completed, "Timeout waiting for jobs to complete"
 
 def test_tag_workflow(client):

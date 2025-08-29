@@ -28,19 +28,19 @@ def configure_routes(app: Flask) -> None:
 
     @app.errorhandler(BadRequestError)
     def handle_bad_request(e):
-        logger.exception(f"Bad request: {e}")
+        logger.error(f"Bad request: {e}")
         return jsonify({'error': e.message}), 400
 
     @app.errorhandler(HTTPError)
     def handle_http_error(e):
-        logger.exception(f"HTTP error: {e}")
+        logger.error(f"HTTP error: {e}")
         status_code = e.response.status_code
         error_resp = json.loads(e.response.text)
         return jsonify({'message': 'Fabric API error', 'error': error_resp}), status_code
 
     @app.errorhandler(MissingResourceError)
     def handle_missing_resource(e):
-        logger.exception(f"Missing resource: {e}")
+        logger.error(f"Missing resource: {e}")
         return jsonify({'message': e.message}), 404
 
     @app.route('/<qhit>/tag', methods=['POST'])
@@ -89,17 +89,13 @@ def boot_state(app: Flask, cfg: AppConfig) -> None:
 
 def configure_lifecycle(app: Flask) -> None:
 
-    def _cleanup():
-        """Cleanup resources before shutdown."""
-        logger.info("Cleaning up resources...")
+    def shutdown():
         app_state = app.config["state"]
+        print('Shutting down.')
         app_state["tagger"].cleanup()
-        logger.info("Cleanup completed.")
-        os._exit(0)
+        print('Finished shutting down.')
 
-    atexit.register(_cleanup)
-    signal.signal(signal.SIGINT, lambda signum, frame: _cleanup())
-    signal.signal(signal.SIGTERM, lambda signum, frame: _cleanup())
+    atexit.register(shutdown)
 
 def create_app(config: AppConfig) -> Flask:
     """Main entry point for the server."""
