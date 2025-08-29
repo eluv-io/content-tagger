@@ -2,6 +2,7 @@
 import threading
 from collections import defaultdict
 import time
+import math
 from copy import deepcopy
 
 from loguru import logger
@@ -14,7 +15,6 @@ from src.tagger.fabric_tagging.types import *
 from src.common.content import Content
 from src.common.errors import MissingResourceError
 from src.fetch.fetch_video import Fetcher
-from src.fetch.types import Source, StreamMetadata
 from src.tags.tagstore.tagstore import FilesystemTagStore
     
 class FabricTagger:
@@ -112,6 +112,9 @@ class FabricTagger:
             jobids = {jobid for jobid in active_jobs.keys() if jobid.qhit == qhit and jobid.feature == feature}
 
             if len(jobids) == 0:
+                old_jobs = [jobid for jobid in self.jobstore.inactive_jobs.keys() if jobid.qhit == qhit and jobid.feature == feature]
+                if old_jobs:
+                    raise MissingResourceError(f"Job for {feature} on {qhit} is already complete")
                 raise MissingResourceError(
                     f"No job running for {feature} on {qhit}"
                 )
@@ -215,11 +218,12 @@ class FabricTagger:
 
         # check status
         state = self.system_tagger.status(job.state.taghandle)
-        if state.status == "Failed":
-            self._set_stop_state(jobid, "Failed", RuntimeError(f"System tagger job reported failure\nError={state.error}"))
+        if state.status not in ("Completed", "Stopped", "Failed"):
+            self._set_stop_state(jobid, "Failed", RuntimeError(f"System tagger gave unexpected status: {state.status}"))
+
+        if state.status in ("Stopped", "Failed"):
+            self._set_stop_state(jobid, state.status, state.error)
             return
-        if state.status != "Completed":
-            self._set_stop_state(jobid, "Failed", RuntimeError("System tagger gave unexpected status: {state}"))
 
         try:
             self._upload_tags(job)
@@ -306,33 +310,46 @@ class FabricTagger:
             outputs = job.state.container.tags()
             new_outputs = [out for out in outputs if media_to_source[out.source_media].name not in job.state.uploaded_sources]
 
+            stream_meta = job.state.media.stream_meta
             tags2upload = []
             for out in new_outputs:
                 original_src = media_to_source[out.source_media]
                 for tag in out.tags:
-                    tags2upload.append(self._fix_tag_offsets(tag, original_src, job.state.media.stream_meta))
-
+                    # add missing metadata
+                    tag.source = original_src.name
+                    tag.jobid = job.upload_job
+                    tags2upload.append(self._fix_tag_offsets(tag, original_src.offset, stream_meta.fps if stream_meta else None))
+                    
             job.state.uploaded_sources.extend(media_to_source[out.source_media].name for out in new_outputs)
             self.tagstore.upload_tags(tags2upload, job.upload_job)
 
-    def _fix_tag_offsets(self, tag: Tag, source: Source, meta: StreamMetadata | None) -> Tag:
+    def _fix_tag_offsets(
+            self, 
+            tag: Tag, 
+            offset: float,
+            fps: float | None,
+        ) -> Tag:
+        """
+        Adjust tag offsets and set the source/jobid fields appropriately so they can be uploaded to tagstore
+        """
         if tag.start_time is not None:
-            tag.start_time += int(source.offset * 1000) # convert to ms
+            tag.start_time += int(offset * 1000) # convert to ms
         if tag.end_time is not None:
-            tag.end_time += int(source.offset * 1000)
-        tag.source = source.name
+            tag.end_time += int(offset * 1000)
         if "frame_tags" in tag.additional_info:
-            assert meta is not None
-            assert meta.fps is not None
-            tag = self._fix_frame_indices(tag, source, meta.fps)
+            assert fps is not None
+            tag = self._fix_frame_indices(tag, offset, fps)
         return tag
 
-    def _fix_frame_indices(self, tag: Tag, source: Source, fps: float) -> Tag:
+    def _fix_frame_indices(self, tag: Tag, offset: float, fps: float) -> Tag:
         if "frame_tags" not in tag.additional_info:
             return tag
 
         frame_tags = tag.additional_info["frame_tags"]
-        frame_offset = int(source.offset * fps)
+        frame_offset = round(offset * fps)
+        residual = (offset * fps) - frame_offset
+        if not math.isclose(residual, 0.0, abs_tol=1e-6):
+            logger.warning(f"Non-integer frame offset detected\noffset: {offset}, fps: {fps}, frame_offset: {frame_offset}, residual: {residual}")
 
         adjusted = {}
         for frame_idx, label in frame_tags.items():
