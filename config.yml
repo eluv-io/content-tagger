@@ -32,8 +32,7 @@ fetcher:
   author: tagger
 
 containers:
-  logs_path: data/logs
-  tags_path: data/tags
+  base_path: data/containers
   cache_path: data/cache
   model_configs:
     llava:

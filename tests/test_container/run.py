@@ -40,6 +40,7 @@ def run(files, runtime_config):
         cfg = nested_update(default_cfg, cfg)
     model = DummyModel(run_config=cfg)
     out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tags')
+    print(files)
     default_tag(model, files, out_path)
 
 if __name__ == '__main__':

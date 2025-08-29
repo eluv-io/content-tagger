@@ -3,9 +3,7 @@ from flask import Flask, Response, jsonify
 from flask_cors import CORS
 import json
 from loguru import logger
-import os
 from requests.exceptions import HTTPError
-import signal
 import atexit
 import setproctitle
 import sys
@@ -19,7 +17,6 @@ from src.common.content import ContentFactory
 from src.tag_containers.containers import ContainerRegistry
 
 from src.api.tagging.handlers import handle_tag, handle_image_tag, handle_status, handle_stop
-#from src.api.upload.handlers import handle_finalize, handle_aggregate
 from src.common.errors import BadRequestError, MissingResourceError
 from app_config import AppConfig
 
