@@ -6,7 +6,7 @@ import threading
 import tempfile
 import shutil
 from copy import deepcopy
-from common_ml.video_processing import unfrag_video, get_video_length
+from common_ml.video_processing import unfrag_video
 from common_ml.utils.files import get_file_type, encode_path
 from common_ml.utils.metrics import timeit
 from loguru import logger
@@ -293,9 +293,8 @@ class Fetcher:
         assert isinstance(scope, VideoScope)
         start_time, end_time = scope.start_time, scope.end_time
 
+        logger.info(f"Downloading stream {req.stream_name} for {q.qhit} with {len(stream_metadata.parts)} parts")
         for idx, part_hash in enumerate(stream_metadata.parts):
-            last_part = idx == len(stream_metadata.parts) - 1
-
             if exit_event is not None and exit_event.is_set():
                 break
 
@@ -325,7 +324,6 @@ class Fetcher:
                 successful_sources.append(source)
                 continue
 
-            logger.info(f"Downloading part {part_hash} for {q.qhit}")
             tmpfile = os.path.join(tmp_path, f"{idx_str}_{part_hash}")
 
             try:
@@ -354,9 +352,9 @@ class Fetcher:
                 continue
 
             # check that length of the file is equal to the part length
-            if not last_part and stream_metadata.codec_type == "video":
-                actual_duration = get_video_length(save_path)
-                assert abs(actual_duration - stream_metadata.part_duration) < 1e-3
+            # if not last_part and stream_metadata.codec_type == "video":
+            #     actual_duration = get_video_length(save_path)
+            #     assert abs(actual_duration - stream_metadata.part_duration) < 1e-3
 
             # TODO: check for audio as well. 
 

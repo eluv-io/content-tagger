@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import sys
 from typing import List
 
 from common_ml.model import FrameModel, default_tag
@@ -25,6 +26,8 @@ class DummyModel(FrameModel):
         return [FrameTag(text=tag, box={"x1": 0, "y1": 0, "x2": 0, "y2": 0}, confidence=1.0)]
 
 def run(files, runtime_config):
+    print('fooballs')
+    print('fooballs', file=sys.stderr)
     default_cfg = {
         "fps": 1,
         "allow_single_frame": True,

@@ -79,8 +79,10 @@ class TagContainer:
             "remove": True,
             "network_mode": "host",
             "log_config": {
-                "type": "file",
-                "path": self.cfg.logs_path,
+                "Type": "k8s-file",
+                "Config": {
+                    "path": "/home/elv-nickb/tagger-working/fuckballs.log"
+                }
             }
         }
 

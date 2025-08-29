@@ -121,7 +121,7 @@ class FabricTagger:
                 self._set_stop_state(job.get_id(), "Stopped", None)
 
         for job in jobs:
-            if job.state.taghandle is None:
+            if not job.state.taghandle:
                 continue
             
             try:
