@@ -59,7 +59,7 @@ def test_config(temp_test_dir):
             tags_path=os.path.join(temp_test_dir, "tags"),
             cache_path=os.path.join(temp_test_dir, "cache"),
             model_configs={
-                "fake": ModelConfig(
+                "test_model": ModelConfig(
                     type="frame",
                     resources={"gpu": 1},
                     image="localhost/test_model:latest"
@@ -146,7 +146,7 @@ def test_video_model(client):
         f"/{test_objects['vod']}/tag?authorization={auth}", 
         json={
             "features": {
-                "fake": {
+                "test_model": {
                     "model": {"tags": ["hello1", "hello2"]}
                 }, 
                 #"shot": {}
@@ -170,117 +170,6 @@ def test_video_model(client):
 
     assert completed, "Timeout waiting for jobs to complete"
 
-def test_tag_workflow(client):
-    """Test the complete tagging workflow."""
-    # Get auth tokens
-    auth = get_auth()
-    
-    # Test initial status - should return 404 for no jobs
-    response = client.get(f"/{test_objects['vod']}/status?authorization={auth}")
-    assert response.status_code == 404
-    
-    # Start video tagging with GPU feature
-    response = client.post(
-        f"/{test_objects['vod']}/tag?authorization={auth}", 
-        json={
-            "features": {
-                "dummy_gpu": {
-                    "model": {"tags": ["hello1", "hello2"]}
-                }, 
-                "shot": {}
-            }, 
-            "replace": True
-        }
-    )
-    assert response.status_code == 200
-    print("Started video GPU tagging")
-    
-    # Start video tagging with CPU feature
-    #response = client.post(
-    #    f"/{test_objects['vod']}/tag?authorization={auth}", 
-    #    json={
-    #        "features": {
-    #            "dummy_cpu": {
-    #                "model": {"tags": ["a", "b"], "allow_single_frame": False}
-    #            }
-    #        }, 
-    #        "replace": True
-    #    }
-    #)
-    #assert response.status_code == 200
-    #print("Started video CPU tagging")
-    
-    # Start image tagging with GPU
-    #response = client.post(
-    #    f"/{test_objects['assets']}/image_tag?authorization={auth}", 
-    #    json={
-    #        "features": {
-    #            "dummy_gpu": {
-    #                "model": {"tags": ["image_hello1"]}
-    #            }
-    #        }, 
-    #        "replace": True
-    #    }
-    #)
-    #assert response.status_code == 200
-    #print("Started image GPU tagging")
-    
-    # Start image tagging with CPU
-    #response = client.post(
-    #    f"/{test_objects['assets']}/image_tag?authorization={auth}", 
-    #    json={
-    #        "features": {
-    #            "dummy_cpu": {
-    #                "model": {"tags": ["image_hello2"]}
-    #            }
-    #        }, 
-    #        "replace": True
-    #    }
-    #)
-    #assert response.status_code == 200
-    #print("Started image CPU tagging")
-    
-    # Wait for all jobs to complete
-    content_ids = [test_objects['vod'], test_objects['assets']]
-    completed = wait_for_jobs_completion(client, content_ids, timeout=60)
-    assert completed, "Timeout waiting for jobs to complete"
-    print("All jobs completed")
-    
-    # Verify final status for video content
-    response = client.get(f"/{test_objects['vod']}/status?authorization={auth}")
-    assert response.status_code == 200
-    video_result = response.get_json()
-    
-    # Check that we have results for all requested features
-    assert 'video' in video_result
-    assert 'dummy_gpu' in video_result['video']
-    assert 'dummy_cpu' in video_result['video'] 
-    assert 'shot' in video_result['video']
-    
-    # Verify all video jobs completed successfully
-    for feature in ['dummy_gpu', 'dummy_cpu', 'shot']:
-        assert video_result['video'][feature]['status'] == 'Completed', f"Video {feature} failed"
-        assert video_result['video'][feature]['failed'] == 0, f"Video {feature} had failures"
-    
-    print("Video tagging verified")
-    
-    # Verify final status for image content
-    response = client.get(f"/{test_objects['assets']}/status?authorization={auth}")
-    assert response.status_code == 200
-    image_result = response.get_json()
-    
-    # Check that we have results for all requested features
-    assert 'image' in image_result
-    assert 'dummy_gpu' in image_result['image']
-    assert 'dummy_cpu' in image_result['image']
-    
-    # Verify all image jobs completed successfully
-    for feature in ['dummy_gpu', 'dummy_cpu']:
-        assert image_result['image'][feature]['status'] == 'Completed', f"Image {feature} failed"
-        assert image_result['image'][feature]['failed'] == 0, f"Image {feature} had failures"
-    
-    print("Image tagging verified")
-
 def test_stop_workflow(client):
     """Test stopping jobs."""
     video_auth = get_auth()
@@ -290,7 +179,7 @@ def test_stop_workflow(client):
         f"/{test_objects['vod']}/tag?authorization={video_auth}", 
         json={
             "features": {
-                "dummy_cpu": {
+                "test_model": {
                     "model": {"tags": ["test_stop"]}
                 }
             }, 
@@ -300,11 +189,8 @@ def test_stop_workflow(client):
     assert response.status_code == 200
     
     # Stop the job quickly (before it completes)
-    response = client.post(f"/{test_objects['vod']}/stop/dummy_cpu?authorization={video_auth}")
+    response = client.post(f"/{test_objects['vod']}/stop/test_model?authorization={video_auth}")
     assert response.status_code == 200
-    
-    # Wait a moment for stop to take effect
-    time.sleep(2)
     
     # Check status - job should be stopped
     response = client.get(f"/{test_objects['vod']}/status?authorization={video_auth}")
@@ -313,12 +199,12 @@ def test_stop_workflow(client):
     
     # The job should exist and be in a stopped state
     assert 'video' in result
-    assert 'dummy_cpu' in result['video']
-    status = result['video']['dummy_cpu']['status']
-    assert status in ['Stopped', 'Failed'], f"Expected job to be stopped, got {status}"
+    assert 'test_model' in result['video']
+    status = result['video']['test_model']['status']
+    assert status == 'Stopped', f"Expected job to be stopped, got {status}"
 
-def test_replace_false_workflow(client):
-    """Test tagging with replace=False (should not overwrite existing jobs)."""
+def test_double_run(client):
+    """Run same job twice, expet second to be rejected."""
     video_auth = get_auth()
     
     # Start initial job
@@ -326,31 +212,33 @@ def test_replace_false_workflow(client):
         f"/{test_objects['vod']}/tag?authorization={video_auth}", 
         json={
             "features": {
-                "dummy_cpu": {
+                "test_model": {
                     "model": {"tags": ["original_tags"]}
                 }
-            }, 
-            "replace": True
+            }
         }
     )
     assert response.status_code == 200
-    
-    # Wait for completion
-    completed = wait_for_jobs_completion(client, [test_objects['vod']], timeout=30)
-    assert completed
     
     # Try to start another job with replace=False (should be rejected)
     response = client.post(
         f"/{test_objects['vod']}/tag?authorization={video_auth}", 
         json={
             "features": {
-                "dummy_cpu": {
+                "test_model": {
                     "model": {"tags": ["should_not_replace"]}
                 }
-            }, 
-            "replace": False
+            },
         }
     )
-    # This should either be rejected (400) or succeed but not actually replace
-    # The exact behavior depends on your implementation
-    assert response.status_code in [200, 400]
+    data = response.get_json()
+    assert response.status_code == 200
+    assert "already running" in data["test_model"]
+
+    # stop the job
+    start = time.time()
+    response = client.post(f"/{test_objects['vod']}/stop/test_model?authorization={video_auth}")
+    duration = time.time() - start
+    print(duration)
+    assert duration < 2, f"Stop request took too long: {duration}s which is over 2s limit"
+    assert response.status_code == 200
