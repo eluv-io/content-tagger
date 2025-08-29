@@ -5,7 +5,7 @@ from loguru import logger
 import json
 import os
 import psutil
-import uuid
+from datetime import datetime
 
 from common_ml.utils.files import get_file_type
 from common_ml.video_processing import get_fps
@@ -81,7 +81,7 @@ class TagContainer:
             "log_config": {
                 "Type": "k8s-file",
                 "Config": {
-                    "path": "/home/elv-nickb/tagger-working/fuckballs.log"
+                    "path": self.cfg.logs_path
                 }
             }
         }
@@ -295,14 +295,15 @@ class ContainerRegistry:
     def __init__(self, cfg: RegistryConfig):
         self.pclient = PodmanClient()
         self.cfg = cfg
-        os.makedirs(self.cfg.logs_path, exist_ok=True)
-        os.makedirs(self.cfg.tags_path, exist_ok=True)
+        os.makedirs(self.cfg.base_path, exist_ok=True)
         os.makedirs(self.cfg.cache_path, exist_ok=True)
 
     def get(self, model: str, fileargs: list[str], runconfig: dict) -> TagContainer:
-        tags_path = os.path.join(self.cfg.tags_path, model, str(uuid.uuid4()))
-        logs_path = os.path.join(tags_path, "logs.out")
+        jobid = datetime.now().strftime("%Y%m%d-%H%M%S")
+        jobpath = os.path.join(self.cfg.base_path, model, f'job-{jobid}')
+        tags_path = os.path.join(jobpath, 'tags')
         os.makedirs(tags_path, exist_ok=True)
+        logs_path = os.path.join(jobpath, 'log.out')
 
         cache_path = self.cfg.cache_path
 

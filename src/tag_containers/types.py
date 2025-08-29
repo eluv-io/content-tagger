@@ -23,8 +23,7 @@ class ContainerSpec:
 @dataclass
 class RegistryConfig:
     model_configs: dict[str, ModelConfig]
-    logs_path: str
-    tags_path: str
+    base_path: str
     cache_path: str
 
 @dataclass
