@@ -180,8 +180,8 @@ def test_tags_video_with_frame_tags(video_tag_container):
     # Create video tags
     video_tags_data = [
         {
-            "start_time": 0,
-            "end_time": 5,
+            "start_time": 1000,
+            "end_time": 3500,
             "text": "person walking",
             "confidence": 0.9
         }
@@ -189,21 +189,21 @@ def test_tags_video_with_frame_tags(video_tag_container):
     
     # Create frame tags (matching text with video tag)
     frame_tags_data = {
-        30: {  # frame 30 = 1 second at 30fps
+        30: [{  # frame 30 = 1 second at 30fps
             "text": "person walking",
             "confidence": 0.95,
             "box": [100, 100, 200, 200]
-        },
-        90: {  # frame 90 = 3 seconds at 30fps
+        }],
+        90: [{  # frame 90 = 3 seconds at 30fps
             "text": "person walking", 
             "confidence": 0.85,
             "box": [110, 105, 210, 205]
-        },
-        180: {  # frame 180 = 6 seconds at 30fps (outside video tag range)
+        }],
+        180: [{  # frame 180 = 6 seconds at 30fps (outside video tag range)
             "text": "person walking",
             "confidence": 0.7,
             "box": [120, 110, 220, 210]
-        }
+        }]
     }
     
     create_video_tags_file(tags_dir, "video1.mp4", video_tags_data)

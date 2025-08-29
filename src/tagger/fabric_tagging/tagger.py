@@ -127,7 +127,7 @@ class FabricTagger:
             try:
                 self.system_tagger.stop(job.state.taghandle)
             except Exception as e:
-                logger.exception(f"Error stopping job {job.get_id()}: {e}")
+                logger.error(f"Error stopping job {job.get_id()}: {e}")
 
     def cleanup(self) -> None:
         logger.info("Shutting down fabric tagger...")
@@ -239,7 +239,7 @@ class FabricTagger:
 
     def _set_stop_state(self, jobid: JobID, status: JobStateDescription, error: Exception | None) -> None:
         if error:
-            logger.exception(error)
+            logger.error(error)
         with self.storelock:
             if jobid in self.jobstore.active_jobs:
                 job = self.jobstore.active_jobs[jobid]
@@ -274,7 +274,7 @@ class FabricTagger:
                 try:
                     self._upload_all()
                 except Exception as e:
-                    logger.exception(f"Unexpected error in job watcher: {e}")
+                    logger.error(f"Unexpected error in uploader: {e}")
                 finally:
                     self.storelock.release()
             time.sleep(0.2)
@@ -331,7 +331,7 @@ class FabricTagger:
             try:
                 frame_idx = int(frame_idx)
             except ValueError:
-                logger.exception(f"Invalid frame index: {tag}")
+                logger.error(f"Invalid frame index: {tag}")
                 continue
             adjusted[frame_idx + frame_offset] = label
 

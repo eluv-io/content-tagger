@@ -167,7 +167,7 @@ class SystemTagger:
                 return
 
             if error:
-                logger.exception(error)
+                print(error)
 
             cj.jobstatus.status = status
             cj.jobstatus.error = error
@@ -182,7 +182,7 @@ class SystemTagger:
 
     def _free_resources(self, cj: ContainerJob) -> None:
 
-        """`
+        """
         Frees the resources allocated for the job and notifies any waiting threads.
         """
 
@@ -229,7 +229,8 @@ class SystemTagger:
                     continue
                 if job.container.is_running():
                     continue
-                assert job.container.container is not None
+                if job.container.container is None:
+                    continue
                 exit_code = job.container.container.attrs["State"]["ExitCode"]
                 if exit_code != 0:
                     self._stop_job(jobid, "Failed", RuntimeError("Container encountered runtime error"))
@@ -240,11 +241,10 @@ class SystemTagger:
             time.sleep(0.2)
 
     def _terminate_all_jobs(self):
-        logger.info("Shutting down system tagger...")
+        print("Shutting down system tagger...")
         # TODO: can change size during list call
         active_jobids = list(self.jobs)
         for jobid in active_jobids:
-            logger.info(f"Killing job {jobid}")
             self._stop_job(jobid, "Stopped")
 
     def _clear_stopped_jobs(self) -> None:
