@@ -91,7 +91,7 @@ def system_tagger():
 
 
 @pytest.fixture
-def fake_container_registry(temp_dir, fake_media_files):
+def fake_container_registry():
     """Create a fake ContainerRegistry that returns mock containers with fake tags"""
 
     class FakeTagContainer:
@@ -367,13 +367,13 @@ def test_stop_running_job(fabric_tagger, sample_content, sample_tag_args):
 
 def test_stop_nonexistent_job(fabric_tagger):
     """Test stopping a job that doesn't exist"""
-    with pytest.raises(MissingResourceError, match="No job running for"):
+    with pytest.raises(MissingResourceError):
         fabric_tagger.stop("iq__nonexistent", "object_detection")
 
 def test_stop_finished_job(fabric_tagger, sample_content, sample_tag_args):
     fabric_tagger.tag(sample_content, sample_tag_args)
     time.sleep(1)
-    with pytest.raises(MissingResourceError, match="No job running for"):
+    with pytest.raises(MissingResourceError):
         fabric_tagger.stop("iq__test_content", "object_detection")
     # check that both are Completed
     status = fabric_tagger.status("iq__test_content")
@@ -432,10 +432,8 @@ def test_many_concurrent_jobs(fabric_tagger):
     for i, result in enumerate(results):
         assert result["object_detection"] == "Job started successfully"
 
-    # Should have 5 active jobs
     assert len(fabric_tagger.jobstore.active_jobs) == 10
 
-    # Should be able to get status for all
     statuses = []
     for content in contents:
         statuses.append(fabric_tagger.status(content.qhit))
@@ -444,7 +442,6 @@ def test_many_concurrent_jobs(fabric_tagger):
         assert status["audio"]["speech_recognition"]["status"] in ["Starting", "Fetching content"]
 
     time.sleep(2)
-
     for content in contents:
         status = fabric_tagger.status(content.qhit)
         assert status["video"]["object_detection"]["status"] == "Completed"

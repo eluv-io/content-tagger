@@ -72,7 +72,7 @@ def test_start_job_with_sufficient_resources(system_tagger):
 def test_start_job_with_insufficient_resources(system_tagger):
     """Test starting a job when resources are not available"""
     container = MockTagContainer()
-    resources = {"A6000": 5}  # More GPUs than available
+    resources = {"cpu_juice": 5}  # More juice than available
     
     with pytest.raises(Exception):
         system_tagger.start(container, resources)
@@ -179,12 +179,17 @@ def test_job_queue_processing(system_tagger):
 def test_resource_allocation_and_cleanup(system_tagger):
     """Test that resources are properly allocated and cleaned up"""
     container = MockTagContainer(work_duration=0.1)
-    resources = {"A6000": 2, "cpu_juice": 2}
+    resources = {"A6000": 1, "cpu_juice": 2}
     
     # Check initial resources
     initial_resources = system_tagger.active_resources.copy()
     
     job_id = system_tagger.start(container, resources)
+
+    # Resources should be allocated
+    mid_resources = system_tagger.active_resources
+    assert mid_resources["A6000"] == initial_resources["A6000"] - 1
+    assert mid_resources["cpu_juice"] == initial_resources["cpu_juice"] - 2
     
     # Wait for job to complete
     timeout = 2.0
@@ -275,11 +280,10 @@ def test_gpu_allocation(system_tagger):
     time.sleep(0.1)
     
     # Check that GPU was allocated
-    with system_tagger.jobslock:
-        job = system_tagger.jobs[job_id]
-        if job.jobstatus.status == "Running":
-            assert len(job.gpus_used) == 1
-            assert container.gpu_idx is not None
+    job = system_tagger.jobs[job_id]
+    if job.jobstatus.status == "Running":
+        assert len(job.gpus_used) == 1
+        assert container.gpu_idx is not None
 
 
 def test_cpu_only_job(system_tagger):
@@ -302,9 +306,8 @@ def test_cpu_only_job(system_tagger):
     assert status.status == "Completed"
     
     # GPU should not have been allocated
-    with system_tagger.jobslock:
-        job = system_tagger.jobs[job_id]
-        assert len(job.gpus_used) == 0
+    job = system_tagger.jobs[job_id]
+    assert len(job.gpus_used) == 0
 
 
 def test_status_returns_copy(system_tagger):

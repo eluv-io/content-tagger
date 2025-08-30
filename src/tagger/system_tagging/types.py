@@ -1,6 +1,7 @@
 from typing import Literal
 from dataclasses import dataclass
 import threading
+import time
 
 from src.common.resources import SystemResources
 from src.tag_containers.containers import TagContainer
@@ -13,6 +14,15 @@ class ContainerJobStatus:
     time_started: float
     time_ended: float | None
     error: Exception | None
+
+    @staticmethod
+    def starting() -> 'ContainerJobStatus':
+        return ContainerJobStatus(
+            status="Queued",
+            time_started=time.time(),
+            time_ended=None,
+            error=None
+        )
 
 @dataclass
 class ContainerJob:
