@@ -382,13 +382,8 @@ class SystemTagger:
                 ]
                 
                 for jobid, job in running_jobs:
-                    if not job.container.is_running():
-                        if job.container.container is not None:
-                            exit_code = job.container.container.attrs["State"]["ExitCode"]
-                        else:
-                            logger.error(f"Container for job {jobid} has no container info")
-                            exit_code = 1  # Assume failure if no container info
-                        
+                    exit_code = job.container.exit_code()
+                    if exit_code is not None:    
                         # Send message to actor
                         message = Message(
                             MessageType.CONTAINER_FINISHED,

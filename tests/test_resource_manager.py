@@ -24,6 +24,7 @@ class MockTagContainer:
         def work():
             time.sleep(self.work_duration)
             self.is_started = False  # Finished working
+            self.is_stopped = True
         threading.Thread(target=work, daemon=True).start()
         
     def stop(self) -> None:
@@ -32,6 +33,11 @@ class MockTagContainer:
         
     def is_running(self) -> bool:
         return self.is_started and not self.is_stopped
+    
+    def exit_code(self) -> int | None:
+        if self.is_stopped:
+            return 0
+        return None
 
 
 @pytest.fixture

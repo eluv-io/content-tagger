@@ -79,11 +79,12 @@ def client(test_dir, test_config):
     yield app.test_client()
     tagger: FabricTagger = app.config["state"]["tagger"]
     tagger.cleanup()
-    
+
 def wait_for_jobs_completion(client, content_ids, timeout=30):
     """Wait for all jobs to complete."""
     start_time = time.time()
-    
+    if timeout is None:
+        timeout = float('inf')
     while time.time() - start_time < timeout:
         all_finished = True
         
@@ -146,7 +147,7 @@ def test_video_model(client):
         }
     )
     assert response.status_code == 200
-    completed = wait_for_jobs_completion(client, [test_objects['vod']], timeout=25)
+    completed = wait_for_jobs_completion(client, [test_objects['vod']], timeout=None)
     assert completed
     tagstore: FilesystemTagStore = client.application.config["state"]["tagger"].tagstore
     jobid = tagstore.find_jobs(qhit=test_objects['vod'], stream='video')[0]

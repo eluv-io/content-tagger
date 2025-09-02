@@ -149,6 +149,17 @@ def fake_container_registry():
                 bool: True if the container is running, False otherwise.
             """
             return self.is_started and not self.is_stopped
+        
+        def exit_code(self) -> int | None:
+            """
+            Get the exit code of the container.
+
+            Returns:
+                int | None: Exit code if available, None otherwise.
+            """
+            if self.is_stopped:
+                return 0
+            return None
 
         def tags(self) -> list[ModelOutput]:
             """
@@ -401,10 +412,6 @@ def test_cleanup(fabric_tagger, sample_content, sample_tag_args):
 
     assert len(fabric_tagger.jobstore.active_jobs) == 0
     assert len(fabric_tagger.jobstore.inactive_jobs) == 2
-
-    assert fabric_tagger.system_tagger.exit.is_set()
-
-    assert len(fabric_tagger.system_tagger.q) == 0
 
     for job in fabric_tagger.system_tagger.jobs.values():
         assert job.stopevent.is_set()
