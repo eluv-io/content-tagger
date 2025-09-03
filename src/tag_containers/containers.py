@@ -147,7 +147,6 @@ class TagContainer:
             try:
                 process = psutil.Process(pid)
                 open_files = process.open_files()
-                print('open_files', open_files)
             except Exception as e:
                 logger.error(f"Error getting open files for PID {pid}: {e}")
                 

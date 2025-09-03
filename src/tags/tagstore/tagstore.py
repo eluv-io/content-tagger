@@ -1,8 +1,8 @@
 from dataclasses import asdict
+from datetime import datetime
 import json
 import os
 import base64
-import uuid
 import time
 
 from src.tags.tagstore.types import *
@@ -21,8 +21,7 @@ class FilesystemTagStore:
         """
         Starts a new job with provided metadata
         """
-        jobid = str(uuid.uuid4())
-
+        jobid = qhit + "/" + track + "/" + datetime.now().strftime("%Y%m%d_%H%M%S")
         job_dir = self._get_job_dir(jobid)
         os.makedirs(job_dir, exist_ok=True)
 
