@@ -276,6 +276,11 @@ class Fetcher:
             DownloadResult containing successful_sources and failed_part_hashes
         """
 
+        if stream_metadata.codec_type not in ["video", "audio"]:
+            raise BadRequestError(
+                f"Invalid codec type for live: {stream_metadata.codec_type}. Must be 'video' or 'audio'."
+            )
+
         output_path = os.path.join(self.config.parts_dir, q.qhit, req.stream_name)
         if not os.path.exists(output_path):
             os.makedirs(output_path)
@@ -318,7 +323,7 @@ class Fetcher:
             ) and not (start_time <= pend < end_time):
                 continue
 
-            filename = f"{idx_str}_{part_hash}.mp4"
+            filename = f"{idx_str}_{part_hash}{'.mp4' if stream_metadata.codec_type == 'video' else '.m4a'}"
             save_path = os.path.join(output_path, filename)
 
             # Skip if file exists and not replacing

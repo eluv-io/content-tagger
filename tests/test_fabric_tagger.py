@@ -4,7 +4,7 @@ import tempfile
 import shutil
 import os
 import time
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from src.tagger.fabric_tagging.tagger import FabricTagger
 from src.tagger.system_tagging.resource_manager import SystemTagger
@@ -16,6 +16,144 @@ from src.fetch.types import DownloadRequest, DownloadResult, Source, StreamMetad
 from src.common.content import Content
 from src.tags.tagstore.types import Tag, TagStoreConfig
 from src.common.errors import MissingResourceError
+
+class FakeTagContainer:
+    """Fake TagContainer that simulates work and asynchronous behavior."""
+    
+    def __init__(self, fileargs, feature, work_duration: float = 0.1):
+        """
+        Initialize the FakeTagContainer.
+
+        Args:
+            fileargs (list[str]): List of file paths to process.
+            feature (str): The feature being tagged.
+            work_duration (float): Time in seconds to simulate work.
+        """
+        self.fileargs = fileargs
+        self.feature = feature
+        self.work_duration = work_duration
+        self.is_started = False
+        self.is_stopped = False
+        self.container = Mock()
+        self.container.attrs = {"State": {"ExitCode": 0}}
+        self.tag_call_count = 0
+        self.worker_thread = None
+
+    def start(self, gpu_idx: int | None = None) -> None:
+        """
+        Start the container and simulate work in a background thread.
+
+        Args:
+            gpu_idx (int | None): GPU index to use (if applicable).
+        """
+        
+        self.gpu_idx = gpu_idx
+
+        # Simulate work in a background thread
+        def work():
+            self.is_started = True
+            time.sleep(self.work_duration)
+            self.is_stopped = True
+
+        self.worker_thread = threading.Thread(target=work, daemon=True)
+        self.worker_thread.start()
+
+    def stop(self) -> None:
+        """
+        Stop the container and terminate the work.
+        """
+        self.is_stopped = True
+
+    def is_running(self) -> bool:
+        """
+        Check if the container is still running.
+
+        Returns:
+            bool: True if the container is running, False otherwise.
+        """
+        return self.is_started and not self.is_stopped
+    
+    def exit_code(self) -> int | None:
+        """
+        Get the exit code of the container.
+
+        Returns:
+            int | None: Exit code if available, None otherwise.
+        """
+        if self.is_stopped:
+            return 0
+        return None
+
+    def tags(self) -> list[ModelOutput]:
+        """
+        Return fake tags for the media files.
+
+        Returns:
+            list[ModelOutput]: List of fake tags for each file.
+        """
+        self.tag_call_count += 1
+
+        outputs = []
+        if not self.is_stopped:
+            finished_files = self.fileargs[:-1]
+        else:
+            finished_files = self.fileargs
+
+        for i, filepath in enumerate(finished_files):
+            # Create fake tags based on the feature
+            fake_tags = [
+                Tag(
+                    start_time=0,
+                    end_time=5000,  # 5 seconds in ms
+                    text=f"{self.feature}_tag_{i}",
+                    additional_info={"confidence": 0.9},
+                    source="",
+                    jobid=""
+                ),
+                Tag(
+                    start_time=5000,
+                    end_time=10000,  # 5-10 seconds in ms
+                    text=f"{self.feature}_tag_{i}_2",
+                    additional_info={"confidence": 0.8},
+                    source="",
+                    jobid=""
+                )
+            ]
+
+            output = ModelOutput(
+                source_media=filepath,
+                tags=fake_tags
+            )
+            outputs.append(output)
+
+        return outputs
+
+class FakeContainerRegistry:
+    def __init__(self):
+        self.containers = {}
+        
+    def get(self, feature: str, fileargs: list[str], runconfig: dict) -> FakeTagContainer:
+        container_key = f"{feature}_{len(fileargs)}"
+        if container_key not in self.containers:
+            self.containers[container_key] = FakeTagContainer(fileargs, feature)
+        return self.containers[container_key]
+    
+    def get_model_config(self, feature: str) -> ModelConfig:
+        return Mock(resources={"gpu": 1, "cpu_juice": 5})
+    
+    def services(self) -> list[str]:
+        return ["object_detection", "speech_recognition", "scene_analysis"]
+    
+    @property
+    def cfg(self):
+        # Mock config with modconfigs
+        mock_cfg = Mock()
+        mock_cfg.modconfigs = {
+            "object_detection": Mock(type="video"),
+            "speech_recognition": Mock(type="audio"), 
+            "scene_analysis": Mock(type="frame")
+        }
+        return mock_cfg
 
 
 @pytest.fixture
@@ -93,144 +231,6 @@ def system_tagger():
 @pytest.fixture
 def fake_container_registry():
     """Create a fake ContainerRegistry that returns mock containers with fake tags"""
-
-    class FakeTagContainer:
-        """Fake TagContainer that simulates work and asynchronous behavior."""
-        
-        def __init__(self, fileargs, feature, work_duration: float = 0.1):
-            """
-            Initialize the FakeTagContainer.
-
-            Args:
-                fileargs (list[str]): List of file paths to process.
-                feature (str): The feature being tagged.
-                work_duration (float): Time in seconds to simulate work.
-            """
-            self.fileargs = fileargs
-            self.feature = feature
-            self.work_duration = work_duration
-            self.is_started = False
-            self.is_stopped = False
-            self.container = Mock()
-            self.container.attrs = {"State": {"ExitCode": 0}}
-            self.tag_call_count = 0
-            self.worker_thread = None
-
-        def start(self, gpu_idx: int | None = None) -> None:
-            """
-            Start the container and simulate work in a background thread.
-
-            Args:
-                gpu_idx (int | None): GPU index to use (if applicable).
-            """
-            
-            self.gpu_idx = gpu_idx
-
-            # Simulate work in a background thread
-            def work():
-                self.is_started = True
-                time.sleep(self.work_duration)
-                self.is_stopped = True
-
-            self.worker_thread = threading.Thread(target=work, daemon=True)
-            self.worker_thread.start()
-
-        def stop(self) -> None:
-            """
-            Stop the container and terminate the work.
-            """
-            self.is_stopped = True
-
-        def is_running(self) -> bool:
-            """
-            Check if the container is still running.
-
-            Returns:
-                bool: True if the container is running, False otherwise.
-            """
-            return self.is_started and not self.is_stopped
-        
-        def exit_code(self) -> int | None:
-            """
-            Get the exit code of the container.
-
-            Returns:
-                int | None: Exit code if available, None otherwise.
-            """
-            if self.is_stopped:
-                return 0
-            return None
-
-        def tags(self) -> list[ModelOutput]:
-            """
-            Return fake tags for the media files.
-
-            Returns:
-                list[ModelOutput]: List of fake tags for each file.
-            """
-            self.tag_call_count += 1
-
-            outputs = []
-            if not self.is_stopped:
-                finished_files = self.fileargs[:-1]
-            else:
-                finished_files = self.fileargs
-
-            for i, filepath in enumerate(finished_files):
-                # Create fake tags based on the feature
-                fake_tags = [
-                    Tag(
-                        start_time=0,
-                        end_time=5000,  # 5 seconds in ms
-                        text=f"{self.feature}_tag_{i}",
-                        additional_info={"confidence": 0.9},
-                        source="",
-                        jobid=""
-                    ),
-                    Tag(
-                        start_time=5000,
-                        end_time=10000,  # 5-10 seconds in ms
-                        text=f"{self.feature}_tag_{i}_2",
-                        additional_info={"confidence": 0.8},
-                        source="",
-                        jobid=""
-                    )
-                ]
-
-                output = ModelOutput(
-                    source_media=filepath,
-                    tags=fake_tags
-                )
-                outputs.append(output)
-
-            return outputs
-    
-    class FakeContainerRegistry:
-        def __init__(self):
-            self.containers = {}
-            
-        def get(self, feature: str, fileargs: list[str], runconfig: dict) -> FakeTagContainer:
-            container_key = f"{feature}_{len(fileargs)}"
-            if container_key not in self.containers:
-                self.containers[container_key] = FakeTagContainer(fileargs, feature)
-            return self.containers[container_key]
-        
-        def get_model_config(self, feature: str) -> ModelConfig:
-            return Mock(resources={"gpu": 1, "cpu_juice": 5})
-        
-        def services(self) -> list[str]:
-            return ["object_detection", "speech_recognition", "scene_analysis"]
-        
-        @property
-        def cfg(self):
-            # Mock config with modconfigs
-            mock_cfg = Mock()
-            mock_cfg.modconfigs = {
-                "object_detection": Mock(type="video"),
-                "speech_recognition": Mock(type="audio"), 
-                "scene_analysis": Mock(type="frame")
-            }
-            return mock_cfg
     
     return FakeContainerRegistry()
 
@@ -505,3 +505,58 @@ def test_tags_uploaded_during_and_after_job(
     assert 0 in tag_counts
     assert 2 in tag_counts
     assert 4 in tag_counts
+
+@patch.object(FakeTagContainer, 'tags')
+def test_container_tags_method_fails(mock_tags, fabric_tagger, sample_content):
+    """Test that when container.tags() fails, the job fails gracefully and stops the container"""
+    
+    # Configure the mock to raise an exception
+    mock_tags.side_effect = RuntimeError("Simulated container tags() failure")
+    
+    # Create args for a simple job
+    args = TagArgs(
+        features={"object_detection": RunConfig(stream="video", model={})},
+        replace=False,
+        scope=VideoScope(start_time=0, end_time=30)
+    )
+    
+    # Start the job
+    result = fabric_tagger.tag(sample_content, args)
+    assert result["object_detection"] == "Job started successfully"
+    
+    # Wait for the job to fail
+    timeout = 3
+    start_time = time.time()
+    
+    while time.time() - start_time < timeout:
+        status = fabric_tagger.status(sample_content.qhit)
+        job_status = status["video"]["object_detection"]["status"]
+        
+        if job_status == "Failed":
+            break
+        elif job_status in ["Completed", "Stopped"]:
+            pytest.fail(f"Expected job to fail, but got status: {job_status}")
+        
+        time.sleep(0.1)
+    else:
+        pytest.fail("Job did not fail within timeout period")
+    
+    # Verify final status is Failed
+    final_status = fabric_tagger.status(sample_content.qhit)
+    assert final_status["video"]["object_detection"]["status"] == "Failed"
+    
+    # Verify the job is moved to inactive jobs
+    assert len(fabric_tagger.jobstore.active_jobs) == 0
+    assert len(fabric_tagger.jobstore.inactive_jobs) == 1
+    
+    # Verify the container was stopped
+    inactive_job = list(fabric_tagger.jobstore.inactive_jobs.values())[0]
+    assert inactive_job.state.container.is_stopped == True
+    assert inactive_job.stopevent.is_set()
+    
+    # Verify no tags were uploaded due to the failure
+    tag_count = fabric_tagger.tagstore.count_tags(qhit=sample_content.qhit)
+    assert tag_count == 0
+    
+    # Verify the tags method was actually called
+    assert mock_tags.call_count == 1

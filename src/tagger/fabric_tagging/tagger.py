@@ -201,8 +201,11 @@ class FabricTagger:
                 ),
                 exit_event=job.stopevent
             )
+        except MissingResourceError as e:
+            self._set_stop_state(jobid, "Failed", str(e), e)
+            return
         except Exception as e:
-            self._set_stop_state(jobid, "Failed", "Failed to download content", e)
+            self._set_stop_state(jobid, "Failed", "", e)
             return
 
         if len(dl_res.successful_sources) == 0:
@@ -233,10 +236,17 @@ class FabricTagger:
         try:
             self._upload_tags(job)
         except Exception as e:
-            self._set_stop_state(jobid, "Failed", "", e)
+            self._abort_job(job, e)
             return
 
         self._set_stop_state(jobid, "Completed", "All tags uploaded successfully", None)
+
+    def _abort_job(self, job: TagJob, error: Exception | None) -> None:
+        self._set_stop_state(job.get_id(), "Failed", "", error)
+        try:
+            self.system_tagger.stop(job.state.taghandle)
+        except Exception as e:
+            logger.exception(f"Error stopping tagging for job {job.get_id()}: {e}")
 
     def _start_tagging_phase(self, job: TagJob, dl_res: DownloadResult) -> threading.Event:
         with self.storelock:
@@ -312,7 +322,10 @@ class FabricTagger:
             jobs = list(self.jobstore.active_jobs.values())
             jobs += list(self.jobstore.inactive_jobs.values())
         for job in jobs:
-            self._upload_tags(job)
+            try:
+                self._upload_tags(job)
+            except Exception as e:
+                self._abort_job(job, e)
 
     def _upload_tags(
             self, 
