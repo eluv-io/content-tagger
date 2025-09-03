@@ -185,8 +185,7 @@ class FilesystemTagStore:
         if not os.path.exists(self.base_path):
             return job_ids
         
-        for job_id in os.listdir(self.base_path):
-            job_dir = os.path.join(self.base_path, job_id)
+        for job_id, job_dir in self._get_job_ids_with_paths():
             
             # Skip if not a directory
             if not os.path.isdir(job_dir):
@@ -271,7 +270,22 @@ class FilesystemTagStore:
                     all_tags.extend(tags)
 
         return all_tags
-    
+
+    def _get_job_ids_with_paths(self) -> list[tuple[str, str]]:
+        """Get all job IDs with their corresponding paths"""
+        if not os.path.exists(self.base_path):
+            return []
+        
+        # jobids are represented by qhit/feature/stream_name, return this path
+        job_ids = []
+        for qhit in os.listdir(self.base_path):
+            for feature in os.listdir(os.path.join(self.base_path, qhit)):
+                for stream_name in os.listdir(os.path.join(self.base_path, qhit, feature)):
+                    job_ids.append(f"{qhit}/{feature}/{stream_name}")
+
+        job_dirs = [os.path.join(self.base_path, job_id) for job_id in job_ids]
+        return list(zip(job_ids, job_dirs))
+
     def _encode_source_for_filename(self, source: str) -> str:
         """Encode source name for safe filesystem usage"""
         if '/' in source:

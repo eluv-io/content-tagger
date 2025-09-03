@@ -119,7 +119,7 @@ class FabricTagger:
 
             jobs = [active_jobs[jid] for jid in jobids]
             for job in jobs:
-                self._set_stop_state(job.get_id(), "Stopped", None)
+                self._set_stop_state(job.get_id(), "Stopped", "", None)
 
         for job in jobs:
             if not job.state.taghandle:
@@ -202,11 +202,11 @@ class FabricTagger:
                 exit_event=job.stopevent
             )
         except Exception as e:
-            self._set_stop_state(jobid, "Failed", e)
+            self._set_stop_state(jobid, "Failed", "Failed to download content", e)
             return
 
         if len(dl_res.successful_sources) == 0:
-            self._set_stop_state(jobid, "Completed", None, "Nothing left to tag")
+            self._set_stop_state(jobid, "Completed", "Nothing left to tag", None)
             return
 
         # 2. tag
@@ -216,7 +216,7 @@ class FabricTagger:
             try:
                 taggingdone = self._start_tagging_phase(job, dl_res)
             except Exception as e:
-                self._set_stop_state(jobid, "Failed", e)
+                self._set_stop_state(jobid, "Failed", "", e)
                 return
 
         taggingdone.wait()
@@ -224,19 +224,19 @@ class FabricTagger:
         # check status
         state = self.system_tagger.status(job.state.taghandle)
         if state.status not in ("Completed", "Stopped", "Failed"):
-            self._set_stop_state(jobid, "Failed", RuntimeError(f"System tagger gave unexpected status: {state.status}"))
+            self._set_stop_state(jobid, "Failed", "", RuntimeError(f"System tagger gave unexpected status: {state.status}"))
 
         if state.status in ("Stopped", "Failed"):
-            self._set_stop_state(jobid, state.status, state.error)
+            self._set_stop_state(jobid, state.status, "", state.error)
             return
 
         try:
             self._upload_tags(job)
         except Exception as e:
-            self._set_stop_state(jobid, "Failed", e)
+            self._set_stop_state(jobid, "Failed", "", e)
             return
 
-        self._set_stop_state(jobid, "Completed", None)
+        self._set_stop_state(jobid, "Completed", "All tags uploaded successfully", None)
 
     def _start_tagging_phase(self, job: TagJob, dl_res: DownloadResult) -> threading.Event:
         with self.storelock:
@@ -257,8 +257,9 @@ class FabricTagger:
     def _set_stop_state(
             self, 
             jobid: JobID, 
-            status: JobStateDescription, 
-            error: Exception | None
+            status: JobStateDescription,
+            message: str,
+            error: Exception | None,
         ) -> None:
         if error:
             logger.exception(error)
@@ -269,6 +270,8 @@ class FabricTagger:
 
                 job.state.status.status = status
                 job.state.status.time_ended = time.time()
+
+                job.state.message = message
 
                 self.jobstore.inactive_jobs[jobid] = job
                 del self.jobstore.active_jobs[jobid]
@@ -283,12 +286,15 @@ class FabricTagger:
                 end = status.time_ended
             total_sources = len(state.media.successful_sources) if state.media else 0
             total_tagged = len(state.uploaded_sources)
-            return {
+            res = {
                 "status": status.status,
                 "time_running": end - status.time_started,
                 "tagging_progress": f"{int(total_tagged / total_sources * 100)}%" if total_sources > 0 else "0%",
                 "failed": status.failed,
             }
+            if state.message:
+                res["message"] = state.message
+            return res
 
     def _uploader(self) -> None:
         while not self.shutdown_signal.is_set():

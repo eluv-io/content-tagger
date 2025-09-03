@@ -495,10 +495,11 @@ def test_tags_uploaded_during_and_after_job(
 
     assert end
 
-    assert len(job_statuses) == 3
+    assert len(job_statuses) == 4
     assert 'Fetching content' in job_statuses
     assert 'Tagging content' in job_statuses
     assert 'Completed' in job_statuses
+    assert 'Starting' in job_statuses
 
     assert len(tag_counts) == 3
     assert 0 in tag_counts

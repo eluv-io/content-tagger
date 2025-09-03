@@ -61,6 +61,7 @@ class JobState:
     status: JobStatus
     taghandle: str
     uploaded_sources: list[str]
+    message: str
     media: DownloadResult | None
     container: TagContainer | None
 
@@ -70,6 +71,7 @@ class JobState:
             status=JobStatus.starting(),
             taghandle="",
             uploaded_sources=[],
+            message="",
             media=None,
             container=None
         )
