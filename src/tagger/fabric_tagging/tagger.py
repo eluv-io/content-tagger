@@ -222,7 +222,11 @@ class FabricTagger:
                 self._set_stop_state(jobid, "Failed", "", e)
                 return
 
+        logger.info(f"Waiting for tag completion job={jobid}")
+
         taggingdone.wait()
+
+        logger.info(f"Tagging finished for job={jobid} - Uploading tags...")
 
         # check status
         state = self.system_tagger.status(job.state.taghandle)
@@ -239,9 +243,15 @@ class FabricTagger:
             self._abort_job(job, e)
             return
 
+        # add missing sources
+        for source in dl_res.successful_sources:
+            if source.name not in job.state.uploaded_sources:
+                job.state.status.failed.append(source.name)
+
         self._set_stop_state(jobid, "Completed", "All tags uploaded successfully", None)
 
     def _abort_job(self, job: TagJob, error: Exception | None) -> None:
+        logger.error(f"Aborting job {job.get_id()} due to error: {error}")
         self._set_stop_state(job.get_id(), "Failed", "", error)
         try:
             self.system_tagger.stop(job.state.taghandle)
@@ -348,7 +358,7 @@ class FabricTagger:
                     tag.source = original_src.name
                     tag.jobid = job.upload_job
                     tags2upload.append(self._fix_tag_offsets(tag, original_src.offset, stream_meta.fps if stream_meta else None))
-                    
+
             job.state.uploaded_sources.extend(media_to_source[out.source_media].name for out in new_outputs)
             self.tagstore.upload_tags(tags2upload, job.upload_job)
 

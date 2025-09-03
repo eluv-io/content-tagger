@@ -29,7 +29,7 @@ class TagContainer:
         if len(file_types) == 0:
             raise ValueError("No files provided")
         self.file_type = file_types[0]
-        if self.file_type not in ["video", "frame", "image"]:
+        if self.file_type not in ["video", "audio", "image"]:
             raise BadRequestError(f"Unsupported file type: {self.file_type}")
         # check that no file has the same basename
         self.basename_to_source = {os.path.basename(f): f for f in self.cfg.file_args}
@@ -129,48 +129,28 @@ class TagContainer:
         for fpath in os.listdir(self.cfg.tags_dir):
             tag_files.append(os.path.join(self.cfg.tags_dir, fpath))
 
-        tag_files = self._filter_open_fd(tag_files)
         return self._files_to_tags(tag_files)
-    
-    def _filter_open_fd(self, tag_files: list[str]) -> list[str]:
-        pid = None
-        if self.is_running() and self.container is not None:
-            try:
-                container_info = self.container.inspect()
-                pid = container_info.get("State", {}).get("Pid")
-            except Exception as e:
-                logger.error(f"Error getting container PID: {e}")
-
-        open_files = []
-        if pid:
-            # Get the process and its open files
-            try:
-                process = psutil.Process(pid)
-                open_files = process.open_files()
-            except Exception as e:
-                logger.error(f"Error getting open files for PID {pid}: {e}")
-                
-        for open_file in open_files:
-            if open_file.path in tag_files:
-                # TODO: check that it's full path.
-                tag_files.remove(open_file.path)
-
-        return tag_files
 
     def _files_to_tags(self, tagged_files: list[str]) -> list[ModelOutput]:
 
         if self.file_type == "image":
             return self._load_image_tags(tagged_files)
-        else:
+        elif self.file_type == "video" or self.file_type == "audio":
             return self._load_video_tags(tagged_files)
+        else:
+            raise ValueError(f"Unsupported file type: {self.file_type}")
         
     def _load_image_tags(self, tagged_files: list[str]) -> list[ModelOutput]:
         outputs = []
         for tagged_file in tagged_files:
             source = self._source_from_tag_file(tagged_file)
             image_tags = []
-            with open(tagged_file, 'r') as f:
-                image_tags = json.load(f)
+            try:
+                with open(tagged_file, 'r') as f:
+                    image_tags = json.load(f)
+            except Exception as e:
+                logger.error(f"Error loading image tags from {tagged_file}: {e}")
+                continue
             outputs.append(self._output_from_image_tags(source, image_tags))
         return outputs
 
@@ -213,18 +193,26 @@ class TagContainer:
         return outputs
 
     def _output_from_tags(self, source_video: str, tag_files: list[str]) -> ModelOutput | None:
-        fps = get_fps(source_video)
+        ftype = get_file_type(source_video)
 
+        if ftype == "video":
+            fps = get_fps(source_video)
+    
         vid_tags = None
         frame_tags = None
 
         for tag_file in tag_files:
-            if tag_file.endswith("_tags.json"):
-                with open(tag_file, 'r') as f:
-                    vid_tags = json.load(f)
-            elif tag_file.endswith("_frametags.json"):
-                with open(tag_file, 'r') as f:
-                    frame_tags = json.load(f)
+            try:
+                if tag_file.endswith("_tags.json"):
+                    with open(tag_file, 'r') as f:
+                        vid_tags = json.load(f)
+                elif tag_file.endswith("_frametags.json"):
+
+                    with open(tag_file, 'r') as f:
+                        frame_tags = json.load(f)
+            except Exception as e:
+                logger.error(f"Error loading tags from {tag_file}: {e}")
+                continue
         
         if vid_tags is None:
             return None
@@ -244,7 +232,8 @@ class TagContainer:
             )
 
             if frame_tags:
-                
+                if ftype != "video":
+                    raise ValueError("Frame tags can only be associated with video files")
                 # Find overlapping frame tags with matching text
                 overlapping_frame_tags = self._find_overlapping_frame_tags(
                     tag, frame_tags, fps

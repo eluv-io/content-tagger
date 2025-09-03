@@ -128,6 +128,18 @@ class FakeTagContainer:
 
         return outputs
 
+class PartialFailContainer(FakeTagContainer):
+    """
+    Always fails last tag
+    """
+
+    def tags(self) -> list[ModelOutput]:
+        outputs = super().tags()
+        if len(outputs) > 1:
+            outputs = outputs[:-1]
+
+        return outputs
+
 class FakeContainerRegistry:
     def __init__(self):
         self.containers = {}
@@ -453,6 +465,8 @@ def test_many_concurrent_jobs(fabric_tagger):
         status = fabric_tagger.status(content.qhit)
         assert status["video"]["object_detection"]["status"] == "Completed"
         assert status["audio"]["speech_recognition"]["status"] == "Completed"
+        assert len(status["video"]["object_detection"]["failed"]) == 0
+        assert len(status["audio"]["speech_recognition"]["failed"]) == 0
 
 def test_tags_uploaded_during_and_after_job(
     fabric_tagger, 
@@ -560,3 +574,43 @@ def test_container_tags_method_fails(mock_tags, fabric_tagger, sample_content):
     
     # Verify the tags method was actually called
     assert mock_tags.call_count == 1
+
+@patch.object(FakeContainerRegistry, 'get')
+def test_failed_tag(mock_get, fabric_tagger, sample_content):
+    # Configure the mock to return PartialFailContainer
+    def get_side_effect(feature, fileargs, runconfig):
+        return PartialFailContainer(fileargs, feature)
+    
+    mock_get.side_effect = get_side_effect
+    
+    # Create args for a simple job
+    args = TagArgs(
+        features={"object_detection": RunConfig(stream="video", model={})},
+        replace=False,
+        scope=VideoScope(start_time=0, end_time=30)
+    )
+    
+    # Start the job
+    result = fabric_tagger.tag(sample_content, args)
+    assert result["object_detection"] == "Job started successfully"
+
+    wait_tag(fabric_tagger, sample_content.qhit, timeout=5)
+
+    # check that one failed
+    status = fabric_tagger.status(sample_content.qhit)
+    assert status["video"]["object_detection"]["status"] == "Completed"
+    assert len(status["video"]["object_detection"]["failed"]) == 1
+
+
+def wait_tag(fabric_tagger, jobid, timeout):
+    start = time.time()
+    while time.time() - start < timeout:
+        status = fabric_tagger.status(jobid)
+        for stream in status:
+            for feature in status[stream]:
+                if status[stream][feature]["status"] == "Completed":
+                    return
+                elif status[stream][feature]["status"] == "Failed":
+                    pytest.fail(f"Job failed: {status[stream][feature]['error']}")
+                time.sleep(0.1)
+    pytest.fail("Job did not complete within timeout period")

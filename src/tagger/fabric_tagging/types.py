@@ -97,6 +97,9 @@ class JobID:
 
     def __hash__(self):
         return hash((self.qhit, self.feature, self.stream))
+    
+    def __str__(self):
+        return f"JobID(qhit={self.qhit}, feature={self.feature}, stream={self.stream})"
 
 @dataclass
 class JobStore:

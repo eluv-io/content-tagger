@@ -37,10 +37,10 @@ container_registry:
         "ollama": 1
       }
     asr: 
-      image: "localhost/hungarian:latest"
+      image: "localhost/asr:latest"
       type: "audio"
       resources: {
-        "cpu_juice": 25
+        "gpu": 1
       }
     french_asr: 
       image: "localhost/multilingual:latest"
