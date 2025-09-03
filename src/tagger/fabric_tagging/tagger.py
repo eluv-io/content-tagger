@@ -45,10 +45,8 @@ class FabricTagger:
 
     def tag(self, q: Content, args: TagArgs) -> dict:
         self._validate_args(args)
-        # TODO: handle image
-        if not isinstance(args, TagArgs):
-            raise NotImplementedError("Image tagging is not implemented yet")
         args = self._assign_default_streams(args)
+        logger.debug(args)
         status = {}
         for feature in args.features:
             tsjob = self.tagstore.start_job(
@@ -182,6 +180,9 @@ class FabricTagger:
         return ""
 
     def _run_job(self, job: TagJob) -> None:
+
+        logger.debug(f"Tag args: {job.args}")
+
         # 1. download
         with self.storelock:
             if job.stopevent.is_set():
@@ -196,12 +197,16 @@ class FabricTagger:
                 DownloadRequest(
                     stream_name=job.args.runconfig.stream,
                     scope=job.args.scope,
-                    preserve_track=job.args.feature if job.args.replace else "",
+                    preserve_track=job.args.feature if not job.args.replace else "",
                 ),
                 exit_event=job.stopevent
             )
         except Exception as e:
             self._set_stop_state(jobid, "Failed", e)
+            return
+
+        if len(dl_res.successful_sources) == 0:
+            self._set_stop_state(jobid, "Completed", None, "Nothing left to tag")
             return
 
         # 2. tag
@@ -249,9 +254,14 @@ class FabricTagger:
             job.state.status.status = "Tagging content"
             return taggingdone
 
-    def _set_stop_state(self, jobid: JobID, status: JobStateDescription, error: Exception | None) -> None:
+    def _set_stop_state(
+            self, 
+            jobid: JobID, 
+            status: JobStateDescription, 
+            error: Exception | None
+        ) -> None:
         if error:
-            logger.error(error)
+            logger.exception(error)
         with self.storelock:
             if jobid in self.jobstore.active_jobs:
                 job = self.jobstore.active_jobs[jobid]
@@ -286,7 +296,7 @@ class FabricTagger:
                 try:
                     self._upload_all()
                 except Exception as e:
-                    logger.error(f"Unexpected error in uploader: {e}")
+                    logger.exception(f"Unexpected error in uploader: {e}")
                 finally:
                     self.storelock.release()
             time.sleep(0.2)

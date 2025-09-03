@@ -67,6 +67,9 @@ class Content():
             return wrapper
         return attr
 
+    def __str__(self):
+        return f"Content(qhit={self.qhit}, qid={self.qid}, qhash={self.qhash}, qlib={self.qlib})"
+
 class ContentFactory:
     def __init__(self, cfg: ContentConfig):
         self.cfg = cfg

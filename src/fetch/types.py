@@ -40,6 +40,9 @@ class DownloadRequest:
         if self.stream_name == "assets" and not isinstance(self.scope, AssetScope):
             raise BadRequestError("Invalid scope type for assets stream")
 
+    def __str__(self):
+        return f"DownloadRequest(stream_name={self.stream_name}, preserve_track={self.preserve_track}, scope={self.scope})"
+
 @dataclass
 class StreamMetadata:
     parts: list[str]

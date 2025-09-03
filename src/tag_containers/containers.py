@@ -26,6 +26,8 @@ class TagContainer:
         file_types = [get_file_type(f) for f in self.cfg.file_args]
         if len(set(file_types)) > 1:
             raise BadRequestError("All files must be of the same type")
+        if len(file_types) == 0:
+            raise ValueError("No files provided")
         self.file_type = file_types[0]
         if self.file_type not in ["video", "frame", "image"]:
             raise BadRequestError(f"Unsupported file type: {self.file_type}")
@@ -139,13 +141,20 @@ class TagContainer:
             except Exception as e:
                 logger.error(f"Error getting container PID: {e}")
 
+        open_files = []
         if pid:
             # Get the process and its open files
-            process = psutil.Process(pid)
-            for open_file in process.open_files():
-                if open_file.path in tag_files:
-                    # TODO: check that it's full path.
-                    tag_files.remove(open_file.path)
+            try:
+                process = psutil.Process(pid)
+                open_files = process.open_files()
+                print('open_files', open_files)
+            except Exception as e:
+                logger.error(f"Error getting open files for PID {pid}: {e}")
+                
+        for open_file in open_files:
+            if open_file.path in tag_files:
+                # TODO: check that it's full path.
+                tag_files.remove(open_file.path)
 
         return tag_files
 

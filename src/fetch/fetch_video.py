@@ -37,6 +37,7 @@ class Fetcher:
         req: DownloadRequest,
         exit_event: threading.Event | None = None,
     ) -> DownloadResult:
+        logger.debug(req)
         with self.dl_sem:
             stream_key = (q.qhit, req.stream_name)
             with self.stream_locks[stream_key]:
@@ -284,17 +285,23 @@ class Fetcher:
         successful_sources = []
         failed_parts = []
 
-        tagged_parts = []
-        if req.preserve_track:
-            existing_tags = self.tagstore.find_tags(author=self.config.author, qhit=q.qhit, stream=req.stream_name, track=req.preserve_track)
-            tagged_parts = [tag.source for tag in existing_tags]
-
         scope = req.scope
         assert isinstance(scope, VideoScope)
         start_time, end_time = scope.start_time, scope.end_time
 
-        logger.info(f"Downloading stream {req.stream_name} for {q.qhit} with {len(stream_metadata.parts)} parts")
-        for idx, part_hash in enumerate(stream_metadata.parts):
+        to_download = stream_metadata.parts
+
+        logger.info(f"Downloading stream {req.stream_name} with {len(to_download)} total parts.")
+
+        tagged_parts = []
+        if req.preserve_track:
+            existing_tags = self.tagstore.find_tags(author=self.config.author, qhit=q.qhit, stream=req.stream_name, track=req.preserve_track)
+            tagged_parts = {tag.source for tag in existing_tags}
+
+        if req.preserve_track and tagged_parts:
+            logger.info(f"Filtering {len(tagged_parts)} already tagged parts")
+
+        for idx, part_hash in enumerate(to_download):
             if exit_event is not None and exit_event.is_set():
                 break
 

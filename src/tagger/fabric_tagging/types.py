@@ -52,6 +52,9 @@ class JobArgs:
     runconfig: RunConfig
     scope: AssetScope | VideoScope
 
+    def __str__(self):
+        return f"JobArgs(q={self.q}, feature={self.feature}, replace={self.replace}, runconfig={self.runconfig}, scope={self.scope})"
+
 @dataclass
 class JobState:
     # everything that might change during the job
@@ -103,3 +106,6 @@ class TagArgs:
     features: dict[str, RunConfig]
     scope: AssetScope | VideoScope
     replace: bool
+
+    def __str__(self):
+        return f"TagArgs(features={self.features}, scope={self.scope}, replace={self.replace})"

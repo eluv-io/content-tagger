@@ -20,6 +20,9 @@ class TagAPIArgs(Data):
         features = {feature: RunConfig(**cfg) for feature, cfg in data['features'].items()}
         return TagAPIArgs(features=features, start_time=data.get('start_time', None), end_time=data.get('end_time', None), replace=data.get('replace', False))
 
+    def __str__(self) -> str:
+        return f"TagAPIArgs(features={self.features}, start_time={self.start_time}, end_time={self.end_time}, replace={self.replace})"
+
     def to_tag_args(self) -> TagArgs:
         return TagArgs(
             features=self.features,

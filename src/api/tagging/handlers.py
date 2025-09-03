@@ -1,4 +1,5 @@
 import json
+from dataclasses import asdict
 
 from flask import Response, request, current_app
 from loguru import logger
@@ -20,6 +21,8 @@ def handle_tag(qhit: str) -> Response:
         logger.exception(e)
         raise BadRequestError(
             "Invalid arguments. Please check your request body.") from e
+
+    logger.debug(args)
 
     tagger: FabricTagger = current_app.config["state"]["tagger"]
 
