@@ -7,7 +7,7 @@ from src.api.auth import parse_qhit
 
 @dataclass
 class ContentConfig:
-    content_url: str
+    config_url: str
     parts_url: str
 
 class Content():
@@ -21,7 +21,7 @@ class Content():
             cfg: ContentConfig
     ):
         client = ElvClient.from_configuration_url(
-            cfg.content_url, static_token=auth)
+            cfg.config_url, static_token=auth)
 
         parts_client = ElvClient.from_configuration_url(
             cfg.parts_url, static_token=auth)

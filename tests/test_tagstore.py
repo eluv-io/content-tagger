@@ -18,7 +18,7 @@ def temp_dir():
 @pytest.fixture
 def tag_store(temp_dir):
     """Create a FilesystemTagStore instance for testing"""
-    return FilesystemTagStore(TagStoreConfig(base_path=os.path.join(temp_dir, "tagstore")))
+    return FilesystemTagStore(TagStoreConfig(base_dir=os.path.join(temp_dir, "tagstore")))
 
 
 @pytest.fixture
@@ -45,12 +45,12 @@ def sample_tags():
 
 def test_init_creates_base_directory(temp_dir):
     """Test that initialization creates the base directory"""
-    base_path = os.path.join(temp_dir, "new_dir")
-    assert not os.path.exists(base_path)
-    
-    store = FilesystemTagStore(TagStoreConfig(base_path=base_path))
-    assert os.path.exists(base_path)
-    assert os.path.isdir(base_path)
+    base_dir = os.path.join(temp_dir, "new_dir")
+    assert not os.path.exists(base_dir)
+
+    store = FilesystemTagStore(TagStoreConfig(base_dir=base_dir))
+    assert os.path.exists(base_dir)
+    assert os.path.isdir(base_dir)
 
 
 def test_get_job_dir(tag_store):

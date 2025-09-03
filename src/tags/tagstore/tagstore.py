@@ -9,7 +9,7 @@ from src.tags.tagstore.types import *
 
 class FilesystemTagStore:
     def __init__(self, cfg: TagStoreConfig):
-        self.base_path = cfg.base_path
+        self.base_path = cfg.base_dir
         os.makedirs(self.base_path, exist_ok=True)
 
     def start_job(self,

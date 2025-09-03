@@ -81,7 +81,7 @@ def fake_fetcher(fake_media_files):
 def tag_store(temp_dir):
     """Create a real FilesystemTagStore for testing"""
     tagstore_dir = os.path.join(temp_dir, "tagstore")
-    return FilesystemTagStore(TagStoreConfig(base_path=tagstore_dir))
+    return FilesystemTagStore(TagStoreConfig(base_dir=tagstore_dir))
 
 
 @pytest.fixture

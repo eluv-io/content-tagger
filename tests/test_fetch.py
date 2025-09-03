@@ -30,7 +30,7 @@ def temp_dir() -> Generator[str, None, None]:
 @pytest.fixture
 def tag_store(temp_dir: str) -> FilesystemTagStore:
     """Create a FilesystemTagStore for testing"""
-    return FilesystemTagStore(TagStoreConfig(base_path=temp_dir))
+    return FilesystemTagStore(TagStoreConfig(base_dir=temp_dir))
 
 
 @pytest.fixture
@@ -41,7 +41,7 @@ def fetcher_config(temp_dir: str) -> FetcherConfig:
     
     return FetcherConfig(
         max_downloads=2,
-        parts_path=parts_path,
+        parts_dir=parts_path,
         author="tagger"
     )
 
@@ -53,7 +53,7 @@ def fetcher(fetcher_config: FetcherConfig, tag_store: FilesystemTagStore) -> Fet
 @pytest.fixture
 def qfactory():
     cfg = ContentConfig(
-        content_url="https://host-154-14-185-98.contentfabric.io/config?self&qspace=main", 
+        config_url="https://host-154-14-185-98.contentfabric.io/config?self&qspace=main", 
         parts_url="http://192.168.96.203/config?self&qspace=main"
     )
     return ContentFactory(cfg=cfg)

@@ -1,6 +1,7 @@
 import json
 
 from flask import Response, request, current_app
+from loguru import logger
 
 from src.api.tagging.format import TagAPIArgs, ImageTagAPIArgs
 from src.common.errors import BadRequestError
@@ -16,8 +17,9 @@ def handle_tag(qhit: str) -> Response:
     except BadRequestError as e:
         raise e
     except Exception as e:
+        logger.exception(e)
         raise BadRequestError(
-            "Invalid search arguments. Please check your query parameters") from e
+            "Invalid arguments. Please check your request body.") from e
 
     tagger: FabricTagger = current_app.config["state"]["tagger"]
 

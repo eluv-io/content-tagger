@@ -3,7 +3,7 @@ content:
   config_url: https://host-154-14-185-98.contentfabric.io/config?self&qspace=main
 
 tagstore:
-  tags_path: data/tags
+  base_dir: data/tags
 
 tag_converter:
   mapping:
@@ -18,22 +18,17 @@ tag_converter:
   interval: 10
 
 system:
-  resources: {
-    "ollama": 2,
-    "cpu": 100,
-    "gpu-weak": 1,
-    "gpu-good": 3
-  }
-  gpu_indices: ["gpu", "disabled", "gpu", "gpu", "gpu"]
+  cpu_juice: 100
+  gpus: ["gpu", "disabled", "gpu", "gpu", "gpu"]
 
 fetcher:
   max_downloads: 16
-  parts_path: data/parts
+  parts_dir: data/parts
   author: tagger
 
-containers:
-  base_path: data/containers
-  cache_path: data/cache
+container_registry:
+  base_dir: data/containers
+  cache_dir: data/cache
   model_configs:
     llava:
       image: "localhost/llava:latest"

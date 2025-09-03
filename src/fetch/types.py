@@ -5,7 +5,7 @@ from src.common.errors import BadRequestError
 @dataclass
 class FetcherConfig:
     max_downloads: int
-    parts_path: str
+    parts_dir: str
     author: str
 
 @dataclass

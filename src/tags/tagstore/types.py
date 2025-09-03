@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 @dataclass
 class TagStoreConfig:
-    base_path: str
+    base_dir: str
 
 ## Schema
 

@@ -275,7 +275,7 @@ class Fetcher:
             DownloadResult containing successful_sources and failed_part_hashes
         """
 
-        output_path = os.path.join(self.config.parts_path, q.qhit, req.stream_name)
+        output_path = os.path.join(self.config.parts_dir, q.qhit, req.stream_name)
         if not os.path.exists(output_path):
             os.makedirs(output_path)
 
@@ -395,7 +395,7 @@ class Fetcher:
         q: Content, 
         req: DownloadRequest
     ) -> DownloadResult:
-        output_path = os.path.join(self.config.parts_path, q.qhit, "assets")
+        output_path = os.path.join(self.config.parts_dir, q.qhit, "assets")
         if not os.path.exists(output_path):
             os.makedirs(output_path)
     

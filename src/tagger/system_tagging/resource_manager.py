@@ -122,8 +122,6 @@ class SystemTagger:
 
     def _actor_loop(self):
         """Processes all messages sequentially."""
-        logger.info("SystemTagger actor started")
-        
         while not self.exit_requested:
             try:
                 # Process messages with timeout to allow periodic queue processing
@@ -159,7 +157,7 @@ class SystemTagger:
 
     def _handle_start_job(self, message: Message):
         request: StartJobRequest = message.data["request"]
-        
+
         job_id = str(uuid.uuid4())
         job = ContainerJob(
             container=request.container,
@@ -178,7 +176,7 @@ class SystemTagger:
 
     def _handle_stop_job(self, message: Message):
         request: StopJobRequest = message.data["request"]
-        
+
         if request.jobid not in self.jobs:
             logger.warning(f"Job {request.jobid} not found")
             if message.response_queue:
@@ -196,7 +194,7 @@ class SystemTagger:
         logger.info(f"Stopping job {request.jobid}")
         
         if request.error:
-            logger.error(f"Job {request.jobid} error: {request.error}")
+            logger.exception(f"Job {request.jobid} error: {request.error}")
         
         job.jobstatus.status = request.status
         job.jobstatus.error = request.error

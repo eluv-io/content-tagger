@@ -13,9 +13,9 @@ class ModelConfig:
 
 @dataclass
 class ContainerSpec:
-    cache_path: str
-    logs_path: str
-    tags_path: str
+    cache_dir: str
+    logs_dir: str
+    tags_dir: str
     file_args: list[str]
     run_config: dict
     model_config: ModelConfig
@@ -23,8 +23,8 @@ class ContainerSpec:
 @dataclass
 class RegistryConfig:
     model_configs: dict[str, ModelConfig]
-    base_path: str
-    cache_path: str
+    base_dir: str
+    cache_dir: str
 
 @dataclass
 class ModelOutput:

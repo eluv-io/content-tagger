@@ -44,22 +44,23 @@ def test_dir():
 def test_config(test_dir):
     """Create test configuration."""
     return AppConfig(
+        root_dir=test_dir,
         content=ContentConfig(
-            content_url="https://main.net955305.contentfabric.io/config",
+            config_url="https://main.net955305.contentfabric.io/config",
             parts_url="http://192.168.96.203/config?self&qspace=main"
         ),
         tagstore=TagStoreConfig(
-            base_path=os.path.join(test_dir, "tags")
+            base_dir=os.path.join(test_dir, "tags")
         ),
         system=SysConfig(gpus=["gpu", "disabled", "gpu"], cpu_juice=100),
         fetcher=FetcherConfig(
-            parts_path=os.path.join(test_dir, "parts"),
+            parts_dir=os.path.join(test_dir, "parts"),
             max_downloads=4,
             author="tagger"
         ),
         container_registry=RegistryConfig(
-            base_path=os.path.join(test_dir, "stuff"),
-            cache_path=os.path.join(test_dir, "cache"),
+            base_dir=os.path.join(test_dir, "stuff"),
+            cache_dir=os.path.join(test_dir, "cache"),
             model_configs={
                 "test_model": ModelConfig(
                     type="frame",

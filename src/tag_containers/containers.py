@@ -43,13 +43,13 @@ class TagContainer:
 
         volumes = [
             {
-                "source": self.cfg.tags_path,
+                "source": self.cfg.tags_dir,
                 # convention for containers to store tags in /elv/tags
                 "target": "/elv/tags",
                 "type": "bind",
             },
             {
-                "source": self.cfg.cache_path,
+                "source": self.cfg.cache_dir,
                 # convention for python modules to store cache in /root/.cache
                 "target": "/root/.cache",
                 "type": "bind",
@@ -81,7 +81,7 @@ class TagContainer:
             "log_config": {
                 "Type": "k8s-file",
                 "Config": {
-                    "path": self.cfg.logs_path
+                    "path": self.cfg.logs_dir
                 }
             }
         }
@@ -124,8 +124,8 @@ class TagContainer:
         """
 
         tag_files = []
-        for fpath in os.listdir(self.cfg.tags_path):
-            tag_files.append(os.path.join(self.cfg.tags_path, fpath))
+        for fpath in os.listdir(self.cfg.tags_dir):
+            tag_files.append(os.path.join(self.cfg.tags_dir, fpath))
 
         tag_files = self._filter_open_fd(tag_files)
         return self._files_to_tags(tag_files)
@@ -304,17 +304,17 @@ class ContainerRegistry:
     def __init__(self, cfg: RegistryConfig):
         self.pclient = PodmanClient()
         self.cfg = cfg
-        os.makedirs(self.cfg.base_path, exist_ok=True)
-        os.makedirs(self.cfg.cache_path, exist_ok=True)
+        os.makedirs(self.cfg.base_dir, exist_ok=True)
+        os.makedirs(self.cfg.cache_dir, exist_ok=True)
 
     def get(self, model: str, fileargs: list[str], runconfig: dict) -> TagContainer:
         jobid = datetime.now().strftime("%Y%m%d-%H%M%S")
-        jobpath = os.path.join(self.cfg.base_path, model, f'job-{jobid}')
+        jobpath = os.path.join(self.cfg.base_dir, model, f'job-{jobid}')
         tags_path = os.path.join(jobpath, 'tags')
         os.makedirs(tags_path, exist_ok=True)
         logs_path = os.path.join(jobpath, 'log.out')
 
-        cache_path = self.cfg.cache_path
+        cache_path = self.cfg.cache_dir
 
         modelcfg = self.cfg.model_configs.get(model)
         if not modelcfg:
@@ -323,9 +323,9 @@ class ContainerRegistry:
         ccfg = ContainerSpec(
             file_args=fileargs,
             run_config=runconfig,
-            logs_path=logs_path,
-            cache_path=cache_path,
-            tags_path=tags_path,
+            logs_dir=logs_path,
+            cache_dir=cache_path,
+            tags_dir=tags_path,
             model_config=modelcfg
         )
 
