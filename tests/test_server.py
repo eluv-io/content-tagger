@@ -52,7 +52,7 @@ def test_config(test_dir):
         tagstore=TagStoreConfig(
             base_dir=os.path.join(test_dir, "tags")
         ),
-        system=SysConfig(gpus=["gpu", "disabled", "gpu"], cpu_juice=100),
+        system=SysConfig(gpus=["gpu", "disabled", "gpu"], resources={"cpu_juice": 16}),
         fetcher=FetcherConfig(
             parts_dir=os.path.join(test_dir, "parts"),
             max_downloads=4,

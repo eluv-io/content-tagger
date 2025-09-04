@@ -237,7 +237,7 @@ def tag_store(temp_dir):
 @pytest.fixture
 def system_tagger():
     """Create a real SystemTagger for testing"""
-    return SystemTagger(cfg=SysConfig(gpus=["gpu", "gpu", "disabled"], cpu_juice=100))
+    return SystemTagger(cfg=SysConfig(gpus=["gpu", "gpu", "disabled"], resources={"cpu_juice": 100}))
 
 
 @pytest.fixture

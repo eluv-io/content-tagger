@@ -45,7 +45,7 @@ def sys_config():
     """Create a test system configuration"""
     return SysConfig(
         gpus=["A6000", "A6000", "disabled"],  # 2 A6000 GPUs, 1 disabled
-        cpu_juice=4
+        resources={"cpu_juice": 4}
     )
 
 

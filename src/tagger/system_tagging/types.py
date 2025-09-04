@@ -38,4 +38,4 @@ class ContainerJob:
 class SysConfig:
     # map gpu idx -> gpu type
     gpus: list[str]
-    cpu_juice: int
+    resources: dict[str, int]

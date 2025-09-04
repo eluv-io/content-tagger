@@ -405,7 +405,15 @@ def load_system_resources(cfg: SysConfig) -> SystemResources:
         if cfg.gpus[device_idx] == "disabled":
             continue
         resources[cfg.gpus[device_idx]] += 1
-    
-    resources["cpu_juice"] = cfg.cpu_juice
-    
+
+    gpu_resources = set(resources)
+    other_resources = set(cfg.resources)
+
+    # should not be overlap
+    assert len(gpu_resources) + len(other_resources) == len(gpu_resources | other_resources)
+
+    resources.update(cfg.resources)
+
+    logger.debug(f"System resources: {dict(resources)}")
+
     return dict(resources)
