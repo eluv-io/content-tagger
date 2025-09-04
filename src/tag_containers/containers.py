@@ -1,10 +1,10 @@
 
 from copy import deepcopy
+import uuid
 from podman import PodmanClient
 from loguru import logger
 import json
 import os
-import psutil
 from datetime import datetime
 
 from common_ml.utils.files import get_file_type
@@ -139,7 +139,7 @@ class TagContainer:
             return self._load_video_tags(tagged_files)
         else:
             raise ValueError(f"Unsupported file type: {self.file_type}")
-        
+
     def _load_image_tags(self, tagged_files: list[str]) -> list[ModelOutput]:
         outputs = []
         for tagged_file in tagged_files:
@@ -305,7 +305,7 @@ class ContainerRegistry:
         os.makedirs(self.cfg.cache_dir, exist_ok=True)
 
     def get(self, model: str, fileargs: list[str], runconfig: dict) -> TagContainer:
-        jobid = datetime.now().strftime("%Y%m%d-%H%M%S")
+        jobid = datetime.now().strftime("%Y%m%d-%H%M%S-") + str(uuid.uuid4())[:8]
         jobpath = os.path.join(self.cfg.base_dir, model, f'job-{jobid}')
         tags_path = os.path.join(jobpath, 'tags')
         os.makedirs(tags_path, exist_ok=True)
