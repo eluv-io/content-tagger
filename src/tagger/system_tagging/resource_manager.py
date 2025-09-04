@@ -114,11 +114,10 @@ class SystemTagger:
         return response_queue.get()
 
     def shutdown(self) -> None:
-        """Shutdown the system tagger."""
-        message = Message(MessageType.SHUTDOWN, {})
+        response_queue = queue.Queue()
+        message = Message(MessageType.SHUTDOWN, {}, response_queue)
         self.message_queue.put(message)
-        self.actor_thread.join(timeout=5.0)
-        self.monitor_thread.join(timeout=5.0)
+        response_queue.get()
 
     def _actor_loop(self):
         """Processes all messages sequentially."""
@@ -236,6 +235,8 @@ class SystemTagger:
         logger.info("Shutdown requested")
         self._terminate_all_jobs()
         self.exit_requested = True
+        if message.response_queue:
+            message.response_queue.put(True)
 
     def _handle_container_finished(self, message: Message):
         jobid = message.data["jobid"]
@@ -394,6 +395,7 @@ class SystemTagger:
             except Exception as e:
                 logger.error(f"Error in container monitor: {e}")
                 time.sleep(1.0)
+        logger.info("Container monitor shutting down")
 
 def load_system_resources(cfg: SysConfig) -> SystemResources:
     """Get currently available system resources"""

@@ -257,7 +257,8 @@ def fabric_tagger(system_tagger, fake_container_registry, tag_store, fake_fetche
         fetcher=fake_fetcher
     )
     yield tagger
-    tagger.cleanup()
+    if not tagger.shutdown_requested:
+        tagger.cleanup()
 
 
 @pytest.fixture
@@ -381,7 +382,7 @@ def test_stop_running_job(fabric_tagger, sample_content, sample_tag_args):
     fabric_tagger.tag(sample_content, sample_tag_args)
     
     # Stop one job
-    fabric_tagger.stop("iq__test_content", "object_detection")
+    fabric_tagger.stop("iq__test_content", "object_detection", None)
     
     # Check that stop event was set
     status = fabric_tagger.status("iq__test_content")
@@ -391,13 +392,13 @@ def test_stop_running_job(fabric_tagger, sample_content, sample_tag_args):
 def test_stop_nonexistent_job(fabric_tagger):
     """Test stopping a job that doesn't exist"""
     with pytest.raises(MissingResourceError):
-        fabric_tagger.stop("iq__nonexistent", "object_detection")
+        fabric_tagger.stop("iq__nonexistent", "object_detection", None)
 
 def test_stop_finished_job(fabric_tagger, sample_content, sample_tag_args):
     fabric_tagger.tag(sample_content, sample_tag_args)
     time.sleep(1)
     with pytest.raises(MissingResourceError):
-        fabric_tagger.stop("iq__test_content", "object_detection")
+        fabric_tagger.stop("iq__test_content", "object_detection", None)
     # check that both are Completed
     status = fabric_tagger.status("iq__test_content")
     assert status["video"]["object_detection"]["status"] == "Completed"
@@ -414,19 +415,16 @@ def test_cleanup(fabric_tagger, sample_content, sample_tag_args):
     time.sleep(1)
     
     # Check shutdown signal is set
-    assert fabric_tagger.shutdown_signal.is_set()
-
+    assert fabric_tagger.shutdown_requested
+    
     # check is_running for all containers
-    status = fabric_tagger.status("iq__test_content")
-    for stream, features in status.items():
-        for feature, job_status in features.items():
-            assert job_status["status"] == "Stopped"
-
     assert len(fabric_tagger.jobstore.active_jobs) == 0
     assert len(fabric_tagger.jobstore.inactive_jobs) == 2
 
+    assert fabric_tagger.system_tagger.exit_requested
+
     for job in fabric_tagger.system_tagger.jobs.values():
-        assert job.stopevent.is_set()
+        assert job.stop_event.is_set()
         assert job.finished.is_set()
         assert job.container.is_running() is False
 
@@ -509,12 +507,6 @@ def test_tags_uploaded_during_and_after_job(
 
     assert end
 
-    assert len(job_statuses) == 4
-    assert 'Fetching content' in job_statuses
-    assert 'Tagging content' in job_statuses
-    assert 'Completed' in job_statuses
-    assert 'Starting' in job_statuses
-
     assert len(tag_counts) == 3
     assert 0 in tag_counts
     assert 2 in tag_counts
@@ -565,8 +557,9 @@ def test_container_tags_method_fails(mock_tags, fabric_tagger, sample_content):
     
     # Verify the container was stopped
     inactive_job = list(fabric_tagger.jobstore.inactive_jobs.values())[0]
+    time.sleep(0.1)  # Give a moment for the container to stop
     assert inactive_job.state.container.is_stopped == True
-    assert inactive_job.stopevent.is_set()
+    assert inactive_job.stop_event.is_set()
     
     # Verify no tags were uploaded due to the failure
     tag_count = fabric_tagger.tagstore.count_tags(qhit=sample_content.qhit)

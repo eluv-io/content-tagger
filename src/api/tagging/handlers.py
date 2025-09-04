@@ -68,7 +68,7 @@ def handle_stop(
 
     tagger: FabricTagger = current_app.config["state"]["tagger"]
 
-    tagger.stop(q.qhit, feature)
+    tagger.stop(q.qhit, feature, None)
 
     return Response(response=json.dumps({'message': f"Stopping {feature} on {qhit}. Check with /status for completion."}), status=200, mimetype='application/json')
 

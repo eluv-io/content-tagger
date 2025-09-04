@@ -79,7 +79,8 @@ def client(test_dir, test_config):
     app.config['TESTING'] = True
     yield app.test_client()
     tagger: FabricTagger = app.config["state"]["tagger"]
-    tagger.cleanup()
+    if tagger.shutdown_requested is False:
+        tagger.cleanup()
 
 def wait_for_jobs_completion(client, content_ids, timeout=30):
     """Wait for all jobs to complete."""

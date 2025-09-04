@@ -14,6 +14,7 @@ class MockTagContainer:
         self.work_duration = work_duration
         self.is_started = False
         self.is_stopped = False
+        self.stop_called = False
         self.container = Mock()
         self.container.attrs = {"State": {"ExitCode": 0}}
         
@@ -23,14 +24,13 @@ class MockTagContainer:
         # Simulate work in background
         def work():
             time.sleep(self.work_duration)
-            self.is_started = False  # Finished working
             self.is_stopped = True
         threading.Thread(target=work, daemon=True).start()
-        
+
     def stop(self) -> None:
+        self.stop_called = True
         self.is_stopped = True
-        self.is_started = False
-        
+
     def is_running(self) -> bool:
         return self.is_started and not self.is_stopped
     
@@ -54,7 +54,8 @@ def system_tagger(sys_config):
     """Create a SystemTagger instance for testing"""
     tagger = SystemTagger(sys_config)
     yield tagger
-    tagger.shutdown()
+    if tagger.exit_requested is False:
+        tagger.shutdown()
 
 
 def test_start_job_with_sufficient_resources(system_tagger):
@@ -229,7 +230,7 @@ def test_shutdown_stops_all_jobs(system_tagger):
     
     # Verify containers are stopped
     for container in containers:
-        assert container.is_stopped or not container.is_running()
+        assert container.stop_called
 
 
 def test_finished_event_notification(system_tagger):

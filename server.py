@@ -88,9 +88,9 @@ def configure_lifecycle(app: Flask) -> None:
 
     def shutdown():
         app_state = app.config["state"]
-        print('Shutting down.')
-        app_state["tagger"].cleanup()
-        print('Finished shutting down.')
+        tagger: FabricTagger = app_state["tagger"]
+        if tagger.shutdown_requested is False:
+            tagger.cleanup()
 
     atexit.register(shutdown)
 
