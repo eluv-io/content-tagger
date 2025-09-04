@@ -12,8 +12,8 @@ from src.fetch.fetch_video import DownloadResult
 JobStateDescription = Literal[
     "Starting",
     "Fetching content",
-    "Waiting for resources",
     "Tagging content",
+    "Uploading tags",
     "Completed",
     "Failed",
     "Stopped"
@@ -80,8 +80,9 @@ class JobState:
 class TagJob:
     args: JobArgs
     state: JobState
-    stopevent: threading.Event
     upload_job: str
+    stop_event: threading.Event
+    tagging_done: threading.Event | None
 
     def get_id(self) -> 'JobID':
         return JobID(qhit=self.args.q.qhit, feature=self.args.feature, stream=self.args.runconfig.stream)
