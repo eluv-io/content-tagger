@@ -443,6 +443,9 @@ class Fetcher:
         to_download = []
         for asset in assets:
             asset_id = encode_path(asset)
+            save_path = os.path.join(output_path, asset_id)
+            if os.path.exists(save_path):
+                continue
             to_download.append(asset)
         if len(to_download) != len(set(to_download)):
             raise ValueError(f"Duplicate assets found for {q.qhit}")
