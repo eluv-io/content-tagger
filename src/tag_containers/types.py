@@ -22,7 +22,7 @@ class ContainerRequest:
 @dataclass
 class ContainerSpec:
     cache_dir: str
-    logs_dir: str
+    logs_path: str
     tags_dir: str
     file_args: list[str]
     run_config: dict

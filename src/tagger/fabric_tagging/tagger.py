@@ -201,7 +201,6 @@ class FabricTagger:
         
         status = {}
         for feature in args.features:
-            # TODO: possibly switch order with self._start_job
             stream = args.features[feature].stream
             assert stream is not None
             tsjob = self.tagstore.start_job(
@@ -366,7 +365,7 @@ class FabricTagger:
             model=job.args.feature,
             file_args=media_files,
             run_config=job.args.runconfig.model,
-            job_id=job.args.q.qhit + "-" + datetime.now().strftime("%Y%m%d%H%M%S") + "-" + str(uuid())
+            job_id=job.args.q.qhit + "-" + datetime.now().strftime("%Y%m%d%H%M") + "-" + str(uuid())[0:6]
         ))
         reqresources = self.cregistry.get_model_config(job.args.feature).resources
         tagging_done = threading.Event()

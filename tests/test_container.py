@@ -59,7 +59,7 @@ def container_spec_video(temp_dir, video_files):
     return ContainerSpec(
         file_args=video_files,
         run_config={},
-        logs_dir=os.path.join(temp_dir, "logs"),
+        logs_path=os.path.join(temp_dir, "logs"),
         cache_dir=os.path.join(temp_dir, "cache"),
         tags_dir=tags_dir,
         model_config=ModelConfig(
@@ -79,7 +79,7 @@ def container_spec_image(temp_dir, image_files):
     return ContainerSpec(
         file_args=image_files,
         run_config={},
-        logs_dir=os.path.join(temp_dir, "logs"),
+        logs_path=os.path.join(temp_dir, "logs"),
         cache_dir=os.path.join(temp_dir, "cache"),
         tags_dir=tags_dir,
         model_config=ModelConfig(
