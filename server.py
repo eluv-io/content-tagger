@@ -25,19 +25,19 @@ def configure_routes(app: Flask) -> None:
 
     @app.errorhandler(BadRequestError)
     def handle_bad_request(e):
-        logger.error(f"Bad request: {e}")
+        logger.exception(f"Bad request: {e}")
         return jsonify({'error': e.message}), 400
 
     @app.errorhandler(HTTPError)
     def handle_http_error(e):
-        logger.error(f"HTTP error: {e}")
+        logger.exception(f"HTTP error: {e}")
         status_code = e.response.status_code
         error_resp = json.loads(e.response.text)
         return jsonify({'message': 'Fabric API error', 'error': error_resp}), status_code
 
     @app.errorhandler(MissingResourceError)
     def handle_missing_resource(e):
-        logger.error(f"Missing resource: {e}")
+        logger.exception(f"Missing resource: {e}")
         return jsonify({'message': e.message}), 404
 
     @app.route('/<qhit>/tag', methods=['POST'])
