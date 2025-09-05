@@ -255,7 +255,7 @@ class SystemTagger:
                 {"request": StopJobRequest(jobid, "Completed")}
             ))
         else:
-            error = RuntimeError(f"Container exited with code {exit_code}")
+            error = RuntimeError(f"Container {job.container.name()} exited with code {exit_code}")
             self._handle_stop_job(Message(
                 MessageType.STOP_JOB,
                 {"request": StopJobRequest(jobid, "Failed", error)}

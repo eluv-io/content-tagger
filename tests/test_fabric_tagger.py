@@ -12,6 +12,7 @@ from src.tag_containers.types import ModelConfig, ModelOutput
 from src.tagger.system_tagging.types import SysConfig
 from src.tagger.fabric_tagging.types import RunConfig, TagArgs
 from src.tags.tagstore.tagstore import FilesystemTagStore
+from src.tag_containers.types import ContainerRequest
 from src.fetch.types import DownloadRequest, DownloadResult, Source, StreamMetadata, VideoScope
 from src.common.content import Content
 from src.tags.tagstore.types import Tag, TagStoreConfig
@@ -127,6 +128,9 @@ class FakeTagContainer:
             outputs.append(output)
 
         return outputs
+    
+    def name(self) -> str:
+        return f"FakeContainer-{self.feature}"
 
 class PartialFailContainer(FakeTagContainer):
     """
@@ -144,10 +148,10 @@ class FakeContainerRegistry:
     def __init__(self):
         self.containers = {}
         
-    def get(self, feature: str, fileargs: list[str], runconfig: dict) -> FakeTagContainer:
-        container_key = f"{feature}_{len(fileargs)}"
+    def get(self, req: ContainerRequest) -> FakeTagContainer:
+        container_key = f"{req.model}_{len(req.file_args)}"
         if container_key not in self.containers:
-            self.containers[container_key] = FakeTagContainer(fileargs, feature)
+            self.containers[container_key] = FakeTagContainer(req.file_args, req.model)
         return self.containers[container_key]
     
     def get_model_config(self, feature: str) -> ModelConfig:
@@ -571,8 +575,8 @@ def test_container_tags_method_fails(mock_tags, fabric_tagger, sample_content):
 @patch.object(FakeContainerRegistry, 'get')
 def test_failed_tag(mock_get, fabric_tagger, sample_content):
     # Configure the mock to return PartialFailContainer
-    def get_side_effect(feature, fileargs, runconfig):
-        return PartialFailContainer(fileargs, feature)
+    def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
+        return PartialFailContainer(req.file_args, req.model)
     
     mock_get.side_effect = get_side_effect
     
@@ -607,3 +611,55 @@ def wait_tag(fabric_tagger, jobid, timeout):
                     pytest.fail(f"Job failed: {status[stream][feature]['error']}")
                 time.sleep(0.1)
     pytest.fail("Job did not complete within timeout period")
+
+@patch.object(FakeTagContainer, 'exit_code', autospec=True)
+def test_container_nonzero_exit_code(mock_exit_code, fabric_tagger, sample_content):
+    """Test that a container with non-zero exit code causes job to fail"""
+    
+    # Configure mock to return container that fails
+    def ec_side_effect(self):
+        if self.is_stopped:
+            return 1
+        return None
+    
+    mock_exit_code.side_effect = ec_side_effect
+    
+    # Create args for a simple job
+    args = TagArgs(
+        features={"object_detection": RunConfig(stream="video", model={})},
+        replace=False,
+        scope=VideoScope(start_time=0, end_time=30)
+    )
+    
+    # Start the job
+    result = fabric_tagger.tag(sample_content, args)
+    assert result["object_detection"] == "Job started successfully"
+    
+    # Wait for the job to fail due to non-zero exit code
+    timeout = 3
+    start_time = time.time()
+    
+    while time.time() - start_time < timeout:
+        status = fabric_tagger.status(sample_content.qhit)
+        job_status = status["video"]["object_detection"]["status"]
+        
+        if job_status == "Failed":
+            break
+        elif job_status in ["Completed", "Stopped"]:
+            pytest.fail(f"Expected job to fail due to exit code, but got: {job_status}")
+        
+        time.sleep(0.1)
+    else:
+        pytest.fail("Job did not fail within timeout period")
+    
+    # Verify final status is Failed
+    final_status = fabric_tagger.status(sample_content.qhit)
+    assert final_status["video"]["object_detection"]["status"] == "Failed"
+    
+    # Verify job moved to inactive
+    assert len(fabric_tagger.jobstore.active_jobs) == 0
+    assert len(fabric_tagger.jobstore.inactive_jobs) == 1
+    
+    # Verify container stopped with exit code 1
+    inactive_job = list(fabric_tagger.jobstore.inactive_jobs.values())[0]
+    assert inactive_job.state.container.exit_code() == 1

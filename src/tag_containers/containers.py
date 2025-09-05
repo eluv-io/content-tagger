@@ -1,11 +1,9 @@
 
 from copy import deepcopy
-import uuid
 from podman import PodmanClient
 from loguru import logger
 import json
 import os
-from datetime import datetime
 
 from common_ml.utils.files import get_file_type
 from common_ml.video_processing import get_fps
@@ -13,7 +11,7 @@ from common_ml.video_processing import get_fps
 from src.common.schema import FrameTag
 from src.common.errors import MissingResourceError, BadRequestError
 from src.tags.tagstore.types import Tag
-from src.tag_containers.types import ContainerSpec, RegistryConfig, ModelOutput, ModelConfig
+from src.tag_containers.types import *
 
 class TagContainer:
 
@@ -130,6 +128,9 @@ class TagContainer:
             tag_files.append(os.path.join(self.cfg.tags_dir, fpath))
 
         return self._files_to_tags(tag_files)
+    
+    def name(self) -> str:
+        return self.cfg.model_config.image
 
     def _files_to_tags(self, tagged_files: list[str]) -> list[ModelOutput]:
 
@@ -292,7 +293,6 @@ class TagContainer:
                         ))
         return overlapping_tags
 
-
 class ContainerRegistry:
     """
     Get runnable containers through identifier
@@ -304,22 +304,21 @@ class ContainerRegistry:
         os.makedirs(self.cfg.base_dir, exist_ok=True)
         os.makedirs(self.cfg.cache_dir, exist_ok=True)
 
-    def get(self, model: str, fileargs: list[str], runconfig: dict) -> TagContainer:
-        jobid = datetime.now().strftime("%Y%m%d-%H%M%S-") + str(uuid.uuid4())[:8]
-        jobpath = os.path.join(self.cfg.base_dir, model, f'job-{jobid}')
+    def get(self, req: ContainerRequest) -> TagContainer:
+        jobpath = os.path.join(self.cfg.base_dir, req.model, req.job_id)
         tags_path = os.path.join(jobpath, 'tags')
         os.makedirs(tags_path, exist_ok=True)
         logs_path = os.path.join(jobpath, 'log.out')
 
         cache_path = self.cfg.cache_dir
 
-        modelcfg = self.cfg.model_configs.get(model)
+        modelcfg = self.cfg.model_configs.get(req.model)
         if not modelcfg:
-            raise MissingResourceError(f"Model {model} not found")
+            raise MissingResourceError(f"Model {req.model} not found")
 
         ccfg = ContainerSpec(
-            file_args=fileargs,
-            run_config=runconfig,
+            file_args=req.file_args,
+            run_config=req.run_config,
             logs_dir=logs_path,
             cache_dir=cache_path,
             tags_dir=tags_path,

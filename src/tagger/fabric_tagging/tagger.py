@@ -6,11 +6,14 @@ import queue
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
+from datetime import datetime
+from uuid import uuid4 as uuid
 
 from loguru import logger
 
 from src.tags.tagstore.types import Tag
 from src.fetch.types import DownloadRequest
+from src.tag_containers.types import ContainerRequest
 from src.tag_containers.containers import ContainerRegistry
 from src.tagger.system_tagging.resource_manager import SystemTagger
 from src.tagger.fabric_tagging.types import *
@@ -359,7 +362,12 @@ class FabricTagger:
         job.state.media = data
         job.state.status.failed += data.failed
         media_files = [s.filepath for s in data.successful_sources]
-        container = self.cregistry.get(job.args.feature, media_files, job.args.runconfig.model)
+        container = self.cregistry.get(ContainerRequest(
+            model=job.args.feature,
+            file_args=media_files,
+            run_config=job.args.runconfig.model,
+            job_id=job.args.q.qhit + "-" + datetime.now().strftime("%Y%m%d%H%M%S") + "-" + str(uuid())
+        ))
         reqresources = self.cregistry.get_model_config(job.args.feature).resources
         tagging_done = threading.Event()
         uid = self.system_tagger.start(container, reqresources, tagging_done)
@@ -431,6 +439,11 @@ class FabricTagger:
         job.tagging_done.wait()
 
         if job.stop_event.is_set():
+            return
+
+        status = self.system_tagger.status(job.state.taghandle)
+        if status.status != "Completed":
+            self._end_job(jobid, "Failed", RuntimeError(f"Tagging job ended with status: {status.status}"))
             return
 
         # start upload

@@ -12,6 +12,14 @@ class ModelConfig:
     resources: SystemResources
 
 @dataclass
+class ContainerRequest:
+    model: str
+    file_args: list[str]
+    run_config: dict
+    # helps to configure where logs/tags go in filesystem
+    job_id: str
+
+@dataclass
 class ContainerSpec:
     cache_dir: str
     logs_dir: str
