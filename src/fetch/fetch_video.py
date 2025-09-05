@@ -410,7 +410,7 @@ class Fetcher:
         output_path = os.path.join(self.config.parts_dir, q.qhit, "assets")
         if not os.path.exists(output_path):
             os.makedirs(output_path)
-    
+
         scope = req.scope
         assert isinstance(scope, AssetScope)
 
@@ -438,29 +438,48 @@ class Fetcher:
             existing_tags = self.tagstore.find_tags(author=self.config.author, qhit=q.qhit, stream="assets", track=req.preserve_track)
             tagged_assets = [tag.source for tag in existing_tags]
 
-        assets = [asset for asset in assets if asset not in tagged_assets]
+        if tagged_assets:
+            logger.info(f"Filtering {len(tagged_assets)} already tagged assets")
 
+        # Filter out already tagged assets
+        assets_to_process = [asset for asset in assets if asset not in tagged_assets]
+        
+        # Separate assets that already exist vs need downloading
+        already_downloaded = []
         to_download = []
-        for asset in assets:
-            asset_id = encode_path(asset)
-            save_path = os.path.join(output_path, asset_id)
+        
+        for asset in assets_to_process:
+            save_path = os.path.join(output_path, encode_path(asset))
             if os.path.exists(save_path):
-                continue
-            to_download.append(asset)
-        if len(to_download) != len(set(to_download)):
-            raise ValueError(f"Duplicate assets found for {q.qhit}")
-        if len(to_download) < len(assets):
-            logger.info(f"{len(assets) - len(to_download)} assets already retrieved for {q.qhit}")
+                already_downloaded.append(asset)
+            else:
+                to_download.append((asset, save_path))
+
+        if already_downloaded:
+            logger.info(f"{len(already_downloaded)} assets already retrieved for {q.qhit}")
+
         logger.info(f"{len(to_download)} assets need to be downloaded for {q.qhit}")
-        new_assets = self._download_concurrent(q, to_download, output_path)
-        bad_assets = set(to_download) - set(new_assets)
-        assets = [asset for asset in assets if asset not in bad_assets]
-        successful_sources = [Source(name=asset, filepath=os.path.join(output_path, encode_path(asset)), offset=0) for asset in new_assets]
-        failed = list(bad_assets)
+
+        # Download new assets
+        assets_to_download = [asset for asset, _ in to_download]
+        newly_downloaded = self._download_concurrent(q, to_download, output_path)
+
+        # Combine all successful assets (already downloaded + newly downloaded)
+        all_successful_assets = already_downloaded + newly_downloaded
+        
+        # Create successful sources for all available assets
+        successful_sources = [
+            Source(name=asset, filepath=os.path.join(output_path, encode_path(asset)), offset=0) 
+            for asset in all_successful_assets
+        ]
+        
+        # Failed assets are those we tried to download but couldn't
+        failed_assets = set(assets_to_download) - set(newly_downloaded)
+        failed = list(failed_assets)
+        
         return DownloadResult(successful_sources=successful_sources, failed=failed, stream_meta=None)
 
-    def _download_concurrent(self, q: Content, files: list[str], output_path: str) -> list[str]:
-        file_jobs = [(asset, encode_path(asset)) for asset in files]
+    def _download_concurrent(self, q: Content, file_jobs: list[tuple[str, str]], output_path: str) -> list[str]:
         with timeit("Downloading assets"):
             status = q.download_files(dest_path=output_path, file_jobs=file_jobs)
         return [asset for (asset, _), error in zip(file_jobs, status) if error is None]
