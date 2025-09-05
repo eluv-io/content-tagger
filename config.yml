@@ -18,8 +18,10 @@ tag_converter:
   interval: 10
 
 system:
-  cpu_juice: 100
-  gpus: ["gpu", "disabled", "gpu", "gpu", "gpu"]
+  resources: 
+    cpu_juice: 100
+    ollama: 3
+  gpus: ["gpu", "disabled", "gpu", "gpu", "disabled"]
 
 fetcher:
   max_downloads: 16

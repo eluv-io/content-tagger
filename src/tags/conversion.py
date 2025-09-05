@@ -1,16 +1,10 @@
 from dataclasses import dataclass, asdict
 from collections import defaultdict
-from loguru import logger
 from copy import deepcopy
 
 from src.tags.tagstore.tagstore import FilesystemTagStore
 from common_ml.tags import FrameTag, VideoTag
 from src.tags.tagstore.types import UploadJob, Tag
-#from src.tags.legacy.agg import (
-#    aggregate_video_tags, 
-#    format_tracks, 
-#    _get_sentence_intervals
-#)
 from src.tags.legacy_format import *
 
 @dataclass
@@ -128,6 +122,7 @@ class TagConverter:
 
             for tag in jt.tags:
                 for frame_idx, frame_info in tag.additional_info.get("frame_tags", {}).items():
+                    frame_idx = int(frame_idx)
                     if frame_idx not in frame_tags:
                         frame_tags[frame_idx] = {}
                     
@@ -145,8 +140,8 @@ class TagConverter:
         return frame_tags
 
     def _feature_to_track(self, feature: str) -> str:
-        return self._feature_to_track(self._feature_to_label(feature))
-    
+        return self._label_to_track(self._feature_to_label(feature))
+
     def _feature_to_label(self, feature: str) -> str:
         if feature in self.cfg.name_mapping:
             return self.cfg.name_mapping[feature]
@@ -265,20 +260,18 @@ class TagConverter:
         return result
 
     def dump_overlay(self, overlay: Overlay) -> dict:
-        result = {"version": 1, "overlay_tags": dict(overlay)}
-
+     
+        result = {}
         for frame_idx, feature_map in overlay.items():
-            if frame_idx not in result["overlay_tags"]:
-                result["overlay_tags"][frame_idx] = {}
+            frame_idx = str(frame_idx)
+            if frame_idx not in result:
+                result[frame_idx] = {}
             for feature, ftags in feature_map.items():
-                label = self._feature_to_label(feature)
-                if label not in result["overlay_tags"][frame_idx]:
-                    result["overlay_tags"][frame_idx][label] = []
+                label = self._feature_to_track(feature)
+                if label not in result[frame_idx]:
+                    result[frame_idx][label] = {"tags": []}
                 for ftag in ftags:
                     as_dict = asdict(ftag)
-                    if ftag.text is not None:
-                        # NOTE: this is just a tag file convention, probably should just be a string value
-                        as_dict["text"] = [as_dict["text"]]
-                    result["overlay_tags"][frame_idx][label].append(as_dict)
+                    result[frame_idx][label]["tags"].append(as_dict)
 
-        return result
+        return {"version": 1, "overlay_tags": {"frame_level_tags": result}}
