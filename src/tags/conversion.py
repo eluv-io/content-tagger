@@ -1,21 +1,24 @@
 from dataclasses import dataclass, asdict
 from collections import defaultdict
 from loguru import logger
+from copy import deepcopy
 
 from src.tags.tagstore.tagstore import FilesystemTagStore
 from common_ml.tags import FrameTag, VideoTag
 from src.tags.tagstore.types import UploadJob, Tag
-from src.tags.legacy.agg import (
-    aggregate_video_tags, 
-    format_tracks, 
-    _get_sentence_intervals
-)
+#from src.tags.legacy.agg import (
+#    aggregate_video_tags, 
+#    format_tracks, 
+#    _get_sentence_intervals
+#)
 from src.tags.legacy_format import *
 
 @dataclass
 class TagConverterConfig:
     interval: int
     name_mapping: dict[str, str]
+    coalesce_tracks: list[str]
+    max_sentence_words: int
 
 @dataclass
 class JobWithTags:
@@ -23,7 +26,7 @@ class JobWithTags:
     tags: list[Tag]
 
 def get_latest_tags_for_content(qhit: str, ts: FilesystemTagStore) -> list[JobWithTags]:
-    """Get tags from the latest job for each source for the given content."""
+    """Get tags from the latest job for each source+track pair for the given content."""
     job_ids = ts.find_jobs(qhit=qhit)
     if not job_ids:
         return []
@@ -33,20 +36,18 @@ def get_latest_tags_for_content(qhit: str, ts: FilesystemTagStore) -> list[JobWi
     jobs.sort(key=lambda job: job.id, reverse=True)  # Newest first
 
     tags = []
-    sources_tagged = set()
+    source_features_tagged = set()
 
     # For each job (newest first), collect tags for sources we haven't seen
     for job in jobs:
-        job_sources = set()
         new_tags = []
-        
+
         for tag in ts.get_tags(job.id):
-            if tag.source in sources_tagged:
+            if (tag.source, job.track) in source_features_tagged:
                 continue
-            job_sources.add(tag.source)
+            source_features_tagged.add((tag.source, job.track))
             new_tags.append(tag)
-        
-        sources_tagged.update(job_sources)
+
         tags.append(JobWithTags(job=job, tags=new_tags))
 
     return tags
@@ -59,42 +60,35 @@ class TagConverter:
     def __init__(self, cfg: TagConverterConfig):
         self.cfg = cfg
 
-    def convert(self, job_tags: list[JobWithTags]) -> tuple[list[dict], list[dict]]:
-        """Convert tagstore tags to VideoTag and FrameTag formats."""
-        vtags, ftags = {}, {}
-        
+    def split_tags(self, job_tags: list[JobWithTags]) -> list[list[JobWithTags]]:
+        """Split based on start time"""
+        num_buckets = max(1, int((max((tag.end_time for jt in job_tags for tag in jt.tags), default=0) / (self.cfg.interval*60*1000))))
+        buckets: list[list[JobWithTags]] = [[] for _ in range(num_buckets)]
+        for jt in job_tags:
+            if not jt.tags:
+                continue
+            for bucket in buckets:
+                bucket.append(JobWithTags(job=jt.job, tags=[]))
+            for tag in jt.tags:
+                bucket_idx = int(tag.start_time / (self.cfg.interval*60*1000))
+                buckets[bucket_idx][-1].tags.append(tag)
+        return buckets
+
+    def get_tracks(self, job_tags: list[JobWithTags]) -> TrackCollection:
+        vtags: dict[str, list[VideoTag]] = {}
+
         for jt in job_tags:
             job = jt.job
-            if not job:
-                logger.warning(f"Could not find job {jt.job.id} for tag")   
-                continue
-                
+
             feature = job.track
 
             for tag in jt.tags:
-                frame_info = tag.additional_info.get("frame_tags", {})
                 
-                # Initialize feature if not seen before
                 if feature not in vtags:
                     vtags[feature] = []
-                    if frame_info:
-                        ftags[feature] = {}
                 
-                # Add video tag
                 vtags[feature].append(VideoTag(tag.start_time, tag.end_time, tag.text))
-                
-                # Add frame tags if present - use timestamp directly as frame index
-                if frame_info:
-                    for timestamp_str, fdata in frame_info.items():
-                        # timestamp_str should be the global timestamp in milliseconds
-                        timestamp_ms = int(timestamp_str)
-                        if timestamp_ms not in ftags[feature]:
-                            ftags[feature][timestamp_ms] = []
-                        ftags[feature][timestamp_ms].append(
-                            FrameTag(tag.text, fdata["box"], confidence=fdata["confidence"])
-                        )
 
-        # Handle shot intervals for aggregation
         shot_intervals = []
         if "shot" in vtags:
             shot_intervals = [(tag.start_time, tag.end_time) for tag in vtags["shot"]]
@@ -104,61 +98,187 @@ class TagConverter:
         if shot_intervals:
             non_shot_tags = {f: tags for f, tags in vtags.items() if f != "shot"}
             aggshot_tags = {
-                "shot_tags": aggregate_video_tags(non_shot_tags, shot_intervals)
+                "shot_tags": self._aggregate_video_tags(non_shot_tags, shot_intervals)
             }
 
         # Handle automatic captions from ASR
+        sentence_intervals = []
         if "asr" in vtags:
-            try:
-                sentence_intervals = _get_sentence_intervals(vtags["asr"])
-                sentence_agg_tags = aggregate_video_tags(
-                    {"asr": vtags["asr"]}, 
-                    sentence_intervals
-                )
-                stt_sent_track = [
-                    VideoTag(agg_tag.start_time, agg_tag.end_time, agg_tag.tags["asr"][0].text) 
-                    for agg_tag in sentence_agg_tags if "asr" in agg_tag.tags
-                ]
-                vtags["auto_captions"] = stt_sent_track
-            except Exception as e:
-                logger.warning(f"Failed to create auto captions from ASR: {e}")
+            sentence_intervals = self._get_sentence_intervals(vtags["asr"])
 
-        # Format tracks and overlays
-        formatted_tracks = format_tracks(
-            aggshot_tags, 
-            vtags, 
-            self.cfg.interval, 
-            custom_labels={}
-        )
-        # Remove fps parameter since frame timestamps are already global
-        overlays = self.format_overlay(ftags, self.cfg.interval)
-        return formatted_tracks, overlays
+        aggsentence_tags = {}
+        if sentence_intervals:
+            aggsentence_tags = self._aggregate_video_tags({"asr": vtags["asr"]}, sentence_intervals)
 
-    def format_overlay(self, all_frame_tags: dict[str, dict[int, list[FrameTag]]], interval: int) -> list[dict[str, dict[int, list[FrameTag]]]]:
-        if len(all_frame_tags) == 0:
-            return []
-        buckets = defaultdict(lambda: {"version": 1, "overlay_tags": {"frame_level_tags": defaultdict(dict)}})
-        interval = interval*60*1000  # Convert to milliseconds
-        
-        for feature, frame_tags in all_frame_tags.items():
-            label = self.feature_to_label(feature)
-            for frame_idx, ftags in frame_tags.items():
-                timestamp_ms = frame_idx
-                bucket_idx = int(frame_idx/interval)
-                buckets[bucket_idx]["overlay_tags"]["frame_level_tags"][frame_idx][self.label_to_track(label)] = {"tags": [asdict(tag) for tag in ftags]}
-        
-        # Add timestamps (frame_idx is already in milliseconds)
-        for bucket in buckets.values():
-            for frame_idx in bucket["overlay_tags"]["frame_level_tags"]:
-                bucket["overlay_tags"]["frame_level_tags"][frame_idx]["timestamp_sec"] = frame_idx
-        
-        buckets = [buckets[i] if i in buckets else {"version": 1, "overlay_tags": {"frame_level_tags": {}}} for i in range(max(buckets.keys())+1)]
-        return buckets
+        if aggsentence_tags:
+            stt_sent_track = [
+                VideoTag(agg_tag.start_time, agg_tag.end_time, agg_tag.tags["asr"][0].text)
+                for agg_tag in aggsentence_tags if "asr" in agg_tag.tags
+            ]
+            vtags["auto_captions"] = stt_sent_track
+
+        return TrackCollection(tracks=vtags, agg_tracks=aggshot_tags)
+
+    def get_overlays(self, job_tags: list[JobWithTags]) -> Overlay:
+        frame_tags: dict[int, dict[str, list[FrameTag]]] = {}
+
+        for jt in job_tags:
+            job = jt.job
+            feature = job.track
+
+            for tag in jt.tags:
+                for frame_idx, frame_info in tag.additional_info.get("frame_tags", {}).items():
+                    if frame_idx not in frame_tags:
+                        frame_tags[frame_idx] = {}
+                    
+                    if feature not in frame_tags[frame_idx]:
+                        frame_tags[frame_idx][feature] = []
+
+                    assert "box" in frame_info
+                    
+                    frame_tags[frame_idx][feature].append(FrameTag(
+                        text=tag.text,
+                        box=frame_info["box"],
+                        confidence=frame_info.get("confidence")
+                    ))
+
+        return frame_tags
+
+    def _feature_to_track(self, feature: str) -> str:
+        return self._feature_to_track(self._feature_to_label(feature))
     
-    def feature_to_label(self, feature: str) -> str:
+    def _feature_to_label(self, feature: str) -> str:
         if feature in self.cfg.name_mapping:
             return self.cfg.name_mapping[feature]
         return feature.replace("_", " ").title()
 
-    def label_to_track(self, label: str) -> str:
+    def _label_to_track(self, label: str) -> str:
         return label.lower().replace(" ", "_")
+
+    def _aggregate_video_tags(self, track_to_tags: dict[str, list[VideoTag]], intervals: list[tuple[int, int]]) -> list[AggTag]:
+        all_tags = deepcopy(track_to_tags)
+        for track, tags in track_to_tags.items():
+            all_tags[track] = sorted(tags, key=lambda x: x.start_time)
+
+        # merged tags into their appropriate intervals
+        result = []
+        for left, right in intervals:
+            agg_tags = AggTag(start_time=left, end_time=right, tags={}) 
+            for feature, tags in all_tags.items():
+                for tag in tags:
+                    if tag.start_time >= left and tag.start_time < right:
+                        if feature not in agg_tags.tags:
+                            agg_tags.tags[feature] = []
+                        agg_tags.tags[feature].append(tag)
+            result.append(agg_tags)
+
+        for agg_tag in result:
+            for feat in self.cfg.coalesce_tracks:
+                agg_tag.coalesce(feat)
+
+        # TODO: add back
+        #for agg_tag in result:
+        #    for feat in config["agg"]["single_shot_tag"]:
+        #        agg_tag.keep_longest(feat)
+        
+        return result
+
+    def _get_sentence_intervals(self, tags: list[VideoTag]) -> list[tuple[int, int]]:
+        sentence_delimiters = ['.', '?', '!']
+        intervals = []
+        if len(tags) == 0:
+            return []
+        quiet = True
+        curr_int = [0]
+        fake_sentence_cutoff = self.cfg.max_sentence_words
+        for i, tag in enumerate(tags):
+            if not tag.text:
+                continue
+            assert tag.text is not None
+            if quiet and tag.start_time > curr_int[0]:
+                # commit the silent interval
+                curr_int.append(tag.start_time)
+                intervals.append((curr_int[0], curr_int[-1]))
+                curr_int.clear()
+                # start a new speaking interval
+                curr_int.append(tag.start_time)
+                quiet = False
+            if tag.text[-1] in sentence_delimiters or i == len(tags)-1 or i > fake_sentence_cutoff:
+                fake_sentence_cutoff = i + self.cfg.max_sentence_words
+                # end and commit the speaking interval, add one due to exclusive bounds
+                curr_int.append(tag.end_time+1)
+                intervals.append((curr_int[0], curr_int[-1]))
+                curr_int.clear()
+                # start a new silent interval
+                curr_int.append(tag.end_time+1)
+                quiet = True
+        return intervals
+
+    def dump_tracks(
+        self,
+        tc: TrackCollection
+    ) -> dict:
+        result = {"version": 1, "metadata_tags": {}}
+        
+        # add aggregated tags
+        for key, tags in tc.agg_tracks.items():
+            label = self._feature_to_label(key)
+            if key not in result["metadata_tags"]:
+                result["metadata_tags"][key] = {"label": label, "tags": []}
+
+            for agg_tag in tags:
+                entry = {
+                    "start_time": agg_tag.start_time,
+                    "end_time": agg_tag.end_time,
+                    "text": defaultdict(list)
+                }
+                
+                for track, video_tags in agg_tag.tags.items():
+                    track_label = self._feature_to_label(track)
+                        
+                    for vtag in video_tags:
+                        as_dict = asdict(vtag)
+                        if vtag.text is not None:
+                            # NOTE: this is just a tag file convention, probably should just be a string value
+                            as_dict["text"] = [as_dict["text"]]
+                        entry["text"][track_label].append(as_dict)
+                        
+                result["metadata_tags"][key]["tags"].append(entry)
+
+        # add standalone tracks
+        for key, video_tags in tc.tracks.items():
+            label = self._feature_to_label(key)
+            track = self._label_to_track(label)
+            
+            if track not in result["metadata_tags"]:
+                result["metadata_tags"][track] = {"label": label, "tags": []}
+                
+            for vtag in video_tags:
+                entry = {
+                    "start_time": vtag.start_time,
+                    "end_time": vtag.end_time,
+                }
+                if vtag.text is not None:
+                    entry["text"] = vtag.text
+                result["metadata_tags"][track]["tags"].append(entry)
+
+        return result
+
+    def dump_overlay(self, overlay: Overlay) -> dict:
+        result = {"version": 1, "overlay_tags": dict(overlay)}
+
+        for frame_idx, feature_map in overlay.items():
+            if frame_idx not in result["overlay_tags"]:
+                result["overlay_tags"][frame_idx] = {}
+            for feature, ftags in feature_map.items():
+                label = self._feature_to_label(feature)
+                if label not in result["overlay_tags"][frame_idx]:
+                    result["overlay_tags"][frame_idx][label] = []
+                for ftag in ftags:
+                    as_dict = asdict(ftag)
+                    if ftag.text is not None:
+                        # NOTE: this is just a tag file convention, probably should just be a string value
+                        as_dict["text"] = [as_dict["text"]]
+                    result["overlay_tags"][frame_idx][label].append(as_dict)
+
+        return result
