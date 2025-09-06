@@ -4,14 +4,12 @@ import shutil
 import os
 import json
 from dotenv import load_dotenv
-from typing import Generator
 
 from src.tags.conversion_workflow import upload_tags_to_fabric
 from src.tags.conversion import TagConverter, TagConverterConfig
 from src.tags.tagstore.tagstore import FilesystemTagStore
-from src.tags.tagstore.types import TagStoreConfig, Tag, UploadJob
+from src.tags.tagstore.types import TagStoreConfig, Tag
 from src.common.content import Content, ContentConfig, ContentFactory
-from elv_client_py import ElvClient
 
 # Load environment variables from .env file
 load_dotenv()
@@ -133,7 +131,8 @@ def test_upload_tags_to_fabric_full_workflow(
     
     # Run the upload workflow
     upload_tags_to_fabric(
-        q=q,
+        source_qhit=q.qhit,
+        qwt=q,
         tagstore=tagstore,
         tag_converter=tag_converter
     )
@@ -243,7 +242,8 @@ def test_upload_tags_empty_tagstore(
     
     # Should handle empty tagstore gracefully
     upload_tags_to_fabric(
-        q=q,
+        source_qhit=q.qhit,
+        qwt=q,
         tagstore=tagstore,
         tag_converter=tag_converter,
     )
@@ -276,7 +276,8 @@ def test_upload_tags_no_frame_tags(
     os.makedirs(tags_path, exist_ok=True)
     
     upload_tags_to_fabric(
-        q=q,
+        source_qhit=q.qhit,
+        qwt=q,
         tagstore=tagstore,
         tag_converter=tag_converter,
     )

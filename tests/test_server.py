@@ -11,6 +11,7 @@ from app_config import AppConfig
 import podman
 from src.common.content import ContentConfig
 from src.tagger.fabric_tagging.tagger import FabricTagger
+from src.tags.conversion import TagConverterConfig
 from src.tags.tagstore.tagstore import FilesystemTagStore
 from src.tags.tagstore.types import TagStoreConfig
 from src.tagger.system_tagging.types import SysConfig
@@ -44,6 +45,12 @@ def test_dir():
 def test_config(test_dir):
     """Create test configuration."""
     return AppConfig(
+        tag_converter=TagConverterConfig(
+            interval=10,
+            coalesce_tracks=[],
+            name_mapping={},
+            max_sentence_words=100
+        ),
         root_dir=test_dir,
         content=ContentConfig(
             config_url="https://main.net955305.contentfabric.io/config",
