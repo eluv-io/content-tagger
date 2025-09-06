@@ -169,7 +169,7 @@ class SystemTagger:
         self.jobs[job_id] = job
         self.job_queue.append(job_id)
         
-        logger.info(f"Job {job_id} queued")
+        logger.info(f"Job {job_id} queued: {request.container.name()} with resources {request.required_resources}")
         assert message.response_queue is not None
         message.response_queue.put(job_id)
 
@@ -286,7 +286,7 @@ class SystemTagger:
         job = self.jobs[jobid]
         
         if job.jobstatus.time_ended:
-            logger.warning(f"Attempted to start already finished job {jobid}")
+            logger.warning(f"Attempted to start already finished job {jobid}: {job.container.name()}")
             return
         
         # Reserve resources
@@ -295,7 +295,7 @@ class SystemTagger:
         # Update status
         job.jobstatus.status = "Running"
         
-        logger.info(f"Starting job {jobid}")
+        logger.info(f"Starting job {jobid}: {job.container.name()} with resources {job.reqs}")
 
         # Start container
         try:
@@ -305,7 +305,7 @@ class SystemTagger:
             gpu = job.gpus_used[0] if job.gpus_used else None
             job.container.start(gpu)
         except Exception as e:
-            logger.error(f"Failed to start job {jobid}: {e}")
+            logger.error(f"Failed to start job {jobid}\n{job.container.name()}: {e}")
             self._handle_stop_job(Message(
                 MessageType.STOP_JOB,
                 {"request": StopJobRequest(jobid, "Failed", e)}

@@ -57,6 +57,7 @@ def container_spec_video(temp_dir, video_files):
     os.makedirs(tags_dir, exist_ok=True)
     
     return ContainerSpec(
+        id="test_video_container",
         file_args=video_files,
         run_config={},
         logs_path=os.path.join(temp_dir, "logs"),
@@ -77,6 +78,7 @@ def container_spec_image(temp_dir, image_files):
     os.makedirs(tags_dir, exist_ok=True)
     
     return ContainerSpec(
+        id="test_image_container",
         file_args=image_files,
         run_config={},
         logs_path=os.path.join(temp_dir, "logs"),

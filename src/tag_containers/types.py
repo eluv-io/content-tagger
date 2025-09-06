@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Any
 from typing_extensions import Literal
 
 from src.common.resources import SystemResources
@@ -16,11 +17,15 @@ class ContainerRequest:
     model: str
     file_args: list[str]
     run_config: dict
-    # helps to configure where logs/tags go in filesystem
-    job_id: str
+    # handle passed to the container for tracking
+    job_id: str | None
+
+    def __str__(self) -> str:
+        return f"ContainerRequest(job_id={self.job_id}, model={self.model}, file_args={self.file_args}, run_config={self.run_config})"
 
 @dataclass
 class ContainerSpec:
+    id: str
     cache_dir: str
     logs_path: str
     tags_dir: str

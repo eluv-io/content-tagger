@@ -38,6 +38,9 @@ class MockTagContainer:
         if self.is_stopped:
             return 0
         return None
+    
+    def name(self) -> str:
+        return "MockContainer"
 
 
 @pytest.fixture

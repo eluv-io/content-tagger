@@ -1,9 +1,11 @@
 
 from copy import deepcopy
+import uuid
 from podman import PodmanClient
 from loguru import logger
 import json
 import os
+from datetime import datetime
 
 from common_ml.utils.files import get_file_type
 from common_ml.video_processing import get_fps
@@ -133,7 +135,7 @@ class TagContainer:
         return self._files_to_tags(tag_files)
     
     def name(self) -> str:
-        return self.cfg.model_config.image
+        return self.cfg.id + self.cfg.model_config.image
 
     def _files_to_tags(self, tagged_files: list[str]) -> list[ModelOutput]:
 
@@ -273,9 +275,9 @@ class TagContainer:
         if suffix not in ["tags.json", "frametags.json", "imagetags.json"]:
             raise ValueError(f"Invalid tag file suffix: {suffix}")
         original_filebase = "_".join(path_parts[:-1])
-        
+
         return self.basename_to_source[original_filebase]
-    
+
     def _find_overlapping_frame_tags(
         self, 
         video_tag: Tag, 
@@ -308,7 +310,13 @@ class ContainerRegistry:
         os.makedirs(self.cfg.cache_dir, exist_ok=True)
 
     def get(self, req: ContainerRequest) -> TagContainer:
-        jobpath = os.path.join(self.cfg.base_dir, req.model, req.job_id)
+        if req.job_id is not None:
+            jobid = req.job_id
+        else:
+            jobid = datetime.now().strftime("%Y%m%d_%H%M%S") + "-" + str(uuid.uuid4())[:6]
+            logger.warning(f"User request {req} did not give jobid, generating default: {jobid}")
+
+        jobpath = os.path.join(self.cfg.base_dir, req.model, jobid)
         tags_path = os.path.join(jobpath, 'tags')
         logs_path = os.path.join(jobpath, 'log.out')
 
@@ -319,6 +327,7 @@ class ContainerRegistry:
             raise MissingResourceError(f"Model {req.model} not found")
 
         ccfg = ContainerSpec(
+            id=jobid,
             file_args=req.file_args,
             run_config=req.run_config,
             logs_path=logs_path,
