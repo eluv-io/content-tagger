@@ -7,6 +7,7 @@ from src.common.content import ContentConfig
 from src.fetch.types import FetcherConfig
 from src.tag_containers.types import RegistryConfig
 from src.tagger.system_tagging.types import SysConfig
+from src.tags.conversion import TagConverterConfig
 from src.tags.tagstore.types import TagStoreConfig
 
 @dataclass
@@ -17,6 +18,7 @@ class AppConfig:
     system: SysConfig
     fetcher: FetcherConfig
     container_registry: RegistryConfig
+    tag_converter: TagConverterConfig
 
     @staticmethod
     def from_yaml(filename: str) -> 'AppConfig':

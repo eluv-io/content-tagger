@@ -11,7 +11,8 @@ from src.tags.conversion import TagConverter
 from src.tags.conversion import get_latest_tags_for_content
 
 def upload_tags_to_fabric(
-    q: Content, 
+    source_qhit: str,
+    qwt: Content, 
     tagstore: FilesystemTagStore, 
     tag_converter: TagConverter
 ) -> None:
@@ -19,19 +20,19 @@ def upload_tags_to_fabric(
     Complete workflow to convert tagstore tags to fabric format and upload them.
     
     Args:
-        q: Content object with write token
+        source_qhit: object qhit whose tags to use
+        qwt: Write token to upload to
         tagstore: FilesystemTagStore instance
         converter_config: Configuration for tag conversion
     """
-    
-    logger.info(f"Starting tag upload for content {q.qhit}")
-    
+    logger.info(f"Starting tag upload for content {source_qhit}")
+
     # Step 1: Extract tags and jobs from tagstore
     logger.info("Extracting latest tags from tagstore")
-    job_tags = get_latest_tags_for_content(q.qhit, tagstore)
+    job_tags = get_latest_tags_for_content(source_qhit, tagstore)
     
     if not job_tags:
-        logger.warning(f"No tags found for content {q.qhit}")
+        logger.warning(f"No tags found for content {source_qhit}")
         return
     
     logger.info(f"Found {len(job_tags)} jobs with tags")
@@ -110,7 +111,7 @@ def upload_tags_to_fabric(
     ]
    
     with timeit("Uploading tag files"):
-        q.upload_files(file_jobs=file_jobs, finalize=False)
+        qwt.upload_files(file_jobs=file_jobs, finalize=False)
     
     logger.info("Tag files uploaded successfully")
     
@@ -118,18 +119,18 @@ def upload_tags_to_fabric(
     logger.info("Adding metadata links")
     
     with timeit("Adding metadata links"):
-        _add_tag_links(q, to_upload)
-    
-    logger.info(f"Tag upload completed for content {q.qhit}")
+        _add_tag_links(qwt, to_upload)
+
+    logger.info(f"Tag upload completed for content {source_qhit}")
 
     shutil.rmtree(tags_dir)
 
-def _add_tag_links(q: Content, filepaths: list[str]) -> None:
+def _add_tag_links(qwt: Content, filepaths: list[str]) -> None:
     """
     Add metadata links for uploaded tag files.
     
     Args:
-        q: Content object with write token
+        qwt: Content object with write token
         filepaths: List of local file paths that were uploaded
     """
     metadata = {}
@@ -155,5 +156,5 @@ def _add_tag_links(q: Content, filepaths: list[str]) -> None:
         logger.debug(f"Added link for {tag_type}[{idx}] -> {filename}")
     
     if metadata:
-        q.merge_metadata(metadata=metadata, metadata_subtree='video_tags')
+        qwt.merge_metadata(metadata=metadata, metadata_subtree='video_tags')
         logger.info(f"Added {len(metadata)} metadata link categories")

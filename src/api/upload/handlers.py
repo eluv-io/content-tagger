@@ -1,192 +1,34 @@
+from flask import jsonify, request, Response, current_app
+import dacite
 
-import os
-import json
-import shutil
-import tempfile
-from flask import Response, request, current_app
-from loguru import logger
-from requests.exceptions import HTTPError
+from src.api.tagging.handlers import _get_authorized_content
+from src.api.upload.format import FinalizeArgs
+from src.common.errors import BadRequestError
+from src.tags.conversion import TagConverter
+from src.tags.conversion_workflow import upload_tags_to_fabric
+from src.tags.tagstore.tagstore import FilesystemTagStore
 
-from elv_client_py import ElvClient
-from common_ml.utils.metrics import timeit
+def handle_commit(qhit: str) -> Response:
 
-from src.api.upload.format import FinalizeArgs, UploadArgs
-from src.common.errors import BadRequestError, MissingResourceError
-from src.api.auth import get_authorization, parse_qhit, get_client
-from src.tagger.fabric_tagging.tagger import Tagger
-from src.common.content import Content
-from src.tags.legacy.agg import format_video_tags, format_asset_tags
+    _ = _get_authorized_content(qhit)
 
-from config import config
-
-def handle_finalize(qhit: str) -> Response:
-    finalize_lock = current_app.config["state"]["finalize_lock"]
     try:
-        args = FinalizeArgs.from_dict(request.args)
+        args = dacite.from_dict(data=request.args, data_class=FinalizeArgs)
     except Exception as e:
         raise BadRequestError(f"Invalid request: {str(e)}")
-    with finalize_lock[args.write_token]:
-        return _finalize_internal(qhit, args, True)
     
-def handle_aggregate(qhit: str) -> Response:
-    finalize_lock = current_app.config["state"]["finalize_lock"]
-    try:
-        args = FinalizeArgs.from_dict(request.args)
-    except Exception as e:
-        raise BadRequestError(f"Invalid request: {str(e)}")
-    with finalize_lock[args.write_token]:
-        return _finalize_internal(qhit, args, False)
-    
-def handle_upload(qhit: str) -> Response:
-    uploaded_files = request.files.getlist('file')
-    if len(uploaded_files) == 0:
-        raise BadRequestError("No files in request")
-    
-    try:
-        args = UploadArgs.from_dict(request.args)
-    except Exception as e:
-        raise BadRequestError(f"Invalid request: {str(e)}")
+    qwt = _get_authorized_content(args.write_token)
 
-    to_upload = []
-    for file in uploaded_files:
-        try:
-            filedata = json.load(file.stream)
-        except json.JSONDecodeError:
-            return Response(response=json.dumps({'error': 'Invalid JSON file'}), status=400, mimetype='application/json')
-        to_upload.append((file.filename, filedata))
+    tag_converter: TagConverter = current_app.config["state"]["tag_converter"]
+    tagstore: FilesystemTagStore = current_app.config["state"]["tagger"].tagstore
 
-    filesystem_lock = current_app.config["state"]["filesystem_lock"]
+    upload_tags_to_fabric(
+        source_qhit=qhit,
+        qwt=qwt,
+        tag_converter=tag_converter,
+        tagstore=tagstore
+    )
 
-    with filesystem_lock:
-        os.makedirs(os.path.join(config["storage"]["tags"], qhit, 'external_tags'), exist_ok=True)
+    qwt.set_commit_message(message="Uploaded tags via tagger worker")
 
-        for fname, fdata in to_upload:
-            if os.path.exists(os.path.join(config["storage"]["tags"], qhit, 'external_tags', fname)):
-                logger.warning(f"File {fname} already exists, overwriting")
-            with open(os.path.join(config["storage"]["tags"], qhit, 'external_tags', fname), 'w') as f:
-                json.dump(fdata, f)
-                
-    if not args.write_token:
-        args.write_token = qhit
-
-    if args.aggregate:
-        return _finalize_internal(qhit, args, True)
-
-    return Response(response=json.dumps({'message': 'Successfully uploaded tags'}), status=200, mimetype='application/json')
-
-def _finalize_internal(qhit: str, args: FinalizeArgs, upload_local_tags = True) -> Response:
-    qwt = args.write_token
-    client = get_client(request, qwt, config["fabric"]["config_url"])
-
-    authorization = get_authorization(request)
-
-    content_args = parse_qhit(qwt)
-
-    q_source = Content(qhit, authorization)
-
-    q = Content(qwt, authorization)
-
-    filesystem_lock = current_app.config["state"]["filesystem_lock"]
-
-    tagger: Tagger = current_app.config["state"]["tagger"]
-
-    file_jobs = []
-    if upload_local_tags:
-        running_jobs = tagger.get_running_jobs(qhit)
-
-        if len(running_jobs) > 0 and not args.force:
-            raise BadRequestError(
-                "Some jobs are still running. Use `force=true` to finalize anyway."
-            )
-
-        if not os.path.exists(os.path.join(config["storage"]["tags"], qhit)):
-            raise MissingResourceError(
-                f"No tags found for {qhit}."
-            )
-
-        for stream in os.listdir(os.path.join(config["storage"]["tags"], qhit)):
-            if stream == "external_tags":
-                continue
-            stream_path = os.path.join(config["storage"]["tags"], qhit, stream)
-            for feature in os.listdir(stream_path):
-                tagspath = os.path.join(stream_path, feature)
-                tagfiles = [os.path.join(tagspath, tf) for tf in os.listdir(tagspath)]
-                num_files = len(tagfiles)
-                if not args.replace:
-                    with timeit(f"Filtering tagged files for {qhit}, {feature}, {stream}"):
-                        tagfiles = tagger._filter_tagged_files(tagfiles, q, stream, feature)
-                logger.debug(f"Upload status for {qhit}: {feature} on {stream}\nTotal media files: {num_files}, Media files to upload: {len(tagfiles)}, Media files already uploaded: {num_files - len(tagfiles)}")
-                if not tagfiles:
-                    continue
-                for tagfile in tagfiles:
-                    if stream == "image":
-                        tags_dir = "image_tags"
-                    else:
-                        tags_dir = f"video_tags/{stream}"
-                    file_jobs.append(ElvClient.FileJob(local_path=tagfile,
-                                            out_path=f"{tags_dir}/{feature}/{os.path.basename(tagfile)}",
-                                            mime_type="application/json"))
-
-        external_tags_path = os.path.join(config["storage"]["tags"], qhit, "external_tags")
-        if os.path.exists(external_tags_path):
-            local_source_tags = os.listdir(external_tags_path)
-            try:
-                remote_source_tags = client.list_files(q.qlib, path="video_tags/source_tags/user", **content_args)
-            except HTTPError:
-                logger.debug(f"No source tags found for {qwt}")
-                remote_source_tags = []
-            
-            for local_source in local_source_tags:
-                tagfile = os.path.join(config["storage"]["tags"], qhit, "external_tags", local_source)
-                file_jobs.append(ElvClient.FileJob(local_path=tagfile,
-                                                    out_path=f"video_tags/source_tags/user/{local_source}",
-                                                    mime_type="application/json"))
-                # TODO: we do need a way to make it so we can do replace=true for external tags but not on the rest. if we can improve the efficiency of this step we could just do two passes and 
-                # Let the user specify which features they want to finalize, and they could do two steps. For now, we will default to always overwriting the external tags.
-                if local_source in remote_source_tags:
-                    logger.warning(f"External tag file {local_source} already exists, overwriting")
-
-    if len(file_jobs) > 0:
-        try:
-            logger.debug(f"Uploading {len(file_jobs)} tag files")
-            with timeit("Uploading tag files"):
-                client.upload_files(library_id=q.qlib, file_jobs=file_jobs, finalize=False, **content_args)
-        except HTTPError as e:
-            return Response(json.dumps({'error': str(e), 'message': 'Please verify your authorization token has write access and the write token has not already been committed. This error can also arise if the write token has already been used to finalize tags.'}), status=403, mimetype='application/json')
-        except ValueError as e:
-            return Response(response=json.dumps({'error': str(e), 'message': 'Please verify the provided write token has not already been used to finalize tags.'}), status=400, mimetype='application/json')
-    # if no file jobs, then we just do the aggregation
-
-    tmpdir = tempfile.TemporaryDirectory(dir=config["storage"]["tmp"])
-
-    with filesystem_lock:
-        if os.path.exists(os.path.join(config["storage"]["tags"], qhit)):
-            shutil.copytree(os.path.join(config["storage"]["tags"], qhit), tmpdir.name, dirs_exist_ok=True)
-        if os.path.exists(os.path.join(tmpdir.name, 'external_tags')):
-            shutil.rmtree(os.path.join(tmpdir.name, 'external_tags'))
-
-    try:
-        with timeit("Aggregating video tags"):
-            format_video_tags(q, config["agg"]["interval"], tmpdir.name)
-        with timeit("Aggregating asset tags"):
-            format_asset_tags(q, tmpdir.name)
-    except HTTPError as e:
-        message = (
-            "Please verify your authorization token has write access and the write token has not already been committed."
-            "This error can also arise if the write token has already been used to finalize tags."
-        )
-        return Response(response=json.dumps({'error': str(e), 'message': message}), status=403, mimetype='application/json')
-    finally:
-        if "keeplasttemp" in os.environ.get("TAGGER_AGG", ""):
-            ## for debugging, keep the last temp directory
-            global last_tmpdir
-            last_tmpdir = tmpdir
-        else:
-            tmpdir.cleanup()
-
-    if not args.leave_open:
-        client.finalize_files(qwt, q.qlib)
-
-    client.set_commit_message(qwt, "uploaded/aggregated ML tags (taggerv2)", q.qlib)
-
-    return Response(response=json.dumps({'message': 'Succesfully uploaded tag files. Please finalize the write token.', 'write token': qwt}), status=200, mimetype='application/json')
+    return jsonify({"status": "finalized"})

@@ -135,7 +135,7 @@ class TagContainer:
         return self._files_to_tags(tag_files)
     
     def name(self) -> str:
-        return self.cfg.id + self.cfg.model_config.image
+        return f"{self.cfg.id}_{self.cfg.model_config.image}"
 
     def _files_to_tags(self, tagged_files: list[str]) -> list[ModelOutput]:
 

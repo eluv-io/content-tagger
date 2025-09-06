@@ -15,8 +15,10 @@ from src.tags.tagstore.tagstore import FilesystemTagStore
 from src.fetch.fetch_video import Fetcher
 from src.common.content import ContentFactory
 from src.tag_containers.containers import ContainerRegistry
+from src.tags.conversion import TagConverter
 
 from src.api.tagging.handlers import handle_tag, handle_image_tag, handle_status, handle_stop
+from src.api.upload.handlers import handle_commit
 from src.common.errors import BadRequestError, MissingResourceError
 from app_config import AppConfig
 
@@ -54,7 +56,11 @@ def configure_routes(app: Flask) -> None:
     
     @app.route('/<qhit>/stop/<feature>', methods=['POST'])
     def stop(qhit: str, feature: str) -> Response:
-        return handle_stop(qhit, feature)    
+        return handle_stop(qhit, feature)
+
+    @app.route('/<qhit>/commit', methods=['POST'])
+    def commit(qhit: str) -> Response:
+        return handle_commit(qhit)
 
     #@app.route('/<qhit>/write', methods=['POST'])
     #@app.route('/<qhit>/finalize', methods=['POST'])
@@ -81,6 +87,8 @@ def boot_state(app: Flask, cfg: AppConfig) -> None:
     )
 
     app_state["content_factory"] = ContentFactory(cfg.content)
+
+    app_state["tag_converter"] = TagConverter(cfg.tag_converter)
 
     app.config["state"] = app_state
 

@@ -66,20 +66,20 @@ written = {}
 
 llava_prompt = "This is an image from a rugby match broadcast. Do not describe what people are wearing. Focus on the action and play depicted in the image. Describe the image in 2 sentences."
 # will round robin between these models
-llava_models = ["elv-llamavision:1", "elv-llamavision:2"]
+llava_models = ["elv-llamavision:1"]
 
-assets_params = {"features": {"logo":{}, "ocr": {}}, "replace": False}
+assets_params = {"features": {"logo":{}, "ocr": {}, "llava": {"model":{"model":"elv-llamavision:1"}}, "caption": {}, "asr": {}, "shot": {}}, "replace": True}
 
 video_params = {
     "replace": False,
     "features": {
-        "asr": {"stream": "audio" },
-        "ocr": {},
+        "asr": {"stream": "stereo"},
+        #"ocr": {},
         "shot": {},
-        "llava": {"model": {"fps": 0.33, "prompt": llava_prompt} },
-        "caption": {},
-        "celeb": {},
-        "logo": {}
+        "llava": {"model": {"fps": 0.5, "prompt": "WHAT IS GOING ON"} },
+        "caption": {"model": {"fps": 0.33}},
+        #"celeb": {},
+        #"logo": {}
     }
 }
     
@@ -104,7 +104,7 @@ def get_status(qhit: str, auth: str):
 
 def tag(contents: list, auth: str, assets: bool, params: dict, start_time: float = None, end_time: float = None):
     
-    llama_models = ["elv-llamavision:1", "elv-llamavision:2"]
+    llama_models = ["elv-llamavision:1"]
     for i, qhit in enumerate(contents):
         if assets:
             url = f"{server}/{qhit}/image_tag"
@@ -155,8 +155,8 @@ def response_force_dict(resp):
 def write(qhit: str, config: str, do_commit: bool, force = False, leave_open = False):
     auth_token = get_auth(config, qhit)
     write_token = get_write_token(qhit, config)
-    write_url = f"{server}/{qhit}/finalize?authorization={auth_token}&force={force}"
-    resp = requests.post(write_url, params={"write_token": write_token, "replace": "true", "leave_open": leave_open})
+    write_url = f"{server}/{qhit}/commit?authorization={auth_token}"
+    resp = requests.post(write_url, params={"write_token": write_token})
     respdict = response_force_dict(resp)
     print(respdict)
     if do_commit and "error" not in respdict:
@@ -265,8 +265,8 @@ def main():
 
     contents = contents + args.iq
         
-    models = list_models()
-    print("models:" , models)
+    #models = list_models()
+    #print("models:" , models)
     
     print("getting auth...")
     auth = get_auth(args.config, contents[0])

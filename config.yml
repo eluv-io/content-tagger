@@ -6,7 +6,7 @@ tagstore:
   base_dir: data/tags
 
 tag_converter:
-  mapping:
+  name_mapping:
     asr: Speech to Text
     caption: Object Detection
     celeb: Celebrity Detection
@@ -16,6 +16,10 @@ tag_converter:
     shot: Shot Detection
     llava: LLAVA Caption
   interval: 10
+  coalesce_tracks: 
+    - asr
+    - french_asr
+  max_sentence_words: 250
 
 system:
   resources: 
@@ -87,15 +91,3 @@ container_registry:
       resources: {
         "gpu": 1
       }
-
-conversion:
-  interval: 10
-  ## if a feature is in this list, don't allow more than one tag per shot (in shot tags)
-  ## (if there are more, then the tag with the greatest duration will be kept)
-  ## this is to avoid errors sorting on the field
-  single_shot_tag:
-    - music
-  coalesce_tracks: 
-    - asr
-    - french_asr
-  max_sentence_words: 250
