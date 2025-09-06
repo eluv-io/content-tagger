@@ -103,25 +103,29 @@ def test_get_latest_tags_complex_deduplication():
     
     # Create tags for different sources and jobs
     tags = [
-        # job1_old - object_detection for part_0.mp4 and part_1.mp4 (should be shadowed for part_0 only)
-        Tag(0, 1000, "old_person", {"frame_tags": {"500": {"box": [10, 20, 30, 40], "confidence": 0.8}}}, 
+        Tag(0, 1000, "old_person", {"frame_tags": {"500": {"box": {"x1": 10, "y1": 20, "x2": 30, "y2": 40}, "confidence": 0.8}}}, 
             "part_0.mp4", "job1_old"),
+        Tag(2000, 3000, "old_person_2", {"frame_tags": {"2500": {"box": {"x1": 12, "y1": 22, "x2": 32, "y2": 42}, "confidence": 0.7}}}, 
+            "part_0.mp4", "job1_old"),  # SECOND tag on same source from same job
         Tag(5000, 6000, "old_car", {}, "part_1.mp4", "job1_old"),
         
-        # job2_old - ASR for part_0.mp4 (should be completely shadowed)
-        Tag(0, 2000, "old speech", {}, "part_0.mp4", "job2_old"),
+        Tag(0, 1000, "old speech one", {}, "part_0.mp4", "job2_old"),
+        Tag(1000, 2000, "old speech two", {}, "part_0.mp4", "job2_old"),  # SECOND ASR tag on same source
         
-        # job3_new - object_detection for part_0.mp4 only (shadows job1_old for this source)
-        Tag(0, 1000, "new_person", {"frame_tags": {"500": {"box": [15, 25, 35, 45], "confidence": 0.9}}}, 
+        Tag(0, 1000, "new_person", {"frame_tags": {"500": {"box": {"x1": 15, "y1": 25, "x2": 35, "y2": 45}, "confidence": 0.9}}}, 
             "part_0.mp4", "job3_new"),
+        Tag(1500, 2500, "new_person_2", {"frame_tags": {"2000": {"box": {"x1": 17, "y1": 27, "x2": 37, "y2": 47}, "confidence": 0.85}}}, 
+            "part_0.mp4", "job3_new"),  # SECOND tag on same source from newer job
         
-        # job4_face - face_detection for part_0.mp4 (new track, no shadowing)
-        Tag(2000, 3000, "face_detected", {"frame_tags": {"2500": {"box": [50, 60, 70, 80], "confidence": 0.95}}}, 
+        Tag(2000, 3000, "face_detected", {"frame_tags": {"2500": {"box": {"x1": 50, "y1": 60, "x2": 70, "y2": 80}, "confidence": 0.95}}}, 
             "part_0.mp4", "job4_face"),
+        Tag(3500, 4500, "face_detected_2", {"frame_tags": {"4000": {"box": {"x1": 52, "y1": 62, "x2": 72, "y2": 82}, "confidence": 0.92}}}, 
+            "part_0.mp4", "job4_face"),  # SECOND face tag on same source
         
-        # job5_asr_new - ASR for part_0.mp4 and part_1.mp4 (shadows job2_old)
-        Tag(0, 2000, "new speech", {}, "part_0.mp4", "job5_asr_new"),
-        Tag(10000, 12000, "more speech", {}, "part_1.mp4", "job5_asr_new"),
+        Tag(0, 1000, "new speech one", {}, "part_0.mp4", "job5_asr_new"),
+        Tag(1000, 2000, "new speech two", {}, "part_0.mp4", "job5_asr_new"),  # SECOND tag on part_0.mp4
+        Tag(10000, 11000, "more speech one", {}, "part_1.mp4", "job5_asr_new"),
+        Tag(11000, 12000, "more speech two", {}, "part_1.mp4", "job5_asr_new"),  # SECOND tag on part_1.mp4
     ]
     
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -144,41 +148,53 @@ def test_get_latest_tags_complex_deduplication():
             # Sort by job timestamp to make assertions easier
             result_by_job = {item.job.id: item for item in result}
             
-            # job5_asr_new (newest ASR) - should have both tags
+            # job5_asr_new (newest ASR) - should have ALL 4 tags (2 on each source)
             job5_tags = result_by_job["job5_asr_new"]
-            assert len(job5_tags.tags) == 2
-            assert {tag.text for tag in job5_tags.tags} == {"new speech", "more speech"}
+            assert len(job5_tags.tags) == 4  # Changed from 2 to 4
+            expected_texts = {"new speech one", "new speech two", "more speech one", "more speech two"}
+            assert {tag.text for tag in job5_tags.tags} == expected_texts
             assert {tag.source for tag in job5_tags.tags} == {"part_0.mp4", "part_1.mp4"}
             
-            # job3_new (newer object_detection) - should have its tag for part_0.mp4
+            # Check that we have 2 tags per source
+            part0_tags = [tag for tag in job5_tags.tags if tag.source == "part_0.mp4"]
+            part1_tags = [tag for tag in job5_tags.tags if tag.source == "part_1.mp4"]
+            assert len(part0_tags) == 2, "Should have 2 tags on part_0.mp4"
+            assert len(part1_tags) == 2, "Should have 2 tags on part_1.mp4"
+            
+            # job3_new (newer object_detection) - should have BOTH tags for part_0.mp4
             job3_tags = result_by_job["job3_new"]
-            assert len(job3_tags.tags) == 1
-            assert job3_tags.tags[0].text == "new_person"
-            assert job3_tags.tags[0].source == "part_0.mp4"
+            assert len(job3_tags.tags) == 2  # Changed from 1 to 2
+            expected_obj_texts = {"new_person", "new_person_2"}
+            assert {tag.text for tag in job3_tags.tags} == expected_obj_texts
+            assert all(tag.source == "part_0.mp4" for tag in job3_tags.tags)
             
-            # job4_face (face_detection) - should have its tag (no conflicts)
+            # job4_face (face_detection) - should have BOTH face tags (no conflicts)
             job4_tags = result_by_job["job4_face"] 
-            assert len(job4_tags.tags) == 1
-            assert job4_tags.tags[0].text == "face_detected"
-            assert job4_tags.tags[0].source == "part_0.mp4"
+            assert len(job4_tags.tags) == 2  # Changed from 1 to 2
+            expected_face_texts = {"face_detected", "face_detected_2"}
+            assert {tag.text for tag in job4_tags.tags} == expected_face_texts
+            assert all(tag.source == "part_0.mp4" for tag in job4_tags.tags)
             
-            # job1_old (old object_detection) - should only have part_1.mp4 tag (part_0.mp4 shadowed by job3)
+            # job1_old (old object_detection) - should only have part_1.mp4 tag 
+            # (part_0.mp4 tags shadowed by job3, but part_1.mp4 tag preserved)
             job1_tags = result_by_job["job1_old"]
-            assert len(job1_tags.tags) == 1
+            assert len(job1_tags.tags) == 1  # Only part_1.mp4 tag remains
             assert job1_tags.tags[0].text == "old_car"
             assert job1_tags.tags[0].source == "part_1.mp4"
             
-            # job2_old (old ASR) - should have no tags (completely shadowed by job5)
             job2_tags = result_by_job["job2_old"]
             assert len(job2_tags.tags) == 0
             
+            total_tags = sum(len(item.tags) for item in result)
+            assert total_tags == 9, f"Expected 9 total tags, got {total_tags}"  # 4 + 2 + 2 + 1 + 0
+            
             # Verify the source+track combinations that should be present
             expected_combinations = {
-                ("part_0.mp4", "object_detection"),  # From job3_new (shadows job1_old)
-                ("part_1.mp4", "object_detection"),  # From job1_old (no shadowing)
-                ("part_0.mp4", "face_detection"),    # From job4_face (unique track)
-                ("part_0.mp4", "asr"),               # From job5_asr_new (shadows job2_old)
-                ("part_1.mp4", "asr"),               # From job5_asr_new (unique)
+                ("part_0.mp4", "object_detection"),  # From job3_new (shadows job1_old) - 2 tags
+                ("part_1.mp4", "object_detection"),  # From job1_old (no shadowing) - 1 tag
+                ("part_0.mp4", "face_detection"),    # From job4_face (unique track) - 2 tags
+                ("part_0.mp4", "asr"),               # From job5_asr_new (shadows job2_old) - 2 tags
+                ("part_1.mp4", "asr"),               # From job5_asr_new (unique) - 2 tags
             }
             
             actual_combinations = set()
@@ -325,13 +341,13 @@ def test_get_overlays_basic_conversion(tag_converter):
     obj_tags = [
         Tag(0, 5000, "person", {
             "frame_tags": {
-                "1000": {"box": [10, 20, 30, 40], "confidence": 0.9},
-                "3000": {"box": [15, 25, 35, 45], "confidence": 0.8}
+                "1000": {"box": {"x1": 10, "y1": 20, "x2": 30, "y2": 40}, "confidence": 0.9},
+                "3000": {"box": {"x1": 15, "y1": 25, "x2": 35, "y2": 45}, "confidence": 0.8}
             }
         }, "part_0.mp4", "job1"),
         Tag(5000, 10000, "car", {
             "frame_tags": {
-                "7000": {"box": [50, 60, 70, 80], "confidence": 0.95}
+                "7000": {"box": {"x1": 50, "y1": 60, "x2": 70, "y2": 80}, "confidence": 0.95}
             }
         }, "part_0.mp4", "job1")
     ]
@@ -353,7 +369,7 @@ def test_get_overlays_basic_conversion(tag_converter):
     
     frame_tag = frame_1000["object_detection"][0]
     assert frame_tag.text == "person"
-    assert frame_tag.box == [10, 20, 30, 40]
+    assert frame_tag.box == {"x1": 10, "y1": 20, "x2": 30, "y2": 40}
     assert frame_tag.confidence == 0.9
     
     # Check frame 7000
@@ -363,7 +379,7 @@ def test_get_overlays_basic_conversion(tag_converter):
     
     frame_tag = frame_7000["object_detection"][0]
     assert frame_tag.text == "car"
-    assert frame_tag.box == [50, 60, 70, 80]
+    assert frame_tag.box == {"x1": 50, "y1": 60, "x2": 70, "y2": 80}
     assert frame_tag.confidence == 0.95
 
 def test_get_overlays_multiple_features(tag_converter):
@@ -375,7 +391,7 @@ def test_get_overlays_multiple_features(tag_converter):
     obj_tags = [
         Tag(0, 5000, "person", {
             "frame_tags": {
-                "1000": {"box": [10, 20, 30, 40], "confidence": 0.9}
+                "1000": {"box": {"x1": 10, "y1": 20, "x2": 30, "y2": 40}, "confidence": 0.9}
             }
         }, "part_0.mp4", "job1")
     ]
@@ -383,7 +399,7 @@ def test_get_overlays_multiple_features(tag_converter):
     face_tags = [
         Tag(0, 5000, "face", {
             "frame_tags": {
-                "1000": {"box": [12, 22, 28, 38], "confidence": 0.85}
+                "1000": {"box": {"x1": 12, "y1": 22, "x2": 28, "y2": 38}, "confidence": 0.85}
             }
         }, "part_0.mp4", "job2")
     ]
@@ -403,12 +419,12 @@ def test_get_overlays_multiple_features(tag_converter):
     # Check object detection
     obj_tag = frame_1000["object_detection"][0]
     assert obj_tag.text == "person"
-    assert obj_tag.box == [10, 20, 30, 40]
-    
+    assert obj_tag.box == {"x1": 10, "y1": 20, "x2": 30, "y2": 40}
+
     # Check face detection
     face_tag = frame_1000["face_detection"][0]
     assert face_tag.text == "face"
-    assert face_tag.box == [12, 22, 28, 38]
+    assert face_tag.box == {"x1": 12, "y1": 22, "x2": 28, "y2": 38}
 
 def test_get_overlays_empty_input(tag_converter):
     """Test overlay conversion with no frame tags"""

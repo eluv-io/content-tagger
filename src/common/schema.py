@@ -1,9 +1,8 @@
 from dataclasses import dataclass
 
-# not part of the db
 @dataclass
 class FrameTag:
-    frame_idx: int
-    box: list[int]
-    text: str
+    frame_idx: str
     confidence: float
+    box: dict
+    text: str

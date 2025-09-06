@@ -39,8 +39,9 @@ def get_latest_tags_for_content(qhit: str, ts: FilesystemTagStore) -> list[JobWi
         for tag in ts.get_tags(job.id):
             if (tag.source, job.track) in source_features_tagged:
                 continue
-            source_features_tagged.add((tag.source, job.track))
             new_tags.append(tag)
+
+        source_features_tagged.update((tag.source, job.track) for tag in new_tags)
 
         tags.append(JobWithTags(job=job, tags=new_tags))
 
@@ -56,7 +57,7 @@ class TagConverter:
 
     def split_tags(self, job_tags: list[JobWithTags]) -> list[list[JobWithTags]]:
         """Split based on start time"""
-        num_buckets = max(1, int((max((tag.end_time for jt in job_tags for tag in jt.tags), default=0) / (self.cfg.interval*60*1000))))
+        num_buckets = int((max((tag.start_time for jt in job_tags for tag in jt.tags), default=0) / (self.cfg.interval*60*1000)) + 1)
         buckets: list[list[JobWithTags]] = [[] for _ in range(num_buckets)]
         for jt in job_tags:
             if not jt.tags:

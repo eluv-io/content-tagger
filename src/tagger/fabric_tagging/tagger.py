@@ -126,7 +126,7 @@ class FabricTagger:
 
     def _end_job(self, jobid: JobID, status: Literal["Stopped", "Failed", "Completed"], error: Exception | None) -> None:
         if error:
-            logger.exception(error)
+            logger.opt(exception=error).error(f"Job {jobid} ended with error")
         request = StopRequest(qhit=jobid.qhit, feature=jobid.feature, stream=jobid.stream, status=status)
         return self._submit(request)
 

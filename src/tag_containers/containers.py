@@ -291,7 +291,7 @@ class TagContainer:
                         overlapping_tags.append(FrameTag(
                             frame_idx=fidx,
                             confidence=ftag.get("confidence", 0.0),
-                            box=ftag.get("box", []),
+                            box=ftag.get("box", None),
                             text=ftag.get("text", "")
                         ))
         return overlapping_tags

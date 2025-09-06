@@ -1,60 +1,159 @@
-
+import os
+import json
+import tempfile
+import shutil
 from loguru import logger
-
+from elv_client_py import ElvClient
+from common_ml.utils.metrics import timeit
 from src.common.content import Content
 from src.tags.tagstore.tagstore import FilesystemTagStore
 from src.tags.conversion import TagConverter
+from src.tags.conversion import get_latest_tags_for_content
 
-def commit(self, q: Content, converter: TagConverter, tagstore: FilesystemTagStore) -> None:
+def upload_tags_to_fabric(
+    q: Content, 
+    tagstore: FilesystemTagStore, 
+    tag_converter: TagConverter
+) -> None:
     """
-    Format and upload tags for a content object using tags stored in the tagstore.
+    Complete workflow to convert tagstore tags to fabric format and upload them.
     
     Args:
         q: Content object with write token
-        interval: Interval in minutes to bucket the formatted results (default: 10)
+        tagstore: FilesystemTagStore instance
+        converter_config: Configuration for tag conversion
     """
-    logger.info(f"Starting commit for content {q.qhit}")
     
-    # Get tags for this content
-    tags = self._get_latest_tags_for_content(q.qhit)
-    if not tags:
-        logger.info(f"No tags found for content {q.qhit}")
-        return
-
-    # Parse tags into video and frame formats
-    all_video_tags, all_frame_tags = self._parse_tags(tags)
+    logger.info(f"Starting tag upload for content {q.qhit}")
     
-    if not all_video_tags:
-        logger.info(f"No tags found for content {q.qhit}")
+    # Step 1: Extract tags and jobs from tagstore
+    logger.info("Extracting latest tags from tagstore")
+    job_tags = get_latest_tags_for_content(q.qhit, tagstore)
+    
+    if not job_tags:
+        logger.warning(f"No tags found for content {q.qhit}")
         return
     
-    # Process tags
-    formatted_tracks, overlays = self._format_tags_for_upload(
-        all_video_tags, all_frame_tags, interval
-    )
+    logger.info(f"Found {len(job_tags)} jobs with tags")
     
-    # Upload formatted tags
-    self._upload_formatted_tags(q, formatted_tracks, overlays)
+    # Step 3: Split into time-based buckets
+    bucketed_job_tags = tag_converter.split_tags(job_tags)
     
-    logger.info(f"Successfully committed tags for content {q.qhit}")
+    logger.info(f"Created {len(bucketed_job_tags)} time buckets")
+    
+    # Step 4: Convert each bucket and prepare upload files
+    to_upload = []
 
-def _add_links(self, q: Content, filenames: list[str]) -> None:
-    """Add metadata links for uploaded tag files."""
-    data = {}
+    tags_dir = tempfile.mkdtemp()
+
+    # Process tracks (metadata tags)
+    for i, bucket in enumerate(bucketed_job_tags):
+        if not any(jt.tags for jt in bucket):  # Skip empty buckets
+            continue
+            
+        logger.debug(f"Processing track bucket {i}")
+        
+        # Convert to TrackCollection and dump
+        track_collection = tag_converter.get_tracks(bucket)
+        track_json = tag_converter.dump_tracks(track_collection)
+
+        # Write to file
+        track_filename = f"video-tags-tracks-{i:04d}.json"
+        track_filepath = os.path.join(tags_dir, track_filename)
+        with open(track_filepath, 'w') as f:
+            json.dump(track_json, f)
+        
+        to_upload.append(track_filepath)
+        logger.debug(f"Created track file: {track_filename}")
     
-    for filename in filenames:
+    # Process overlays (frame-level tags)
+    for i, bucket in enumerate(bucketed_job_tags):
+        if not any(jt.tags for jt in bucket):  # Skip empty buckets
+            continue
+            
+        logger.debug(f"Processing overlay bucket {i}")
+        
+        # Convert to Overlay and dump
+        overlay = tag_converter.get_overlays(bucket)
+
+        if not overlay:  # Skip if no frame-level tags
+            continue
+
+        overlay_json = tag_converter.dump_overlay(overlay)
+        
+        # Write to file
+        overlay_filename = f"video-tags-overlay-{i:04d}.json"
+        overlay_filepath = os.path.join(tags_dir, overlay_filename)
+
+        with open(overlay_filepath, 'w') as f:
+            json.dump(overlay_json, f)
+        
+        to_upload.append(overlay_filepath)
+        logger.debug(f"Created overlay file: {overlay_filename}")
+    
+    if not to_upload:
+        logger.warning("No tag files to upload")
+        return
+    
+    logger.info(f"Prepared {len(to_upload)} files for upload")
+    
+    # Step 5: Upload files to fabric
+    logger.info("Uploading tag files to fabric")
+    
+    file_jobs = [
+        ElvClient.FileJob(
+            local_path=filepath, 
+            out_path=f"video_tags/{os.path.basename(filepath)}", 
+            mime_type="application/json"
+        ) 
+        for filepath in to_upload
+    ]
+   
+    with timeit("Uploading tag files"):
+        q.upload_files(file_jobs=file_jobs, finalize=False)
+    
+    logger.info("Tag files uploaded successfully")
+    
+    # Step 6: Add metadata links
+    logger.info("Adding metadata links")
+    
+    with timeit("Adding metadata links"):
+        _add_tag_links(q, to_upload)
+    
+    logger.info(f"Tag upload completed for content {q.qhit}")
+
+    shutil.rmtree(tags_dir)
+
+def _add_tag_links(q: Content, filepaths: list[str]) -> None:
+    """
+    Add metadata links for uploaded tag files.
+    
+    Args:
+        q: Content object with write token
+        filepaths: List of local file paths that were uploaded
+    """
+    metadata = {}
+    
+    for filepath in filepaths:
+        filename = os.path.basename(filepath)
+        
         if 'video-tags-tracks' in filename:
             tag_type = 'metadata_tags'
         elif 'video-tags-overlay' in filename:
             tag_type = 'overlay_tags'
         else:
+            logger.warning(f"Unknown tag file type: {filename}")
             continue
         
-        if tag_type not in data:
-            data[tag_type] = {}
-
+        if tag_type not in metadata:
+            metadata[tag_type] = {}
+        
+        # Extract index from filename (e.g., "0001" from "video-tags-tracks-0001.json")
         idx = ''.join([char for char in filename if char.isdigit()])
-        data[tag_type][idx] = {"/": f"./files/video_tags/{filename}"}
+        
+        metadata[tag_type][idx] = {"/": f"./files/video_tags/{filename}"}
+        logger.debug(f"Added link for {tag_type}[{idx}] -> {filename}")
     
-    if data:
-        q.merge_metadata(metadata=data, metadata_subtree='video_tags')
+    if metadata:
+        q.merge_metadata(metadata=metadata, metadata_subtree='video_tags')
+        logger.info(f"Added {len(metadata)} metadata link categories")
