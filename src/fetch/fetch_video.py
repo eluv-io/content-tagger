@@ -63,11 +63,33 @@ class Fetcher:
         """Fetches metadata for a stream based on content type."""
         if self._is_live(q):
             return self._fetch_livestream_metadata(q, stream_name)
-        elif self._is_legacy_vod(q):
+        
+        if stream_name == "audio":
+            # NOTE: kinda janky logic but stream_name "audio" is special-cased to mean "default audio stream"
+            logger.info(f"Finding default audio stream for {q.qhit}")
+            stream_name = self._find_default_audio_stream(q)
+
+        if self._is_legacy_vod(q):
             return self._fetch_legacy_vod_metadata(q, stream_name)
         else:
             return self._fetch_vod_metadata(q, stream_name)
+        
+    def _find_default_audio_stream(self, q: Content) -> str:
+        streams = q.content_object_metadata(
+            metadata_subtree="offerings/default/media_struct/streams",
+            resolve_links=False,
+        )
 
+        assert isinstance(streams, dict)
+
+        for stream_name, stream_info in streams.items():
+            if stream_info.get("codec_type") == "audio" and \
+                stream_info.get("language") == "en" and \
+                stream_info.get("channels") == 2:
+                return stream_name
+            
+        return "audio"
+                
     def _fetch_vod_metadata(self, q: Content, stream_name: str) -> StreamMetadata:
         """Fetches metadata for modern VOD content."""
         try:
@@ -77,6 +99,8 @@ class Fetcher:
         except HTTPError as e:
             raise HTTPError(f"Failed to retrieve transcodes for {q.qhit}") from e
 
+        assert isinstance(transcodes, dict)
+
         try:
             streams = q.content_object_metadata(
                 metadata_subtree="offerings/default/playout/streams",
@@ -84,6 +108,8 @@ class Fetcher:
             )
         except HTTPError as e:
             raise HTTPError(f"Failed to retrieve streams for {q.qhit}") from e
+        
+        assert isinstance(streams, dict)
 
         if stream_name not in streams:
             raise MissingResourceError(f"Stream {stream_name} not found in {q.qhit}")
@@ -134,6 +160,8 @@ class Fetcher:
             )
         except HTTPError as e:
             raise HTTPError(f"Failed to retrieve streams for {q.qhit}") from e
+        
+        assert isinstance(streams, dict)
 
         if stream_name not in streams:
             raise MissingResourceError(f"Stream {stream_name} not found in {q.qhit}")
@@ -173,6 +201,8 @@ class Fetcher:
             raise HTTPError(
                 f"Failed to retrieve periods for live recording {q.qhit}"
             ) from e
+
+        assert isinstance(periods, list)
 
         if len(periods) == 0:
             raise MissingResourceError(f"Live recording {q.qhit} is empty")
@@ -218,6 +248,8 @@ class Fetcher:
                 raise HTTPError(
                     f"Failed to retrieve live stream metadata from {q.qhit}"
                 ) from e
+            
+            assert isinstance(live_stream_info, list)
 
             video_stream_info = None
             for stream_info in live_stream_info:
@@ -416,6 +448,7 @@ class Fetcher:
 
         if scope.assets is None:
             assets_meta = q.content_object_metadata(metadata_subtree='assets')
+            assert isinstance(assets_meta, dict)
             assets_meta = list(assets_meta.values())
             assets = []
             for ameta in assets_meta:

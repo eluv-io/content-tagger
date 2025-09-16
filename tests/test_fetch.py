@@ -178,7 +178,7 @@ def test_download_with_replace_true(
 
     # audio instead
     req = DownloadRequest(
-        stream_name="stereo",
+        stream_name="audio",
         scope=VideoScope(
             start_time=0,
             end_time=60
@@ -334,3 +334,11 @@ def test_fetch_assets_with_preserve_track(
         # tagged before
         assert assetname not in assets_to_tag
         assert assetname in untagged_assets
+
+def test_find_default_audio_stream(
+    fetcher: Fetcher,
+    vod_content: Content,
+):
+    result = fetcher._find_default_audio_stream(vod_content)
+
+    assert result == "stereo"
