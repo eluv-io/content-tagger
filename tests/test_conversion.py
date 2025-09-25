@@ -19,6 +19,7 @@ def tag_converter():
             "asr": "Speech to Text",
             "shot": "Shot Detection"
         },
+        single_tag_tracks=[],
         coalesce_tracks=["asr"],
         max_sentence_words=200
     )
@@ -40,7 +41,9 @@ def sample_job_tags():
     obj_tags = [
         Tag(0, 5000, "person", {}, "part_0.mp4", "job1"),
         Tag(10000, 15000, "car", {}, "part_0.mp4", "job1"),
-        Tag(20000, 25000, "person", {}, "part_0.mp4", "job1")
+        Tag(20000, 25000, "person", {}, "part_0.mp4", "job1"),
+        Tag(26000, 29000, "dog", {}, "part_0.mp4", "job1"),
+        Tag(30000, 35000, "bicycle", {}, "part_1.mp4", "job1")
     ]
     
     # ASR job
@@ -72,7 +75,8 @@ def sample_job_tags():
     shot_tags = [
         Tag(0, 10000, "", {}, "part_0.mp4", "job3"),   # Shot 1
         Tag(10000, 20000, "", {}, "part_0.mp4", "job3"), # Shot 2
-        Tag(20000, 30000, "", {}, "part_0.mp4", "job3")  # Shot 3
+        Tag(20000, 30000, "", {}, "part_0.mp4", "job3"),  # Shot 3
+        Tag(30000, 40000, "", {}, "part_1.mp4", "job3")  # Continutation of Shot 3
     ]
     
     return [
@@ -220,7 +224,7 @@ def test_get_tracks_basic_conversion(tag_converter, sample_job_tags):
     
     # Check object detection track
     obj_track = track_collection.tracks["object_detection"]
-    assert len(obj_track) == 3
+    assert len(obj_track) == 5
     assert obj_track[0].start_time == 0
     assert obj_track[0].end_time == 5000
     assert obj_track[0].text == "person"
@@ -249,6 +253,13 @@ def test_get_tracks_shot_aggregation(tag_converter, sample_job_tags):
     assert "object_detection" in first_shot.tags
     assert len(first_shot.tags["object_detection"]) == 1  # 1 person tag in first shot
     assert first_shot.tags["object_detection"][0].text == "person"
+
+    # Last shot should contain two object tags and begin at 20s and end at 40s
+    last_shot = shot_agg_tags[-1]
+    assert last_shot.start_time == 20000
+    assert last_shot.end_time == 40000
+    assert "object_detection" in last_shot.tags
+    assert len(last_shot.tags["object_detection"]) == 3
 
 def test_get_tracks_asr_auto_captions(tag_converter, sample_job_tags):
     """Test that ASR creates auto_captions track"""
@@ -289,7 +300,7 @@ def test_dump_tracks_basic_structure(tag_converter, sample_job_tags):
     obj_detection = metadata_tags["object_detection"]
     assert obj_detection["label"] == "Object Detection"
     assert "tags" in obj_detection
-    assert len(obj_detection["tags"]) == 3
+    assert len(obj_detection["tags"]) == 5
 
 def test_dump_tracks_aggregated_tags(tag_converter, sample_job_tags):
     """Test that aggregated tags are formatted correctly"""

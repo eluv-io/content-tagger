@@ -256,9 +256,9 @@ class FilesystemTagStore:
         
         if not os.path.exists(job_dir):
             return []
-        
+
         all_tags = []
-        
+
         # Find all .json files that aren't jobmetadata.json
         for filename in os.listdir(job_dir):
             if filename.endswith('.json') and filename != 'jobmetadata.json':

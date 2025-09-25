@@ -12,6 +12,7 @@ class TagConverterConfig:
     interval: int
     name_mapping: dict[str, str]
     coalesce_tracks: list[str]
+    single_tag_tracks: list[str]
     max_sentence_words: int
 
 @dataclass
@@ -19,6 +20,7 @@ class JobWithTags:
     job: UploadJob
     tags: list[Tag]
 
+# TODO: this should be the default behavior of /{qid}/tags
 def get_latest_tags_for_content(qhit: str, ts: FilesystemTagStore) -> list[JobWithTags]:
     """Get tags from the latest job for each source+track pair for the given content."""
     job_ids = ts.find_jobs(qhit=qhit)
@@ -84,9 +86,10 @@ class TagConverter:
                 
                 vtags[feature].append(VideoTag(tag.start_time, tag.end_time, tag.text))
 
-        shot_intervals = []
-        if "shot" in vtags:
-            shot_intervals = [(tag.start_time, tag.end_time) for tag in vtags["shot"]]
+        shot_jobs = [jt for jt in job_tags if jt.job.track == "shot"]
+        assert len(shot_jobs) <= 1, "Multiple shot detection jobs found"
+
+        shot_intervals = self._get_shot_intervals(shot_jobs[0].tags if shot_jobs else [])
 
         # Aggregate tags by shot intervals if available
         aggshot_tags = {}
@@ -172,12 +175,26 @@ class TagConverter:
             for feat in self.cfg.coalesce_tracks:
                 agg_tag.coalesce(feat)
 
-        # TODO: add back
-        #for agg_tag in result:
-        #    for feat in config["agg"]["single_shot_tag"]:
-        #        agg_tag.keep_longest(feat)
+        for agg_tag in result:
+            for feat in self.cfg.single_tag_tracks:
+                agg_tag.keep_longest(feat)
         
         return result
+    
+    def _get_shot_intervals(self, shot_tags: list[Tag]) -> list[tuple[int, int]]:
+        if not shot_tags:
+            return []
+        intvs = []
+        shot_tags = sorted(shot_tags, key=lambda x: x.start_time)
+        last_source = shot_tags[0].source
+        for tag in shot_tags:
+            if tag.source == last_source:
+                intvs.append((tag.start_time, tag.end_time))
+            else:
+                # merge intervals from previous source
+                intvs[-1] = (intvs[-1][0], tag.end_time)
+                last_source = tag.source
+        return intvs
 
     def _get_sentence_intervals(self, tags: list[VideoTag]) -> list[tuple[int, int]]:
         sentence_delimiters = ['.', '?', '!']
@@ -250,7 +267,7 @@ class TagConverter:
                 result["metadata_tags"][track] = {"label": label, "tags": []}
                 
             for vtag in video_tags:
-                entry = {
+                entry: dict[str, object] = {
                     "start_time": vtag.start_time,
                     "end_time": vtag.end_time,
                 }

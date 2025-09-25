@@ -48,6 +48,7 @@ def test_config(test_dir):
         tag_converter=TagConverterConfig(
             interval=10,
             coalesce_tracks=[],
+            single_tag_tracks=[],
             name_mapping={},
             max_sentence_words=100
         ),

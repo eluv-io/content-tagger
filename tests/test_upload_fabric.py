@@ -11,10 +11,9 @@ from src.tags.tagstore.tagstore import FilesystemTagStore
 from src.tags.tagstore.types import TagStoreConfig, Tag
 from src.common.content import Content, ContentConfig, ContentFactory
 
-# Load environment variables from .env file
 load_dotenv()
 
-TEST_QHIT = "iq__3C58dDYxsn5KKSWGYrfYr44ykJRm"  # Use your test content
+TEST_QHIT = "iq__3C58dDYxsn5KKSWGYrfYr44ykJRm"
 
 @pytest.fixture
 def temp_dir():
@@ -40,6 +39,7 @@ def tag_converter() -> TagConverter:
             "asr": "Speech to Text",
             "shot": "Shot Detection"
         },
+        single_tag_tracks=[],
         coalesce_tracks=["asr"],
         max_sentence_words=10
     )

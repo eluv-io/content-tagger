@@ -19,6 +19,8 @@ tag_converter:
   coalesce_tracks: 
     - asr
     - french_asr
+  single_tag_tracks:
+    - music_detection
   max_sentence_words: 250
 
 system:
