@@ -197,6 +197,7 @@ class TagConverter:
         return intvs
 
     def _get_sentence_intervals(self, tags: list[VideoTag]) -> list[tuple[int, int]]:
+        tags = sorted(tags, key=lambda x: x.start_time)
         sentence_delimiters = ['.', '?', '!']
         intervals = []
         if len(tags) == 0:

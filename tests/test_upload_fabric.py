@@ -99,9 +99,9 @@ def test_upload_tags_to_fabric_full_workflow(
     ]
     
     asr_tags_bucket1 = [
+        Tag(3001, 6000, "This is a test.", {}, "part_0.mp4", asr_job.id),
         Tag(1, 3000, "Hello world", {}, "part_0.mp4", asr_job.id),
-        Tag(3000, 6000, "This is a test.", {}, "part_0.mp4", asr_job.id),
-        Tag(6000, 9000, "How are you?", {}, "part_0.mp4", asr_job.id)
+        Tag(6001, 9000, "How are you?", {}, "part_0.mp4", asr_job.id)
     ]
     
     shot_tags_bucket1 = [
@@ -187,7 +187,7 @@ def test_upload_tags_to_fabric_full_workflow(
             # Verify ASR tags (converted to auto_captions)
             if "auto_captions" in metadata_tracks:
                 asr_tags = metadata_tracks["auto_captions"]["tags"]
-                assert len(asr_tags) > 0, "Should have auto caption tags"
+                assert len(asr_tags) == 2, "Should have auto caption tags"
         
         elif bucket_idx == "0001":  # Second bucket
             assert "object_detection" in metadata_tracks, "Second bucket should have object_detection"
