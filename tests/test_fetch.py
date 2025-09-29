@@ -7,10 +7,9 @@ from typing import Generator
 
 from src.fetch.fetch_video import Fetcher
 from src.fetch.types import AssetScope, DownloadRequest, FetcherConfig, VideoScope
-from src.tags.tagstore.tagstore import FilesystemTagStore, Tag
+from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore, Tag
 from src.common.content import Content, ContentConfig, ContentFactory
 from src.common.errors import MissingResourceError
-from src.tags.tagstore.types import TagStoreConfig
 
 # Load environment variables from .env file
 load_dotenv()
@@ -30,7 +29,7 @@ def temp_dir() -> Generator[str, None, None]:
 @pytest.fixture
 def tag_store(temp_dir: str) -> FilesystemTagStore:
     """Create a FilesystemTagStore for testing"""
-    return FilesystemTagStore(TagStoreConfig(base_dir=temp_dir))
+    return FilesystemTagStore(base_dir=temp_dir)
 
 
 @pytest.fixture
@@ -48,7 +47,7 @@ def fetcher_config(temp_dir: str) -> FetcherConfig:
 @pytest.fixture
 def fetcher(fetcher_config: FetcherConfig, tag_store: FilesystemTagStore) -> Fetcher:
     """Create a Fetcher instance for testing"""
-    return Fetcher(config=fetcher_config, tagstore=tag_store)
+    return Fetcher(config=fetcher_config, ts=tag_store)
 
 @pytest.fixture
 def qfactory():
@@ -122,13 +121,13 @@ def test_download_with_replace_true(
     assert len(result1.successful_sources) == 2
     assert len(result1.failed) == 0
 
-    tagstore = fetcher.tagstore
+    tagstore = fetcher.ts
 
     job = tagstore.start_job(
         qhit=vod_content.qhit,
         stream="video",
         author="tagger",
-        track="track"
+        track="track",
     )
 
     first_source = result1.successful_sources[0].name
@@ -229,7 +228,7 @@ def test_fetch_assets_with_preserve_track(
     assert set(returned_asset_names) == set(selected_assets), "Returned assets should match requested assets"
     
     # Third test: Add tags for some assets and test preserve_track functionality
-    tagstore = fetcher.tagstore
+    tagstore = fetcher.ts
     
     job = tagstore.start_job(
         qhit=assets_content.qhit,
@@ -311,7 +310,7 @@ def test_fetch_assets_with_preserve_track(
     tagstore.upload_tags(newtags, new_job.id)
 
     # Verify that the tags were uploaded correctly
-    uploaded_tags = tagstore.get_tags(new_job.id)
+    uploaded_tags = tagstore.find_tags(jobid=new_job.id)
     assert len(uploaded_tags) == len(newtags), "Not all tags were uploaded"
     for tag in newtags:
         assert tag in uploaded_tags, f"Tag {tag} was not found in uploaded tags"

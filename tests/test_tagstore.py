@@ -3,8 +3,7 @@ import tempfile
 import shutil
 import os
 import json
-from src.tags.tagstore.tagstore import FilesystemTagStore, Tag, UploadJob
-from src.tags.tagstore.types import TagStoreConfig
+from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore, Tag, UploadJob
 
 
 @pytest.fixture
@@ -18,7 +17,7 @@ def temp_dir():
 @pytest.fixture
 def tag_store(temp_dir):
     """Create a FilesystemTagStore instance for testing"""
-    return FilesystemTagStore(TagStoreConfig(base_dir=os.path.join(temp_dir, "tagstore")))
+    return FilesystemTagStore(base_dir=os.path.join(temp_dir, "tagstore"))
 
 
 @pytest.fixture
@@ -48,7 +47,7 @@ def test_init_creates_base_directory(temp_dir):
     base_dir = os.path.join(temp_dir, "new_dir")
     assert not os.path.exists(base_dir)
 
-    store = FilesystemTagStore(TagStoreConfig(base_dir=base_dir))
+    store = FilesystemTagStore(base_dir=base_dir)
     assert os.path.exists(base_dir)
     assert os.path.isdir(base_dir)
 
@@ -154,7 +153,7 @@ def test_upload_tags_appends_to_existing(tag_store, job_args):
     tag_store.upload_tags(initial_tags, sample_job.id)
     
     # Verify initial upload worked
-    llava_tags = tag_store.get_tags(sample_job.id)
+    llava_tags = tag_store.find_tags(jobid=sample_job.id)
     assert len(llava_tags) == 1
     assert llava_tags[0].text == "person"
     
@@ -165,7 +164,7 @@ def test_upload_tags_appends_to_existing(tag_store, job_args):
     tag_store.upload_tags(additional_tags, sample_job.id)
     
     # Check that both tags are present
-    llava_tags = tag_store.get_tags(sample_job.id)
+    llava_tags = tag_store.find_tags(jobid=sample_job.id)
     assert len(llava_tags) == 2
     assert {tag.text for tag in llava_tags} == {"person", "car"}
 
@@ -183,11 +182,11 @@ def test_upload_empty_tags_list(tag_store, job_args):
 
 
 def test_get_tags_returns_all_tags(tag_store, job_args, sample_tags):
-    """Test that get_tags returns tags from all sources"""
+    """Test that find_tags returns tags from all sources"""
     sample_job = tag_store.start_job(**job_args)
     tag_store.upload_tags(sample_tags, sample_job.id)
     
-    all_tags = tag_store.get_tags(sample_job.id)
+    all_tags = tag_store.find_tags(jobid=sample_job.id)
     
     assert len(all_tags) == 4
     sources = {tag.source for tag in all_tags}
@@ -196,7 +195,7 @@ def test_get_tags_returns_all_tags(tag_store, job_args, sample_tags):
 
 def test_get_tags_nonexistent_job_returns_empty(tag_store):
     """Test that getting tags for non-existent job returns empty list"""
-    tags = tag_store.get_tags("nonexistent-job")
+    tags = tag_store.find_tags(jobid="nonexistent-job")
     assert tags == []
 
 
@@ -272,7 +271,7 @@ def test_start_job_and_upload_tags(tag_store, job_args, sample_tags):
     assert os.path.exists(caption_path)
     
     # Verify all tags are retrievable
-    all_tags = tag_store.get_tags(sample_job.id)
+    all_tags = tag_store.find_tags(jobid=sample_job.id)
     assert len(all_tags) == 4
 
 
@@ -388,7 +387,7 @@ def test_error_handling(tag_store, sample_tags):
     assert result is None
     
     # Test getting tags for nonexistent job
-    tags = tag_store.get_tags("nonexistent")
+    tags = tag_store.find_tags(jobid="nonexistent")
     assert tags == []
 
 
@@ -405,7 +404,7 @@ def test_tag_appending(tag_store, job_args):
     tag_store.upload_tags(additional_tags, sample_job.id)
     
     # Check that both tags are present
-    all_tags = tag_store.find_tags(job_id=sample_job.id, sources=["llava"])
+    all_tags = tag_store.find_tags(jobid=sample_job.id, sources=["llava"])
     assert len(all_tags) == 2
     assert {tag.text for tag in all_tags} == {"person", "car"}
 
@@ -424,7 +423,7 @@ def test_source_with_slash_encoding(tag_store, job_args):
     tag_store.upload_tags(tags_with_slashes, sample_job.id)
     
     # Verify we can retrieve all tags correctly
-    all_tags = tag_store.get_tags(sample_job.id)
+    all_tags = tag_store.find_tags(jobid=sample_job.id)
     assert len(all_tags) == 3
     
     # Verify original source names are preserved in the tag data

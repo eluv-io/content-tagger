@@ -11,7 +11,7 @@ from waitress import serve
 
 from src.tagger.system_tagging.resource_manager import SystemTagger
 from src.tagger.fabric_tagging.tagger import FabricTagger
-from src.tags.tagstore.tagstore import FilesystemTagStore
+from src.tags.tagstore.factory import create_tagstore
 from src.fetch.fetch_video import Fetcher
 from src.common.content import ContentFactory
 from src.tag_containers.containers import ContainerRegistry
@@ -75,7 +75,7 @@ def boot_state(app: Flask, cfg: AppConfig) -> None:
     app_state = {}
 
     system_tagger = SystemTagger(cfg.system)
-    tagstore = FilesystemTagStore(cfg.tagstore)
+    tagstore = create_tagstore(cfg.tagstore)
     fetcher = Fetcher(cfg.fetcher, tagstore)
     container_registry = ContainerRegistry(cfg.container_registry)
 

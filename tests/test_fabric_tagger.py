@@ -11,11 +11,11 @@ from src.tagger.system_tagging.resource_manager import SystemTagger
 from src.tag_containers.types import ModelConfig, ModelOutput
 from src.tagger.system_tagging.types import SysConfig
 from src.tagger.fabric_tagging.types import RunConfig, TagArgs
-from src.tags.tagstore.tagstore import FilesystemTagStore
+from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.tag_containers.types import ContainerRequest
 from src.fetch.types import DownloadRequest, DownloadResult, Source, StreamMetadata, VideoScope
 from src.common.content import Content
-from src.tags.tagstore.types import Tag, TagStoreConfig
+from src.tags.tagstore.types import Tag
 from src.common.errors import MissingResourceError
 
 class FakeTagContainer:
@@ -235,7 +235,7 @@ def fake_fetcher(fake_media_files):
 def tag_store(temp_dir):
     """Create a real FilesystemTagStore for testing"""
     tagstore_dir = os.path.join(temp_dir, "tagstore")
-    return FilesystemTagStore(TagStoreConfig(base_dir=tagstore_dir))
+    return FilesystemTagStore(base_dir=tagstore_dir)
 
 
 @pytest.fixture

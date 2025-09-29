@@ -7,8 +7,10 @@ from dotenv import load_dotenv
 
 from src.tags.conversion_workflow import upload_tags_to_fabric
 from src.tags.conversion import TagConverter, TagConverterConfig
-from src.tags.tagstore.tagstore import FilesystemTagStore
-from src.tags.tagstore.types import TagStoreConfig, Tag
+from src.tags.tagstore.abstract import Tagstore
+from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
+from src.tags.tagstore.rest_tagstore import RestTagstore
+from src.tags.tagstore.types import Tag
 from src.common.content import Content, ContentConfig, ContentFactory
 
 load_dotenv()
@@ -23,11 +25,25 @@ def temp_dir():
     shutil.rmtree(temp_path, ignore_errors=True)
 
 @pytest.fixture
-def tagstore(temp_dir: str) -> FilesystemTagStore:
+def rest_tagstore() -> RestTagstore:
+    """Create a RestTagstore using TEST_TAGSTORE_HOST environment variable"""
+    host = os.getenv("TEST_TAGSTORE_HOST")
+    
+    return RestTagstore(base_url=f"http://{host}")
+
+@pytest.fixture
+def filesystem_tagstore(temp_dir: str) -> FilesystemTagStore:
     """Create a FilesystemTagStore with test data"""
-    config = TagStoreConfig(base_dir=temp_dir)
-    store = FilesystemTagStore(config)
+    store = FilesystemTagStore(base_dir=temp_dir)
     return store
+
+@pytest.fixture
+def tagstore(rest_tagstore: RestTagstore, filesystem_tagstore: FilesystemTagStore):
+    """Create appropriate tagstore based on TEST_TAGSTORE_HOST environment variable"""
+    if os.getenv("TEST_TAGSTORE_HOST"):
+        return rest_tagstore
+    else:
+        return filesystem_tagstore
 
 @pytest.fixture
 def tag_converter() -> TagConverter:
@@ -68,7 +84,7 @@ def q():
     q.replace_metadata(metadata_subtree="video_tags", metadata={})
 
 def test_upload_tags_to_fabric_full_workflow(
-    tagstore: FilesystemTagStore,
+    tagstore: Tagstore,
     tag_converter: TagConverter,
     q: Content,
     temp_dir: str,
@@ -131,7 +147,7 @@ def test_upload_tags_to_fabric_full_workflow(
     
     # Run the upload workflow
     upload_tags_to_fabric(
-        source_qhit=q.qhit,
+        source_q=q,
         qwt=q,
         tagstore=tagstore,
         tag_converter=tag_converter
@@ -185,9 +201,8 @@ def test_upload_tags_to_fabric_full_workflow(
             assert obj_tags[1]["text"] == "car"
             
             # Verify ASR tags (converted to auto_captions)
-            if "auto_captions" in metadata_tracks:
-                asr_tags = metadata_tracks["auto_captions"]["tags"]
-                assert len(asr_tags) == 2, "Should have auto caption tags"
+            asr_tags = metadata_tracks["auto_captions"]["tags"]
+            assert len(asr_tags) == 2, "Should have auto caption tags"
         
         elif bucket_idx == "0001":  # Second bucket
             assert "object_detection" in metadata_tracks, "Second bucket should have object_detection"
@@ -230,7 +245,7 @@ def test_upload_tags_to_fabric_full_workflow(
             assert "object_detection" in frame_tags['352000'], "Frame 352000 should have Object Detection"
 
 def test_upload_tags_empty_tagstore(
-    tagstore: FilesystemTagStore,
+    tagstore: Tagstore,
     tag_converter: TagConverter,
     q: Content,
     temp_dir: str
@@ -242,7 +257,7 @@ def test_upload_tags_empty_tagstore(
     
     # Should handle empty tagstore gracefully
     upload_tags_to_fabric(
-        source_qhit=q.qhit,
+        source_q=q,
         qwt=q,
         tagstore=tagstore,
         tag_converter=tag_converter,
@@ -252,7 +267,7 @@ def test_upload_tags_empty_tagstore(
     assert len(os.listdir(tags_path)) == 0, "No files should be created for empty tagstore"
 
 def test_upload_tags_no_frame_tags(
-    tagstore: FilesystemTagStore,
+    tagstore: Tagstore,
     tag_converter: TagConverter,
     q: Content,
     temp_dir: str
@@ -276,7 +291,7 @@ def test_upload_tags_no_frame_tags(
     os.makedirs(tags_path, exist_ok=True)
     
     upload_tags_to_fabric(
-        source_qhit=q.qhit,
+        source_q=q,
         qwt=q,
         tagstore=tagstore,
         tag_converter=tag_converter,

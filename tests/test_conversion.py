@@ -2,12 +2,11 @@ import tempfile
 
 import pytest
 from src.tags.tagstore.types import UploadJob, Tag
-from src.tags.tagstore.tagstore import FilesystemTagStore
+from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.tags.conversion import TagConverterConfig, get_latest_tags_for_content
-from src.tags.tagstore.types import TagStoreConfig
 from src.tags.legacy_format import *
 from src.tags.conversion import TagConverter, JobWithTags
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 @pytest.fixture
 def tag_converter():
@@ -133,18 +132,17 @@ def test_get_latest_tags_complex_deduplication():
     ]
     
     with tempfile.TemporaryDirectory() as temp_dir:
-        config = TagStoreConfig(base_dir=temp_dir)
-        tagstore = FilesystemTagStore(config)
+        tagstore = FilesystemTagStore(temp_dir)
         
         with patch.object(tagstore, 'find_jobs') as mock_find, \
              patch.object(tagstore, 'get_job') as mock_get_job, \
-             patch.object(tagstore, 'get_tags') as mock_get_tags:
+             patch.object(tagstore, 'find_tags') as mock_get_tags:
             
             mock_find.return_value = ["job1_old", "job2_old", "job3_new", "job4_face", "job5_asr_new"]
-            mock_get_job.side_effect = lambda job_id: next((job for job in jobs if job.id == job_id), None)
-            mock_get_tags.side_effect = lambda job_id: [tag for tag in tags if tag.jobid == job_id]
-            
-            result = get_latest_tags_for_content("iq__test", tagstore)
+            mock_get_job.side_effect = lambda jobid, auth=None: next((job for job in jobs if job.id == jobid), None)
+            mock_get_tags.side_effect = lambda jobid, auth=None: [tag for tag in tags if tag.jobid == jobid]
+
+            result = get_latest_tags_for_content(MagicMock(qhit="iq__test"), tagstore)
             
             # Should have 5 jobs returned (all jobs, but with filtered tags)
             assert len(result) == 5

@@ -6,17 +6,19 @@ import base64
 import time
 
 from src.tags.tagstore.types import *
+from src.tags.tagstore.abstract import Tagstore
 
-class FilesystemTagStore:
-    def __init__(self, cfg: TagStoreConfig):
-        self.base_path = cfg.base_dir
+class FilesystemTagStore(Tagstore):
+    def __init__(self, base_dir: str):
+        self.base_path = base_dir
         os.makedirs(self.base_path, exist_ok=True)
 
     def start_job(self,
         qhit: str,
         track: str,
         stream: str,
-        author: str
+        author: str,
+        auth: str | None = None
     ) -> UploadJob:
         """
         Starts a new job with provided metadata
@@ -40,7 +42,11 @@ class FilesystemTagStore:
 
         return job
 
-    def upload_tags(self, tags: list[Tag], jobid: str) -> None:
+    def upload_tags(self, 
+        tags: list[Tag], 
+        jobid: str,
+        auth: str | None = None
+    ) -> None:
         """
         Upload tags for a specific job, grouped by source
         """
@@ -88,7 +94,7 @@ class FilesystemTagStore:
                     os.remove(temp_path)
                 raise e
 
-    def find_tags(self, **filters) -> list[Tag]:
+    def find_tags(self, auth: str | None = None, **filters) -> list[Tag]:
         """
         Find tags with flexible filtering.
         
@@ -96,7 +102,7 @@ class FilesystemTagStore:
         - qhit: str
         - stream: str  
         - track: str
-        - job_id: str
+        - jobid: str  
         - sources: List[str] (tags with source in this list)
         - start_time_gte: float
         - start_time_lte: float
@@ -118,16 +124,16 @@ class FilesystemTagStore:
         if 'author' in filters:
             job_filters['author'] = filters['author']
         
-        if 'job_id' in filters:
-            # If specific job_id requested, only check that job
-            job_ids = [filters['job_id']]
+        if 'jobid' in filters:
+            # If specific jobid requested, only check that job
+            job_ids = [filters['jobid']]
         else:
             # Get all matching jobs
-            job_ids = self.find_jobs(**job_filters)
+            job_ids = self.find_jobs(auth=auth, **job_filters)
         
         # Collect tags from matching jobs
         for job_id in job_ids:
-            tags = self.get_tags(job_id)
+            tags = self._get_tags_for_job(job_id)
             all_tags.extend(tags)
         
         # Apply tag-level filters
@@ -165,7 +171,7 @@ class FilesystemTagStore:
         
         return filtered_tags
 
-    def find_jobs(self, **filters) -> list[str]:
+    def find_jobs(self, auth: str | None = None, **filters) -> list[str]:
         """
         Find job IDs with flexible filtering.
         
@@ -192,7 +198,7 @@ class FilesystemTagStore:
                 continue
             
             # Get job metadata to check filters
-            job = self.get_job(job_id)
+            job = self.get_job(job_id, auth=auth)
             if job is None:
                 continue
             
@@ -223,23 +229,19 @@ class FilesystemTagStore:
         
         return job_ids
 
-    def count_tags(self, **filters) -> int:
+    def count_tags(self, auth: str | None = None, **filters) -> int:
         """Count tags matching the given filters without loading all data"""
-        return len(self.find_tags(**filters))
+        return len(self.find_tags(auth=auth, **filters))
 
-    def count_jobs(self, **filters) -> int:
+    def count_jobs(self, auth: str | None = None, **filters) -> int:
         """Count jobs matching the given filters"""
         return len(self.find_jobs(**filters))
 
-    def get_tags_for_job(self, job_id: str) -> list[Tag]:
-        """Get all tags for a specific job"""
-        return self.find_tags(job_id=job_id)
-
-    def get_job(self, job_id: str) -> UploadJob | None:
+    def get_job(self, jobid: str, auth: str | None=None) -> UploadJob | None:
         """
         Get job metadata
         """
-        metadata_path = self._get_job_metadata_path(job_id)
+        metadata_path = self._get_job_metadata_path(jobid)
         
         if not os.path.exists(metadata_path):
             return None
@@ -247,29 +249,6 @@ class FilesystemTagStore:
         with open(metadata_path, 'r') as f:
             job_data = json.load(f)
             return UploadJob(**job_data)
-
-    def get_tags(self, job_id: str) -> list[Tag]:
-        """
-        Get all tags for a specific job (from all source files)
-        """
-        job_dir = self._get_job_dir(job_id)
-        
-        if not os.path.exists(job_dir):
-            return []
-
-        all_tags = []
-
-        # Find all .json files that aren't jobmetadata.json
-        for filename in os.listdir(job_dir):
-            if filename.endswith('.json') and filename != 'jobmetadata.json':
-                tags_path = os.path.join(job_dir, filename)
-                
-                with open(tags_path, 'r') as f:
-                    tags_data = json.load(f)
-                    tags = [Tag(**tag_data) for tag_data in tags_data]
-                    all_tags.extend(tags)
-
-        return all_tags
 
     def _get_job_ids_with_paths(self) -> list[tuple[str, str]]:
         """Get all job IDs with their corresponding paths"""
@@ -314,3 +293,26 @@ class FilesystemTagStore:
         """Get the path to tags file for a specific source"""
         encoded_source = self._encode_source_for_filename(source)
         return os.path.join(self._get_job_dir(job_id), f"{encoded_source}.json")
+
+    def _get_tags_for_job(self, job_id: str) -> list[Tag]:
+        """Helper method to get all tags for a specific job without filtering"""
+        all_tags = []
+        job_dir = self._get_job_dir(job_id)
+        
+        if not os.path.exists(job_dir):
+            return all_tags
+        
+        # Iterate through all tag files in the job directory
+        for filename in os.listdir(job_dir):
+            if filename.endswith('.json') and filename != 'jobmetadata.json':
+                tags_path = os.path.join(job_dir, filename)
+                try:
+                    with open(tags_path, 'r') as f:
+                        tag_data = json.load(f)
+                        tags = [Tag(**tag_dict) for tag_dict in tag_data]
+                        all_tags.extend(tags)
+                except Exception:
+                    # Skip corrupted files
+                    continue
+        
+        return all_tags

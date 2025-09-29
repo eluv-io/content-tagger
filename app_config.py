@@ -8,13 +8,13 @@ from src.fetch.types import FetcherConfig
 from src.tag_containers.types import RegistryConfig
 from src.tagger.system_tagging.types import SysConfig
 from src.tags.conversion import TagConverterConfig
-from src.tags.tagstore.types import TagStoreConfig
+from src.tags.tagstore.types import TagstoreConfig
 
 @dataclass
 class AppConfig:
     root_dir: str
     content: ContentConfig
-    tagstore: TagStoreConfig
+    tagstore: TagstoreConfig
     system: SysConfig
     fetcher: FetcherConfig
     container_registry: RegistryConfig

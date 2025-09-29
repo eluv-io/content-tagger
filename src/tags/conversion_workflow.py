@@ -6,14 +6,14 @@ from loguru import logger
 from elv_client_py import ElvClient
 from common_ml.utils.metrics import timeit
 from src.common.content import Content
-from src.tags.tagstore.tagstore import FilesystemTagStore
+from src.tags.tagstore.abstract import Tagstore
 from src.tags.conversion import TagConverter
 from src.tags.conversion import get_latest_tags_for_content
 
 def upload_tags_to_fabric(
-    source_qhit: str,
+    source_q: Content,
     qwt: Content, 
-    tagstore: FilesystemTagStore, 
+    tagstore: Tagstore, 
     tag_converter: TagConverter
 ) -> None:
     """
@@ -25,14 +25,14 @@ def upload_tags_to_fabric(
         tagstore: FilesystemTagStore instance
         converter_config: Configuration for tag conversion
     """
-    logger.info(f"Starting tag upload for content {source_qhit}")
+    logger.info(f"Starting tag upload for content {source_q.qhit}")
 
     # Step 1: Extract tags and jobs from tagstore
     logger.info("Extracting latest tags from tagstore")
-    job_tags = get_latest_tags_for_content(source_qhit, tagstore)
+    job_tags = get_latest_tags_for_content(source_q, tagstore)
     
     if not job_tags:
-        logger.warning(f"No tags found for content {source_qhit}")
+        logger.warning(f"No tags found for content {source_q.qhit}")
         return
     
     logger.info(f"Found {len(job_tags)} jobs with tags")
@@ -121,7 +121,7 @@ def upload_tags_to_fabric(
     with timeit("Adding metadata links"):
         _add_tag_links(qwt, to_upload)
 
-    logger.info(f"Tag upload completed for content {source_qhit}")
+    logger.info(f"Tag upload completed for content {source_q.qhit}")
 
     shutil.rmtree(tags_dir)
 

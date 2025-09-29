@@ -4,8 +4,10 @@ from dataclasses import dataclass
 ## Config
 
 @dataclass
-class TagStoreConfig:
-    base_dir: str
+class TagstoreConfig:
+    base_dir: str=""
+    base_url: str=""
+    auth_token: str | None = None
 
 ## Schema
 

@@ -12,8 +12,8 @@ import podman
 from src.common.content import ContentConfig
 from src.tagger.fabric_tagging.tagger import FabricTagger
 from src.tags.conversion import TagConverterConfig
-from src.tags.tagstore.tagstore import FilesystemTagStore
-from src.tags.tagstore.types import TagStoreConfig
+from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
+from src.tags.tagstore.types import TagstoreConfig
 from src.tagger.system_tagging.types import SysConfig
 from src.fetch.types import FetcherConfig
 from src.tag_containers.types import ModelConfig, RegistryConfig
@@ -57,7 +57,7 @@ def test_config(test_dir):
             config_url="https://main.net955305.contentfabric.io/config",
             parts_url="http://192.168.96.203/config?self&qspace=main"
         ),
-        tagstore=TagStoreConfig(
+        tagstore=TagstoreConfig(
             base_dir=os.path.join(test_dir, "tags")
         ),
         system=SysConfig(gpus=["gpu", "disabled", "gpu"], resources={"cpu_juice": 16}),
@@ -157,11 +157,11 @@ def test_video_model(client):
         }
     )
     assert response.status_code == 200
-    completed = wait_for_jobs_completion(client, [test_objects['vod']], timeout=None)
+    completed = wait_for_jobs_completion(client, [test_objects['vod']], timeout=30)
     assert completed
     tagstore: FilesystemTagStore = client.application.config["state"]["tagger"].tagstore
     jobid = tagstore.find_jobs(qhit=test_objects['vod'], stream='video')[0]
-    tags = tagstore.get_tags(jobid)
+    tags = tagstore.find_tags(jobid=jobid)
     tags = sorted(tags, key=lambda x: x.start_time)
     assert len(tags) == 122
     next_tag = 'hello1'
@@ -194,7 +194,7 @@ def test_asset_tag(client):
     print(status.get_json())
     tagstore: FilesystemTagStore = client.application.config["state"]["tagger"].tagstore
     jobid = tagstore.find_jobs(qhit=test_objects['assets'], stream='assets')[0]
-    tags = tagstore.get_tags(jobid)
+    tags = tagstore.find_tags(jobid=jobid)
     tags = sorted(tags, key=lambda x: x.start_time)
     assert len(tags) > 0
 

@@ -15,17 +15,17 @@ from src.common.content import Content
 from src.common.errors import MissingResourceError, BadRequestError
 from src.fetch.types import AssetScope, DownloadRequest, VideoScope, DownloadResult, Source, StreamMetadata
 from src.fetch.types import FetcherConfig, DownloadResult
-from src.tags.tagstore.tagstore import FilesystemTagStore
+from src.tags.tagstore.abstract import Tagstore
 
 
 class Fetcher:
     def __init__(
         self,
         config: FetcherConfig,
-        tagstore: FilesystemTagStore,
+        ts: Tagstore,
     ):
         self.config = config
-        self.tagstore = tagstore
+        self.ts = ts
         # sem to keep total IO reasonable
         self.dl_sem = threading.Semaphore(config.max_downloads)
         # maps (qhit, stream) to lock to prevent unnecessary stream download duplication
@@ -38,6 +38,7 @@ class Fetcher:
         exit_event: threading.Event | None = None,
     ) -> DownloadResult:
         logger.debug(req)
+        # TODO: need to flip order of sem and stream locks
         with self.dl_sem:
             stream_key = (q.qhit, req.stream_name)
             with self.stream_locks[stream_key]:
@@ -332,7 +333,13 @@ class Fetcher:
 
         tagged_parts = []
         if req.preserve_track:
-            existing_tags = self.tagstore.find_tags(author=self.config.author, qhit=q.qhit, stream=req.stream_name, track=req.preserve_track)
+            existing_tags = self.ts.find_tags(
+                author=self.config.author, 
+                qhit=q.qhit, 
+                stream=req.stream_name, 
+                track=req.preserve_track,
+                auth=q._client.token
+            )
             tagged_parts = {tag.source for tag in existing_tags}
 
         if req.preserve_track and tagged_parts:
@@ -468,7 +475,7 @@ class Fetcher:
 
         tagged_assets = []
         if req.preserve_track:
-            existing_tags = self.tagstore.find_tags(author=self.config.author, qhit=q.qhit, stream="assets", track=req.preserve_track)
+            existing_tags = self.ts.find_tags(author=self.config.author, qhit=q.qhit, stream="assets", track=req.preserve_track, auth=q._client.token)
             tagged_assets = [tag.source for tag in existing_tags]
 
         if tagged_assets:

@@ -20,7 +20,7 @@ from src.tagger.fabric_tagging.types import *
 from src.common.content import Content
 from src.common.errors import MissingResourceError
 from src.fetch.fetch_video import Fetcher
-from src.tags.tagstore.tagstore import FilesystemTagStore
+from src.tags.tagstore.abstract import Tagstore
 
 @dataclass
 class TagRequest:
@@ -89,7 +89,7 @@ class FabricTagger:
             self, 
             system_tagger: SystemTagger,
             cregistry: ContainerRegistry,
-            tagstore: FilesystemTagStore,
+            tagstore: Tagstore,
             fetcher: Fetcher
         ):
 
@@ -207,7 +207,8 @@ class FabricTagger:
                 qhit=request.q.qhit,
                 track=feature,
                 stream=stream,
-                author="tagger"
+                author="tagger",
+                auth=request.q._client.token
             )
 
             job = TagJob(
@@ -572,7 +573,7 @@ class FabricTagger:
                 tag.jobid = job.upload_job
                 tags2upload.append(self._fix_tag_offsets(tag, original_src.offset, stream_meta.fps if stream_meta else None))
 
-        self.tagstore.upload_tags(tags2upload, job.upload_job)
+        self.tagstore.upload_tags(tags2upload, job.upload_job, auth=job.args.q._client.token)
 
         job.state.uploaded_sources.extend(media_to_source[out.source_media].name for out in new_outputs)
 

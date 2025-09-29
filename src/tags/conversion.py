@@ -2,7 +2,8 @@ from dataclasses import dataclass, asdict
 from collections import defaultdict
 from copy import deepcopy
 
-from src.tags.tagstore.tagstore import FilesystemTagStore
+from src.common.content import Content
+from src.tags.tagstore.abstract import Tagstore
 from common_ml.tags import FrameTag, VideoTag
 from src.tags.tagstore.types import UploadJob, Tag
 from src.tags.legacy_format import *
@@ -19,15 +20,17 @@ class TagConverterConfig:
 class JobWithTags:
     job: UploadJob
     tags: list[Tag]
-
+    
 # TODO: this should be the default behavior of /{qid}/tags
-def get_latest_tags_for_content(qhit: str, ts: FilesystemTagStore) -> list[JobWithTags]:
+def get_latest_tags_for_content(q: Content, ts: Tagstore) -> list[JobWithTags]:
     """Get tags from the latest job for each source+track pair for the given content."""
-    job_ids = ts.find_jobs(qhit=qhit)
+
+    auth = q._client.token
+    job_ids = ts.find_jobs(qhit=q.qhit, auth=auth)
     if not job_ids:
         return []
 
-    jobs = [ts.get_job(job_id) for job_id in job_ids]
+    jobs = [ts.get_job(job_id, auth=auth) for job_id in job_ids]
     jobs = [job for job in jobs if job is not None]
     jobs.sort(key=lambda job: job.id, reverse=True)  # Newest first
 
@@ -38,7 +41,7 @@ def get_latest_tags_for_content(qhit: str, ts: FilesystemTagStore) -> list[JobWi
     for job in jobs:
         new_tags = []
 
-        for tag in ts.get_tags(job.id):
+        for tag in ts.find_tags(jobid=job.id, auth=auth):
             if (tag.source, job.track) in source_features_tagged:
                 continue
             new_tags.append(tag)
