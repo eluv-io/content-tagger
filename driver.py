@@ -100,7 +100,11 @@ def get_write_token(qhit: str, config: str) -> str:
 
 def get_status(qhit: str, auth: str):
     res = requests.get(f"{server}/{qhit}/status", params={"authorization": auth})
-    return response_force_dict(res)
+    status = response_force_dict(res)
+    if "message" in status:
+        status['error'] = status['message']
+        del status['message']
+    return status
 
 def tag(contents: list, auth: str, assets: bool, params: dict, start_time: float = None, end_time: float = None):
     
