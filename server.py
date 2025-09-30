@@ -8,6 +8,7 @@ import atexit
 import setproctitle
 import sys
 from waitress import serve
+import os
 
 from src.tagger.system_tagging.resource_manager import SystemTagger
 from src.tagger.fabric_tagging.tagger import FabricTagger
@@ -113,6 +114,11 @@ def create_app(config: AppConfig) -> Flask:
 
 def main():
     logger.info("Python interpreter version: " + sys.version)
+
+    if args.directory:
+        os.chdir(args.directory)
+        logger.info(f"changed directory to {args.directory}")
+
     cfg = AppConfig.from_yaml(args.config)
     app = create_app(cfg)
 
@@ -124,5 +130,6 @@ if __name__ == '__main__':
     parser.add_argument('--port', type=int, default=8086)
     parser.add_argument('--host', type=str, default="127.0.0.1")
     parser.add_argument('--config', type=str, default="config.yml")
+    parser.add_argument('--directory', type=str)
     args = parser.parse_args()
     main()
