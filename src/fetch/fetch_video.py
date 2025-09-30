@@ -5,6 +5,7 @@ import os
 import threading
 import tempfile
 import shutil
+from fractions import Fraction
 from copy import deepcopy
 from common_ml.video_processing import unfrag_video
 from common_ml.utils.files import get_file_type, encode_path
@@ -124,7 +125,7 @@ class Fetcher:
                 transcode_id = tid
                 continue
             if tid != transcode_id:
-                logger.error(
+                logger.warning(
                     f"Multiple transcode_ids found for stream {stream_name} in {q.qhit}! Continuing with the first one found."
                 )
 
@@ -140,13 +141,19 @@ class Fetcher:
         if len(stream) == 0:
             raise MissingResourceError(f"Stream {stream_name} is empty")
 
-        part_duration = stream[0]["duration"]["float"]
+        if type(stream[0]) is dict:
+            part_duration = stream[0]["duration"]["float"]
+            parts = [part["source"] for part in stream]
+        else:
+            dur = stream[0][1]
+            if type(dur) is str: dur = int(dur)     ## i don't know if dur is ever not a string, but just anticipate it anyway
+            part_duration = dur * float(Fraction(transcode_meta["duration"]["time_base"]))
+            parts = [part[0] for part in stream]
 
         fps = None
         if codec_type == "video":
             fps = self._parse_fps(transcode_meta["rate"])
 
-        parts = [part["source"] for part in stream]
 
         return StreamMetadata(
             parts=parts, part_duration=part_duration, fps=fps, codec_type=codec_type
