@@ -1,6 +1,10 @@
 import time
+import json
 import requests
-from datetime import datetime
+from dateutil import parser
+from loguru import logger
+
+from src.common.content import Content
 from src.tags.tagstore.types import Tag, UploadJob
 from src.tags.tagstore.abstract import Tagstore
 
@@ -12,19 +16,28 @@ class RestTagstore(Tagstore):
             'Content-Type': 'application/json'
         })
 
-    def _get_headers(self, auth: str | None) -> dict:
-        """Get headers with auth if provided"""
+    def _get_headers(self, q: Content | None) -> dict:
+        """Get headers with q if provided"""
         headers = {'Content-Type': 'application/json'}
-        if auth:
-            headers['Authorization'] = f'Bearer {auth}'
+        assert q is not None
+        headers['Authorization'] = f"Bearer {q.token()}"
         return headers
+
+    def _log_response_and_raise(self, response: requests.Response):
+        """Log response content before raising HTTPError"""
+        try:
+            response_json = response.json()
+            logger.error(f"{json.dumps(response_json)}")
+        except Exception:
+            logger.error(f"HTTP {response.status_code} response (non-JSON): {response.text}")
+        response.raise_for_status()
 
     def start_job(self,
         qhit: str,
         track: str,
         stream: str,
         author: str,
-        auth: str | None = None
+        q: Content | None = None
     ) -> UploadJob:
         """
         Starts a new job with provided metadata
@@ -42,9 +55,11 @@ class RestTagstore(Tagstore):
         response = self.session.post(
             f"{self.base_url}/{qhit}/jobs", 
             json=job_data,
-            headers=self._get_headers(auth)
+            headers=self._get_headers(q)
         )
-        response.raise_for_status()
+        
+        if not response.ok:
+            self._log_response_and_raise(response)
         
         result = response.json()
         job_id = result["job_id"]
@@ -61,15 +76,15 @@ class RestTagstore(Tagstore):
         
         return job
 
-    def upload_tags(self, tags: list[Tag], jobid: str, auth: str | None = None) -> None:
+    def upload_tags(self, tags: list[Tag], jobid: str, q: Content | None = None) -> None:
         """
         Upload tags for a specific job
         """
         if not tags:
             return
         
-        # Extract qhit from jobid (assuming format: qhit/track/timestamp)
-        qhit = jobid.split('/')[0]
+        assert q is not None
+        qhit = q.qid
         
         # Convert tags to API format
         api_tags = []
@@ -79,7 +94,7 @@ class RestTagstore(Tagstore):
                 "end_time": tag.end_time,
                 "tag": tag.text,
                 "source": tag.source,
-                "additional_properties": tag.additional_info
+                "additional_info": tag.additional_info
             }
             api_tags.append(api_tag)
         
@@ -92,11 +107,13 @@ class RestTagstore(Tagstore):
         response = self.session.post(
             f"{self.base_url}/{qhit}/tags", 
             json=upload_data,
-            headers=self._get_headers(auth)
+            headers=self._get_headers(q)
         )
-        response.raise_for_status()
+        
+        if not response.ok:
+            self._log_response_and_raise(response)
 
-    def find_tags(self, auth: str | None = None, **filters) -> list[Tag]:
+    def find_tags(self, q: Content | None = None, **filters) -> list[Tag]:
         """
         Find tags with flexible filtering.
         
@@ -113,10 +130,9 @@ class RestTagstore(Tagstore):
         - limit: int
         - offset: int
         """
-        if 'qhit' not in filters:
-            raise ValueError("qhit is required for REST API queries")
         
-        qhit = filters['qhit']
+        assert q is not None
+        qhit = q.qid
         
         # Build query parameters
         params = {}
@@ -141,9 +157,11 @@ class RestTagstore(Tagstore):
         response = self.session.get(
             f"{self.base_url}/{qhit}/tags", 
             params=params,
-            headers=self._get_headers(auth)
+            headers=self._get_headers(q)
         )
-        response.raise_for_status()
+        
+        if not response.ok:
+            self._log_response_and_raise(response)
         
         result = response.json()
         api_tags = result.get('tags', [])
@@ -155,7 +173,7 @@ class RestTagstore(Tagstore):
                 start_time=api_tag['start_time'],
                 end_time=api_tag['end_time'],
                 text=api_tag['tag'],
-                additional_info=api_tag.get('additional_properties', {}),
+                additional_info=api_tag.get('additional_info', {}),
                 source=api_tag.get('source', 'content'),
                 jobid=api_tag['job_id']
             )
@@ -169,7 +187,7 @@ class RestTagstore(Tagstore):
         
         return tags
 
-    def find_jobs(self, auth: str | None = None, **filters) -> list[str]:
+    def find_jobs(self, q: Content | None = None, **filters) -> list[str]:
         """
         Find job IDs with flexible filtering.
         
@@ -183,10 +201,9 @@ class RestTagstore(Tagstore):
         - limit: int
         - offset: int
         """
-        if 'qhit' not in filters:
-            raise ValueError("qhit is required for REST API queries")
         
-        qhit = filters['qhit']
+        assert q is not None
+        qhit = q.qid
         
         # Build query parameters
         params = {}
@@ -203,9 +220,11 @@ class RestTagstore(Tagstore):
         response = self.session.get(
             f"{self.base_url}/{qhit}/jobs", 
             params=params,
-            headers=self._get_headers(auth)
+            headers=self._get_headers(q)
         )
-        response.raise_for_status()
+        
+        if not response.ok:
+            self._log_response_and_raise(response)
         
         result = response.json()
         jobs = result.get('jobs', [])
@@ -215,16 +234,14 @@ class RestTagstore(Tagstore):
         
         return job_ids
 
-    def count_tags(self, auth: str | None = None, **filters) -> int:
+    def count_tags(self, q: Content | None = None, **filters) -> int:
         """Count tags matching the given filters"""
         # Use the same query but with a high limit to get count from meta
         query_filters = filters.copy()
         query_filters['limit'] = 1  # Just need meta info
-        
-        if 'qhit' not in query_filters:
-            raise ValueError("qhit is required for REST API queries")
-        
-        qhit = query_filters['qhit']
+
+        assert q is not None        
+        qhit = q.qid
         
         # Build query parameters
         params = {}
@@ -246,23 +263,24 @@ class RestTagstore(Tagstore):
         response = self.session.get(
             f"{self.base_url}/{qhit}/tags", 
             params=params,
-            headers=self._get_headers(auth)
+            headers=self._get_headers(q)
         )
-        response.raise_for_status()
+        
+        if not response.ok:
+            self._log_response_and_raise(response)
         
         result = response.json()
         return result.get('meta', {}).get('total', 0)
 
-    def count_jobs(self, auth: str | None = None, **filters) -> int:
+    def count_jobs(self, q: Content | None = None, **filters) -> int:
         """Count jobs matching the given filters"""
         # Use the same query but with a high limit to get count from meta
         query_filters = filters.copy()
         query_filters['limit'] = 1  # Just need meta info
         
-        if 'qhit' not in query_filters:
-            raise ValueError("qhit is required for REST API queries")
+        assert q is not None
         
-        qhit = query_filters['qhit']
+        qhit = q.qid
         
         # Build query parameters
         params = {}
@@ -276,26 +294,34 @@ class RestTagstore(Tagstore):
         response = self.session.get(
             f"{self.base_url}/{qhit}/jobs", 
             params=params,
-            headers=self._get_headers(auth)
+            headers=self._get_headers(q)
         )
-        response.raise_for_status()
+        
+        if not response.ok:
+            self._log_response_and_raise(response)
         
         result = response.json()
         return result.get('meta', {}).get('total', 0)
 
-    def get_job(self, jobid: str, auth: str | None = None) -> UploadJob | None:
+    def get_job(self, jobid: str, q: Content | None = None) -> UploadJob | None:
         """
         Get job metadata
         """
         # Extract qhit from jobid (assuming format: qhit/track/timestamp)
-        qhit = jobid.split('/')[0]
+        assert q is not None
+        qhit = q.qid
         
         try:
             response = self.session.get(
                 f"{self.base_url}/{qhit}/jobs/{jobid}",
-                headers=self._get_headers(auth)
+                headers=self._get_headers(q)
             )
-            response.raise_for_status()
+            
+            if response.status_code == 404:
+                return None
+                
+            if not response.ok:
+                self._log_response_and_raise(response)
             
             job_data = response.json()
             
@@ -305,7 +331,7 @@ class RestTagstore(Tagstore):
                 qhit=qhit,
                 track=job_data['track'],
                 stream=job_data.get('additional_info', {}).get('stream'),
-                timestamp=datetime.fromisoformat(job_data['timestamp']).timestamp(),
+                timestamp=parser.isoparse(job_data['timestamp'].replace("Z", "+00:00")).timestamp(),
                 author=job_data['author']
             )
             
@@ -315,3 +341,18 @@ class RestTagstore(Tagstore):
             if e.response.status_code == 404:
                 return None
             raise
+
+    def delete_job(self, jobid: str, q: Content | None = None) -> None:
+        """
+        Delete a job and its associated tags
+        """
+        assert q is not None
+        qhit = q.qid
+        
+        response = self.session.delete(
+            f"{self.base_url}/{qhit}/jobs/{jobid}",
+            headers=self._get_headers(q)
+        )
+        
+        if not response.ok:
+            self._log_response_and_raise(response)

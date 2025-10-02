@@ -208,7 +208,7 @@ class FabricTagger:
                 track=feature,
                 stream=stream,
                 author="tagger",
-                auth=request.q._client.token
+                q=request.q
             )
 
             job = TagJob(
@@ -573,7 +573,7 @@ class FabricTagger:
                 tag.jobid = job.upload_job
                 tags2upload.append(self._fix_tag_offsets(tag, original_src.offset, stream_meta.fps if stream_meta else None))
 
-        self.tagstore.upload_tags(tags2upload, job.upload_job, auth=job.args.q._client.token)
+        self.tagstore.upload_tags(tags2upload, job.upload_job, q=job.args.q)
 
         job.state.uploaded_sources.extend(media_to_source[out.source_media].name for out in new_outputs)
 

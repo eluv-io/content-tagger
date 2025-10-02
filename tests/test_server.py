@@ -9,7 +9,7 @@ from loguru import logger
 from server import create_app
 from app_config import AppConfig
 import podman
-from src.common.content import ContentConfig
+from src.common.content import ContentConfig, ContentFactory
 from src.tagger.fabric_tagging.tagger import FabricTagger
 from src.tags.conversion import TagConverterConfig
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
@@ -34,6 +34,19 @@ def get_auth(qid: str) -> str:
         auth = os.getenv(f"ASSETS_AUTH")
     assert auth is not None
     return auth
+
+def get_content(auth: str, qhit: str):
+    """Create Content object with write token from environment"""
+    
+    cfg = ContentConfig(
+        config_url="https://host-154-14-185-98.contentfabric.io/config?self&qspace=main", 
+        parts_url="https://host-154-14-185-98.contentfabric.io/config?self&qspace=main"
+    )
+    factory = ContentFactory(cfg=cfg)
+    
+    q = factory.create_content(qhit=qhit, auth=auth)
+
+    return q
 
 @pytest.fixture(scope="session")
 def test_dir():
@@ -137,15 +150,16 @@ def check_skip():
 def test_video_model(client):
     """Test the complete tagging workflow."""
     # Get auth tokens
-    auth = get_auth(qid=test_objects['vod'])
+    qid = test_objects['vod']
+    auth = get_auth(qid=qid)
     
     # Test initial status - should return 404 for no jobs
-    response = client.get(f"/{test_objects['vod']}/status?authorization={auth}")
+    response = client.get(f"/{qid}/status?authorization={auth}")
     assert response.status_code == 404
     
     # Start video tagging with GPU feature
     response = client.post(
-        f"/{test_objects['vod']}/tag?authorization={auth}", 
+        f"/{qid}/tag?authorization={auth}", 
         json={
             "features": {
                 "test_model": {
@@ -157,11 +171,11 @@ def test_video_model(client):
         }
     )
     assert response.status_code == 200
-    completed = wait_for_jobs_completion(client, [test_objects['vod']], timeout=30)
+    completed = wait_for_jobs_completion(client, [qid], timeout=30)
     assert completed
     tagstore: FilesystemTagStore = client.application.config["state"]["tagger"].tagstore
-    jobid = tagstore.find_jobs(qhit=test_objects['vod'], stream='video')[0]
-    tags = tagstore.find_tags(jobid=jobid)
+    jobid = tagstore.find_jobs(q=get_content(auth, qid), stream='video')[0]
+    tags = tagstore.find_tags(jobid=jobid, q=get_content(auth, qid))
     tags = sorted(tags, key=lambda x: x.start_time)
     assert len(tags) == 122
     next_tag = 'hello1'
@@ -174,11 +188,12 @@ def test_video_model(client):
 
 def test_asset_tag(client):
     """Test asset tagging."""
-    auth = get_auth(qid=test_objects['assets'])
+    qid = test_objects['assets']
+    auth = get_auth(qid=qid)
     
     # Start asset tagging with CPU feature
     response = client.post(
-        f"/{test_objects['assets']}/image_tag?authorization={auth}", 
+        f"/{qid}/image_tag?authorization={auth}", 
         json={
             "features": {
                 "test_model": {
@@ -188,9 +203,9 @@ def test_asset_tag(client):
         }
     )
     assert response.status_code == 200
-    completed = wait_for_jobs_completion(client, [test_objects['assets']], timeout=25)
+    completed = wait_for_jobs_completion(client, [qid], timeout=25)
     assert completed
-    status = client.get(f"/{test_objects['assets']}/status?authorization={auth}")
+    status = client.get(f"/{qid}/status?authorization={auth}")
     print(status.get_json())
     tagstore: FilesystemTagStore = client.application.config["state"]["tagger"].tagstore
     jobid = tagstore.find_jobs(qhit=test_objects['assets'], stream='assets')[0]

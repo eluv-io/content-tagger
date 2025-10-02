@@ -203,6 +203,8 @@ class TagContainer:
 
         if ftype == "video":
             fps = get_fps(source_video)
+        else:
+            fps = None
     
         vid_tags = None
         frame_tags = None
@@ -241,6 +243,7 @@ class TagContainer:
                 if ftype != "video":
                     raise ValueError("Frame tags can only be associated with video files")
                 # Find overlapping frame tags with matching text
+                assert fps is not None
                 overlapping_frame_tags = self._find_overlapping_frame_tags(
                     tag, frame_tags, fps
                 )

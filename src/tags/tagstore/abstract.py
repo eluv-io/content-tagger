@@ -1,5 +1,6 @@
 from typing import Protocol
 
+from src.common.content import Content
 from src.tags.tagstore.types import Tag, UploadJob
 
 class Tagstore(Protocol):
@@ -8,14 +9,14 @@ class Tagstore(Protocol):
         track: str,
         stream: str,
         author: str,
-        auth: str | None=None,
+        q: Content | None=None,
     ) -> UploadJob:
         ...
 
-    def upload_tags(self, tags: list[Tag], jobid: str, auth: str | None=None) -> None:
+    def upload_tags(self, tags: list[Tag], jobid: str, q: Content | None=None) -> None:
         ...
 
-    def find_tags(self, auth: str | None=None, **filters) -> list[Tag]:
+    def find_tags(self, q: Content | None=None, **filters) -> list[Tag]:
         """
         Find tags with flexible filtering.
         
@@ -34,11 +35,14 @@ class Tagstore(Protocol):
         """
         ...
 
-    def get_job(self, jobid: str, auth: str | None=None) -> UploadJob | None:
+    def get_job(self, jobid: str, q: Content | None=None) -> UploadJob | None:
         ...
 
-    def find_jobs(self, auth: str | None=None, **filters) -> list[str]:
+    def find_jobs(self, q: Content | None=None, **filters) -> list[str]:
         ...
 
-    def count_tags(self, auth: str | None=None, **filters) -> int:
+    def count_tags(self, q: Content | None=None, **filters) -> int:
+        ...
+
+    def delete_job(self, jobid: str, q: Content | None=None) -> None:
         ...

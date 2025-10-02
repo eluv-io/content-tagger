@@ -25,12 +25,11 @@ class JobWithTags:
 def get_latest_tags_for_content(q: Content, ts: Tagstore) -> list[JobWithTags]:
     """Get tags from the latest job for each source+track pair for the given content."""
 
-    auth = q._client.token
-    job_ids = ts.find_jobs(qhit=q.qhit, auth=auth)
+    job_ids = ts.find_jobs(qhit=q.qhit, q=q)
     if not job_ids:
         return []
 
-    jobs = [ts.get_job(job_id, auth=auth) for job_id in job_ids]
+    jobs = [ts.get_job(job_id, q=q) for job_id in job_ids]
     jobs = [job for job in jobs if job is not None]
     jobs.sort(key=lambda job: job.id, reverse=True)  # Newest first
 
@@ -41,7 +40,7 @@ def get_latest_tags_for_content(q: Content, ts: Tagstore) -> list[JobWithTags]:
     for job in jobs:
         new_tags = []
 
-        for tag in ts.find_tags(jobid=job.id, auth=auth):
+        for tag in ts.find_tags(jobid=job.id, q=q):
             if (tag.source, job.track) in source_features_tagged:
                 continue
             new_tags.append(tag)

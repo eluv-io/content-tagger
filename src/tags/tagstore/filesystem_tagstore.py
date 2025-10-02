@@ -1,10 +1,12 @@
 from dataclasses import asdict
 from datetime import datetime
+import shutil
 import json
 import os
 import base64
 import time
 
+from src.common.content import Content
 from src.tags.tagstore.types import *
 from src.tags.tagstore.abstract import Tagstore
 
@@ -18,7 +20,7 @@ class FilesystemTagStore(Tagstore):
         track: str,
         stream: str,
         author: str,
-        auth: str | None = None
+        q: Content | None = None
     ) -> UploadJob:
         """
         Starts a new job with provided metadata
@@ -45,7 +47,7 @@ class FilesystemTagStore(Tagstore):
     def upload_tags(self, 
         tags: list[Tag], 
         jobid: str,
-        auth: str | None = None
+        q: Content | None = None
     ) -> None:
         """
         Upload tags for a specific job, grouped by source
@@ -94,12 +96,11 @@ class FilesystemTagStore(Tagstore):
                     os.remove(temp_path)
                 raise e
 
-    def find_tags(self, auth: str | None = None, **filters) -> list[Tag]:
+    def find_tags(self, q: Content | None = None, **filters) -> list[Tag]:
         """
         Find tags with flexible filtering.
         
         Supported filters:
-        - qhit: str
         - stream: str  
         - track: str
         - jobid: str  
@@ -129,7 +130,7 @@ class FilesystemTagStore(Tagstore):
             job_ids = [filters['jobid']]
         else:
             # Get all matching jobs
-            job_ids = self.find_jobs(auth=auth, **job_filters)
+            job_ids = self.find_jobs(**job_filters)
         
         # Collect tags from matching jobs
         for job_id in job_ids:
@@ -171,7 +172,7 @@ class FilesystemTagStore(Tagstore):
         
         return filtered_tags
 
-    def find_jobs(self, auth: str | None = None, **filters) -> list[str]:
+    def find_jobs(self, q: Content | None = None, **filters) -> list[str]:
         """
         Find job IDs with flexible filtering.
         
@@ -198,7 +199,7 @@ class FilesystemTagStore(Tagstore):
                 continue
             
             # Get job metadata to check filters
-            job = self.get_job(job_id, auth=auth)
+            job = self.get_job(job_id)
             if job is None:
                 continue
             
@@ -229,15 +230,19 @@ class FilesystemTagStore(Tagstore):
         
         return job_ids
 
-    def count_tags(self, auth: str | None = None, **filters) -> int:
-        """Count tags matching the given filters without loading all data"""
-        return len(self.find_tags(auth=auth, **filters))
+    def delete_job(self, jobid: str, q: Content | None = None) -> None:
+        dir = self._get_job_dir(jobid)
+        shutil.rmtree(dir, ignore_errors=True)
 
-    def count_jobs(self, auth: str | None = None, **filters) -> int:
+    def count_tags(self, q: Content | None = None, **filters) -> int:
+        """Count tags matching the given filters without loading all data"""
+        return len(self.find_tags(**filters))
+
+    def count_jobs(self, q: Content | None = None, **filters) -> int:
         """Count jobs matching the given filters"""
         return len(self.find_jobs(**filters))
 
-    def get_job(self, jobid: str, auth: str | None=None) -> UploadJob | None:
+    def get_job(self, jobid: str, q: Content | None=None) -> UploadJob | None:
         """
         Get job metadata
         """

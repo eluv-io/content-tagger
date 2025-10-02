@@ -40,6 +40,9 @@ class Content():
         self._client = client
         self._parts_client = parts_client
 
+    def token(self) -> str:
+        return self._client.token
+
     def content_object_versions(self) -> Dict[str, Any]:
         """Get all versions of the content object."""
         return self._client.content_object_versions(object_id=self.qid, library_id=self.qlib)

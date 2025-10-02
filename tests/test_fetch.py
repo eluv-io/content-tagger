@@ -128,6 +128,7 @@ def test_download_with_replace_true(
         stream="video",
         author="tagger",
         track="track",
+        q=vod_content
     )
 
     first_source = result1.successful_sources[0].name
@@ -234,7 +235,8 @@ def test_fetch_assets_with_preserve_track(
         qhit=assets_content.qhit,
         stream="assets",
         author=fetcher.config.author,
-        track="asset_track"
+        track="asset_track",
+        q=assets_content
     )
     jobid = job.id
     
@@ -293,7 +295,8 @@ def test_fetch_assets_with_preserve_track(
         qhit=assets_content.qhit,
         stream="assets",
         author="user",
-        track="another_track"
+        track="another_track",
+        q=assets_content
     )
 
     newtags = []

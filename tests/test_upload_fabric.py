@@ -25,13 +25,6 @@ def temp_dir():
     shutil.rmtree(temp_path, ignore_errors=True)
 
 @pytest.fixture
-def rest_tagstore() -> RestTagstore:
-    """Create a RestTagstore using TEST_TAGSTORE_HOST environment variable"""
-    host = os.getenv("TEST_TAGSTORE_HOST")
-    
-    return RestTagstore(base_url=f"http://{host}")
-
-@pytest.fixture
 def filesystem_tagstore(temp_dir: str) -> FilesystemTagStore:
     """Create a FilesystemTagStore with test data"""
     store = FilesystemTagStore(base_dir=temp_dir)
@@ -83,6 +76,19 @@ def q():
     yield q
     q.replace_metadata(metadata_subtree="video_tags", metadata={})
 
+@pytest.fixture
+def rest_tagstore(q: Content) -> RestTagstore:
+    """Create a RestTagstore using TEST_TAGSTORE_HOST environment variable"""
+    host = os.getenv("TEST_TAGSTORE_HOST") or ""
+    ts = RestTagstore(base_url=host)
+
+    if host:
+        jobids = ts.find_jobs(q=q)
+        for jobid in jobids:
+            ts.delete_job(jobid, q=q)
+
+    return ts
+
 def test_upload_tags_to_fabric_full_workflow(
     tagstore: Tagstore,
     tag_converter: TagConverter,
@@ -91,12 +97,12 @@ def test_upload_tags_to_fabric_full_workflow(
 ):
     """Test complete upload workflow with multiple tracks and time buckets"""
 
-    qhit = q.qhit
+    qhit = q.qid
 
     # Create test jobs in tagstore
-    obj_job = tagstore.start_job(qhit, track="object", author="tagger", stream="video")
-    asr_job = tagstore.start_job(qhit, stream="audio", author="tagger", track="asr")
-    shot_job = tagstore.start_job(qhit, stream="video", author="tagger", track="shot")
+    obj_job = tagstore.start_job(qhit, track="object", author="tagger", stream="video", q=q)
+    asr_job = tagstore.start_job(qhit, stream="audio", author="tagger", track="asr", q=q)
+    shot_job = tagstore.start_job(qhit, stream="video", author="tagger", track="shot", q=q)
 
     # Create tags spanning multiple time buckets (5-minute intervals = 300,000ms)
     # First bucket: 0-300,000ms
@@ -139,11 +145,9 @@ def test_upload_tags_to_fabric_full_workflow(
         Tag(323000, 326000, "More text here.", {}, "part_1.mp4", asr_job.id)
     ]
     
-    tagstore.upload_tags(obj_tags_bucket1 + obj_tags_bucket2, obj_job.id)
-
-    tagstore.upload_tags(asr_tags_bucket1 + asr_tags_bucket2, asr_job.id)
-
-    tagstore.upload_tags(shot_tags_bucket1, shot_job.id)
+    tagstore.upload_tags(obj_tags_bucket1 + obj_tags_bucket2, obj_job.id, q=q)
+    tagstore.upload_tags(asr_tags_bucket1 + asr_tags_bucket2, asr_job.id, q=q)
+    tagstore.upload_tags(shot_tags_bucket1, shot_job.id, q=q)
     
     # Run the upload workflow
     upload_tags_to_fabric(
@@ -274,10 +278,8 @@ def test_upload_tags_no_frame_tags(
 ):
     """Test upload with only metadata tags (no frame-level tags)"""
     
-    qhit = q.qhit
-    
     # Create job with only ASR tags (no frame_tags in additional_info)
-    asr_job = tagstore.start_job(qhit, "audio", "tagger", "asr")
+    asr_job = tagstore.start_job(q.qid, "audio", "tagger", "asr", q=q)
     
     asr_tags = [
         Tag(0, 3000, "Speech only test", {}, "part_0.mp4", asr_job.id),
@@ -285,7 +287,7 @@ def test_upload_tags_no_frame_tags(
     ]
     
     for tag in asr_tags:
-        tagstore.upload_tags([tag], asr_job.id)
+        tagstore.upload_tags([tag], asr_job.id, q=q)
     
     tags_path = os.path.join(temp_dir, "metadata_only")
     os.makedirs(tags_path, exist_ok=True)
@@ -307,4 +309,3 @@ def test_upload_tags_no_frame_tags(
     # overlay_tags might not be present if no frame-level tags exist
     if "overlay_tags" in video_tags_metadata:
         assert len(video_tags_metadata["overlay_tags"]) == 0, "Should have no overlay files"
-    

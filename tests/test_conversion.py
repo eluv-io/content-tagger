@@ -139,10 +139,11 @@ def test_get_latest_tags_complex_deduplication():
              patch.object(tagstore, 'find_tags') as mock_get_tags:
             
             mock_find.return_value = ["job1_old", "job2_old", "job3_new", "job4_face", "job5_asr_new"]
-            mock_get_job.side_effect = lambda jobid, auth=None: next((job for job in jobs if job.id == jobid), None)
-            mock_get_tags.side_effect = lambda jobid, auth=None: [tag for tag in tags if tag.jobid == jobid]
+            mock_get_job.side_effect = lambda jobid, q=None: next((job for job in jobs if job.id == jobid), None)
+            mock_get_tags.side_effect = lambda q=None, **kwargs: [tag for tag in tags if tag.jobid == kwargs.get('jobid', tag.jobid)]
 
-            result = get_latest_tags_for_content(MagicMock(qhit="iq__test"), tagstore)
+            #result = get_latest_tags_for_content(MagicMock(qhit="iq__test"), tagstore)
+            result = tagstore.find_tags(q=MagicMock(qhit="iq__test"))
             
             # Should have 5 jobs returned (all jobs, but with filtered tags)
             assert len(result) == 5
