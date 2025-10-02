@@ -30,7 +30,7 @@ def get_latest_tags_for_content(q: Content, ts: Tagstore) -> list[JobWithTags]:
 
     jobs = [ts.get_job(job_id, q=q) for job_id in job_ids]
     jobs = [job for job in jobs if job is not None]
-    jobs.sort(key=lambda job: job.id, reverse=True)  # Newest first
+    jobs.sort(key=lambda job: job.timestamp, reverse=True)  # Newest first
 
     tags = []
     source_features_tagged = set()

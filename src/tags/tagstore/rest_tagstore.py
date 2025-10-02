@@ -139,8 +139,9 @@ class RestTagstore(Tagstore):
         # Build query parameters
         params = {}
         
-        if 'job_id' in filters:
-            params['job_id'] = filters['job_id']
+        if 'jobid' in filters:
+            # TODO: probably should change to job_id everywhere
+            params['job_id'] = filters['jobid']
         if 'track' in filters:
             params['track'] = filters['track']
         if 'author' in filters:
