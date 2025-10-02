@@ -342,7 +342,7 @@ class Fetcher:
         if req.preserve_track:
             existing_tags = self.ts.find_tags(
                 author=self.config.author, 
-                qhit=q.qhit, 
+                qhit=q.qid, 
                 stream=req.stream_name, 
                 track=req.preserve_track,
                 auth=q._client.token

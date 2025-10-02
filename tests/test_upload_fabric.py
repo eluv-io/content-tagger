@@ -298,13 +298,13 @@ def test_upload_tags_no_frame_tags(
         tagstore=tagstore,
         tag_converter=tag_converter,
     )
-    
+
     video_tags_metadata = q.content_object_metadata(
         metadata_subtree="video_tags"
     )
 
     assert isinstance(video_tags_metadata, dict)
-    
+
     assert "metadata_tags" in video_tags_metadata, "Should have metadata_tags"
     # overlay_tags might not be present if no frame-level tags exist
     if "overlay_tags" in video_tags_metadata:

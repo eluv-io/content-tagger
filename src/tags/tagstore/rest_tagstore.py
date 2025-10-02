@@ -132,6 +132,8 @@ class RestTagstore(Tagstore):
         """
         
         assert q is not None
+        if 'qhit' in filters:
+            assert filters['qhit'] == q.qid
         qhit = q.qid
         
         # Build query parameters
@@ -203,6 +205,8 @@ class RestTagstore(Tagstore):
         """
         
         assert q is not None
+        if 'qhit' in filters:
+            assert filters['qhit'] == q.qid
         qhit = q.qid
         
         # Build query parameters

@@ -124,7 +124,7 @@ def test_download_with_replace_true(
     tagstore = fetcher.ts
 
     job = tagstore.start_job(
-        qhit=vod_content.qhit,
+        qhit=vod_content.qid,
         stream="video",
         author="tagger",
         track="track",

@@ -99,8 +99,11 @@ class FilesystemTagStore(Tagstore):
     def find_tags(self, q: Content | None = None, **filters) -> list[Tag]:
         """
         Find tags with flexible filtering.
+
+        NOTE: the filesystem implementation does not implement the shadowing logic.
         
         Supported filters:
+        - qhit: str
         - stream: str  
         - track: str
         - jobid: str  
@@ -191,9 +194,9 @@ class FilesystemTagStore(Tagstore):
         # Iterate through all directories in base_path
         if not os.path.exists(self.base_path):
             return job_ids
-        
+
         for job_id, job_dir in self._get_job_ids_with_paths():
-            
+
             # Skip if not a directory
             if not os.path.isdir(job_dir):
                 continue

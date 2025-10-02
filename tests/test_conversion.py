@@ -143,7 +143,7 @@ def test_get_latest_tags_complex_deduplication():
             mock_get_tags.side_effect = lambda q=None, **kwargs: [tag for tag in tags if tag.jobid == kwargs.get('jobid', tag.jobid)]
 
             #result = get_latest_tags_for_content(MagicMock(qhit="iq__test"), tagstore)
-            result = tagstore.find_tags(q=MagicMock(qhit="iq__test"))
+            result = get_latest_tags_for_content(MagicMock(qhit="iq__test"), tagstore)
             
             # Should have 5 jobs returned (all jobs, but with filtered tags)
             assert len(result) == 5

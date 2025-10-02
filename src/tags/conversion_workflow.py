@@ -6,9 +6,8 @@ from loguru import logger
 from elv_client_py import ElvClient
 from common_ml.utils.metrics import timeit
 from src.common.content import Content
-from src.tags.conversion import JobWithTags
 from src.tags.tagstore.abstract import Tagstore
-from src.tags.conversion import TagConverter
+from src.tags.conversion import TagConverter, get_latest_tags_for_content
 
 def upload_tags_to_fabric(
     source_q: Content,
@@ -30,22 +29,14 @@ def upload_tags_to_fabric(
     # Step 1: Extract tags and jobs from tagstore
     logger.info("Extracting latest tags from tagstore")
 
-    # TODO: fix for filesystem tagstore
-    tags = tagstore.find_tags(q=source_q)
-    jobids = set(tag.jobid for tag in tags if tag.jobid)
+    job_tags = get_latest_tags_for_content(source_q, tagstore)
 
-    job_tags = []
-    for jobid in jobids:
-        job = tagstore.get_job(jobid, q=source_q)
-        assert job is not None
-        job_tags.append(JobWithTags(job=job, tags=[tag for tag in tags if tag.jobid == jobid]))
-    
     if not job_tags:
         logger.warning(f"No tags found for content {source_q.qhit}")
         return
-    
+
     logger.info(f"Found {len(job_tags)} jobs with tags")
-    
+
     # Step 3: Split into time-based buckets
     bucketed_job_tags = tag_converter.split_tags(job_tags)
     

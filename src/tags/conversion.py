@@ -21,11 +21,10 @@ class JobWithTags:
     job: UploadJob
     tags: list[Tag]
     
-# TODO: this should be the default behavior of /{qid}/tags
 def get_latest_tags_for_content(q: Content, ts: Tagstore) -> list[JobWithTags]:
     """Get tags from the latest job for each source+track pair for the given content."""
 
-    job_ids = ts.find_jobs(qhit=q.qhit, q=q)
+    job_ids = ts.find_jobs(qhit=q.qid, q=q)
     if not job_ids:
         return []
 
@@ -265,10 +264,10 @@ class TagConverter:
         for key, video_tags in tc.tracks.items():
             label = self._feature_to_label(key)
             track = self._label_to_track(label)
-            
+
             if track not in result["metadata_tags"]:
                 result["metadata_tags"][track] = {"label": label, "tags": []}
-                
+
             for vtag in video_tags:
                 entry: dict[str, object] = {
                     "start_time": vtag.start_time,
@@ -281,7 +280,7 @@ class TagConverter:
         return result
 
     def dump_overlay(self, overlay: Overlay) -> dict:
-     
+    
         result = {}
         for frame_idx, feature_map in overlay.items():
             frame_idx = str(frame_idx)
