@@ -14,7 +14,10 @@ def handle_tag(qhit: str) -> Response:
     q = _get_authorized_content(qhit)
 
     try:
-        args = TagAPIArgs.from_dict(request.json)
+        body = request.json
+        if body is None:
+            raise BadRequestError("Missing request body")
+        args = TagAPIArgs.from_dict(body)
     except BadRequestError as e:
         raise e
     except Exception as e:
@@ -34,7 +37,10 @@ def handle_image_tag(qhit: str) -> Response:
     q = _get_authorized_content(qhit)
 
     try:
-        args = ImageTagAPIArgs.from_dict(request.json)
+        body = request.json
+        if body is None:
+            raise BadRequestError("Missing request body")
+        args = ImageTagAPIArgs.from_dict(body)
     except TypeError as e:
         return Response(response=json.dumps({'error': str(e)}), status=400, mimetype='application/json')
 

@@ -24,9 +24,14 @@ class TagAPIArgs(Data):
         return f"TagAPIArgs(features={self.features}, start_time={self.start_time}, end_time={self.end_time}, replace={self.replace})"
 
     def to_tag_args(self) -> TagArgs:
+        scope_args = {}
+        if self.start_time is not None:
+            scope_args['start_time'] = self.start_time
+        if self.end_time is not None:
+            scope_args['end_time'] = self.end_time
         return TagArgs(
             features=self.features,
-            scope=VideoScope(start_time=self.start_time, end_time=self.end_time),
+            scope=VideoScope(**scope_args),
             replace=self.replace
         )
 

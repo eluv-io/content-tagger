@@ -85,6 +85,7 @@ class TagJob:
     tagging_done: threading.Event | None
 
     def get_id(self) -> 'JobID':
+        assert self.args.runconfig.stream is not None
         return JobID(qhit=self.args.q.qhit, feature=self.args.feature, stream=self.args.runconfig.stream)
 
 @dataclass

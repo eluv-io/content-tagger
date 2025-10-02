@@ -20,14 +20,8 @@ class AssetScope:
 
 @dataclass
 class VideoScope:
-    start_time: int
-    end_time: int
-
-    def __post_init__(self):
-        if self.start_time is None:
-            self.start_time = 0
-        if self.end_time is None:
-            self.end_time = float("inf")
+    start_time: int = 0
+    end_time: float | int = float("inf")
 
 @dataclass
 class DownloadRequest:

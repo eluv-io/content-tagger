@@ -271,6 +271,7 @@ class Fetcher:
                 )
 
             fps = self._parse_fps(video_stream_info["frame_rate"])
+            assert isinstance(xc_params, dict)
             part_duration = xc_params.get("seg_duration", None)
 
             if part_duration is None:
@@ -279,6 +280,7 @@ class Fetcher:
                 )
             part_duration = float(part_duration)
         else:
+            assert isinstance(xc_params, dict)
             sr = xc_params.get("sample_rate", None)
             ts = xc_params.get("audio_seg_duration_ts", None)
 
@@ -529,4 +531,5 @@ class Fetcher:
     def _download_concurrent(self, q: Content, file_jobs: list[tuple[str, str]], output_path: str) -> list[str]:
         with timeit("Downloading assets"):
             status = q.download_files(dest_path=output_path, file_jobs=file_jobs)
+        assert isinstance(status, list) and len(status) == len(file_jobs)
         return [asset for (asset, _), error in zip(file_jobs, status) if error is None]

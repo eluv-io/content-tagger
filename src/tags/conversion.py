@@ -256,6 +256,7 @@ class TagConverter:
                         if vtag.text is not None:
                             # NOTE: this is just a tag file convention, probably should just be a string value
                             as_dict["text"] = [as_dict["text"]]
+                        assert isinstance(entry["text"], defaultdict)
                         entry["text"][track_label].append(as_dict)
                         
                 result["metadata_tags"][key]["tags"].append(entry)
