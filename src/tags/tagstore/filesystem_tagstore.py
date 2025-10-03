@@ -5,6 +5,7 @@ import json
 import os
 import base64
 import time
+import uuid
 
 from src.common.content import Content
 from src.tags.tagstore.types import *
@@ -25,7 +26,7 @@ class FilesystemTagStore(Tagstore):
         """
         Starts a new job with provided metadata
         """
-        jobid = qhit + "/" + track + "/" + datetime.now().strftime("%Y%m%d_%H%M%S")
+        jobid = qhit + "/" + track + "/" + datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + str(uuid.uuid4())[0:4]
         job_dir = self._get_job_dir(jobid)
         os.makedirs(job_dir, exist_ok=True)
 

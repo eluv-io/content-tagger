@@ -1,6 +1,4 @@
 import pytest
-import tempfile
-import shutil
 import os
 import json
 from dotenv import load_dotenv
@@ -8,35 +6,10 @@ from dotenv import load_dotenv
 from src.tags.conversion_workflow import upload_tags_to_fabric
 from src.tags.conversion import TagConverter, TagConverterConfig
 from src.tags.tagstore.abstract import Tagstore
-from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
-from src.tags.tagstore.rest_tagstore import RestTagstore
 from src.tags.tagstore.types import Tag
-from src.common.content import Content, ContentConfig, ContentFactory
+from src.common.content import Content
 
 load_dotenv()
-
-TEST_QHIT = "iq__3C58dDYxsn5KKSWGYrfYr44ykJRm"
-
-@pytest.fixture
-def temp_dir():
-    """Create a temporary directory for tests"""
-    temp_path = tempfile.mkdtemp()
-    yield temp_path
-    shutil.rmtree(temp_path, ignore_errors=True)
-
-@pytest.fixture
-def filesystem_tagstore(temp_dir: str) -> FilesystemTagStore:
-    """Create a FilesystemTagStore with test data"""
-    store = FilesystemTagStore(base_dir=temp_dir)
-    return store
-
-@pytest.fixture
-def tagstore(rest_tagstore: RestTagstore, filesystem_tagstore: FilesystemTagStore):
-    """Create appropriate tagstore based on TEST_TAGSTORE_HOST environment variable"""
-    if os.getenv("TEST_TAGSTORE_HOST"):
-        return rest_tagstore
-    else:
-        return filesystem_tagstore
 
 @pytest.fixture
 def tag_converter() -> TagConverter:
@@ -54,43 +27,8 @@ def tag_converter() -> TagConverter:
     )
     return TagConverter(config)
 
-@pytest.fixture
-def q():
-    """Create Content object with write token from environment"""
-    auth_token = os.getenv("TEST_AUTH")
-    write_token = os.getenv("TEST_QWT")
-    
-    if not auth_token:
-        pytest.skip("TEST_AUTH not set in environment")
-    if not write_token:
-        pytest.skip("TEST_QWT not set in environment")
-    
-    cfg = ContentConfig(
-        config_url="https://host-154-14-185-98.contentfabric.io/config?self&qspace=main", 
-        parts_url="https://host-154-14-185-98.contentfabric.io/config?self&qspace=main"
-    )
-    factory = ContentFactory(cfg=cfg)
-    
-    q = factory.create_content(qhit=write_token, auth=auth_token)
-
-    yield q
-    q.replace_metadata(metadata_subtree="video_tags", metadata={})
-
-@pytest.fixture
-def rest_tagstore(q: Content) -> RestTagstore:
-    """Create a RestTagstore using TEST_TAGSTORE_HOST environment variable"""
-    host = os.getenv("TEST_TAGSTORE_HOST") or ""
-    ts = RestTagstore(base_url=host)
-
-    if host:
-        jobids = ts.find_jobs(q=q)
-        for jobid in jobids:
-            ts.delete_job(jobid, q=q)
-
-    return ts
-
 def test_upload_tags_to_fabric_full_workflow(
-    tagstore: Tagstore,
+    tag_store: Tagstore,
     tag_converter: TagConverter,
     q: Content,
     temp_dir: str,
@@ -100,9 +38,9 @@ def test_upload_tags_to_fabric_full_workflow(
     qhit = q.qid
 
     # Create test jobs in tagstore
-    obj_job = tagstore.start_job(qhit, track="object", author="tagger", stream="video", q=q)
-    asr_job = tagstore.start_job(qhit, stream="audio", author="tagger", track="asr", q=q)
-    shot_job = tagstore.start_job(qhit, stream="video", author="tagger", track="shot", q=q)
+    obj_job = tag_store.start_job(qhit, track="object", author="tagger", stream="video", q=q)
+    asr_job = tag_store.start_job(qhit, stream="audio", author="tagger", track="asr", q=q)
+    shot_job = tag_store.start_job(qhit, stream="video", author="tagger", track="shot", q=q)
 
     # Create tags spanning multiple time buckets (5-minute intervals = 300,000ms)
     # First bucket: 0-300,000ms
@@ -145,15 +83,15 @@ def test_upload_tags_to_fabric_full_workflow(
         Tag(323000, 326000, "More text here.", {}, "part_1.mp4", asr_job.id)
     ]
     
-    tagstore.upload_tags(obj_tags_bucket1 + obj_tags_bucket2, obj_job.id, q=q)
-    tagstore.upload_tags(asr_tags_bucket1 + asr_tags_bucket2, asr_job.id, q=q)
-    tagstore.upload_tags(shot_tags_bucket1, shot_job.id, q=q)
+    tag_store.upload_tags(obj_tags_bucket1 + obj_tags_bucket2, obj_job.id, q=q)
+    tag_store.upload_tags(asr_tags_bucket1 + asr_tags_bucket2, asr_job.id, q=q)
+    tag_store.upload_tags(shot_tags_bucket1, shot_job.id, q=q)
     
     # Run the upload workflow
     upload_tags_to_fabric(
         source_q=q,
         qwt=q,
-        tagstore=tagstore,
+        tagstore=tag_store,
         tag_converter=tag_converter
     )
     
@@ -249,7 +187,7 @@ def test_upload_tags_to_fabric_full_workflow(
             assert "object_detection" in frame_tags['352000'], "Frame 352000 should have Object Detection"
 
 def test_upload_tags_empty_tagstore(
-    tagstore: Tagstore,
+    tag_store: Tagstore,
     tag_converter: TagConverter,
     q: Content,
     temp_dir: str
@@ -263,7 +201,7 @@ def test_upload_tags_empty_tagstore(
     upload_tags_to_fabric(
         source_q=q,
         qwt=q,
-        tagstore=tagstore,
+        tagstore=tag_store,
         tag_converter=tag_converter,
     )
     
@@ -271,7 +209,7 @@ def test_upload_tags_empty_tagstore(
     assert len(os.listdir(tags_path)) == 0, "No files should be created for empty tagstore"
 
 def test_upload_tags_no_frame_tags(
-    tagstore: Tagstore,
+    tag_store: Tagstore,
     tag_converter: TagConverter,
     q: Content,
     temp_dir: str
@@ -279,7 +217,7 @@ def test_upload_tags_no_frame_tags(
     """Test upload with only metadata tags (no frame-level tags)"""
     
     # Create job with only ASR tags (no frame_tags in additional_info)
-    asr_job = tagstore.start_job(q.qid, "audio", "tagger", "asr", q=q)
+    asr_job = tag_store.start_job(q.qid, "audio", "tagger", "asr", q=q)
     
     asr_tags = [
         Tag(0, 3000, "Speech only test", {}, "part_0.mp4", asr_job.id),
@@ -287,7 +225,7 @@ def test_upload_tags_no_frame_tags(
     ]
     
     for tag in asr_tags:
-        tagstore.upload_tags([tag], asr_job.id, q=q)
+        tag_store.upload_tags([tag], asr_job.id, q=q)
     
     tags_path = os.path.join(temp_dir, "metadata_only")
     os.makedirs(tags_path, exist_ok=True)
@@ -295,7 +233,7 @@ def test_upload_tags_no_frame_tags(
     upload_tags_to_fabric(
         source_q=q,
         qwt=q,
-        tagstore=tagstore,
+        tagstore=tag_store,
         tag_converter=tag_converter,
     )
 

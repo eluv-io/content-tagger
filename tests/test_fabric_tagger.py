@@ -1,7 +1,5 @@
 import threading
 import pytest
-import tempfile
-import shutil
 import os
 import time
 from unittest.mock import Mock, patch
@@ -11,7 +9,6 @@ from src.tagger.system_tagging.resource_manager import SystemTagger
 from src.tag_containers.types import ModelConfig, ModelOutput
 from src.tagger.system_tagging.types import SysConfig
 from src.tagger.fabric_tagging.types import RunConfig, TagArgs
-from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.tag_containers.types import ContainerRequest
 from src.fetch.types import DownloadRequest, DownloadResult, Source, StreamMetadata, VideoScope
 from src.common.content import Content
@@ -171,15 +168,6 @@ class FakeContainerRegistry:
         }
         return mock_cfg
 
-
-@pytest.fixture
-def temp_dir():
-    """Create a temporary directory for test files"""
-    temp_path = tempfile.mkdtemp()
-    yield temp_path
-    shutil.rmtree(temp_path, ignore_errors=True)
-
-
 @pytest.fixture
 def fake_media_files(temp_dir):
     """Create fake media files for testing"""
@@ -232,13 +220,6 @@ def fake_fetcher(fake_media_files):
 
 
 @pytest.fixture
-def tag_store(temp_dir):
-    """Create a real FilesystemTagStore for testing"""
-    tagstore_dir = os.path.join(temp_dir, "tagstore")
-    return FilesystemTagStore(base_dir=tagstore_dir)
-
-
-@pytest.fixture
 def system_tagger():
     """Create a real SystemTagger for testing"""
     return SystemTagger(cfg=SysConfig(gpus=["gpu", "gpu", "disabled"], resources={"cpu_juice": 100}))
@@ -266,9 +247,9 @@ def fabric_tagger(system_tagger, fake_container_registry, tag_store, fake_fetche
 
 
 @pytest.fixture
-def sample_content():
+def sample_content(test_qid):
     """Create a sample Content object for testing"""
-    return Mock(qhit="iq__test_content", auth="fake_auth_token")
+    return Mock(qhit=test_qid, auth="fake_auth_token")
 
 
 @pytest.fixture

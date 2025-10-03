@@ -11,14 +11,6 @@ from src.common.resources import SystemResources
 
 
 @pytest.fixture
-def temp_dir():
-    """Create a temporary directory for test files"""
-    temp_path = tempfile.mkdtemp()
-    yield temp_path
-    shutil.rmtree(temp_path, ignore_errors=True)
-
-
-@pytest.fixture
 def mock_podman_client():
     """Mock PodmanClient for testing"""
     return Mock()

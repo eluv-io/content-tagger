@@ -1,36 +1,15 @@
 import pytest
-import tempfile
-import shutil
 import os
-from dotenv import load_dotenv
-from typing import Generator
 
 from src.fetch.fetch_video import Fetcher
 from src.fetch.types import AssetScope, DownloadRequest, FetcherConfig, VideoScope
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore, Tag
-from src.common.content import Content, ContentConfig, ContentFactory
+from src.common.content import Content
 from src.common.errors import MissingResourceError
-
-# Load environment variables from .env file
-load_dotenv()
 
 VOD_QHIT = "iq__3C58dDYxsn5KKSWGYrfYr44ykJRm"
 LEGACY_VOD_QHIT = "hq__3B47zhoJbyiwqWUq8DNJJQXHg1GZitfQBXpsGkV2tQLpHzp2McAk7xAFJwKSJ99mgjzZjqRdHU"
 ASSETS_QHIT = "hq__3B47zhoJbyiwqWUq8DNJJQXHg1GZitfQBXpsGkV2tQLpHzp2McAk7xAFJwKSJ99mgjzZjqRdHU"
-
-@pytest.fixture
-def temp_dir() -> Generator[str, None, None]:
-    """Create a temporary directory for tests"""
-    temp_path = tempfile.mkdtemp()
-    yield temp_path
-    shutil.rmtree(temp_path, ignore_errors=True)
-
-
-@pytest.fixture
-def tag_store(temp_dir: str) -> FilesystemTagStore:
-    """Create a FilesystemTagStore for testing"""
-    return FilesystemTagStore(base_dir=temp_dir)
-
 
 @pytest.fixture
 def fetcher_config(temp_dir: str) -> FetcherConfig:
@@ -48,14 +27,6 @@ def fetcher_config(temp_dir: str) -> FetcherConfig:
 def fetcher(fetcher_config: FetcherConfig, tag_store: FilesystemTagStore) -> Fetcher:
     """Create a Fetcher instance for testing"""
     return Fetcher(config=fetcher_config, ts=tag_store)
-
-@pytest.fixture
-def qfactory():
-    cfg = ContentConfig(
-        config_url="https://host-154-14-185-98.contentfabric.io/config?self&qspace=main", 
-        parts_url="http://192.168.96.203/config?self&qspace=main"
-    )
-    return ContentFactory(cfg=cfg)
 
 @pytest.fixture
 def legacy_vod_content(qfactory) -> Content:
