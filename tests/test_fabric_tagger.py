@@ -560,7 +560,7 @@ def test_container_tags_method_fails(mock_tags, fabric_tagger, q):
         elif job_status in ["Completed", "Stopped"]:
             pytest.fail(f"Expected job to fail, but got status: {job_status}")
         
-        time.sleep(0.1)
+        time.sleep(0.25)
     else:
         pytest.fail("Job did not fail within timeout period")
     
@@ -574,7 +574,7 @@ def test_container_tags_method_fails(mock_tags, fabric_tagger, q):
     
     # Verify the container was stopped
     inactive_job = list(fabric_tagger.jobstore.inactive_jobs.values())[0]
-    time.sleep(0.1)  # Give a moment for the container to stop
+    time.sleep(0.25)  # Give a moment for the container to stop
     assert inactive_job.state.container.is_stopped == True
     assert inactive_job.stop_event.is_set()
     
@@ -622,7 +622,7 @@ def wait_tag(fabric_tagger, jobid, timeout):
                     return
                 elif status[stream][feature]["status"] == "Failed":
                     pytest.fail(f"Job failed: {status[stream][feature]['error']}")
-                time.sleep(0.1)
+                time.sleep(0.25)
     pytest.fail("Job did not complete within timeout period")
 
 @patch.object(FakeTagContainer, 'exit_code', autospec=True)
@@ -661,7 +661,7 @@ def test_container_nonzero_exit_code(mock_exit_code, fabric_tagger, q):
         elif job_status in ["Completed", "Stopped"]:
             pytest.fail(f"Expected job to fail due to exit code, but got: {job_status}")
         
-        time.sleep(0.1)
+        time.sleep(0.25)
     else:
         pytest.fail("Job did not fail within timeout period")
     

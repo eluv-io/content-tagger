@@ -39,10 +39,9 @@ class Fetcher:
         exit_event: threading.Event | None = None,
     ) -> DownloadResult:
         logger.debug(req)
-        # TODO: need to flip order of sem and stream locks
-        with self.dl_sem:
-            stream_key = (q.qhit, req.stream_name)
-            with self.stream_locks[stream_key]:
+        stream_key = (q.qhit, req.stream_name)
+        with self.stream_locks[stream_key]:
+            with self.dl_sem:
                 if req.stream_name == "assets":
                     return self._fetch_assets(q, req)
                 return self._download_stream(q, req, exit_event)
