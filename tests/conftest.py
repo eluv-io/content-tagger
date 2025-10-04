@@ -3,6 +3,7 @@ import shutil
 import tempfile
 import pytest
 import dotenv
+from unittest.mock import Mock
 
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.tags.tagstore.rest_tagstore import RestTagstore
@@ -63,18 +64,19 @@ def writable_q(qfactory):
     q.replace_metadata(metadata_subtree="video_tags", metadata={})
     
 @pytest.fixture
-def readonly_q(qfactory, test_qid):
+def q(qfactory, test_qid):
     """Check if TEST_AUTH is set in environment"""
     auth_token = os.getenv("TEST_AUTH")
     
     if not auth_token:
-        return None
+        return Mock(qid=test_qid, qhit=test_qid)
 
     return qfactory.create_content(qhit=test_qid, auth=auth_token)
 
+"""
 @pytest.fixture
-def q(writable_q, readonly_q):
-    """Create Content object with write token from environment"""
+def q(writable_q, readonly_q, test_qid):
+    #Create Content object with write token from environment
     auth_token = os.getenv("TEST_AUTH")
     write_token = os.getenv("TEST_QWT")
 
@@ -83,7 +85,8 @@ def q(writable_q, readonly_q):
     elif auth_token:
         return readonly_q
     else:
-        return None
+        return Mock(qid=test_qid, qhit=test_qid)
+"""
 
 @pytest.fixture
 def rest_tagstore(q: Content) -> RestTagstore:

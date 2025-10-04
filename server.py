@@ -36,12 +36,12 @@ def configure_routes(app: Flask) -> None:
         logger.exception(f"HTTP error: {e}")
         status_code = e.response.status_code
         error_resp = json.loads(e.response.text)
-        return jsonify({'message': 'Fabric API error', 'error': error_resp}), status_code
+        return jsonify({'code': status_code, 'error': error_resp}), status_code
 
     @app.errorhandler(MissingResourceError)
     def handle_missing_resource(e):
         logger.exception(f"Missing resource: {e}")
-        return jsonify({'message': e.message}), 404
+        return jsonify({'code': 404, 'message': e.message}), 404
 
     @app.route('/<qhit>/tag', methods=['POST'])
     def tag(qhit: str) -> Response:

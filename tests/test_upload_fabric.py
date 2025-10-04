@@ -30,10 +30,11 @@ def tag_converter() -> TagConverter:
 def test_upload_tags_to_fabric_full_workflow(
     tag_store: Tagstore,
     tag_converter: TagConverter,
-    q: Content,
+    writable_q: Content,
     temp_dir: str,
 ):
     """Test complete upload workflow with multiple tracks and time buckets"""
+    q = writable_q
 
     qhit = q.qid
 
@@ -189,10 +190,11 @@ def test_upload_tags_to_fabric_full_workflow(
 def test_upload_tags_empty_tagstore(
     tag_store: Tagstore,
     tag_converter: TagConverter,
-    q: Content,
+    writable_q: Content,
     temp_dir: str
 ):
     """Test upload workflow with empty tagstore"""
+    q = writable_q
     
     tags_path = os.path.join(temp_dir, "empty_tags")
     os.makedirs(tags_path, exist_ok=True)
@@ -211,10 +213,11 @@ def test_upload_tags_empty_tagstore(
 def test_upload_tags_no_frame_tags(
     tag_store: Tagstore,
     tag_converter: TagConverter,
-    q: Content,
+    writable_q: Content,
     temp_dir: str
 ):
     """Test upload with only metadata tags (no frame-level tags)"""
+    q = writable_q
     
     # Create job with only ASR tags (no frame_tags in additional_info)
     asr_job = tag_store.start_job(q.qid, "audio", "tagger", "asr", q=q)
