@@ -347,7 +347,7 @@ class Fetcher:
                 qhit=q.qid, 
                 stream=req.stream_name, 
                 track=req.preserve_track,
-                auth=q._client.token
+                q=q
             )
             tagged_parts = {tag.source for tag in existing_tags}
 
@@ -484,7 +484,7 @@ class Fetcher:
 
         tagged_assets = []
         if req.preserve_track:
-            existing_tags = self.ts.find_tags(author=self.config.author, qhit=q.qhit, stream="assets", track=req.preserve_track, auth=q._client.token)
+            existing_tags = self.ts.find_tags(author=self.config.author, qhit=q.qhit, stream="assets", track=req.preserve_track, q=q)
             tagged_assets = [tag.source for tag in existing_tags]
 
         if tagged_assets:

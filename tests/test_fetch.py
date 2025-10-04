@@ -8,8 +8,8 @@ from src.common.content import Content
 from src.common.errors import MissingResourceError
 
 VOD_QHIT = "iq__3C58dDYxsn5KKSWGYrfYr44ykJRm"
-LEGACY_VOD_QHIT = "hq__3B47zhoJbyiwqWUq8DNJJQXHg1GZitfQBXpsGkV2tQLpHzp2McAk7xAFJwKSJ99mgjzZjqRdHU"
-ASSETS_QHIT = "hq__3B47zhoJbyiwqWUq8DNJJQXHg1GZitfQBXpsGkV2tQLpHzp2McAk7xAFJwKSJ99mgjzZjqRdHU"
+LEGACY_VOD_QHIT = "iq__cebzuQ8BqsWZyoUdnTXCe23fUgz"
+ASSETS_QHIT = "iq__cebzuQ8BqsWZyoUdnTXCe23fUgz"
 
 @pytest.fixture
 def fetcher_config(temp_dir: str) -> FetcherConfig:
@@ -24,46 +24,64 @@ def fetcher_config(temp_dir: str) -> FetcherConfig:
     )
 
 @pytest.fixture
-def fetcher(fetcher_config: FetcherConfig, tag_store: FilesystemTagStore) -> Fetcher:
+def fetcher(fetcher_config: FetcherConfig, tag_store) -> Fetcher:
     """Create a Fetcher instance for testing"""
     return Fetcher(config=fetcher_config, ts=tag_store)
 
 @pytest.fixture
-def legacy_vod_content(qfactory) -> Content:
+def legacy_vod_content(qfactory, tag_store) -> Content:
     auth_token = os.getenv("TEST_AUTH")
     
     if not auth_token:
         pytest.skip("TEST_AUTH not set in environment")
     
     try:
-        return qfactory.create_content(qhit=LEGACY_VOD_QHIT, auth=auth_token)
+        q = qfactory.create_content(qhit=LEGACY_VOD_QHIT, auth=auth_token)
     except Exception as e:
         pytest.skip(f"Failed to create legacy VOD content: {e}")
 
+    jobids = tag_store.find_jobs(q=q)
+    for jobid in jobids:
+        tag_store.delete_job(jobid, q=q)
+
+    return q
+
 
 @pytest.fixture
-def vod_content(qfactory) -> Content:
+def vod_content(qfactory, tag_store) -> Content:
     auth_token = os.getenv("TEST_AUTH")
     
     if not auth_token:
         pytest.skip("TEST_AUTH not set in environment")
     
     try:
-        return qfactory.create_content(qhit=VOD_QHIT, auth=auth_token)
+        q = qfactory.create_content(qhit=VOD_QHIT, auth=auth_token)
     except Exception as e:
         pytest.skip(f"Failed to create modern VOD content: {e}")
 
+    jobids = tag_store.find_jobs(q=q)
+    for jobid in jobids:
+        tag_store.delete_job(jobid, q=q)
+
+    return q
+
 @pytest.fixture
-def assets_content(qfactory) -> Content:
+def assets_content(qfactory, tag_store) -> Content:
     auth_token = os.getenv("TEST_AUTH")
 
     if not auth_token:
         pytest.skip("TEST_AUTH not set in environment")
 
     try:
-        return qfactory.create_content(qhit=ASSETS_QHIT, auth=auth_token)
+        q = qfactory.create_content(qhit=ASSETS_QHIT, auth=auth_token)
     except Exception as e:
         pytest.skip(f"Failed to create assets content: {e}")
+
+    jobids = tag_store.find_jobs(q=q)
+    for jobid in jobids:
+        tag_store.delete_job(jobid, q=q)
+
+    return q
 
 
 @pytest.mark.parametrize("content_fixture", ["vod_content", "legacy_vod_content"])
@@ -113,7 +131,7 @@ def test_download_with_replace_true(
         jobid=job.id
     )
 
-    tagstore.upload_tags([tag], job.id)
+    tagstore.upload_tags([tag], job.id, q=vod_content)
 
     result2 = fetcher.download(vod_content, req)
     assert len(result2.successful_sources) == 1
@@ -225,7 +243,7 @@ def test_fetch_assets_with_preserve_track(
         )
         tags.append(tag)
     
-    tagstore.upload_tags(tags, jobid)
+    tagstore.upload_tags(tags, jobid, q=assets_content)
     
     req3 = DownloadRequest(
         stream_name="assets",
@@ -281,10 +299,10 @@ def test_fetch_assets_with_preserve_track(
             jobid=new_job.id
         )
         newtags.append(tag)
-    tagstore.upload_tags(newtags, new_job.id)
+    tagstore.upload_tags(newtags, new_job.id, q=assets_content)
 
     # Verify that the tags were uploaded correctly
-    uploaded_tags = tagstore.find_tags(jobid=new_job.id)
+    uploaded_tags = tagstore.find_tags(jobid=new_job.id, q=assets_content)
     assert len(uploaded_tags) == len(newtags), "Not all tags were uploaded"
     for tag in newtags:
         assert tag in uploaded_tags, f"Tag {tag} was not found in uploaded tags"

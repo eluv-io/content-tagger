@@ -20,7 +20,7 @@ from src.common.errors import MissingResourceError
 class FakeTagContainer:
     """Fake TagContainer that simulates work and asynchronous behavior."""
     
-    def __init__(self, fileargs, feature, work_duration: float = 0.1):
+    def __init__(self, fileargs, feature, work_duration: float = 0.25):
         """
         Initialize the FakeTagContainer.
 
@@ -474,7 +474,6 @@ def test_tags_uploaded_during_and_after_job(
         streams_to_features[cfg.stream].append(feature)
 
     tag_counts = set()
-    job_statuses = set()
 
     timeout = 3
     start = time.time()
@@ -485,19 +484,6 @@ def test_tags_uploaded_during_and_after_job(
         for stream, features in streams_to_features.items():
             for feature in features:
                 tag_count = fabric_tagger.tagstore.count_tags(track=feature, stream=stream, q=q)
-                #print(fabric_tagger.mailbox)
-                #st = fabric_tagger.status(q.qhit)
-                #status = st[stream][feature]
-                #if status["status"] != "Completed":
-                #    end = False
-                #job_statuses.add(status["status"])
-                #if status["status"] == "Fetching Content":
-                #    assert tag_count == 0
-                #if tag_count == 2:
-                #    assert status["tagging_progress"] == '50%'
-                #if status["status"] == "Completed":
-                #    assert status["tagging_progress"] == '100%'
-                #    assert tag_count == 4
                 tag_counts.add(tag_count)
                 if tag_count < 4:
                     end = False

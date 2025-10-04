@@ -177,7 +177,7 @@ class RestTagstore(Tagstore):
                 end_time=api_tag['end_time'],
                 text=api_tag['tag'],
                 additional_info=api_tag.get('additional_info', {}),
-                source=api_tag.get('source', 'content'),
+                source=api_tag.get('source', ''),
                 jobid=api_tag['job_id']
             )
             
