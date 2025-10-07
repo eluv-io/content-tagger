@@ -4,7 +4,7 @@ import shutil
 import time
 import json
 from dotenv import load_dotenv
-from loguru import logger
+from src.common.logging import logger
 
 from server import create_app
 from app_config import AppConfig

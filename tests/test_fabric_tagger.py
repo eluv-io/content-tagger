@@ -148,9 +148,9 @@ class FakeContainerRegistry:
         self.containers = {}
         
     def get(self, req: ContainerRequest) -> FakeTagContainer:
-        container_key = f"{req.model}_{len(req.file_args)}"
+        container_key = f"{req.model_id}_{len(req.file_args)}"
         if container_key not in self.containers:
-            self.containers[container_key] = FakeTagContainer(req.file_args, req.model)
+            self.containers[container_key] = FakeTagContainer(req.file_args, req.model_id)
         return self.containers[container_key]
     
     def get_model_config(self, feature: str) -> ModelConfig:
@@ -589,7 +589,7 @@ def test_container_tags_method_fails(mock_tags, fabric_tagger, q):
 def test_failed_tag(mock_get, fabric_tagger, q):
     # Configure the mock to return PartialFailContainer
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
-        return PartialFailContainer(req.file_args, req.model)
+        return PartialFailContainer(req.file_args, req.model_id)
     
     mock_get.side_effect = get_side_effect
     

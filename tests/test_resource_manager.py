@@ -333,3 +333,55 @@ def test_status_returns_copy(system_tagger):
     # Should be equal but not the same object
     assert status1.status == status2.status
     assert status1 is not status2
+
+
+def test_stop_queued_job_doesnt_free_resources(system_tagger):
+    """Test that stopping a queued job doesn't incorrectly free resources"""
+    # Start enough jobs to fill all GPUs and queue some
+    containers = [MockTagContainer(work_duration=1.0) for _ in range(4)]  # Long duration
+    resources = {"A6000": 1}  # Each needs 1 GPU, but we only have 2
+
+    total_resources = system_tagger.active_resources.copy()
+    
+    job_ids = []
+    for container in containers:
+        job_id = system_tagger.start(container, resources)
+        job_ids.append(job_id)
+    
+    # Let the first jobs start and others queue
+    time.sleep(0.1)
+    
+    # Find a queued job
+    queued_job_id = None
+    for job_id in job_ids:
+        status = system_tagger.status(job_id)
+        if status.status == "Queued":
+            queued_job_id = job_id
+            break
+    
+    assert queued_job_id is not None, "Should have at least one queued job"
+    
+    # Record resources before stopping the queued job
+    resources_before = system_tagger.active_resources.copy()
+
+    assert resources_before["A6000"] == 0
+    
+    # Stop the queued job
+    system_tagger.stop(queued_job_id)
+    
+    # Resources should be the same (no resources were reserved for queued job)
+    resources_after = system_tagger.active_resources
+    assert resources_after == resources_before, f"Resources changed from {resources_before} to {resources_after} when stopping queued job"
+    
+    # The job should be stopped
+    status = system_tagger.status(queued_job_id)
+    assert status.status == "Stopped"
+    
+    # Clean up - stop all jobs
+    for job_id in job_ids:
+        if job_id != queued_job_id:
+            system_tagger.stop(job_id)
+
+    # check that resources are fully restored
+    final_resources = system_tagger.active_resources
+    assert final_resources == total_resources, f"Final resources {final_resources} do not match total {total_resources}"

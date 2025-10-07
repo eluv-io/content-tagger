@@ -107,7 +107,7 @@ class SystemTagger:
 
     def stop(self, jobid: str) -> ContainerJobStatus | None:
         """Stop a job and return its status. Return None if jobid not found."""
-        logger.info("Received request to stop job", extra={"jobid": jobid})
+        logger.info("Received request to stop job", extra={"jobid": jobid[:8]})
         request = StopJobRequest(jobid=jobid, status="Stopped")
         response_queue = queue.Queue()
         message = Message(MessageType.STOP_JOB, {"request": request}, response_queue)
@@ -116,7 +116,7 @@ class SystemTagger:
 
     def status(self, jobid: str) -> ContainerJobStatus:
         """Get job status."""
-        logger.info("Received request to get status for job", extra={"jobid": jobid})
+        logger.bind(extra={"jobid": jobid[:8]}).info("Received request to get status for job")
         response_queue = queue.Queue()
         message = Message(MessageType.GET_STATUS, {"jobid": jobid}, response_queue)
         self.message_queue.put(message)
@@ -243,7 +243,7 @@ class SystemTagger:
         
         job = self.jobs[request.jobid]
 
-        log_fields = {"jobid": request.jobid, "container": job.container.name(), "status": job.jobstatus.status}
+        log_fields = {"jobid": request.jobid[:8], "container": job.container.name(), "status": job.jobstatus.status}
         
         if job.jobstatus.time_ended:
             logger.warning("stop requested for already stopped job", extra=log_fields)
@@ -255,10 +255,6 @@ class SystemTagger:
             logger.opt(exception=request.error).info("stopping job with error", extra=log_fields)
         else:
             logger.info("stopping job", extra=log_fields)
-
-        job.jobstatus.status = request.status
-        job.jobstatus.error = request.error
-        job.jobstatus.time_ended = time.time()
         
         # TODO: stop in separate thread to not block
         try:
@@ -266,12 +262,20 @@ class SystemTagger:
         except Exception as e:
             logger.opt(exception=e).error("Error stopping container", extra=log_fields)
         
-        self._free_resources(job)
-
-        logger.info("Successfully stopped container and freed resources", extra={"new_available_resources": self.active_resources})
-        
-        if request.jobid in self.job_queue:
+        if job.jobstatus.status == "Running":
+            self._free_resources(job)
+            logger.info("successfully stopped running job and freed resources", extra={**log_fields, "new_available_resources": self.active_resources})
+        elif job.jobstatus.status == "Queued":
+            assert request.jobid in self.job_queue
             self.job_queue.remove(request.jobid)
+            logger.info("successfully removed job from queue", extra=log_fields)
+        else:
+            logger.error("Job in unexpected state during stop", extra=log_fields)
+            raise RuntimeError("Job in unexpected state during stop")
+
+        job.jobstatus.status = request.status
+        job.jobstatus.error = request.error
+        job.jobstatus.time_ended = time.time()
         
         if job.finished:
             job.finished.set()
@@ -287,10 +291,14 @@ class SystemTagger:
 
     def _handle_get_status(self, message: Message):
         jobid = message.data["jobid"]
+        log_fields = {"jobid": jobid[:8]}
         if jobid in self.jobs:
+            log_fields["container"] = self.jobs[jobid].container.name()
             status = deepcopy(self.jobs[jobid].jobstatus)
         else:
+            logger.warning("Status requested for unknown job", extra=log_fields)
             status = None
+        logger.info("Returning job status", extra=log_fields)
         assert message.response_queue is not None
         message.response_queue.put(status)
 
@@ -349,13 +357,12 @@ class SystemTagger:
         job = self.jobs[jobid]
         
         if job.jobstatus.time_ended:
-            logger.warning(f"Attempted to start already finished job {jobid}: {job.container.name()}")
+            logger.warning("Attempted to start already finished job", extra={"jobid": jobid[:8], "container": job.container.name()})
             return
         
         # Reserve resources
         self._reserve_resources(job)
         
-        # Update status
         job.jobstatus.status = "Running"
         
         logger.info(f"Starting job {jobid}: {job.container.name()} with resources {job.reqs}")
