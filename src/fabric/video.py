@@ -5,6 +5,7 @@ import os
 import threading
 import tempfile
 import shutil
+from fractions import Fraction
 from common_ml.video_processing import unfrag_video
 from config import config
 from loguru import logger
@@ -67,13 +68,18 @@ def _fetch_vod_metadata(qhit: str, stream_name: str, client: ElvClient) -> Tuple
     if len(stream) == 0:
         raise StreamNotFoundError(f"Stream {stream_name} is empty")
     
-    part_duration = stream[0]["duration"]["float"]
+    if type(stream[0]) is dict:
+        part_duration = stream[0]["duration"]["float"]
+        parts = [part["source"] for part in stream]
+    else:
+        dur = stream[0][1]
+        if type(dur) is str: dur = int(dur)     ## i don't know if dur is ever not a string, but just anticipate it anyway
+        part_duration = dur * float(Fraction(transcode_meta["duration"]["time_base"]))
+        parts = [part[0] for part in stream]
 
     fps = None
     if codec_type == "video":
         fps = _parse_fps(transcode_meta["rate"])
-
-    parts = [part["source"] for part in stream]
 
     return parts, part_duration, fps, codec_type
 
