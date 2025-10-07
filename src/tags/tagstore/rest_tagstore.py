@@ -2,7 +2,7 @@ import time
 import json
 import requests
 from dateutil import parser
-from loguru import logger
+from src.common.logging import logger
 
 from src.common.content import Content
 from src.tags.tagstore.types import Tag, UploadJob

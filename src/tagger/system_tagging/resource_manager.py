@@ -7,12 +7,11 @@ import queue
 from enum import Enum
 from dataclasses import dataclass
 
-from loguru import logger
-
 from src.common.errors import BadRequestError
 from src.common.resources import SystemResources
 from src.tag_containers.containers import TagContainer
 from src.tagger.system_tagging.types import *
+from src.common.logging import logger
 
 class MessageType(Enum):
     START_JOB = "start_job"
@@ -51,8 +50,11 @@ class SystemTagger:
         # Actor state (only accessed by actor thread)
         self.active_resources = load_system_resources(cfg)
         self.gpu_status = [False] * len(cfg.gpus)
+        # preserve the initial total resources
         self.total_resources = deepcopy(self.active_resources)
+        # maps jobid -> ContainerJob
         self.jobs: dict[str, ContainerJob] = {}
+        # queue of jobids, should be in self.jobs
         self.job_queue: list[str] = []
         self.exit_requested = False
         
@@ -79,6 +81,11 @@ class SystemTagger:
         if not self.check_capacity(required_resources):
             raise BadRequestError("Insufficient resources available to start job on this system.")
         
+        logger.info("Received request to start container", extra={
+            "container": container.name(),
+            "resources": required_resources
+        })
+
         request = StartJobRequest(
             container=container,
             required_resources=required_resources,
@@ -100,6 +107,7 @@ class SystemTagger:
 
     def stop(self, jobid: str) -> ContainerJobStatus | None:
         """Stop a job and return its status. Return None if jobid not found."""
+        logger.info("Received request to stop job", extra={"jobid": jobid})
         request = StopJobRequest(jobid=jobid, status="Stopped")
         response_queue = queue.Queue()
         message = Message(MessageType.STOP_JOB, {"request": request}, response_queue)
@@ -108,12 +116,15 @@ class SystemTagger:
 
     def status(self, jobid: str) -> ContainerJobStatus:
         """Get job status."""
+        logger.info("Received request to get status for job", extra={"jobid": jobid})
         response_queue = queue.Queue()
         message = Message(MessageType.GET_STATUS, {"jobid": jobid}, response_queue)
         self.message_queue.put(message)
         return response_queue.get()
 
     def shutdown(self) -> None:
+        """Shuts down the actor and all running jobs."""
+        logger.info("Shutdown requested for SystemTagger")
         response_queue = queue.Queue()
         message = Message(MessageType.SHUTDOWN, {}, response_queue)
         self.message_queue.put(message)
@@ -121,6 +132,9 @@ class SystemTagger:
 
     def _actor_loop(self):
         """Processes all messages sequentially."""
+        last_status_log = time.time()
+        status_log_interval = 30.0
+        
         while not self.exit_requested:
             try:
                 # Process messages with timeout to allow periodic queue processing
@@ -133,10 +147,50 @@ class SystemTagger:
                 # Try to start queued jobs
                 self._process_job_queue()
                 
+                current_time = time.time()
+                if current_time - last_status_log >= status_log_interval:
+                    if not self.message_queue.empty():
+                        self._log_queue_status()
+                    else:
+                        logger.debug("SystemTagger - no new messages")
+                    last_status_log = current_time
+
             except Exception as e:
                 logger.exception(f"Error in actor loop: {e}")
-        
+
         logger.info("SystemTagger actor shutting down")
+
+    def _log_queue_status(self):
+        """Log current queue and job status"""
+        message_queue_size = self.message_queue.qsize()
+        job_queue_size = len(self.job_queue)
+        
+        # Count jobs by status
+        job_counts = {}
+        for job in self.jobs.values():
+            status = job.jobstatus.status
+            job_counts[status] = job_counts.get(status, 0) + 1
+        
+        # Format resource usage
+        total_gpus = len(self.sys_config.gpus)
+        used_gpus = sum(1 for used in self.gpu_status if used)
+        
+        logger.info(
+            f"Queue Status - Messages: {message_queue_size}, "
+            f"Job Queue: {job_queue_size}, "
+            f"Jobs: {dict(job_counts)}, "
+            f"GPUs: {used_gpus}/{total_gpus}, "
+            f"Resources: {dict(self.active_resources)}"
+        )
+        
+        # Log individual queued jobs if any
+        if self.job_queue:
+            queued_jobs = []
+            for jobid in self.job_queue:
+                if jobid in self.jobs:
+                    job = self.jobs[jobid]
+                    queued_jobs.append(f"{jobid[:8]}:{job.container.name()}")
+            logger.debug(f"Queued jobs: {queued_jobs}")
 
     def _handle_message(self, message: Message):
         if message.type == MessageType.START_JOB:
@@ -169,7 +223,12 @@ class SystemTagger:
         self.jobs[job_id] = job
         self.job_queue.append(job_id)
         
-        logger.info(f"Job {job_id} queued: {request.container.name()} with resources {request.required_resources}")
+        logger.info("Job queued", extra={
+            "jobid": job_id,
+            "container": request.container.name(),
+            "resources": request.required_resources
+        })
+
         assert message.response_queue is not None
         message.response_queue.put(job_id)
 
@@ -177,24 +236,26 @@ class SystemTagger:
         request: StopJobRequest = message.data["request"]
 
         if request.jobid not in self.jobs:
-            logger.warning(f"Job {request.jobid} not found")
+            logger.warning("Stop requested for unknown job", extra={"jobid": request.jobid})
             if message.response_queue:
                 message.response_queue.put(None)
             return
         
         job = self.jobs[request.jobid]
+
+        log_fields = {"jobid": request.jobid, "container": job.container.name(), "status": job.jobstatus.status}
         
         if job.jobstatus.time_ended:
-            # Already stopped
+            logger.warning("stop requested for already stopped job", extra=log_fields)
             if message.response_queue:
                 message.response_queue.put(deepcopy(job.jobstatus))
             return
         
-        logger.info(f"Stopping job {request.jobid}")
-        
         if request.error:
-            logger.exception(f"Job {request.jobid} error: {request.error}")
-        
+            logger.opt(exception=request.error).info("stopping job with error", extra=log_fields)
+        else:
+            logger.info("stopping job", extra=log_fields)
+
         job.jobstatus.status = request.status
         job.jobstatus.error = request.error
         job.jobstatus.time_ended = time.time()
@@ -203,9 +264,11 @@ class SystemTagger:
         try:
             job.container.stop()
         except Exception as e:
-            logger.error(f"Failed to stop container for job {request.jobid}: {e}")
+            logger.opt(exception=e).error("Error stopping container", extra=log_fields)
         
         self._free_resources(job)
+
+        logger.info("Successfully stopped container and freed resources", extra={"new_available_resources": self.active_resources})
         
         if request.jobid in self.job_queue:
             self.job_queue.remove(request.jobid)

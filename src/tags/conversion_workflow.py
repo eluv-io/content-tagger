@@ -2,7 +2,7 @@ import os
 import json
 import tempfile
 import shutil
-from loguru import logger
+from src.common.logging import logger
 from elv_client_py import ElvClient
 from common_ml.utils.metrics import timeit
 from src.common.content import Content

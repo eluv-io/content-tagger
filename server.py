@@ -2,7 +2,7 @@ import argparse
 from flask import Flask, Response, jsonify
 from flask_cors import CORS
 import json
-from loguru import logger
+from src.common.logging import logger
 from requests.exceptions import HTTPError
 import atexit
 import setproctitle

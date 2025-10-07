@@ -1,8 +1,7 @@
 import json
-from dataclasses import asdict
 
 from flask import Response, request, current_app
-from loguru import logger
+from src.common.logging import logger
 
 from src.api.tagging.format import TagAPIArgs, ImageTagAPIArgs
 from src.common.errors import BadRequestError

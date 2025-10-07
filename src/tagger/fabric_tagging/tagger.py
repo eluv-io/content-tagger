@@ -9,7 +9,7 @@ from typing import Any
 from datetime import datetime
 from uuid import uuid4 as uuid
 
-from loguru import logger
+from src.common.logging import logger
 
 from src.tags.tagstore.types import Tag
 from src.fetch.types import DownloadRequest
@@ -154,7 +154,7 @@ class FabricTagger:
     def _actor_loop(self):
         """Main actor loop - processes all messages sequentially"""
         logger.info("FabricTagger actor started")
-        
+
         while not self.shutdown_requested:
             try:
                 message = self.mailbox.get(timeout=1.0)
@@ -164,7 +164,7 @@ class FabricTagger:
             except Exception as e:
                 logger.exception(f"Error in actor loop: {e}")
                 time.sleep(0.2)
-        
+
         logger.info("FabricTagger actor shutting down")
 
     def _handle_message(self, message: Message):
@@ -363,7 +363,7 @@ class FabricTagger:
         job.state.status.failed += data.failed
         media_files = [s.filepath for s in data.successful_sources]
         container = self.cregistry.get(ContainerRequest(
-            model=job.args.feature,
+            model_id=job.args.feature,
             file_args=media_files,
             run_config=job.args.runconfig.model,
             job_id=job.args.q.qhit + "-" + datetime.now().strftime("%Y%m%d%H%M") + "-" + str(uuid())[0:6]

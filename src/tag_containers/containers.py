@@ -2,7 +2,7 @@
 from copy import deepcopy
 import uuid
 from podman import PodmanClient
-from loguru import logger
+from src.common.logging import logger
 import json
 import os
 from datetime import datetime
@@ -319,15 +319,15 @@ class ContainerRegistry:
             jobid = datetime.now().strftime("%Y%m%d_%H%M%S") + "-" + str(uuid.uuid4())[:6]
             logger.warning(f"User request {req} did not give jobid, generating default: {jobid}")
 
-        jobpath = os.path.join(self.cfg.base_dir, req.model, jobid)
+        jobpath = os.path.join(self.cfg.base_dir, req.model_id, jobid)
         tags_path = os.path.join(jobpath, 'tags')
         logs_path = os.path.join(jobpath, 'log.out')
 
         cache_path = self.cfg.cache_dir
 
-        modelcfg = self.cfg.model_configs.get(req.model)
+        modelcfg = self.cfg.model_configs.get(req.model_id)
         if not modelcfg:
-            raise MissingResourceError(f"Model {req.model} not found")
+            raise MissingResourceError(f"Model {req.model_id} not found")
 
         ccfg = ContainerSpec(
             id=jobid,
