@@ -305,7 +305,7 @@ class SystemTagger:
         message.response_queue.put(status)
 
     def _handle_shutdown(self, message: Message):
-        logger.info("Shutdown requested")
+        logger.info("shutdown requested")
         self._terminate_all_jobs()
         self.exit_requested = True
         if message.response_queue:
@@ -316,19 +316,25 @@ class SystemTagger:
         exit_code = message.data["exit_code"]
         
         if jobid not in self.jobs:
+            logger.warning("Received finished message for unknown job", extra={"jobid": jobid[:8]})
             return
         
         job = self.jobs[jobid]
+
+        log_fields = {"jobid": jobid[:8], "container": job.container.name(), "exit_code": exit_code}
         if job.jobstatus.time_ended:
-            return  # Already stopped
+            logger.warning("Received finished message for already finished job", extra=log_fields)
+            return
         
         if exit_code == 0:
+            logger.info("container finished successfully", extra=log_fields)
             self._handle_stop_job(Message(
                 MessageType.STOP_JOB, 
                 {"request": StopJobRequest(jobid, "Completed")}
             ))
         else:
             error = RuntimeError(f"Container {job.container.name()} exited with code {exit_code}")
+            logger.info("tagging container failed, stopping job with error status", extra=log_fields)
             self._handle_stop_job(Message(
                 MessageType.STOP_JOB,
                 {"request": StopJobRequest(jobid, "Failed", error)}
