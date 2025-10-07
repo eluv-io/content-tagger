@@ -9,8 +9,6 @@ from typing import Any
 from datetime import datetime
 from uuid import uuid4 as uuid
 
-from src.common.logging import logger
-
 from src.tags.tagstore.types import Tag
 from src.fetch.types import DownloadRequest
 from src.tag_containers.types import ContainerRequest
@@ -21,6 +19,9 @@ from src.common.content import Content
 from src.common.errors import MissingResourceError
 from src.fetch.fetch_video import Fetcher
 from src.tags.tagstore.abstract import Tagstore
+
+from src.common.logging import logger
+logger = logger.bind(name="Fabric Tagger")
 
 @dataclass
 class TagRequest:
@@ -109,18 +110,22 @@ class FabricTagger:
         self._schedule_upload_tick()
 
     def tag(self, q: Content, args: TagArgs) -> dict:
+        logger.info("Received a new tag request", extra={"qhit": q.qhit, "args": args})
         request = TagRequest(q=q, args=args)
         return self._submit(request)
 
     def status(self, qhit: str) -> dict[str, dict[str, dict]]:
+        logger.info("Received status request", extra={"qhit": qhit})
         request = StatusRequest(qhit=qhit)
         return self._submit(request)
 
     def stop(self, qhit: str, feature: str | None, stream: str | None) -> None:
+        logger.info("Received stop request", extra={"qhit": qhit, "feature": feature, "stream": stream})
         request = StopRequest(qhit=qhit, feature=feature, stream=stream, status="Stopped")
         return self._submit(request)
 
     def cleanup(self) -> None:
+        logger.info("Received cleanup request")
         request = CleanupRequest()
         return self._submit(request)
 
@@ -197,7 +202,7 @@ class FabricTagger:
     
         self._validate_args(request.args)
         args = self._assign_default_streams(request.args)
-        logger.debug(args)
+        logger.info("Received a new tag request", extra={"qhit": request.q.qhit, "args": args})
         
         status = {}
         for feature in args.features:
@@ -225,7 +230,7 @@ class FabricTagger:
                 tagging_done=None,
             )
 
-            status[feature] = self._start_job(job)
+            status[feature] = self._start_job_thread(job)
 
         message.response_mailbox.put(Response(data=status, error=None))
 
@@ -312,7 +317,7 @@ class FabricTagger:
         try:
             self._upload_all()
         except Exception as e:
-            logger.exception(f"Unexpected error in uploader: {e}")
+            logger.exception(f"unexpected error in uploader: {e}")
         self._schedule_upload_tick()
         message.response_mailbox.put(Response(data=None, error=None))
 
@@ -329,8 +334,8 @@ class FabricTagger:
 
         if job_status not in ("Starting", "Fetching content", "Tagging content", "Uploading tags"):
             raise ValueError(f"{job} does not have a next state.")
-        
-        job = self.jobstore.active_jobs[update.job_id]
+
+        logger.info("handling job transition", extra={"jobid": update.job_id, "starting_status": job_status, "data": update.data})
         
         try:
             if job_status == "Starting":
@@ -347,6 +352,7 @@ class FabricTagger:
         message.response_mailbox.put(Response(data=None, error=None))
 
     def _enter_complete_stage(self, job: TagJob, data: Any) -> None:
+        logger.info("transitioning to complete stage", extra={"jobid": job.get_id()})
         self._set_stop_state(job.get_id(), "Completed", "", None)
         assert job.state.media is not None
         for source in job.state.media.successful_sources:
@@ -354,9 +360,11 @@ class FabricTagger:
                 job.state.status.failed.append(source.name)
 
     def _enter_fetching_stage(self, job: TagJob, data: Any) -> None:
+        logger.info("transitioning to fetching stage", extra={"jobid": job.get_id()})
         job.state.status.status = "Fetching content"
 
     def _enter_tagging_stage(self, job: TagJob, data: Any) -> None:
+        logger.info("transitioning to tagging stage", extra={"jobid": job.get_id()})
         assert isinstance(data, DownloadResult)
         job.state.status.status = "Tagging content"
         job.state.media = data
@@ -376,10 +384,11 @@ class FabricTagger:
         job.tagging_done = tagging_done
 
     def _enter_upload_stage(self, job: TagJob, data: Any) -> None:
+        logger.info("transitioning to upload stage", extra={"jobid": job.get_id()})
         job.state.status.status = "Uploading tags"
         self._run_upload(job)
 
-    def _start_job(self, job: TagJob) -> str:
+    def _start_job_thread(self, job: TagJob) -> str:
         """
         Checks if job is startable, if so sends an async message to start it and returns
         """
@@ -396,13 +405,16 @@ class FabricTagger:
         return "Job started successfully"
 
     def _run_job(self, job: TagJob) -> None:
-        logger.debug(job.args)
-
         jobid = job.get_id()
+
+        logger.info("starting job thread", extra={"jobid": jobid})
 
         # 1. start fetching
         assert job.state.status.status == "Starting"
+
+        # transition to fetching
         self._submit(JobTransition(job_id=jobid, data=None))
+        assert job.state.status.status == "Fetching content"
 
         try:
             stream = job.args.runconfig.stream
@@ -418,22 +430,18 @@ class FabricTagger:
             )
             if job.stop_event.is_set():
                 return
-        except MissingResourceError as e:
-            # str(e)
-            self._end_job(jobid, "Failed", e)
-            return
         except Exception as e:
             self._end_job(jobid, "Failed", e)
             return
 
         if len(dl_res.successful_sources) == 0:
             # Nothing left to tag
+            logger.info("No media to tag, ending job", extra={"jobid": jobid, "successful_sources": dl_res.successful_sources, "failed_sources": dl_res.failed})
             self._end_job(jobid, "Completed", None)
             return
 
-        # start tagging
-        assert job.state.status.status == "Fetching content"
         self._submit(JobTransition(job_id=jobid, data=dl_res))
+        assert job.state.status.status == "Tagging content"
 
         assert job.tagging_done is not None
         job.tagging_done.wait()
@@ -447,15 +455,15 @@ class FabricTagger:
             return
 
         # start upload
-        assert job.state.status.status == "Tagging content"
         self._submit(JobTransition(job_id=jobid, data=None))
+        assert job.state.status.status == "Uploading tags"
 
         if job.stop_event.is_set():
             return
 
         # Set job to completed
-        assert job.state.status.status == "Uploading tags"
         self._submit(JobTransition(job_id=jobid, data=None))
+        assert job.state.status.status == "Completed"
 
     def _set_stop_state(
             self, 
@@ -472,7 +480,7 @@ class FabricTagger:
         """
 
         if error:
-            logger.exception(error)
+            logger.opt(exception=error).error("Job stopped with error", extra={"jobid": jobid, "status": status, "message": message})
 
         if status not in ("Completed", "Failed", "Stopped"):
             raise ValueError(f"Invalid stop status: {status}")
@@ -525,7 +533,7 @@ class FabricTagger:
                 self._set_stop_state(job.get_id(), "Failed", "Tag upload failed", e)
 
     def _run_upload(self, job: TagJob) -> None:
-        """Run upload for a job (called from uploader thread)"""
+        """Run upload for a job"""
         try:
             self.__upload_tags(job)
         except Exception as e:
@@ -544,7 +552,7 @@ class FabricTagger:
             try:
                 self.system_tagger.stop(job.state.taghandle)
             except Exception as e:
-                logger.error(f"Error stopping job {job.get_id()}: {e}")
+                logger.opt(exception=e).error("error stopping job", extra={"jobid": job.get_id()})
 
         if job.state.status.status == "Tagging content" and job.state.taghandle is not None:
             threading.Thread(target=cleanup, daemon=True).start()
@@ -553,7 +561,7 @@ class FabricTagger:
         """Upload tags for a job (called from actor thread)"""
         if job.state.status.status not in ("Uploading tags", "Tagging content"):
             return
-            
+
         assert job.state.media is not None
         media_to_source = {s.filepath: s for s in job.state.media.successful_sources}
 
@@ -563,6 +571,8 @@ class FabricTagger:
 
         if not new_outputs:
             return
+
+        logger.info("uploading new tags", extra={"jobid": job.get_id(), "num_tags": len(new_outputs)})
 
         stream_meta = job.state.media.stream_meta
         tags2upload = []

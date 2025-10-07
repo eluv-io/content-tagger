@@ -13,6 +13,8 @@ from src.tag_containers.containers import TagContainer
 from src.tagger.system_tagging.types import *
 from src.common.logging import logger
 
+logger = logger.bind(name="System Tagger")
+
 class MessageType(Enum):
     START_JOB = "start_job"
     STOP_JOB = "stop_job"
