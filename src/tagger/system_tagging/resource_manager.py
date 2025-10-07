@@ -264,6 +264,8 @@ class SystemTagger:
         
         if job.jobstatus.status == "Running":
             self._free_resources(job)
+            if request.jobid in self.job_queue:
+                self.job_queue.remove(request.jobid)
             logger.info("successfully stopped running job and freed resources", extra={**log_fields, "new_available_resources": self.active_resources})
         elif job.jobstatus.status == "Queued":
             assert request.jobid in self.job_queue
@@ -337,15 +339,11 @@ class SystemTagger:
         if not self.job_queue:
             return
         
-        # Clean queue of stopped jobs first
-        self.job_queue = [
-            jobid for jobid in self.job_queue 
-            if jobid in self.jobs and self.jobs[jobid].jobstatus.status == "Queued"
-        ]
-        
         # Try to start jobs
         for jobid in self.job_queue[:]:
             job = self.jobs[jobid]
+
+            assert job.jobstatus.status == "Queued"
             
             if self._can_start(job.reqs, self.active_resources):
                 self._start_job(jobid)
