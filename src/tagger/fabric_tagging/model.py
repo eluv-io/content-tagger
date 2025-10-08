@@ -3,12 +3,25 @@
 from dataclasses import dataclass, field
 from typing import Literal
 import time
-import threading
 
 from src.common.content import Content
 from src.fetch.model import AssetScope, VideoScope
-from src.tag_containers.containers import TagContainer
-from src.fetch.fetch_content import DownloadResult
+
+@dataclass
+class RunConfig:
+    # model config, used to overwrite the model level config
+    model: dict = field(default_factory=dict)
+    # stream name to run the model on, None to use the default stream. "assets" is a special case which will tag image assets
+    stream: str | None = None
+
+@dataclass
+class TagArgs:
+    features: dict[str, RunConfig]
+    scope: AssetScope | VideoScope
+    replace: bool
+
+    def __str__(self):
+        return f"TagArgs(features={self.features}, scope={self.scope}, replace={self.replace})"
 
 JobStateDescription = Literal[
     "Starting",
@@ -39,13 +52,6 @@ class JobStatus:
         )
 
 @dataclass
-class RunConfig:
-    # model config, used to overwrite the model level config
-    model: dict = field(default_factory=dict)
-    # stream name to run the model on, None to use the default stream. "assets" is a special case which will tag image assets
-    stream: str | None = None
-
-@dataclass
 class JobArgs:
     q: Content
     feature: str
@@ -55,39 +61,6 @@ class JobArgs:
 
     def __str__(self):
         return f"JobArgs(q={self.q}, feature={self.feature}, replace={self.replace}, runconfig={self.runconfig}, scope={self.scope})"
-
-@dataclass
-class JobState:
-    # everything that might change during the job
-    status: JobStatus
-    taghandle: str
-    uploaded_sources: list[str]
-    message: str
-    media: DownloadResult | None
-    container: TagContainer | None
-
-    @staticmethod
-    def starting() -> 'JobState':
-        return JobState(
-            status=JobStatus.starting(),
-            taghandle="",
-            uploaded_sources=[],
-            message="",
-            media=None,
-            container=None
-        )
-
-@dataclass
-class TagJob:
-    args: JobArgs
-    state: JobState
-    upload_job: str
-    stop_event: threading.Event
-    tagging_done: threading.Event | None
-
-    def get_id(self) -> 'JobID':
-        assert self.args.runconfig.stream is not None
-        return JobID(qhit=self.args.q.qhit, feature=self.args.feature, stream=self.args.runconfig.stream)
 
 @dataclass
 class JobID:
@@ -103,17 +76,3 @@ class JobID:
     
     def __str__(self):
         return f"JobID(qhit={self.qhit}, feature={self.feature}, stream={self.stream})"
-
-@dataclass
-class JobStore:
-    active_jobs: dict[JobID, TagJob] = field(default_factory=dict)
-    inactive_jobs: dict[JobID, TagJob] = field(default_factory=dict)
-
-@dataclass
-class TagArgs:
-    features: dict[str, RunConfig]
-    scope: AssetScope | VideoScope
-    replace: bool
-
-    def __str__(self):
-        return f"TagArgs(features={self.features}, scope={self.scope}, replace={self.replace})"

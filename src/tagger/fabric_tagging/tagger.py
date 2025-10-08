@@ -20,6 +20,7 @@ from src.common.errors import MissingResourceError
 from src.fetch.fetch_content import Fetcher
 from src.tags.tagstore.abstract import Tagstore
 from src.tagger.fabric_tagging.message_types import *
+from src.tagger.fabric_tagging.job_state import *
 
 from src.common.logging import logger
 logger = logger.bind(name="Fabric Tagger")
