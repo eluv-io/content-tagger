@@ -11,7 +11,7 @@ from uuid import uuid4 as uuid
 
 from src.tags.tagstore.types import Tag
 from src.fetch.types import DownloadRequest
-from src.tag_containers.types import ContainerRequest
+from src.tag_containers.model import ContainerRequest
 from src.tag_containers.containers import ContainerRegistry
 from src.tagger.system_tagging.resource_manager import SystemTagger
 from src.tagger.fabric_tagging.types import *
@@ -376,9 +376,9 @@ class FabricTagger:
             run_config=job.args.runconfig.model,
             job_id=job.args.q.qhit + "-" + datetime.now().strftime("%Y%m%d%H%M") + "-" + str(uuid())[0:6]
         ))
-        reqresources = self.cregistry.get_model_config(job.args.feature).resources
+        #reqresources = self.cregistry.get_model_config(job.args.feature).resources
         tagging_done = threading.Event()
-        uid = self.system_tagger.start(container, reqresources, tagging_done)
+        uid = self.system_tagger.start(container, tagging_done)
         job.state.container = container
         job.state.taghandle = uid
         job.tagging_done = tagging_done

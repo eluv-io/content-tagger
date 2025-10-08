@@ -8,8 +8,8 @@ from enum import Enum
 from dataclasses import dataclass
 
 from src.common.errors import BadRequestError
-from src.common.resources import SystemResources
 from src.tag_containers.containers import TagContainer
+from src.common.model import SystemResources
 from src.tagger.system_tagging.types import *
 from src.common.logging import logger
 
@@ -32,7 +32,6 @@ class Message:
 @dataclass
 class StartJobRequest:
     container: TagContainer
-    required_resources: SystemResources
     finished: threading.Event | None = None
 
 @dataclass
@@ -74,10 +73,11 @@ class SystemTagger:
     def start(
         self, 
         container: TagContainer,
-        required_resources: SystemResources,
         finished: threading.Event | None = None
     ) -> str:
         """Starts a job by enqueueing the container, and returns uuid for the job."""
+
+        required_resources = container.required_resources()
         
         # Quick capacity check before queuing
         if not self.check_capacity(required_resources):
@@ -90,7 +90,6 @@ class SystemTagger:
 
         request = StartJobRequest(
             container=container,
-            required_resources=required_resources,
             finished=finished
         )
         
@@ -216,7 +215,6 @@ class SystemTagger:
         job_id = str(uuid.uuid4())
         job = ContainerJob(
             container=request.container,
-            reqs=request.required_resources,
             jobstatus=ContainerJobStatus.starting(),
             gpus_used=[],
             finished=request.finished
@@ -228,7 +226,6 @@ class SystemTagger:
         logger.info("Job queued", extra={
             "jobid": job_id,
             "container": request.container.name(),
-            "resources": request.required_resources
         })
 
         assert message.response_queue is not None
@@ -353,7 +350,8 @@ class SystemTagger:
 
             assert job.jobstatus.status == "Queued"
             
-            if self._can_start(job.reqs, self.active_resources):
+            container_reqs = job.container.required_resources()
+            if self._can_start(container_reqs, self.active_resources):
                 self._start_job(jobid)
                 if jobid in self.job_queue:
                     # we need the check because _start_job may have removed it already if it errors
@@ -371,7 +369,7 @@ class SystemTagger:
         
         job.jobstatus.status = "Running"
         
-        logger.info(f"Starting job {jobid}: {job.container.name()} with resources {job.reqs}")
+        logger.info(f"Starting job {jobid}: {job.container.name()}")
 
         # Start container
         try:
@@ -398,8 +396,10 @@ class SystemTagger:
         """Reserve resources for a job."""
         gpu_resources = set(self.sys_config.gpus)
         reserved_gpus = []
+
+        job_reqs = job.container.required_resources()
         
-        for resr, req in job.reqs.items():
+        for resr, req in job_reqs.items():
             self.active_resources[resr] -= req
             assert self.active_resources[resr] >= 0, f"Resource {resr} went negative"
             
@@ -422,8 +422,9 @@ class SystemTagger:
     def _free_resources(self, job: ContainerJob) -> None:
         """Free resources allocated to a job."""
         gpu_resources = set(self.sys_config.gpus)
+        job_reqs = job.container.required_resources()
         
-        for resr, req in job.reqs.items():
+        for resr, req in job_reqs.items():
             self.active_resources[resr] += req
             
             if resr in gpu_resources:

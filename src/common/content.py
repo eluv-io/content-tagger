@@ -10,8 +10,14 @@ class ContentConfig:
     config_url: str
     parts_url: str
 
-class Content():
+class Content:
     """Content object representation and API wrapper.
+
+    Serves the following uses:
+        - Caches qinfo call (qid, qhash, qlib) so that they don't need to be requeried
+        - Bridges the the parts and regular fabric APIs into one interface
+        - Helps reduce parameter counts in functions by not requiring the qhit & the ElvClient to
+            be passed separately
     """
 
     def __init__(
@@ -74,6 +80,7 @@ class Content():
         return f"Content(qhit={self.qhit}, qid={self.qid}, qhash={self.qhash}, qlib={self.qlib})"
 
 class ContentFactory:
+
     def __init__(self, cfg: ContentConfig):
         self.cfg = cfg
 

@@ -8,10 +8,10 @@ from collections import defaultdict
 from src.tags.tagstore.rest_tagstore import RestTagstore
 from src.tagger.fabric_tagging.tagger import FabricTagger
 from src.tagger.system_tagging.resource_manager import SystemTagger
-from src.tag_containers.types import ModelConfig, ModelOutput
+from src.tag_containers.model import ModelConfig, ModelOutput
 from src.tagger.system_tagging.types import SysConfig
 from src.tagger.fabric_tagging.types import RunConfig, TagArgs
-from src.tag_containers.types import ContainerRequest
+from src.tag_containers.model import ContainerRequest
 from src.fetch.types import DownloadRequest, DownloadResult, Source, StreamMetadata, VideoScope
 from src.common.content import Content
 from src.tags.tagstore.types import Tag
@@ -130,6 +130,9 @@ class FakeTagContainer:
     
     def name(self) -> str:
         return f"FakeContainer-{self.feature}"
+    
+    def required_resources(self):
+        return {}
 
 class PartialFailContainer(FakeTagContainer):
     """

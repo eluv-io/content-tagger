@@ -5,7 +5,7 @@ from dacite import from_dict
 
 from src.common.content import ContentConfig
 from src.fetch.types import FetcherConfig
-from src.tag_containers.types import RegistryConfig
+from src.tag_containers.model import RegistryConfig
 from src.tagger.system_tagging.types import SysConfig
 from src.tags.conversion import TagConverterConfig
 from src.tags.tagstore.types import TagstoreConfig

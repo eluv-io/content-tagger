@@ -5,9 +5,10 @@ from unittest.mock import Mock
 
 from src.tagger.system_tagging.resource_manager import SystemTagger
 from src.tagger.system_tagging.types import SysConfig
+from src.tag_containers.containers import TagContainer
 
 
-class MockTagContainer:
+class MockTagContainer(TagContainer):
     """Mock TagContainer that simulates work"""
     
     def __init__(self, work_duration: float = 0.1):
@@ -17,10 +18,11 @@ class MockTagContainer:
         self.stop_called = False
         self.container = Mock()
         self.container.attrs = {"State": {"ExitCode": 0}}
+        self.resources = {"A6000": 1}
         
-    def start(self, gpu_idx: int | None = None) -> None:
+    def start(self, gpuidx: int | None = None) -> None:
         self.is_started = True
-        self.gpu_idx = gpu_idx
+        self.gpu_idx = gpuidx
         # Simulate work in background
         def work():
             time.sleep(self.work_duration)
@@ -42,6 +44,9 @@ class MockTagContainer:
     def name(self) -> str:
         return "MockContainer"
 
+    def required_resources(self) -> dict[str, int]:
+        return self.resources
+
 
 @pytest.fixture
 def sys_config():
@@ -61,12 +66,12 @@ def system_tagger(sys_config):
         tagger.shutdown()
 
 
-def test_start_job_with_sufficient_resources(system_tagger):
+def test_start_job_with_sufficient_resources(system_tagger: SystemTagger):
     """Test starting a job when resources are available"""
     container = MockTagContainer()
-    resources = {"A6000": 1, "cpu_juice": 2}
+    container.resources = {"A6000": 1, "cpu_juice": 2}
     
-    job_id = system_tagger.start(container, resources)
+    job_id = system_tagger.start(container)
     
     assert job_id is not None
     assert isinstance(job_id, str)
@@ -79,21 +84,20 @@ def test_start_job_with_sufficient_resources(system_tagger):
     assert status.error is None
 
 
-def test_start_job_with_insufficient_resources(system_tagger):
+def test_start_job_with_insufficient_resources(system_tagger: SystemTagger):
     """Test starting a job when resources are not available"""
     container = MockTagContainer()
-    resources = {"cpu_juice": 5}  # More juice than available
+    container.resources = {"cpu_juice": 5}  # More juice than available
     
     with pytest.raises(Exception):
-        system_tagger.start(container, resources)
+        system_tagger.start(container)
 
 
-def test_job_completion_flow(system_tagger):
+def test_job_completion_flow(system_tagger: SystemTagger):
     """Test that a job goes through the complete lifecycle"""
     container = MockTagContainer(work_duration=0.1)
-    resources = {"A6000": 1}
     
-    job_id = system_tagger.start(container, resources)
+    job_id = system_tagger.start(container)
     
     # Wait for job to complete
     timeout = 5.0
@@ -110,18 +114,18 @@ def test_job_completion_flow(system_tagger):
     assert final_status.time_ended > final_status.time_started
 
 
-def test_stop_job(system_tagger):
+def test_stop_job(system_tagger: SystemTagger):
     """Test manually stopping a job"""
-    container = MockTagContainer(work_duration=1.0)  # Long duration
-    resources = {"A6000": 1}
+    container = MockTagContainer(work_duration=1.0)
     
-    job_id = system_tagger.start(container, resources)
+    job_id = system_tagger.start(container)
     
     # Let it start
     time.sleep(0.1)
     
     # Stop the job
     stop_status = system_tagger.stop(job_id)
+    assert stop_status is not None
     assert stop_status.status == "Stopped"
     assert stop_status.time_ended is not None
     
@@ -130,14 +134,13 @@ def test_stop_job(system_tagger):
     assert status.status == "Stopped"
 
 
-def test_multiple_jobs_queuing(system_tagger):
+def test_multiple_jobs_queuing(system_tagger: SystemTagger):
     """Test that jobs are queued when resources are exhausted"""
     containers = [MockTagContainer(work_duration=0.2) for _ in range(3)]
-    resources = {"A6000": 1}  # Each job needs 1 GPU, but we only have 2
     
     job_ids = []
     for container in containers:
-        job_id = system_tagger.start(container, resources)
+        job_id = system_tagger.start(container)
         job_ids.append(job_id)
     
     # Check that some jobs are queued
@@ -155,14 +158,13 @@ def test_multiple_jobs_queuing(system_tagger):
     assert running_count <= 2  # Can't run more than available GPUs
 
 
-def test_job_queue_processing(system_tagger):
+def test_job_queue_processing(system_tagger: SystemTagger):
     """Test that queued jobs get started when resources become available"""
     containers = [MockTagContainer(work_duration=0.1) for _ in range(3)]
-    resources = {"A6000": 1}
     
     job_ids = []
     for container in containers:
-        job_id = system_tagger.start(container, resources)
+        job_id = system_tagger.start(container)
         job_ids.append(job_id)
     
     # Wait for all jobs to complete
@@ -186,15 +188,15 @@ def test_job_queue_processing(system_tagger):
         assert status.status == "Completed"
 
 
-def test_resource_allocation_and_cleanup(system_tagger):
+def test_resource_allocation_and_cleanup(system_tagger: SystemTagger):
     """Test that resources are properly allocated and cleaned up"""
     container = MockTagContainer(work_duration=0.1)
-    resources = {"A6000": 1, "cpu_juice": 2}
+    container.resources = {"A6000": 1, "cpu_juice": 2}
     
     # Check initial resources
     initial_resources = system_tagger.active_resources.copy()
     
-    job_id = system_tagger.start(container, resources)
+    job_id = system_tagger.start(container)
 
     # Resources should be allocated
     mid_resources = system_tagger.active_resources
@@ -215,14 +217,13 @@ def test_resource_allocation_and_cleanup(system_tagger):
     assert final_resources == initial_resources
 
 
-def test_shutdown_stops_all_jobs(system_tagger):
+def test_shutdown_stops_all_jobs(system_tagger: SystemTagger):
     """Test that shutdown properly stops all running jobs"""
     containers = [MockTagContainer(work_duration=1.0) for _ in range(2)]
-    resources = {"A6000": 1}
     
     job_ids = []
     for container in containers:
-        job_id = system_tagger.start(container, resources)
+        job_id = system_tagger.start(container)
         job_ids.append(job_id)
     
     # Let jobs start
@@ -236,13 +237,12 @@ def test_shutdown_stops_all_jobs(system_tagger):
         assert container.stop_called
 
 
-def test_finished_event_notification(system_tagger):
+def test_finished_event_notification(system_tagger: SystemTagger):
     """Test that the finished event is properly set when job completes"""
     container = MockTagContainer(work_duration=0.1)
-    resources = {"A6000": 1}
     finished_event = threading.Event()
     
-    job_id = system_tagger.start(container, resources, finished_event)
+    job_id = system_tagger.start(container, finished_event)
     
     # Wait for the event to be set
     assert finished_event.wait(timeout=2.0), "Finished event was not set"
@@ -252,18 +252,18 @@ def test_finished_event_notification(system_tagger):
     assert status.status == "Completed"
 
 
-def test_job_failure_handling(system_tagger):
+def test_job_failure_handling(system_tagger: SystemTagger):
     """Test handling of job failures"""
     container = MockTagContainer()
     
     # Mock the container to raise an exception on start
-    def failing_start(gpu_idx=None):
+    def failing_start(gpuidx=None):
         raise RuntimeError("Container failed to start")
     
     container.start = failing_start
     resources = {"A6000": 1}
     
-    job_id = system_tagger.start(container, resources)
+    job_id = system_tagger.start(container)
     
     # Wait for failure to be detected
     timeout = 2.0
@@ -279,12 +279,11 @@ def test_job_failure_handling(system_tagger):
     assert status.error is not None
 
 
-def test_gpu_allocation(system_tagger):
+def test_gpu_allocation(system_tagger: SystemTagger):
     """Test that GPU allocation works correctly"""
     container = MockTagContainer(work_duration=0.1)
-    resources = {"A6000": 1}
     
-    job_id = system_tagger.start(container, resources)
+    job_id = system_tagger.start(container)
     
     # Wait for job to start
     time.sleep(0.1)
@@ -296,12 +295,12 @@ def test_gpu_allocation(system_tagger):
         assert container.gpu_idx is not None
 
 
-def test_cpu_only_job(system_tagger):
+def test_cpu_only_job(system_tagger: SystemTagger):
     """Test running a job that only needs CPU resources"""
     container = MockTagContainer(work_duration=0.1)
-    resources = {"cpu_juice": 2}  # No GPU required
+    container.resources = {"cpu_juice": 2}
     
-    job_id = system_tagger.start(container, resources)
+    job_id = system_tagger.start(container)
     
     # Wait for completion
     timeout = 2.0
@@ -320,12 +319,11 @@ def test_cpu_only_job(system_tagger):
     assert len(job.gpus_used) == 0
 
 
-def test_status_returns_copy(system_tagger):
+def test_status_returns_copy(system_tagger: SystemTagger):
     """Test that status method returns a copy, not the original object"""
     container = MockTagContainer()
-    resources = {"A6000": 1}
     
-    job_id = system_tagger.start(container, resources)
+    job_id = system_tagger.start(container)
     
     status1 = system_tagger.status(job_id)
     status2 = system_tagger.status(job_id)
@@ -335,17 +333,16 @@ def test_status_returns_copy(system_tagger):
     assert status1 is not status2
 
 
-def test_stop_queued_job_doesnt_free_resources(system_tagger):
+def test_stop_queued_job_doesnt_free_resources(system_tagger: SystemTagger):
     """Test that stopping a queued job doesn't incorrectly free resources"""
     # Start enough jobs to fill all GPUs and queue some
     containers = [MockTagContainer(work_duration=1.0) for _ in range(4)]  # Long duration
-    resources = {"A6000": 1}  # Each needs 1 GPU, but we only have 2
 
     total_resources = system_tagger.active_resources.copy()
     
     job_ids = []
     for container in containers:
-        job_id = system_tagger.start(container, resources)
+        job_id = system_tagger.start(container)
         job_ids.append(job_id)
     
     # Let the first jobs start and others queue

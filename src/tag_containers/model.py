@@ -1,9 +1,8 @@
 from dataclasses import dataclass
 from typing_extensions import Literal
 
-from src.common.resources import SystemResources
 from src.tags.tagstore.types import Tag
-
+from src.common.model import SystemResources
 
 @dataclass
 class ModelConfig:
@@ -43,3 +42,10 @@ class RegistryConfig:
 class ModelOutput:
     source_media: str
     tags: list[Tag]
+
+@dataclass
+class FrameTag:
+    frame_idx: str
+    confidence: float
+    box: dict
+    text: str

@@ -1,13 +1,11 @@
 import pytest
-import tempfile
-import shutil
 import json
 import os
 from unittest.mock import Mock, patch
 
 from src.tag_containers.containers import TagContainer
-from src.tag_containers.types import ContainerSpec, ModelConfig
-from src.common.resources import SystemResources
+from src.tag_containers.model import ContainerSpec, ModelConfig
+from src.common.model import SystemResources
 
 
 @pytest.fixture

@@ -1,2 +1,1 @@
-
 SystemResources = dict[str, int]

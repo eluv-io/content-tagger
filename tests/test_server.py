@@ -16,7 +16,7 @@ from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.tags.tagstore.types import TagstoreConfig
 from src.tagger.system_tagging.types import SysConfig
 from src.fetch.types import FetcherConfig
-from src.tag_containers.types import ModelConfig, RegistryConfig
+from src.tag_containers.model import ModelConfig, RegistryConfig
 
 load_dotenv()
 

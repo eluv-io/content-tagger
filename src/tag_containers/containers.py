@@ -6,14 +6,15 @@ from src.common.logging import logger
 import json
 import os
 from datetime import datetime
+from copy import copy
 
 from common_ml.utils.files import get_file_type
 from common_ml.video_processing import get_fps
 
-from src.common.schema import FrameTag
+from src.tag_containers.model import FrameTag
 from src.common.errors import MissingResourceError, BadRequestError
 from src.tags.tagstore.types import Tag
-from src.tag_containers.types import *
+from src.tag_containers.model import *
 
 class TagContainer:
 
@@ -136,6 +137,9 @@ class TagContainer:
     
     def name(self) -> str:
         return f"{self.cfg.id}_{self.cfg.model_config.image}"
+
+    def required_resources(self) -> SystemResources:
+        return copy(self.cfg.model_config.resources)
 
     def _files_to_tags(self, tagged_files: list[str]) -> list[ModelOutput]:
 

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import threading
 import time
 
-from src.common.resources import SystemResources
+from src.common.model import SystemResources
 from src.tag_containers.containers import TagContainer
 
 JobStateDescription = Literal["Queued", "Running", "Completed", "Failed", "Stopped"]
@@ -27,8 +27,6 @@ class ContainerJobStatus:
 @dataclass
 class ContainerJob:
     container: TagContainer
-    # resource requirements for the job
-    reqs: SystemResources
     jobstatus: ContainerJobStatus
     gpus_used: list[int]
     # trigger downstream tasks
@@ -39,4 +37,4 @@ class SysConfig:
     # map gpu idx -> gpu type
     gpus: list[str]
     # arbitrary key-value pairs for other resources
-    resources: dict[str, int]
+    resources: SystemResources
