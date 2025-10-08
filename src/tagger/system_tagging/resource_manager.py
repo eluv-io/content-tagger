@@ -4,41 +4,16 @@ import time
 import uuid
 import threading
 import queue
-from enum import Enum
-from dataclasses import dataclass
 
 from src.common.errors import BadRequestError
 from src.tag_containers.containers import TagContainer
 from src.common.model import SystemResources
-from src.tagger.system_tagging.types import *
+from src.tagger.system_tagging.model import *
+from src.tagger.system_tagging.job_state import *
+from src.tagger.system_tagging.message_types import *
 from src.common.logging import logger
 
 logger = logger.bind(name="System Tagger")
-
-class MessageType(Enum):
-    START_JOB = "start_job"
-    STOP_JOB = "stop_job"
-    CHECK_CAPACITY = "check_capacity"
-    GET_STATUS = "get_status"
-    SHUTDOWN = "shutdown"
-    CONTAINER_FINISHED = "container_finished"
-
-@dataclass
-class Message:
-    type: MessageType
-    data: dict
-    response_queue: queue.Queue | None = None
-
-@dataclass
-class StartJobRequest:
-    container: TagContainer
-    finished: threading.Event | None = None
-
-@dataclass
-class StopJobRequest:
-    jobid: str
-    status: JobStateDescription
-    error: Exception | None = None
 
 class SystemTagger:
     """

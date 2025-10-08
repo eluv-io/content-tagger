@@ -4,7 +4,7 @@ import threading
 from unittest.mock import Mock
 
 from src.tagger.system_tagging.resource_manager import SystemTagger
-from src.tagger.system_tagging.types import SysConfig
+from src.tagger.system_tagging.model import SysConfig
 from src.tag_containers.containers import TagContainer
 
 

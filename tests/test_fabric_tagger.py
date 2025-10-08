@@ -9,7 +9,7 @@ from src.tags.tagstore.rest_tagstore import RestTagstore
 from src.tagger.fabric_tagging.tagger import FabricTagger
 from src.tagger.system_tagging.resource_manager import SystemTagger
 from src.tag_containers.model import ModelConfig, ModelOutput
-from src.tagger.system_tagging.types import SysConfig
+from src.tagger.system_tagging.model import SysConfig
 from src.tagger.fabric_tagging.model import RunConfig, TagArgs
 from src.tag_containers.model import ContainerRequest
 from src.fetch.model import DownloadRequest, DownloadResult, Source, StreamMetadata, VideoScope
