@@ -13,7 +13,7 @@ import os
 from src.tagger.system_tagging.resource_manager import SystemTagger
 from src.tagger.fabric_tagging.tagger import FabricTagger
 from src.tags.tagstore.factory import create_tagstore
-from src.fetch.fetch_video import Fetcher
+from src.fetch.fetch_content import Fetcher
 from src.common.content import ContentFactory
 from src.tag_containers.containers import ContainerRegistry
 from src.tags.conversion import TagConverter

@@ -14,15 +14,18 @@ from src.common.logging import logger
 
 from src.common.content import Content
 from src.common.errors import MissingResourceError, BadRequestError
-from src.fetch.types import AssetScope, DownloadRequest, VideoScope, DownloadResult, Source, StreamMetadata
-from src.fetch.types import FetcherConfig, DownloadResult
+from src.fetch.model import AssetScope, DownloadRequest, VideoScope, DownloadResult, Source, StreamMetadata
+from src.fetch.model import FetcherConfig, DownloadResult
 from src.tags.tagstore.abstract import Tagstore
+
+logger = logger.bind(name="Fetcher")
 
 
 class Fetcher:
     def __init__(
         self,
         config: FetcherConfig,
+        # used to prevent fetching of tagged parts/assets
         ts: Tagstore,
     ):
         self.config = config
@@ -36,9 +39,14 @@ class Fetcher:
         self,
         q: Content,
         req: DownloadRequest,
+        # to enable graceful shutdown
         exit_event: threading.Event | None = None,
     ) -> DownloadResult:
-        logger.debug(req)
+        """
+        Downloads video/audio or static file data from a content object
+        """
+
+        logger.debug("received download request", extra={"qid": q.qid, "req": req})
         stream_key = (q.qhit, req.stream_name)
         with self.stream_locks[stream_key]:
             with self.dl_sem:

@@ -10,9 +10,9 @@ from src.tagger.fabric_tagging.tagger import FabricTagger
 from src.tagger.system_tagging.resource_manager import SystemTagger
 from src.tag_containers.model import ModelConfig, ModelOutput
 from src.tagger.system_tagging.types import SysConfig
-from src.tagger.fabric_tagging.types import RunConfig, TagArgs
+from src.tagger.fabric_tagging.model import RunConfig, TagArgs
 from src.tag_containers.model import ContainerRequest
-from src.fetch.types import DownloadRequest, DownloadResult, Source, StreamMetadata, VideoScope
+from src.fetch.model import DownloadRequest, DownloadResult, Source, StreamMetadata, VideoScope
 from src.common.content import Content
 from src.tags.tagstore.types import Tag
 from src.common.errors import MissingResourceError

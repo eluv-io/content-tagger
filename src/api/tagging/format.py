@@ -1,8 +1,8 @@
 
 from dataclasses import dataclass
 from common_ml.types import Data
-from src.fetch.types import AssetScope, VideoScope
-from src.tagger.fabric_tagging.types import RunConfig, TagArgs
+from src.fetch.model import AssetScope, VideoScope
+from src.tagger.fabric_tagging.model import RunConfig, TagArgs
 
 @dataclass
 class TagAPIArgs(Data):

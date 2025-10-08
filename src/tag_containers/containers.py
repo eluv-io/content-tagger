@@ -100,10 +100,9 @@ class TagContainer:
         if not self.container:
             return
         if self.container.status == "running":
-            # podman client will kill if it doesn't stop within the timeout limit
             self.container.stop(timeout=5)
         if self.is_running():
-            logger.warning(f"Container {self.container.id} did not stop in time, killing it")
+            logger.warning("Container did not stop in time, killing it", extra={"container_id": self.container.id, "handle": self.name()})
             self.container.kill()
 
     def is_running(self) -> bool:

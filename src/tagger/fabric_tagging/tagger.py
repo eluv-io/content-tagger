@@ -10,62 +10,19 @@ from datetime import datetime
 from uuid import uuid4 as uuid
 
 from src.tags.tagstore.types import Tag
-from src.fetch.types import DownloadRequest
+from src.fetch.model import DownloadRequest
 from src.tag_containers.model import ContainerRequest
 from src.tag_containers.containers import ContainerRegistry
 from src.tagger.system_tagging.resource_manager import SystemTagger
-from src.tagger.fabric_tagging.types import *
+from src.tagger.fabric_tagging.model import *
 from src.common.content import Content
 from src.common.errors import MissingResourceError
-from src.fetch.fetch_video import Fetcher
+from src.fetch.fetch_content import Fetcher
 from src.tags.tagstore.abstract import Tagstore
+from src.tagger.fabric_tagging.message_types import *
 
 from src.common.logging import logger
 logger = logger.bind(name="Fabric Tagger")
-
-@dataclass
-class TagRequest:
-    q: Content
-    args: TagArgs
-
-    def __str__(self):
-        return f"TagRequest(q={self.q}, args={self.args})"
-
-@dataclass
-class StatusRequest:
-    qhit: str
-    def __str__(self):
-        return f"StatusRequest(qhit={self.qhit})"
-
-@dataclass
-class StopRequest:
-    qhit: str
-    feature: str | None
-    stream: str | None
-    status: Literal["Stopped", "Failed", "Completed"]
-
-    def __str__(self):
-        return f"StopRequest(qhit={self.qhit}, feature={self.feature}, stream={self.stream}, status={self.status})"
-
-@dataclass
-class JobTransition:
-    job_id: JobID
-    data: Any
-
-    def __str__(self):
-        return f"JobTransition(job_id={self.job_id}, data={self.data})"
-
-@dataclass
-class UploadTick:
-    def __str__(self):
-        return "UploadTick()"
-
-@dataclass
-class CleanupRequest:
-    def __str__(self):
-        return "CleanupRequest()"
-
-Request = TagRequest | StatusRequest | StopRequest | JobTransition | CleanupRequest | UploadTick
 
 @dataclass
 class Message:

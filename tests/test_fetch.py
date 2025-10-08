@@ -1,9 +1,9 @@
 import pytest
 import os
 
-from src.fetch.fetch_video import Fetcher
-from src.fetch.types import AssetScope, DownloadRequest, FetcherConfig, VideoScope
-from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore, Tag
+from src.fetch.fetch_content import Fetcher
+from src.fetch.model import AssetScope, DownloadRequest, FetcherConfig, VideoScope
+from src.tags.tagstore.filesystem_tagstore import Tag
 from src.common.content import Content
 from src.common.errors import MissingResourceError
 

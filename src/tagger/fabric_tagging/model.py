@@ -1,13 +1,14 @@
     
+
 from dataclasses import dataclass, field
 from typing import Literal
 import time
 import threading
 
 from src.common.content import Content
-from src.fetch.types import AssetScope, VideoScope
+from src.fetch.model import AssetScope, VideoScope
 from src.tag_containers.containers import TagContainer
-from src.fetch.fetch_video import DownloadResult
+from src.fetch.fetch_content import DownloadResult
 
 JobStateDescription = Literal[
     "Starting",
