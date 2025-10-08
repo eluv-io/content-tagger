@@ -9,7 +9,7 @@ from src.common.errors import BadRequestError
 from src.tag_containers.containers import TagContainer
 from src.common.model import SystemResources
 from src.tagger.system_tagging.model import *
-from src.tagger.system_tagging.job_state import *
+from src.tagger.system_tagging.state import *
 from src.tagger.system_tagging.message_types import *
 from src.common.logging import logger
 
@@ -23,25 +23,21 @@ class SystemTagger:
     def __init__(self, cfg: SysConfig):
         self.sys_config = cfg
         
-        # Actor state (only accessed by actor thread)
-        self.active_resources = load_system_resources(cfg)
-        self.gpu_status = [False] * len(cfg.gpus)
-        # preserve the initial total resources
-        self.total_resources = deepcopy(self.active_resources)
-        # maps jobid -> ContainerJob
+        # --- Actor state (only accessed by actor thread) --- 
+        self.resource_state = self._load_system_resources(cfg)
+        # maps jobid (internal uuid) -> ContainerJob
         self.jobs: dict[str, ContainerJob] = {}
         # queue of jobids, should be in self.jobs
         self.job_queue: list[str] = []
         self.exit_requested = False
-        
-        # Communication with actor
-        self.message_queue = queue.Queue()
+
+        self.mailbox = queue.Queue()
         
         # Actor thread
         self.actor_thread = threading.Thread(target=self._actor_loop, daemon=True)
         self.actor_thread.start()
         
-        # Container monitor thread
+        # Container monitor thread (notifies when containers finish)
         self.monitor_thread = threading.Thread(target=self._monitor_containers, daemon=True)
         self.monitor_thread.start()
 
@@ -50,7 +46,13 @@ class SystemTagger:
         container: TagContainer,
         finished: threading.Event | None = None
     ) -> str:
-        """Starts a job by enqueueing the container, and returns uuid for the job."""
+        """Starts a job by enqueueing the container, and returns uuid for the job.
+        
+        Args:
+            container: TagContainer to run
+            finished: Optional threading.Event. If provided, this will be set when job completes or fails.
+                Useful for triggering downstream tasks.
+        """
 
         required_resources = container.required_resources()
         
@@ -70,15 +72,16 @@ class SystemTagger:
         
         response_queue = queue.Queue()
         message = Message(MessageType.START_JOB, {"request": request}, response_queue)
-        self.message_queue.put(message)
+        self.mailbox.put(message)
         
         return response_queue.get()
 
+    # TODO: This doesn't need to go through the actor thread.
     def check_capacity(self, required_resources: SystemResources) -> bool:
         """Checks if the system has enough resources to start a job."""
         response_queue = queue.Queue()
         message = Message(MessageType.CHECK_CAPACITY, {"resources": required_resources}, response_queue)
-        self.message_queue.put(message)
+        self.mailbox.put(message)
         return response_queue.get()
 
     def stop(self, jobid: str) -> ContainerJobStatus | None:
@@ -87,7 +90,7 @@ class SystemTagger:
         request = StopJobRequest(jobid=jobid, status="Stopped")
         response_queue = queue.Queue()
         message = Message(MessageType.STOP_JOB, {"request": request}, response_queue)
-        self.message_queue.put(message)
+        self.mailbox.put(message)
         return response_queue.get()
 
     def status(self, jobid: str) -> ContainerJobStatus:
@@ -95,7 +98,7 @@ class SystemTagger:
         logger.bind(extra={"jobid": jobid[:8]}).info("Received request to get status for job")
         response_queue = queue.Queue()
         message = Message(MessageType.GET_STATUS, {"jobid": jobid}, response_queue)
-        self.message_queue.put(message)
+        self.mailbox.put(message)
         return response_queue.get()
 
     def shutdown(self) -> None:
@@ -103,11 +106,11 @@ class SystemTagger:
         logger.info("Shutdown requested for SystemTagger")
         response_queue = queue.Queue()
         message = Message(MessageType.SHUTDOWN, {}, response_queue)
-        self.message_queue.put(message)
+        self.mailbox.put(message)
         response_queue.get()
 
     def _actor_loop(self):
-        """Processes all messages sequentially."""
+        """Processes all messages sequentially and starts queued jobs."""
         last_status_log = time.time()
         status_log_interval = 30.0
         
@@ -115,7 +118,7 @@ class SystemTagger:
             try:
                 # Process messages with timeout to allow periodic queue processing
                 try:
-                    message = self.message_queue.get(timeout=0.1)
+                    message = self.mailbox.get(timeout=0.1)
                     self._handle_message(message)
                 except queue.Empty:
                     pass
@@ -125,20 +128,20 @@ class SystemTagger:
                 
                 current_time = time.time()
                 if current_time - last_status_log >= status_log_interval:
-                    if not self.message_queue.empty():
+                    if not self.mailbox.empty():
                         self._log_queue_status()
                     else:
-                        logger.debug("SystemTagger - no new messages")
+                        logger.debug("No new messages")
                     last_status_log = current_time
 
             except Exception as e:
-                logger.exception(f"Error in actor loop: {e}")
+                logger.opt(exception=e).error("Error in actor loop")
 
-        logger.info("SystemTagger actor shutting down")
+        logger.info("Actor thread shutting down")
 
     def _log_queue_status(self):
         """Log current queue and job status"""
-        message_queue_size = self.message_queue.qsize()
+        message_queue_size = self.mailbox.qsize()
         job_queue_size = len(self.job_queue)
         
         # Count jobs by status
@@ -149,14 +152,14 @@ class SystemTagger:
         
         # Format resource usage
         total_gpus = len(self.sys_config.gpus)
-        used_gpus = sum(1 for used in self.gpu_status if used)
+        used_gpus = sum(1 for used in self.resource_state.gpu_status if used)
         
         logger.info(
             f"Queue Status - Messages: {message_queue_size}, "
             f"Job Queue: {job_queue_size}, "
             f"Jobs: {dict(job_counts)}, "
             f"GPUs: {used_gpus}/{total_gpus}, "
-            f"Resources: {dict(self.active_resources)}"
+            f"Resources: {dict(self.resource_state.available)}"
         )
         
         # Log individual queued jobs if any
@@ -240,7 +243,7 @@ class SystemTagger:
             self._free_resources(job)
             if request.jobid in self.job_queue:
                 self.job_queue.remove(request.jobid)
-            logger.info("successfully stopped running job and freed resources", extra={**log_fields, "new_available_resources": self.active_resources})
+            logger.info("successfully stopped running job and freed resources", extra={**log_fields, "new_available_resources": self.resource_state.available})
         elif job.jobstatus.status == "Queued":
             assert request.jobid in self.job_queue
             self.job_queue.remove(request.jobid)
@@ -261,7 +264,7 @@ class SystemTagger:
 
     def _handle_check_capacity(self, message: Message):
         required_resources = message.data["resources"]
-        can_start = self._can_start(required_resources, self.total_resources)
+        can_start = self._can_start(required_resources, self.resource_state.total)
         assert message.response_queue is not None
         message.response_queue.put(can_start)
 
@@ -318,15 +321,15 @@ class SystemTagger:
         """Try to start queued jobs."""
         if not self.job_queue:
             return
-        
+
         # Try to start jobs
         for jobid in self.job_queue[:]:
             job = self.jobs[jobid]
 
             assert job.jobstatus.status == "Queued"
-            
+
             container_reqs = job.container.required_resources()
-            if self._can_start(container_reqs, self.active_resources):
+            if self._can_start(container_reqs, self.resource_state.available):
                 self._start_job(jobid)
                 if jobid in self.job_queue:
                     # we need the check because _start_job may have removed it already if it errors
@@ -375,8 +378,8 @@ class SystemTagger:
         job_reqs = job.container.required_resources()
         
         for resr, req in job_reqs.items():
-            self.active_resources[resr] -= req
-            assert self.active_resources[resr] >= 0, f"Resource {resr} went negative"
+            self.resource_state.available[resr] -= req
+            assert self.resource_state.available[resr] >= 0, f"Resource {resr} went negative"
             
             if resr not in gpu_resources:
                 continue
@@ -384,8 +387,8 @@ class SystemTagger:
             # Allocate GPUs
             for _ in range(req):
                 for gpuidx, gpu_type in enumerate(self.sys_config.gpus):
-                    if gpu_type == resr and not self.gpu_status[gpuidx]:
-                        self.gpu_status[gpuidx] = True
+                    if gpu_type == resr and not self.resource_state.gpu_status[gpuidx]:
+                        self.resource_state.gpu_status[gpuidx] = True
                         reserved_gpus.append(gpuidx)
                         break
                 else:
@@ -400,11 +403,11 @@ class SystemTagger:
         job_reqs = job.container.required_resources()
         
         for resr, req in job_reqs.items():
-            self.active_resources[resr] += req
+            self.resource_state.available[resr] += req
             
             if resr in gpu_resources:
                 for gpu_idx in job.gpus_used:
-                    self.gpu_status[gpu_idx] = False
+                    self.resource_state.gpu_status[gpu_idx] = False
         
         job.gpus_used = []
 
@@ -424,7 +427,7 @@ class SystemTagger:
             ))
 
     def _monitor_containers(self):
-        """Monitor running containers and notify when they finish."""
+        """Monitor running containers and notifies when they finish."""
         while not self.exit_requested:
             try:
                 running_jobs = [
@@ -440,7 +443,7 @@ class SystemTagger:
                             MessageType.CONTAINER_FINISHED,
                             {"jobid": jobid, "exit_code": exit_code}
                         )
-                        self.message_queue.put(message)
+                        self.mailbox.put(message)
                 
                 time.sleep(0.2)
                 
@@ -449,23 +452,27 @@ class SystemTagger:
                 time.sleep(1.0)
         logger.info("Container monitor shutting down")
 
-def load_system_resources(cfg: SysConfig) -> SystemResources:
-    """Get currently available system resources"""
-    resources = defaultdict(int)
-    
-    for device_idx in range(len(cfg.gpus)):
-        if cfg.gpus[device_idx] == "disabled":
-            continue
-        resources[cfg.gpus[device_idx]] += 1
+    def _load_system_resources(self, cfg: SysConfig) -> ResourceState:
+        """Get currently available system resources and load the state object for tracking what's available"""
+        resources = defaultdict(int)
+        
+        for device_idx in range(len(cfg.gpus)):
+            if cfg.gpus[device_idx] == "disabled":
+                continue
+            resources[cfg.gpus[device_idx]] += 1
 
-    gpu_resources = set(resources)
-    other_resources = set(cfg.resources)
+        gpu_resources = set(resources)
+        other_resources = set(cfg.resources)
 
-    # should not be overlap
-    assert len(gpu_resources) + len(other_resources) == len(gpu_resources | other_resources)
+        # should not be overlap
+        assert len(gpu_resources) + len(other_resources) == len(gpu_resources | other_resources)
 
-    resources.update(cfg.resources)
+        resources.update(cfg.resources)
 
-    logger.debug(f"System resources: {dict(resources)}")
+        logger.debug(f"System resources: {dict(resources)}")
 
-    return dict(resources)
+        return ResourceState(
+            total=SystemResources(dict(resources)),
+            available=SystemResources(dict(resources)),
+            gpu_status=[False] * len(cfg.gpus)
+        )
