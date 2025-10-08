@@ -10,7 +10,7 @@ import sys
 from waitress import serve
 import os
 
-from src.tagger.system_tagging.resource_manager import SystemTagger
+from src.tagger.system_tagging.system_tagger import SystemTagger
 from src.tagger.fabric_tagging.tagger import FabricTagger
 from src.tags.tagstore.factory import create_tagstore
 from src.fetch.fetch_content import Fetcher

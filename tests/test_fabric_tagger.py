@@ -7,7 +7,7 @@ from collections import defaultdict
 
 from src.tags.tagstore.rest_tagstore import RestTagstore
 from src.tagger.fabric_tagging.tagger import FabricTagger
-from src.tagger.system_tagging.resource_manager import SystemTagger
+from src.tagger.system_tagging.system_tagger import SystemTagger
 from src.tag_containers.model import ModelConfig, ModelOutput
 from src.tagger.system_tagging.model import SysConfig
 from src.tagger.fabric_tagging.model import RunConfig, TagArgs

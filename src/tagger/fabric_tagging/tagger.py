@@ -13,7 +13,7 @@ from src.tags.tagstore.types import Tag
 from src.fetch.model import DownloadRequest
 from src.tag_containers.model import ContainerRequest
 from src.tag_containers.containers import ContainerRegistry
-from src.tagger.system_tagging.resource_manager import SystemTagger
+from src.tagger.system_tagging.system_tagger import SystemTagger
 from src.tagger.fabric_tagging.model import *
 from src.common.content import Content
 from src.common.errors import MissingResourceError
