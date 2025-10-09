@@ -1,4 +1,3 @@
-
 from copy import deepcopy
 import uuid
 from podman import PodmanClient
@@ -24,17 +23,35 @@ class TagContainer:
         cfg: ContainerSpec
     ):
         self.cfg = cfg
-        file_types = [get_file_type(f) for f in self.cfg.file_args]
+
+        if isinstance(self.cfg.media_input, str):
+            # single directory
+            if not os.path.exists(self.cfg.media_input):
+                raise FileNotFoundError(f"Directory {self.cfg.media_input} not found")
+            elif not os.path.isdir(self.cfg.media_input):
+                raise NotADirectoryError(f"{self.cfg.media_input} is not a directory")
+            self.media_files = [os.path.join(self.cfg.media_input, f) for f in os.listdir(self.cfg.media_input)]
+        else:
+            self.media_files = self.cfg.media_input
+
+        self.media_dir = self._find_common_root(self.media_files)
+
+        max_depth = self._calculate_max_depth(self.media_files, self.media_dir)
+        
+        if max_depth > 3:
+            raise BadRequestError(f"Files are too deeply nested ({max_depth} levels below common root). Maximum allowed depth is 3.\n {self.media_files}")
+
+        file_types = [get_file_type(f) for f in self.media_files]
         if len(set(file_types)) > 1:
-            raise BadRequestError("All files must be of the same type")
+            raise BadRequestError(f"All files must be of the same type: {self.media_files}")
         if len(file_types) == 0:
             raise ValueError("No files provided")
         self.file_type = file_types[0]
         if self.file_type not in ["video", "audio", "image"]:
             raise BadRequestError(f"Unsupported file type: {self.file_type}")
         # check that no file has the same basename
-        self.basename_to_source = {os.path.basename(f): f for f in self.cfg.file_args}
-        if len(self.basename_to_source) != len(self.cfg.file_args):
+        self.basename_to_source = {os.path.basename(f): f for f in self.media_files}
+        if len(self.basename_to_source) != len(self.media_files):
             raise BadRequestError("Files must have unique basenames")
         self.pclient = pclient
         self.container = None
@@ -44,13 +61,6 @@ class TagContainer:
         gpuidx: int | None,
     ) -> None:
         os.makedirs(self.cfg.tags_dir, exist_ok=True)
-        
-        # Find common root directory and validate depth
-        common_root = self._find_common_root(self.cfg.file_args)
-        max_depth = self._calculate_max_depth(self.cfg.file_args, common_root)
-        
-        if max_depth > 3:
-            raise BadRequestError(f"Files are too deeply nested ({max_depth} levels below common root). Maximum allowed depth is 3.")
         
         volumes = [
             {
@@ -67,7 +77,7 @@ class TagContainer:
                 "read_only": False
             },
             {
-                "source": common_root,
+                "source": self.media_dir,
                 "target": "/elv/media",
                 "type": "bind",
                 "read_only": True
@@ -76,7 +86,7 @@ class TagContainer:
 
         # Calculate paths from perspective of the container working directory "/elv"
         relative_paths = []
-        for f in self.cfg.file_args:
+        for f in self.media_files:
             if not os.path.exists(f):
                 raise FileNotFoundError(f"File {f} not found")
             elif not os.path.isfile(f):
@@ -84,7 +94,7 @@ class TagContainer:
             elif not os.path.isabs(f):
                 raise ValueError(f"{f} must be an absolute path")
             
-            rel_path = os.path.relpath(f, common_root)
+            rel_path = os.path.relpath(f, self.media_dir)
             relative_paths.append(f"media/{rel_path}")
 
         kwargs = {

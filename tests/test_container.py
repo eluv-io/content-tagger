@@ -48,7 +48,7 @@ def container_spec_video(temp_dir, video_files):
     
     return ContainerSpec(
         id="test_video_container",
-        file_args=video_files,
+        media_input=video_files,
         run_config={},
         logs_path=os.path.join(temp_dir, "logs"),
         cache_dir=os.path.join(temp_dir, "cache"),
@@ -69,7 +69,7 @@ def container_spec_image(temp_dir, image_files):
     
     return ContainerSpec(
         id="test_image_container",
-        file_args=image_files,
+        media_input=image_files,
         run_config={},
         logs_path=os.path.join(temp_dir, "logs"),
         cache_dir=os.path.join(temp_dir, "cache"),
@@ -464,3 +464,56 @@ def test_tags_case_insensitive_text_matching(video_tag_container):
             frame_tags = tag.additional_info["frame_tags"]
             # Both frame tags should match despite case differences
             assert len(frame_tags) == 2
+
+def test_container_with_directory_input(mock_podman_client, temp_dir):
+    """Test starting a container with directory as media_input"""
+    # Create a directory with video files
+    videos_dir = os.path.join(temp_dir, "videos")
+    os.makedirs(videos_dir)
+    
+    video1 = os.path.join(videos_dir, "video1.mp4")
+    video2 = os.path.join(videos_dir, "video2.mp4")
+    open(video1, 'a').close()
+    open(video2, 'a').close()
+    
+    # Create container spec with directory input
+    tags_dir = os.path.join(temp_dir, "tags")
+    os.makedirs(tags_dir, exist_ok=True)
+    
+    container_spec = ContainerSpec(
+        id="test_dir_container",
+        media_input=videos_dir,  # Pass directory instead of file list
+        run_config={},
+        logs_path=os.path.join(temp_dir, "logs"),
+        cache_dir=os.path.join(temp_dir, "cache"),
+        tags_dir=tags_dir,
+        model_config=ModelConfig(
+            type="video",
+            image="test/model:latest",
+            resources=SystemResources(memory_mb=1024, vcpus=1)
+        )
+    )
+    
+    container = TagContainer(mock_podman_client, container_spec)
+    
+    # Create video tags for both videos
+    video1_tags = [{"start_time": 0, "end_time": 5, "text": "scene1"}]
+    create_video_tags_file(tags_dir, "video1.mp4", video1_tags)
+    
+    video2_tags = [{"start_time": 0, "end_time": 3, "text": "scene2"}]
+    create_video_tags_file(tags_dir, "video2.mp4", video2_tags)
+
+    with patch('src.tag_containers.containers.get_fps', return_value=30.0):
+        outputs = container.tags()
+        
+        assert len(outputs) == 2
+        
+        # Find outputs by source media
+        video1_output = next(o for o in outputs if o.source_media.endswith("video1.mp4"))
+        video2_output = next(o for o in outputs if o.source_media.endswith("video2.mp4"))
+        
+        assert len(video1_output.tags) == 1
+        assert video1_output.tags[0].text == "scene1"
+        
+        assert len(video2_output.tags) == 1
+        assert video2_output.tags[0].text == "scene2"

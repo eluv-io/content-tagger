@@ -4,6 +4,8 @@ from typing_extensions import Literal
 from src.tags.tagstore.types import Tag
 from src.common.model import SystemResources
 
+MediaInput = list[str] | str
+
 @dataclass
 class ModelConfig:
     """
@@ -28,7 +30,7 @@ class ContainerSpec:
     # destination path for the tags
     tags_dir: str
     # media files to run the model on
-    file_args: list[str]
+    media_input: MediaInput
     # runtime params passed to the model (unique schema per model)
     run_config: dict
     # static attributes of the container to run
@@ -38,16 +40,15 @@ class ContainerSpec:
 class ContainerRequest:
     # e.g: "caption", "asr" (same model handle used in the API)
     model_id: str
-    # media files to run the model on
-    file_args: list[str]
+    # Either a list of files or a single directory
+    media_input: MediaInput
     # runtime params passed to the model
     run_config: dict
-
     # handle passed to the container for tracking
     job_id: str | None
 
     def __str__(self) -> str:
-        return f"ContainerRequest(job_id={self.job_id}, model_id={self.model_id}, file_args={self.file_args}, run_config={self.run_config})"
+        return f"ContainerRequest(job_id={self.job_id}, model_id={self.model_id}, media_input={self.media_input}, run_config={self.run_config})"
 
 @dataclass
 class RegistryConfig:
