@@ -44,6 +44,74 @@ class TagContainer:
         gpuidx: int | None,
     ) -> None:
         os.makedirs(self.cfg.tags_dir, exist_ok=True)
+        
+        # Find common root directory and validate depth
+        common_root = self._find_common_root(self.cfg.file_args)
+        max_depth = self._calculate_max_depth(self.cfg.file_args, common_root)
+        
+        if max_depth > 3:
+            raise BadRequestError(f"Files are too deeply nested ({max_depth} levels below common root). Maximum allowed depth is 3.")
+        
+        volumes = [
+            {
+                "source": self.cfg.tags_dir,
+                # convention for containers to store tags in /elv/tags
+                "target": "/elv/tags",
+                "type": "bind",
+            },
+            {
+                "source": self.cfg.cache_dir,
+                # convention for python modules to store cache in /root/.cache
+                "target": "/root/.cache",
+                "type": "bind",
+                "read_only": False
+            },
+            {
+                "source": common_root,
+                "target": "/elv/media",
+                "type": "bind",
+                "read_only": True
+            }
+        ]
+
+        # Calculate paths from perspective of the container working directory "/elv"
+        relative_paths = []
+        for f in self.cfg.file_args:
+            if not os.path.exists(f):
+                raise FileNotFoundError(f"File {f} not found")
+            elif not os.path.isfile(f):
+                raise IsADirectoryError(f"{f} is a directory")
+            elif not os.path.isabs(f):
+                raise ValueError(f"{f} must be an absolute path")
+            
+            rel_path = os.path.relpath(f, common_root)
+            relative_paths.append(f"media/{rel_path}")
+
+        kwargs = {
+            "image": self.cfg.model_config.image,
+            "command": relative_paths + ["--config", f"{json.dumps(self.cfg.run_config)}"],
+            "mounts": volumes,
+            "remove": True,
+            "network_mode": "host",
+            "log_config": {
+                "Type": "k8s-file",
+                "Config": {
+                    "path": self.cfg.logs_path
+                }
+            }
+        }
+
+        if gpuidx is not None:
+            kwargs["devices"] = [f"nvidia.com/gpu={gpuidx}"]
+
+        container = self.pclient.containers.create(**kwargs)
+        container.start()
+        self.container = container
+
+        self, 
+        gpuidx: int | None,
+    ) -> None:
+        os.makedirs(self.cfg.tags_dir, exist_ok=True)
         volumes = [
             {
                 "source": self.cfg.tags_dir,
@@ -306,6 +374,35 @@ class TagContainer:
                             text=ftag.get("text", "")
                         ))
         return overlapping_tags
+
+    def _find_common_root(self, filepaths: list[str]) -> str:
+        """Find the common root directory for all files"""
+        if not filepaths:
+            raise ValueError("No files provided")
+        
+        # Get absolute paths
+        abs_paths = [os.path.abspath(f) for f in filepaths]
+        
+        # Find common prefix
+        common_prefix = os.path.commonpath(abs_paths)
+        
+        # If common prefix is a file (only one file), use its directory
+        if os.path.isfile(common_prefix):
+            common_prefix = os.path.dirname(common_prefix)
+        
+        return common_prefix
+
+    def _calculate_max_depth(self, filepaths: list[str], root: str) -> int:
+        """Calculate maximum depth of files relative to root directory"""
+        max_depth = 0
+        
+        for filepath in filepaths:
+            rel_path = os.path.relpath(filepath, root)
+            # Count directory separators to determine depth
+            depth = rel_path.count(os.sep)
+            max_depth = max(max_depth, depth)
+        
+        return max_depth
 
 class ContainerRegistry:
     """

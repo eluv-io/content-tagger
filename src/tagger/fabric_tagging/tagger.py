@@ -68,7 +68,7 @@ class FabricTagger:
         self._schedule_upload_tick()
 
     def tag(self, q: Content, args: TagArgs) -> dict:
-        logger.info("Received a new tag request", extra={"qhit": q.qhit, "args": args})
+        logger.info("queueing a new tag request", extra={"qhit": q.qhit, "args": args})
         request = TagRequest(q=q, args=args)
         return self._submit(request)
 
@@ -160,7 +160,7 @@ class FabricTagger:
     
         self._validate_args(request.args)
         args = self._assign_default_streams(request.args)
-        logger.info("Received a new tag request", extra={"qhit": request.q.qhit, "args": args})
+        logger.info("processing tag request", extra={"qhit": request.q.qhit, "args": args})
         
         status = {}
         for feature in args.features:
