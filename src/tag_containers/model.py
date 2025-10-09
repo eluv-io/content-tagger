@@ -44,6 +44,7 @@ class ContainerRequest:
     media_input: MediaInput
     # runtime params passed to the model
     run_config: dict
+    live: bool
     # handle passed to the container for tracking
     job_id: str | None
 

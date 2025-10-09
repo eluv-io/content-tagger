@@ -6,7 +6,6 @@ from src.fetch.fetch_content import DownloadResult
 
 @dataclass
 class JobState:
-    # everything that might change during the job
     status: JobStatus
     taghandle: str
     uploaded_sources: list[str]
@@ -30,6 +29,7 @@ class TagJob:
     args: JobArgs
     state: JobState
     upload_job: str
+    media_dir: str
     stop_event: threading.Event
     tagging_done: threading.Event | None
 

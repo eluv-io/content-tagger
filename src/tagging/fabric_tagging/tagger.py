@@ -8,19 +8,21 @@ from dataclasses import dataclass
 from typing import Any
 from datetime import datetime
 from uuid import uuid4 as uuid
+import os
 
 from src.tags.tagstore.types import Tag
 from src.fetch.model import DownloadRequest
+from src.tag_containers.containers import LiveTagContainer
 from src.tag_containers.model import ContainerRequest
 from src.tag_containers.registry import ContainerRegistry
 from src.tagging.scheduling.scheduler import ContainerScheduler
-from src.tagging.fabric_tagging.model import *
 from src.common.content import Content
 from src.common.errors import MissingResourceError
 from src.fetch.fetch_content import Fetcher
 from src.tags.tagstore.abstract import Tagstore
 from src.tagging.fabric_tagging.message_types import *
 from src.tagging.fabric_tagging.job_state import *
+from src.tagging.fabric_tagging.model import *
 
 from src.common.logging import logger
 logger = logger.bind(name="Fabric Tagger")
@@ -49,13 +51,15 @@ class FabricTagger:
             system_tagger: ContainerScheduler,
             cregistry: ContainerRegistry,
             tagstore: Tagstore,
-            fetcher: Fetcher
+            fetcher: Fetcher,
+            cfg: FabricTaggerConfig
         ):
 
         self.system_tagger = system_tagger
         self.cregistry = cregistry
         self.tagstore = tagstore
         self.fetcher = fetcher
+        self.cfg = cfg
 
         self.jobstore = JobStore()
         self.shutdown_requested = False
@@ -183,6 +187,7 @@ class FabricTagger:
                     runconfig=args.features[feature],
                     scope=args.scope
                 ),
+                media_dir=self._output_dir_from_q(request.q),
                 upload_job=tsjob.id,
                 stop_event=threading.Event(),
                 tagging_done=None,
@@ -241,6 +246,7 @@ class FabricTagger:
                     stream_name=stream,
                     scope=job.args.scope,
                     preserve_track=job.args.feature if not job.args.replace else "",
+                    output_dir=job.media_dir
                 ),
                 exit_event=job.stop_event
             )
@@ -277,11 +283,31 @@ class FabricTagger:
         job.state.media = dl_res
         job.state.status.failed += dl_res.failed
 
-        media_files = [s.filepath for s in dl_res.successful_sources]
+        if not job.state.container:
+            self._start_new_container(job)
+        else:
+            assert isinstance(job.state.container, LiveTagContainer)
+            self._send_media(job)
+
+        message.response_mailbox.put(Response(data=None, error=None))
+
+    def _send_media(self, job: TagJob):
+        """
+        Reads the DownloadResult from the job.state and upload to the live container.
+        """
+        assert isinstance(job.state.container, LiveTagContainer)
+
+        dl_res = job.state.media
+        assert dl_res is not None
+
+        job.state.container.add_media([s.filepath for s in dl_res.successful_sources])
+
+    def _start_new_container(self, job: TagJob) -> None:
         container = self.cregistry.get(ContainerRequest(
             model_id=job.args.feature,
-            media_input=media_files,
+            media_input=job.media_dir,
             run_config=job.args.runconfig.model,
+            live=self._is_live(job.args.q),
             job_id=job.args.q.qhit + "-" + datetime.now().strftime("%Y%m%d%H%M") + "-" + str(uuid())[0:6]
         ))
         
@@ -297,8 +323,6 @@ class FabricTagger:
             args=(job,), 
             daemon=True
         ).start()
-
-        message.response_mailbox.put(Response(data=None, error=None))
 
     def _do_tagging(self, job: TagJob) -> None:
         """Waits for tagging to complete, then uploads tags and requests transition to complete phase"""
@@ -556,6 +580,9 @@ class FabricTagger:
 
         job.state.uploaded_sources.extend(media_to_source[out.source_media].name for out in new_outputs)
 
+    def _output_dir_from_q(self, q: Content) -> str:
+        return os.path.join(self.cfg.media_dir, q.qhit)
+
     def _validate_args(self, args: TagArgs) -> None:
         """Validate args (called from actor thread)"""
         services = self.cregistry.services()
@@ -627,3 +654,5 @@ class FabricTagger:
                 config.stream = stream
         return args
     
+    def _is_live(self, q: Content) -> bool:
+        return False

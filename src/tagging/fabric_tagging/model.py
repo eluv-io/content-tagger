@@ -8,6 +8,10 @@ from src.common.content import Content
 from src.fetch.model import AssetScope, VideoScope
 
 @dataclass
+class FabricTaggerConfig:
+    media_dir: str
+
+@dataclass
 class RunConfig:
     # model config, used to overwrite the model level config
     model: dict = field(default_factory=dict)

@@ -174,6 +174,8 @@ class TagContainer:
                 raise IsADirectoryError(f"{f} is a directory")
             elif not os.path.isabs(f):
                 raise ValueError(f"{f} must be an absolute path")
+            elif not f.startswith(self.media_dir):
+                raise ValueError(f"{f} is not in media directory {self.media_dir}")
             
             rel_path = os.path.relpath(f, self.media_dir)
             relative_paths.append(f"media/{rel_path}")
@@ -398,7 +400,7 @@ class LiveTagContainer(TagContainer):
         self.stdin_socket.sendall(msg.encode())
 
     # TODO: need to verify that tagger handles the exceptions nicely
-    def run_live(self, gpuidx: int | None) -> None:
+    def start(self, gpuidx: int | None, stdin_open: bool=True) -> None:
         super().start(gpuidx, True)
         timeout = 10
         start = time.time()
@@ -414,9 +416,6 @@ class LiveTagContainer(TagContainer):
         # add initial media files to stdin
         if self.media_files:
             self.add_media(self.media_files)
-
-    def start(self, gpuidx: int | None, stdin_open: bool=False) -> None:
-        raise NotImplementedError("Use run_live() to start a live container")
 
     def stop(self) -> None:
         if self.stdin_socket:

@@ -7,6 +7,7 @@ from collections import defaultdict
 
 from src.tags.tagstore.rest_tagstore import RestTagstore
 from src.tagging.fabric_tagging.tagger import FabricTagger
+from src.tagging.fabric_tagging.model import FabricTaggerConfig
 from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.tag_containers.model import ModelConfig, ModelOutput
 from src.tagging.scheduling.model import SysConfig
@@ -244,7 +245,9 @@ def fabric_tagger(system_tagger, fake_container_registry, tag_store, fake_fetche
         system_tagger=system_tagger,
         cregistry=fake_container_registry,
         tagstore=tag_store,
-        fetcher=fake_fetcher
+        fetcher=fake_fetcher,
+        # sho
+        cfg=FabricTaggerConfig(media_dir="")
     )
     yield tagger
     if not tagger.shutdown_requested:

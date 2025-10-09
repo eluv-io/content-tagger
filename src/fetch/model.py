@@ -5,7 +5,6 @@ from src.common.errors import BadRequestError
 @dataclass
 class FetcherConfig:
     max_downloads: int
-    parts_dir: str
     author: str
 
 @dataclass
@@ -24,11 +23,20 @@ class VideoScope:
     end_time: float | int = float("inf")
 
 @dataclass
+class LiveScope:
+    pass
+
+@dataclass
 class DownloadRequest:
     # asset is a special case
+    # TODO: should probably be subsumed by the VideoScope
     stream_name: str
+    # used to avoid re-downloading parts if this track has already been tagged
+    # TODO: this logic might not belong in the fetcher, maybe we can instead pass in 
+    # the sources to not download. 
     preserve_track: str
-    scope: AssetScope | VideoScope
+    output_dir: str
+    scope: AssetScope | VideoScope | LiveScope
 
     def __post_init__(self):
         if self.stream_name == "assets" and not isinstance(self.scope, AssetScope):

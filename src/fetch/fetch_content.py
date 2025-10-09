@@ -20,12 +20,12 @@ from src.tags.tagstore.abstract import Tagstore
 
 logger = logger.bind(name="Fetcher")
 
-
 class Fetcher:
     def __init__(
         self,
         config: FetcherConfig,
         # used to prevent fetching of tagged parts/assets
+        # TODO: probably should disentangle and pass in the already tagged sources directly into download
         ts: Tagstore,
     ):
         self.config = config
@@ -330,7 +330,7 @@ class Fetcher:
                 f"Invalid codec type for live: {stream_metadata.codec_type}. Must be 'video' or 'audio'."
             )
 
-        output_path = os.path.join(self.config.parts_dir, q.qhit, req.stream_name)
+        output_path = os.path.join(req.output_dir, q.qhit, req.stream_name)
         if not os.path.exists(output_path):
             os.makedirs(output_path)
 
@@ -462,7 +462,7 @@ class Fetcher:
         q: Content, 
         req: DownloadRequest
     ) -> DownloadResult:
-        output_path = os.path.join(self.config.parts_dir, q.qhit, "assets")
+        output_path = os.path.join(req.output_dir, q.qhit, "assets")
         if not os.path.exists(output_path):
             os.makedirs(output_path)
 

@@ -7,10 +7,10 @@ from loguru import logger
 
 from src.common.errors import MissingResourceError
 from src.tag_containers.model import RegistryConfig, ContainerSpec, ModelConfig
-from src.tag_containers.containers import TagContainer
+from src.tag_containers.containers import *
 from src.tag_containers.model import ContainerRequest
 
-logger = logger.bind(name="ContainerRegistry")
+logger = logger.bind(name="Container Registry")
 
 class ContainerRegistry:
     """
@@ -47,10 +47,13 @@ class ContainerRegistry:
             logs_path=logs_path,
             cache_dir=cache_path,
             tags_dir=tags_path,
-            model_config=modelcfg
+            model_config=modelcfg,
         )
 
-        return TagContainer(self.pclient, ccfg)
+        if req.live:
+            return LiveTagContainer(self.pclient, ccfg)
+        else:    
+            return TagContainer(self.pclient, ccfg)
 
     def get_model_config(self, model: str) -> ModelConfig:
         return deepcopy(self.cfg.model_configs[model])

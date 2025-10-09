@@ -84,7 +84,8 @@ def boot_state(app: Flask, cfg: AppConfig) -> None:
         system_tagger=system_tagger,
         fetcher=fetcher,
         cregistry=container_registry,
-        tagstore=tagstore
+        tagstore=tagstore,
+        cfg=cfg.tagger
     )
 
     app_state["content_factory"] = ContentFactory(cfg.content)

@@ -34,6 +34,9 @@ fetcher:
   parts_dir: data/parts
   author: tagger
 
+tagger:
+  media_dir: data/parts
+
 container_registry:
   base_dir: data/containers
   cache_dir: data/cache

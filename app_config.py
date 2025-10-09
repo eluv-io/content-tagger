@@ -9,6 +9,7 @@ from src.tag_containers.model import RegistryConfig
 from src.tagging.scheduling.model import SysConfig
 from src.tags.conversion import TagConverterConfig
 from src.tags.tagstore.types import TagstoreConfig
+from src.tagging.fabric_tagging.model import FabricTaggerConfig
 
 @dataclass
 class AppConfig:
@@ -19,6 +20,7 @@ class AppConfig:
     fetcher: FetcherConfig
     container_registry: RegistryConfig
     tag_converter: TagConverterConfig
+    tagger: FabricTaggerConfig
 
     @staticmethod
     def from_yaml(filename: str) -> 'AppConfig':
