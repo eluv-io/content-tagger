@@ -10,12 +10,12 @@ import sys
 from waitress import serve
 import os
 
-from src.tagger.system_tagging.system_tagger import SystemTagger
-from src.tagger.fabric_tagging.tagger import FabricTagger
+from src.tagging.scheduling.scheduler import ContainerScheduler
+from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tags.tagstore.factory import create_tagstore
 from src.fetch.fetch_content import Fetcher
 from src.common.content import ContentFactory
-from src.tag_containers.containers import ContainerRegistry
+from src.tag_containers.registry import ContainerRegistry
 from src.tags.conversion import TagConverter
 
 from src.api.tagging.handlers import handle_tag, handle_image_tag, handle_status, handle_stop
@@ -75,7 +75,7 @@ def configure_routes(app: Flask) -> None:
 def boot_state(app: Flask, cfg: AppConfig) -> None:
     app_state = {}
 
-    system_tagger = SystemTagger(cfg.system)
+    system_tagger = ContainerScheduler(cfg.system)
     tagstore = create_tagstore(cfg.tagstore)
     fetcher = Fetcher(cfg.fetcher, tagstore)
     container_registry = ContainerRegistry(cfg.container_registry)

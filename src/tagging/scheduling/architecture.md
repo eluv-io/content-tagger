@@ -4,7 +4,7 @@ This module is used to schedule container jobs on the machine (see [TagContainer
 
 ## Responsibilities
 
-Container jobs involve running a model that lives in a container and generating output tags, but what exactly the job does is irrelevant to the SystemTagger which is only responsible for queuing them and pressing the tag button when they are ready. It is also responsible for reporting to the caller (via a threading.Event) when the job is done.
+Container jobs involve running a model that lives in a container and generating output tags, but what exactly the job does is irrelevant to the ContainerScheduler which is only responsible for queuing them and pressing the tag button when they are ready. It is also responsible for reporting to the caller (via a threading.Event) when the job is done.
 
 ## Methods
 The following methods are provided which are fairly intuitive

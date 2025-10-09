@@ -3,8 +3,8 @@ import time
 import threading
 from unittest.mock import Mock
 
-from src.tagger.system_tagging.system_tagger import SystemTagger
-from src.tagger.system_tagging.model import SysConfig
+from src.tagging.scheduling.scheduler import ContainerScheduler
+from src.tagging.scheduling.model import SysConfig
 from src.tag_containers.containers import TagContainer
 
 
@@ -20,7 +20,7 @@ class MockTagContainer(TagContainer):
         self.container.attrs = {"State": {"ExitCode": 0}}
         self.resources = {"A6000": 1}
         
-    def start(self, gpuidx: int | None = None) -> None:
+    def start(self, gpuidx: int | None = None, stdin_open: bool = False) -> None:
         self.is_started = True
         self.gpu_idx = gpuidx
         # Simulate work in background
@@ -59,14 +59,14 @@ def sys_config():
 
 @pytest.fixture
 def system_tagger(sys_config):
-    """Create a SystemTagger instance for testing"""
-    tagger = SystemTagger(sys_config)
+    """Create a ContainerScheduler instance for testing"""
+    tagger = ContainerScheduler(sys_config)
     yield tagger
     if tagger.exit_requested is False:
         tagger.shutdown()
 
 
-def test_start_job_with_sufficient_resources(system_tagger: SystemTagger):
+def test_start_job_with_sufficient_resources(system_tagger: ContainerScheduler):
     """Test starting a job when resources are available"""
     container = MockTagContainer()
     container.resources = {"A6000": 1, "cpu_juice": 2}
@@ -84,7 +84,7 @@ def test_start_job_with_sufficient_resources(system_tagger: SystemTagger):
     assert status.error is None
 
 
-def test_start_job_with_insufficient_resources(system_tagger: SystemTagger):
+def test_start_job_with_insufficient_resources(system_tagger: ContainerScheduler):
     """Test starting a job when resources are not available"""
     container = MockTagContainer()
     container.resources = {"cpu_juice": 5}  # More juice than available
@@ -93,7 +93,7 @@ def test_start_job_with_insufficient_resources(system_tagger: SystemTagger):
         system_tagger.start(container)
 
 
-def test_job_completion_flow(system_tagger: SystemTagger):
+def test_job_completion_flow(system_tagger: ContainerScheduler):
     """Test that a job goes through the complete lifecycle"""
     container = MockTagContainer(work_duration=0.1)
     
@@ -114,7 +114,7 @@ def test_job_completion_flow(system_tagger: SystemTagger):
     assert final_status.time_ended > final_status.time_started
 
 
-def test_stop_job(system_tagger: SystemTagger):
+def test_stop_job(system_tagger: ContainerScheduler):
     """Test manually stopping a job"""
     container = MockTagContainer(work_duration=1.0)
     
@@ -134,7 +134,7 @@ def test_stop_job(system_tagger: SystemTagger):
     assert status.status == "Stopped"
 
 
-def test_multiple_jobs_queuing(system_tagger: SystemTagger):
+def test_multiple_jobs_queuing(system_tagger: ContainerScheduler):
     """Test that jobs are queued when resources are exhausted"""
     containers = [MockTagContainer(work_duration=0.2) for _ in range(3)]
     
@@ -158,7 +158,7 @@ def test_multiple_jobs_queuing(system_tagger: SystemTagger):
     assert running_count <= 2  # Can't run more than available GPUs
 
 
-def test_job_queue_processing(system_tagger: SystemTagger):
+def test_job_queue_processing(system_tagger: ContainerScheduler):
     """Test that queued jobs get started when resources become available"""
     containers = [MockTagContainer(work_duration=0.1) for _ in range(3)]
     
@@ -188,7 +188,7 @@ def test_job_queue_processing(system_tagger: SystemTagger):
         assert status.status == "Completed"
 
 
-def test_resource_allocation_and_cleanup(system_tagger: SystemTagger):
+def test_resource_allocation_and_cleanup(system_tagger: ContainerScheduler):
     """Test that resources are properly allocated and cleaned up"""
     container = MockTagContainer(work_duration=0.1)
     container.resources = {"A6000": 1, "cpu_juice": 2}
@@ -217,7 +217,7 @@ def test_resource_allocation_and_cleanup(system_tagger: SystemTagger):
     assert final_resources == initial_resources
 
 
-def test_shutdown_stops_all_jobs(system_tagger: SystemTagger):
+def test_shutdown_stops_all_jobs(system_tagger: ContainerScheduler):
     """Test that shutdown properly stops all running jobs"""
     containers = [MockTagContainer(work_duration=1.0) for _ in range(2)]
     
@@ -237,7 +237,7 @@ def test_shutdown_stops_all_jobs(system_tagger: SystemTagger):
         assert container.stop_called
 
 
-def test_finished_event_notification(system_tagger: SystemTagger):
+def test_finished_event_notification(system_tagger: ContainerScheduler):
     """Test that the finished event is properly set when job completes"""
     container = MockTagContainer(work_duration=0.1)
     finished_event = threading.Event()
@@ -252,12 +252,12 @@ def test_finished_event_notification(system_tagger: SystemTagger):
     assert status.status == "Completed"
 
 
-def test_job_failure_handling(system_tagger: SystemTagger):
+def test_job_failure_handling(system_tagger: ContainerScheduler):
     """Test handling of job failures"""
     container = MockTagContainer()
     
     # Mock the container to raise an exception on start
-    def failing_start(gpuidx=None):
+    def failing_start(gpuidx=None, stdin_open=False):
         raise RuntimeError("Container failed to start")
     
     container.start = failing_start
@@ -279,7 +279,7 @@ def test_job_failure_handling(system_tagger: SystemTagger):
     assert status.error is not None
 
 
-def test_gpu_allocation(system_tagger: SystemTagger):
+def test_gpu_allocation(system_tagger: ContainerScheduler):
     """Test that GPU allocation works correctly"""
     container = MockTagContainer(work_duration=0.1)
     
@@ -295,7 +295,7 @@ def test_gpu_allocation(system_tagger: SystemTagger):
         assert container.gpu_idx is not None
 
 
-def test_cpu_only_job(system_tagger: SystemTagger):
+def test_cpu_only_job(system_tagger: ContainerScheduler):
     """Test running a job that only needs CPU resources"""
     container = MockTagContainer(work_duration=0.1)
     container.resources = {"cpu_juice": 2}
@@ -319,7 +319,7 @@ def test_cpu_only_job(system_tagger: SystemTagger):
     assert len(job.gpus_used) == 0
 
 
-def test_status_returns_copy(system_tagger: SystemTagger):
+def test_status_returns_copy(system_tagger: ContainerScheduler):
     """Test that status method returns a copy, not the original object"""
     container = MockTagContainer()
     
@@ -333,7 +333,7 @@ def test_status_returns_copy(system_tagger: SystemTagger):
     assert status1 is not status2
 
 
-def test_stop_queued_job_doesnt_free_resources(system_tagger: SystemTagger):
+def test_stop_queued_job_doesnt_free_resources(system_tagger: ContainerScheduler):
     """Test that stopping a queued job doesn't incorrectly free resources"""
     # Start enough jobs to fill all GPUs and queue some
     containers = [MockTagContainer(work_duration=1.0) for _ in range(4)]  # Long duration

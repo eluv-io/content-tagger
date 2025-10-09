@@ -7,7 +7,7 @@ from src.api.tagging.format import TagAPIArgs, ImageTagAPIArgs
 from src.common.errors import BadRequestError
 from src.api.auth import get_authorization
 from src.common.content import Content, ContentFactory
-from src.tagger.fabric_tagging.tagger import FabricTagger
+from src.tagging.fabric_tagging.tagger import FabricTagger
 
 def handle_tag(qhit: str) -> Response:
     q = _get_authorized_content(qhit)

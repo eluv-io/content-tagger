@@ -6,11 +6,11 @@ from unittest.mock import Mock, patch
 from collections import defaultdict
 
 from src.tags.tagstore.rest_tagstore import RestTagstore
-from src.tagger.fabric_tagging.tagger import FabricTagger
-from src.tagger.system_tagging.system_tagger import SystemTagger
+from src.tagging.fabric_tagging.tagger import FabricTagger
+from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.tag_containers.model import ModelConfig, ModelOutput
-from src.tagger.system_tagging.model import SysConfig
-from src.tagger.fabric_tagging.model import RunConfig, TagArgs
+from src.tagging.scheduling.model import SysConfig
+from src.tagging.fabric_tagging.model import RunConfig, TagArgs
 from src.tag_containers.model import ContainerRequest
 from src.fetch.model import DownloadRequest, DownloadResult, Source, StreamMetadata, VideoScope
 from src.common.content import Content
@@ -151,9 +151,9 @@ class FakeContainerRegistry:
         self.containers = {}
         
     def get(self, req: ContainerRequest) -> FakeTagContainer:
-        container_key = f"{req.model_id}_{len(req.file_args)}"
+        container_key = f"{req.model_id}_{len(req.media_input)}"
         if container_key not in self.containers:
-            self.containers[container_key] = FakeTagContainer(req.file_args, req.model_id)
+            self.containers[container_key] = FakeTagContainer(req.media_input, req.model_id)
         return self.containers[container_key]
     
     def get_model_config(self, feature: str) -> ModelConfig:
@@ -226,8 +226,8 @@ def fake_fetcher(fake_media_files):
 
 @pytest.fixture
 def system_tagger():
-    """Create a real SystemTagger for testing"""
-    return SystemTagger(cfg=SysConfig(gpus=["gpu", "gpu", "disabled"], resources={"cpu_juice": 100}))
+    """Create a real ContainerScheduler for testing"""
+    return ContainerScheduler(cfg=SysConfig(gpus=["gpu", "gpu", "disabled"], resources={"cpu_juice": 100}))
 
 
 @pytest.fixture
@@ -592,7 +592,7 @@ def test_container_tags_method_fails(mock_tags, fabric_tagger, q):
 def test_failed_tag(mock_get, fabric_tagger, q):
     # Configure the mock to return PartialFailContainer
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
-        return PartialFailContainer(req.file_args, req.model_id)
+        return PartialFailContainer(req.media_input, req.model_id)
     
     mock_get.side_effect = get_side_effect
     

@@ -10,11 +10,11 @@ from server import create_app
 from app_config import AppConfig
 import podman
 from src.common.content import ContentConfig, ContentFactory
-from src.tagger.fabric_tagging.tagger import FabricTagger
+from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tags.conversion import TagConverterConfig
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.tags.tagstore.types import TagstoreConfig
-from src.tagger.system_tagging.model import SysConfig
+from src.tagging.scheduling.model import SysConfig
 from src.fetch.model import FetcherConfig
 from src.tag_containers.model import ModelConfig, RegistryConfig
 

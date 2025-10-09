@@ -8,14 +8,14 @@ import queue
 from src.common.errors import BadRequestError
 from src.tag_containers.containers import TagContainer
 from src.common.model import SystemResources
-from src.tagger.system_tagging.model import *
-from src.tagger.system_tagging.state import *
-from src.tagger.system_tagging.message_types import *
+from src.tagging.scheduling.model import *
+from src.tagging.scheduling.state import *
+from src.tagging.scheduling.message_types import *
 from src.common.logging import logger
 
-logger = logger.bind(name="System Tagger")
+logger = logger.bind(name="Container Scheduler")
 
-class SystemTagger:
+class ContainerScheduler:
     """
     Handles tagging jobs on internal resources using single-thread actor pattern.
     """
@@ -103,7 +103,7 @@ class SystemTagger:
 
     def shutdown(self) -> None:
         """Shuts down the actor and all running jobs."""
-        logger.info("Shutdown requested for SystemTagger")
+        logger.info("Shutdown requested for ContainerScheduler")
         response_queue = queue.Queue()
         message = Message(MessageType.SHUTDOWN, {}, response_queue)
         self.mailbox.put(message)

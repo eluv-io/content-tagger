@@ -1,6 +1,6 @@
 import threading
 
-from src.tagger.fabric_tagging.model import *
+from src.tagging.fabric_tagging.model import *
 from src.tag_containers.containers import TagContainer
 from src.fetch.fetch_content import DownloadResult
 

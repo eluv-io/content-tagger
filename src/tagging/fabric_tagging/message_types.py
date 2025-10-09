@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from src.common.content import Content
-from src.tagger.fabric_tagging.model import *
+from src.tagging.fabric_tagging.model import *
 from src.fetch.model import DownloadResult
 
 @dataclass

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 import threading
 
-from src.tagger.system_tagging.model import *
+from src.tagging.scheduling.model import *
 
 @dataclass
 class ContainerJob:

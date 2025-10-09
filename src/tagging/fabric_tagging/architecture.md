@@ -9,7 +9,7 @@ This module is used to orchestrate the flow from downloading source media, runni
 - Stop a job `FabricTagger.stop`
 
 ## Dependencies
-- `SystemTagger`: manages scheduling the lower level containers (`TagContainer`) on the system.
+- `ContainerScheduler`: manages scheduling the lower level containers (`TagContainer`) on the system.
 - `Fetcher`: downloads data from the fabric
 - `Tagstore`: interface for storing tags
 - `ContainerRegistry`
@@ -20,7 +20,7 @@ This module is used to orchestrate the flow from downloading source media, runni
 - All requests and state transitions go through one single actor thread so we don't need to worry about race conditions.
 - Each job is handled in it's own thread which does the following:
     - Initiates media fetching
-    - Submits the container (`TagContainer`) to the `SystemTagger` and awaits completion using a threading.Event
+    - Submits the container (`TagContainer`) to the `ContainerScheduler` and awaits completion using a threading.Event
     - Submits an upload request at the end
     - Updates the job status as it progresses by submitting a `JobTransition` request to the actor thread.
 - There is another thread which is responsible for regularly uploading new tags to the tagstore (uses threading.Timer)

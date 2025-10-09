@@ -4,7 +4,7 @@ import threading
 import queue
 from dataclasses import dataclass
 
-from src.tagger.system_tagging.model import *
+from src.tagging.scheduling.model import *
 
 
 class MessageType(Enum):
