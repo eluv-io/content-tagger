@@ -11,7 +11,7 @@ from uuid import uuid4 as uuid
 import os
 
 from src.tags.tagstore.types import Tag
-from src.fetch.model import DownloadRequest
+from src.fetch.model import DownloadRequest, LiveDownloadResult
 from src.tag_containers.containers import LiveTagContainer
 from src.tag_containers.model import ContainerRequest
 from src.tag_containers.registry import ContainerRegistry
@@ -232,6 +232,8 @@ class FabricTagger:
         """Perform fetching work, then request transition to tagging phase
         
         Runs in a background thread to avoid blocking the main thread.
+
+        In the case of live jobs, if fetching fails, it will retry after a delay.
         """
 
         jobid = job.get_id()
@@ -254,16 +256,20 @@ class FabricTagger:
             if job.stop_event.is_set():
                 return
 
-            if len(dl_res.successful_sources) == 0:
+            if not self._is_live(job) and len(dl_res.successful_sources) == 0:
                 logger.info("No media to tag, ending job", extra={"jobid": jobid})
                 self._end_job(jobid, "Completed", None)
                 return
 
-            # Request transition to tagging phase
-            self._submit(EnterTaggingPhase(job_id=jobid, data=dl_res))
-
         except Exception as e:
-            self._end_job(jobid, "Failed", e)
+            if self._is_live(job):
+                logger.opt(exception=e).error("Error during fetching for live job, retrying", extra={"jobid": jobid})
+                threading.Timer(5.0, lambda: self._submit_async(EnterFetchingPhase(job_id=jobid))).start()
+            else:
+                self._end_job(jobid, "Failed", e)
+            return
+
+        self._submit(EnterTaggingPhase(job_id=jobid, data=dl_res))
 
     def _handle_enter_tagging_phase(self, message: Message):
         """Update state and start tagging in background thread"""
@@ -280,34 +286,58 @@ class FabricTagger:
         logger.info("entering tagging phase", extra={"jobid": jobid})
         
         job.state.status.status = "Tagging content"
-        job.state.media = dl_res
+
+        if not job.state.media:
+            job.state.media = MediaState(sources=[], stream_meta=dl_res.stream_meta)
+
+        new_sources = []
+        for s in dl_res.successful_sources:
+            if s.name not in job.state.media.sources:
+                new_sources.append(s)
+            else:
+                logger.error("Got a duplicate source, ignoring", extra={"jobid": jobid, "source": s.name})
+
+        job.state.media.sources += new_sources
+
+        # mark any sources that failed to download
         job.state.status.failed += dl_res.failed
 
         if not job.state.container:
             self._start_new_container(job)
+            if self._is_live(job):
+                self._submit_async(EnterFetchingPhase(job_id=jobid))
         else:
+            # live case
             assert isinstance(job.state.container, LiveTagContainer)
-            self._send_media(job)
+            assert isinstance(dl_res, LiveDownloadResult)
+            self._send_media(job, new_sources, dl_res.done)
+            # return to fetching
+            self._submit_async(EnterFetchingPhase(job_id=jobid))
 
         message.response_mailbox.put(Response(data=None, error=None))
 
-    def _send_media(self, job: TagJob):
+    def _send_media(self, job: TagJob, new_media: list[Source], done: bool) -> None:
         """
-        Reads the DownloadResult from the job.state and upload to the live container.
+        Reads the DownloadResult from the job.state
         """
         assert isinstance(job.state.container, LiveTagContainer)
 
-        dl_res = job.state.media
-        assert dl_res is not None
+        job.state.container.add_media([s.filepath for s in new_media])
 
-        job.state.container.add_media([s.filepath for s in dl_res.successful_sources])
+        if done:
+            # stop the container manually, so the job watcher 
+            job.state.container.stop()
 
     def _start_new_container(self, job: TagJob) -> None:
+        if job.state.media is None:
+            media_input = job.media_dir
+        else:
+            media_input = [s.filepath for s in job.state.media.sources]
         container = self.cregistry.get(ContainerRequest(
             model_id=job.args.feature,
-            media_input=job.media_dir,
+            media_input=media_input,
             run_config=job.args.runconfig.model,
-            live=self._is_live(job.args.q),
+            live=self._is_live(job),
             job_id=job.args.q.qhit + "-" + datetime.now().strftime("%Y%m%d%H%M") + "-" + str(uuid())[0:6]
         ))
         
@@ -365,7 +395,7 @@ class FabricTagger:
         logger.info("entering complete phase", extra={"jobid": jobid})
 
         assert job.state.media is not None
-        for source in job.state.media.successful_sources:
+        for source in job.state.media.sources:
             if source.name not in job.state.uploaded_sources:
                 job.state.status.failed.append(source.name)
 
@@ -504,7 +534,7 @@ class FabricTagger:
         end = time.time()
         if status.time_ended:
             end = status.time_ended
-        total_sources = len(state.media.successful_sources) if state.media else 0
+        total_sources = len(state.media.sources) if state.media else 0
         total_tagged = len(state.uploaded_sources)
         res = {
             "status": status.status,
@@ -556,12 +586,13 @@ class FabricTagger:
             return
 
         assert job.state.media is not None
-        media_to_source = {s.filepath: s for s in job.state.media.successful_sources}
+        media_to_source = {s.filepath: s for s in job.state.media.sources}
 
         assert job.state.container is not None
-        # TODO: fix for live
+
         outputs = job.state.container.tags()
-        new_outputs = [out for out in outputs if media_to_source[out.source_media].name not in job.state.uploaded_sources]
+        new_outputs = [out for out in outputs if out.source_media in media_to_source \
+                       and media_to_source[out.source_media].name not in job.state.uploaded_sources]
 
         if not new_outputs:
             return
@@ -657,5 +688,5 @@ class FabricTagger:
                 config.stream = stream
         return args
     
-    def _is_live(self, q: Content) -> bool:
-        return False
+    def _is_live(self, job: TagJob) -> bool:
+        return False #job.args.q.is_live

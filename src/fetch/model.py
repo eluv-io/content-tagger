@@ -57,3 +57,20 @@ class DownloadResult:
     successful_sources: list[Source]
     failed: list[str]
     stream_meta: StreamMetadata | None
+
+@dataclass
+class LiveDownloadResult(DownloadResult):
+    successful_sources: list[Source]
+    failed: list[str]
+    stream_meta: StreamMetadata | None
+    # signal end of stream
+    done: bool
+
+    @staticmethod
+    def ended() -> 'LiveDownloadResult':
+        return LiveDownloadResult(
+            successful_sources=[],
+            failed=[],
+            stream_meta=None,
+            done=True
+        )

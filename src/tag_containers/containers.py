@@ -390,6 +390,13 @@ class LiveTagContainer(TagContainer):
             logger.warning("Container is not running, cannot add media", extra={"handle": self.name()})
             return
         
+        if len(new_media) == 0:
+            return
+        
+        # add to base_name_to_source map
+        for f in new_media:
+            self.basename_to_source[os.path.basename(f)] = f
+
         assert self.stdin_socket is not None
         
         media_files = self._get_relative_paths(new_media)
@@ -420,10 +427,16 @@ class LiveTagContainer(TagContainer):
     def stop(self) -> None:
         if self.stdin_socket:
             try:
-                self.stdin_socket.close()
+                try:
+                    self.stdin_socket.shutdown(socket.SHUT_WR)
+                except OSError:
+                    pass
+                finally:
+                    self.stdin_socket.close()
             except Exception as e:
                 logger.error(f"Error closing stdin socket: {e}")
-            self.stdin_socket = None
+            finally:
+                self.stdin_socket = None
         super().stop()
 
     def _get_args(self, media_files: list[str]) -> list[str]:

@@ -1,3 +1,4 @@
+from threading import Event
 import pytest
 import os
 import shutil
@@ -9,13 +10,15 @@ from src.common.logging import logger
 from server import create_app
 from app_config import AppConfig
 import podman
-from src.common.content import ContentConfig, ContentFactory
+from src.common.content import Content, ContentConfig, ContentFactory
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tags.conversion import TagConverterConfig
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.tags.tagstore.types import TagstoreConfig
+from src.tags.tagstore.abstract import Tagstore
 from src.tagging.scheduling.model import SysConfig
-from src.fetch.model import FetcherConfig
+from src.fetch.model import DownloadRequest, DownloadResult, FetcherConfig, LiveDownloadResult
+from src.fetch.fetch_content import Fetcher
 from src.tag_containers.model import ModelConfig, RegistryConfig
 from src.tagging.fabric_tagging.model import FabricTaggerConfig
 
@@ -49,12 +52,33 @@ def get_content(auth: str, qhit: str):
 
     return q
 
+class FakeLiveFetcher(Fetcher):
+    def __init__(self, config: FetcherConfig, ts: Tagstore):
+        super().__init__(config, ts)
+        self.call_count = 0
+
+    def download(self, q: Content, req: DownloadRequest, exit_event: Event | None = None) -> LiveDownloadResult:
+        res = super().download(q, req, exit_event)
+        # TODO: think about how the LiveFetcher should signal that it's done
+        time.sleep(2)
+        if self.call_count >= len(res.successful_sources):
+            return LiveDownloadResult.ended()
+        live_res = LiveDownloadResult(
+            successful_sources=res.successful_sources[self.call_count:self.call_count+1],
+            failed=res.failed,
+            stream_meta=res.stream_meta,
+            done=False
+        )
+
+        self.call_count += 1
+
+        return live_res
+
 @pytest.fixture(scope="session")
 def test_dir():
     test_dir = os.path.join(os.path.abspath(__file__), '../..', 'test-stuff')
     test_dir = os.path.abspath(test_dir)
     return test_dir
-
 
 @pytest.fixture(scope="session")
 def tagger_config(test_dir) -> FabricTaggerConfig:
@@ -100,16 +124,20 @@ def test_config(test_dir, tagger_config):
         tagger=tagger_config
     )
 
-@pytest.fixture() 
-def client(test_dir, test_config):
-    """Create Flask app for testing."""
+
+@pytest.fixture()
+def app(test_dir, test_config):
     shutil.rmtree(test_dir, ignore_errors=True)
     app = create_app(test_config)
-    app.config['TESTING'] = True
-    yield app.test_client()
+    app.config["TESTING"] = True
+    yield app
     tagger: FabricTagger = app.config["state"]["tagger"]
-    if tagger.shutdown_requested is False:
+    if not tagger.shutdown_requested:
         tagger.cleanup()
+
+@pytest.fixture()
+def client(app):
+    return app.test_client()
 
 def wait_for_jobs_completion(client, content_ids, timeout=30):
     """Wait for all jobs to complete."""
@@ -194,6 +222,71 @@ def test_video_model(client):
         assert 'frame_tags' in tag.additional_info
 
     assert completed, "Timeout waiting for jobs to complete"
+
+def test_live_video_model(app, test_config):
+    """Test the live tagging workflow with FakeLiveFetcher."""
+    # Get auth tokens
+    qid = test_objects['vod']
+    auth = get_auth(qid=qid)
+    
+    # Replace the real fetcher with FakeLiveFetcher
+    tagger: FabricTagger = app.config["state"]["tagger"]
+    tagstore = tagger.tagstore
+    
+    # Create FakeLiveFetcher with the same config
+    fake_fetcher = FakeLiveFetcher(test_config.fetcher, tagstore)
+    tagger.fetcher = fake_fetcher
+    
+    # Override _is_live to return True for this job
+    original_is_live = tagger._is_live
+    def mock_is_live(job):
+        return True
+    tagger._is_live = mock_is_live
+    
+    # Create test client
+    client = app.test_client()
+    
+    # Test initial status - should return 404 for no jobs
+    response = client.get(f"/{qid}/status?authorization={auth}")
+    assert response.status_code == 404
+    
+    # Start video tagging with GPU feature
+    response = client.post(
+        f"/{qid}/tag?authorization={auth}", 
+        json={
+            "features": {
+                "test_model": {
+                    "model": {"tags": ["hello1", "hello2"]}
+                }
+            }, 
+            "replace": True
+        }
+    )
+    assert response.status_code == 200
+    
+    # Wait for job completion
+    completed = wait_for_jobs_completion(client, [qid], timeout=60)
+    assert completed, "Timeout waiting for live job to complete"
+    
+    # Verify the fetcher was called 5 times (once for each part)
+    assert fake_fetcher.call_count == 5, f"Expected 5 fetch calls, got {fake_fetcher.call_count}"
+    
+    # Get tags and verify results
+    jobid = tagstore.find_jobs(q=get_content(auth, qid), stream='video')[0]
+    tags = tagstore.find_tags(jobid=jobid, q=get_content(auth, qid))
+    tags = sorted(tags, key=lambda x: x.start_time)
+    
+    # Should have same number of tags as regular video model test
+    assert len(tags) == 122, f"Expected 122 tags, got {len(tags)}"
+    
+    # Verify tags alternate between hello1 and hello2
+    next_tag = 'hello1'
+    for tag in tags:
+        assert tag.text == next_tag, f"Expected {next_tag}, got {tag.text}"
+        next_tag = 'hello2' if next_tag == 'hello1' else 'hello1'
+        assert 'frame_tags' in tag.additional_info
+    
+    logger.info(f"Live test completed successfully with {fake_fetcher.call_count} fetch calls")
 
 def test_asset_tag(client):
     """Test asset tagging."""

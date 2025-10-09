@@ -2,7 +2,12 @@ import threading
 
 from src.tagging.fabric_tagging.model import *
 from src.tag_containers.containers import TagContainer
-from src.fetch.fetch_content import DownloadResult
+from src.fetch.model import Source, StreamMetadata
+
+@dataclass
+class MediaState:
+    sources: list[Source]
+    stream_meta: StreamMetadata | None
 
 @dataclass
 class JobState:
@@ -10,7 +15,7 @@ class JobState:
     taghandle: str
     uploaded_sources: list[str]
     message: str
-    media: DownloadResult | None
+    media: MediaState | None
     container: TagContainer | None
 
     @staticmethod
