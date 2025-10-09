@@ -24,10 +24,8 @@ class TagArgs:
         return f"TagArgs(features={self.features}, scope={self.scope}, replace={self.replace})"
 
 JobStateDescription = Literal[
-    "Starting",
     "Fetching content",
     "Tagging content",
-    "Uploading tags",
     "Completed",
     "Failed",
     "Stopped"
@@ -44,7 +42,7 @@ class JobStatus:
     @staticmethod
     def starting() -> 'JobStatus':
         return JobStatus(
-            status="Starting",
+            status="Fetching content",
             time_started=time.time(),
             time_ended=None,
             tagging_progress="0%",

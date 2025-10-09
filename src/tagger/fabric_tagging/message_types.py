@@ -1,8 +1,9 @@
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Literal
 
 from src.common.content import Content
 from src.tagger.fabric_tagging.model import *
+from src.fetch.model import DownloadResult
 
 @dataclass
 class TagRequest:
@@ -30,17 +31,29 @@ class StopRequest:
         return f"StopRequest(qhit={self.qhit}, feature={self.feature}, stream={self.stream}, status={self.status})"
 
 @dataclass
-class JobTransition:
-    """
-    Request to transition the job to the next stage
-    """
-
+class EnterFetchingPhase:
+    """Request to enter fetching phase"""
     job_id: JobID
-    # depends on the job stage, some stages require information to be passed forward
-    data: Any
 
     def __str__(self):
-        return f"JobTransition(job_id={self.job_id}, data={self.data})"
+        return f"EnterFetchingPhase(job_id={self.job_id})"
+
+@dataclass
+class EnterTaggingPhase:
+    """Request to enter tagging phase"""
+    job_id: JobID
+    data: DownloadResult
+
+    def __str__(self):
+        return f"EnterTaggingPhase(job_id={self.job_id})"
+
+@dataclass
+class EnterCompletePhase:
+    """Request to enter complete phase"""
+    job_id: JobID
+
+    def __str__(self):
+        return f"EnterCompletePhase(job_id={self.job_id})"
 
 @dataclass
 class UploadTick:
@@ -52,4 +65,4 @@ class CleanupRequest:
     def __str__(self):
         return "CleanupRequest()"
 
-Request = TagRequest | StatusRequest | StopRequest | JobTransition | CleanupRequest | UploadTick
+Request = TagRequest | StatusRequest | StopRequest | EnterFetchingPhase | EnterTaggingPhase | EnterCompletePhase | CleanupRequest | UploadTick

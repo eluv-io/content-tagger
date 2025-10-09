@@ -194,12 +194,12 @@ def test_resource_allocation_and_cleanup(system_tagger: SystemTagger):
     container.resources = {"A6000": 1, "cpu_juice": 2}
     
     # Check initial resources
-    initial_resources = system_tagger.active_resources.copy()
+    initial_resources = system_tagger.resource_state.available.copy()
     
     job_id = system_tagger.start(container)
 
     # Resources should be allocated
-    mid_resources = system_tagger.active_resources
+    mid_resources = system_tagger.resource_state.available
     assert mid_resources["A6000"] == initial_resources["A6000"] - 1
     assert mid_resources["cpu_juice"] == initial_resources["cpu_juice"] - 2
     
@@ -213,7 +213,7 @@ def test_resource_allocation_and_cleanup(system_tagger: SystemTagger):
         time.sleep(0.05)
     
     # Resources should be restored
-    final_resources = system_tagger.active_resources
+    final_resources = system_tagger.resource_state.available
     assert final_resources == initial_resources
 
 
@@ -338,7 +338,7 @@ def test_stop_queued_job_doesnt_free_resources(system_tagger: SystemTagger):
     # Start enough jobs to fill all GPUs and queue some
     containers = [MockTagContainer(work_duration=1.0) for _ in range(4)]  # Long duration
 
-    total_resources = system_tagger.active_resources.copy()
+    total_resources = system_tagger.resource_state.available.copy()
     
     job_ids = []
     for container in containers:
@@ -359,7 +359,7 @@ def test_stop_queued_job_doesnt_free_resources(system_tagger: SystemTagger):
     assert queued_job_id is not None, "Should have at least one queued job"
     
     # Record resources before stopping the queued job
-    resources_before = system_tagger.active_resources.copy()
+    resources_before = system_tagger.resource_state.available.copy()
 
     assert resources_before["A6000"] == 0
     
@@ -367,7 +367,7 @@ def test_stop_queued_job_doesnt_free_resources(system_tagger: SystemTagger):
     system_tagger.stop(queued_job_id)
     
     # Resources should be the same (no resources were reserved for queued job)
-    resources_after = system_tagger.active_resources
+    resources_after = system_tagger.resource_state.available
     assert resources_after == resources_before, f"Resources changed from {resources_before} to {resources_after} when stopping queued job"
     
     # The job should be stopped
@@ -380,5 +380,5 @@ def test_stop_queued_job_doesnt_free_resources(system_tagger: SystemTagger):
             system_tagger.stop(job_id)
 
     # check that resources are fully restored
-    final_resources = system_tagger.active_resources
+    final_resources = system_tagger.resource_state.available
     assert final_resources == total_resources, f"Final resources {final_resources} do not match total {total_resources}"

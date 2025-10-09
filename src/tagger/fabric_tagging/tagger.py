@@ -131,7 +131,6 @@ class FabricTagger:
         logger.info("FabricTagger actor shutting down")
 
     def _handle_message(self, message: Message):
-        """Handle a single message"""
         try:
             if isinstance(message.data, TagRequest):
                 self._handle_tag_request(message)
@@ -142,16 +141,17 @@ class FabricTagger:
             elif isinstance(message.data, CleanupRequest):
                 self._handle_cleanup_request(message)
             elif isinstance(message.data, UploadTick):
-                # called internally from upload timer
                 self._handle_upload_tick(message)
-            elif isinstance(message.data, JobTransition):
-                # called internally from tagger thread
-                self._handle_job_transition(message)
+            elif isinstance(message.data, EnterFetchingPhase):
+                self._handle_enter_fetching_phase(message)
+            elif isinstance(message.data, EnterTaggingPhase):
+                self._handle_enter_tagging_phase(message)
+            elif isinstance(message.data, EnterCompletePhase):
+                self._handle_enter_complete_phase(message)
             else:
                 logger.warning(f"Unknown message type: {type(message.data)}")
         except Exception as e:
             logger.exception(f"Error handling message {message.data}: {e}")
-            # catch all errors to avoid crashing the actor thread, passed to caller who can raise
             message.response_mailbox.put(Response(data=None, error=e))
 
     def _handle_tag_request(self, message: Message):
@@ -188,9 +188,166 @@ class FabricTagger:
                 tagging_done=None,
             )
 
-            status[feature] = self._start_job_thread(job)
+            jobid = job.get_id()
+            if jobid in self.jobstore.active_jobs:
+                status[feature] = f"{jobid} is already running"
+                continue
+
+            self.jobstore.active_jobs[jobid] = job
+            status[feature] = "Job started successfully"
+
+            # Submit message to enter fetching phase (async)
+            self._submit_async(EnterFetchingPhase(job_id=jobid))
 
         message.response_mailbox.put(Response(data=status, error=None))
+
+    def _handle_enter_fetching_phase(self, message: Message):
+        """Updates states and then starts fetching in background thread"""
+        assert isinstance(message.data, EnterFetchingPhase)
+        jobid = message.data.job_id
+
+        if jobid not in self.jobstore.active_jobs:
+            logger.warning(f"Received EnterFetchingPhase for inactive job: {jobid}")
+            message.response_mailbox.put(Response(data=None, error=None))
+            return
+
+        job = self.jobstore.active_jobs[jobid]
+        logger.info("entering fetching phase", extra={"jobid": jobid})
+        job.state.status.status = "Fetching content"
+
+        threading.Thread(
+            target=self._do_fetching, 
+            args=(job,), 
+            daemon=True
+        ).start()
+
+        message.response_mailbox.put(Response(data=None, error=None))
+
+    def _do_fetching(self, job: TagJob) -> None:
+        """Perform fetching work, then request transition to tagging phase
+        
+        Runs in a background thread to avoid blocking the main thread.
+        """
+
+        jobid = job.get_id()
+        logger.info("starting fetching work", extra={"jobid": jobid})
+
+        try:
+            stream = job.args.runconfig.stream
+            assert stream is not None
+            dl_res = self.fetcher.download(
+                job.args.q, 
+                DownloadRequest(
+                    stream_name=stream,
+                    scope=job.args.scope,
+                    preserve_track=job.args.feature if not job.args.replace else "",
+                ),
+                exit_event=job.stop_event
+            )
+            
+            if job.stop_event.is_set():
+                return
+
+            if len(dl_res.successful_sources) == 0:
+                logger.info("No media to tag, ending job", extra={"jobid": jobid})
+                self._end_job(jobid, "Completed", None)
+                return
+
+            # Request transition to tagging phase
+            self._submit(EnterTaggingPhase(job_id=jobid, data=dl_res))
+
+        except Exception as e:
+            self._end_job(jobid, "Failed", e)
+
+    def _handle_enter_tagging_phase(self, message: Message):
+        """Update state and start tagging in background thread"""
+        assert isinstance(message.data, EnterTaggingPhase)
+        jobid = message.data.job_id
+        dl_res = message.data.data
+
+        if jobid not in self.jobstore.active_jobs:
+            logger.warning(f"Received EnterTaggingPhase for inactive job: {jobid}")
+            message.response_mailbox.put(Response(data=None, error=None))
+            return
+
+        job = self.jobstore.active_jobs[jobid]
+        logger.info("entering tagging phase", extra={"jobid": jobid})
+        
+        job.state.status.status = "Tagging content"
+        job.state.media = dl_res
+        job.state.status.failed += dl_res.failed
+
+        media_files = [s.filepath for s in dl_res.successful_sources]
+        container = self.cregistry.get(ContainerRequest(
+            model_id=job.args.feature,
+            file_args=media_files,
+            run_config=job.args.runconfig.model,
+            job_id=job.args.q.qhit + "-" + datetime.now().strftime("%Y%m%d%H%M") + "-" + str(uuid())[0:6]
+        ))
+        
+        tagging_done = threading.Event()
+        uid = self.system_tagger.start(container, tagging_done)
+        job.state.container = container
+        job.state.taghandle = uid
+        job.tagging_done = tagging_done
+
+        # Start tagging in background thread
+        threading.Thread(
+            target=self._do_tagging, 
+            args=(job,), 
+            daemon=True
+        ).start()
+
+        message.response_mailbox.put(Response(data=None, error=None))
+
+    def _do_tagging(self, job: TagJob) -> None:
+        """Waits for tagging to complete, then uploads tags and requests transition to complete phase"""
+        jobid = job.get_id()
+        logger.info("waiting for tagging to complete", extra={"jobid": jobid})
+
+        assert job.tagging_done is not None
+        job.tagging_done.wait()
+
+        if job.stop_event.is_set():
+            logger.info("tagging was stopped by the user", extra={"jobid": jobid})
+            return
+
+        status = self.system_tagger.status(job.state.taghandle)
+        if status.status != "Completed":
+            self._end_job(jobid, "Failed", RuntimeError(f"Tagging job ended with status: {status.status}"))
+            return
+        
+        # NOTE: We could let the background uploader do this as well, but we do it here for two reasons:
+        # 1. In the case of VOD tagging it's simply faster to do it here
+        # 2. In the case of live tagging, since we will re-enter the fetch phase after tagging
+        #    and thus get new media, it's possible that we will miss the upload window on some tags.
+        self._run_upload(job)
+
+        # Request transition to complete phase
+        self._submit(EnterCompletePhase(job_id=jobid))
+
+    def _handle_enter_complete_phase(self, message: Message):
+        """Phase 3: Update state to complete (actor thread)"""
+        assert isinstance(message.data, EnterCompletePhase)
+        jobid = message.data.job_id
+
+        if jobid not in self.jobstore.active_jobs:
+            logger.warning(f"Received EnterCompletePhase for inactive job: {jobid}")
+            message.response_mailbox.put(Response(data=None, error=None))
+            return
+
+        job = self.jobstore.active_jobs[jobid]
+
+        logger.info("entering complete phase", extra={"jobid": jobid})
+
+        assert job.state.media is not None
+        for source in job.state.media.successful_sources:
+            if source.name not in job.state.uploaded_sources:
+                job.state.status.failed.append(source.name)
+
+        self._set_stop_state(jobid, "Completed", "", None)
+
+        message.response_mailbox.put(Response(data=None, error=None))
 
     def _handle_status_request(self, message: Message):
         assert isinstance(message.data, StatusRequest)
@@ -245,7 +402,7 @@ class FabricTagger:
         # Stop system tagger jobs in background thread
         def stop_system_jobs():
             for job in jobs:
-                if not job.state.status == "Taggging content":
+                if not job.state.status.status == "Tagging content":
                     continue
                 try:
                     self.system_tagger.stop(job.state.taghandle)
@@ -278,150 +435,6 @@ class FabricTagger:
             logger.exception(f"unexpected error in uploader: {e}")
         self._schedule_upload_tick()
         message.response_mailbox.put(Response(data=None, error=None))
-
-    def _handle_job_transition(self, message: Message):
-        assert isinstance(message.data, JobTransition)
-        update: JobTransition = message.data
-
-        if update.job_id not in self.jobstore.active_jobs:
-            raise ValueError(f"Received update for inactive job: {update.job_id}")
-
-        job = self.jobstore.active_jobs[update.job_id]
-
-        job_status = job.state.status.status
-
-        if job_status not in ("Starting", "Fetching content", "Tagging content", "Uploading tags"):
-            raise ValueError(f"{job} does not have a next state.")
-
-        logger.info("handling job transition", extra={"jobid": update.job_id, "starting_status": job_status, "data": update.data})
-        
-        try:
-            if job_status == "Starting":
-                self._enter_fetching_stage(job, update.data)
-            elif job_status == "Fetching content":
-                self._enter_tagging_stage(job, update.data)
-            elif job_status == "Tagging content":
-                self._enter_upload_stage(job, update.data)
-            elif job_status == "Uploading tags":
-                self._enter_complete_stage(job, update.data)
-        except Exception as e:
-            self._set_stop_state(job.get_id(), "Failed", "", e)
-
-        message.response_mailbox.put(Response(data=None, error=None))
-
-    def _enter_complete_stage(self, job: TagJob, data: Any) -> None:
-        logger.info("transitioning to complete stage", extra={"jobid": job.get_id()})
-        self._set_stop_state(job.get_id(), "Completed", "", None)
-        assert job.state.media is not None
-        for source in job.state.media.successful_sources:
-            if source.name not in job.state.uploaded_sources:
-                job.state.status.failed.append(source.name)
-
-    def _enter_fetching_stage(self, job: TagJob, data: Any) -> None:
-        logger.info("transitioning to fetching stage", extra={"jobid": job.get_id()})
-        job.state.status.status = "Fetching content"
-
-    def _enter_tagging_stage(self, job: TagJob, data: Any) -> None:
-        logger.info("transitioning to tagging stage", extra={"jobid": job.get_id()})
-        assert isinstance(data, DownloadResult)
-        job.state.status.status = "Tagging content"
-        job.state.media = data
-        job.state.status.failed += data.failed
-        media_files = [s.filepath for s in data.successful_sources]
-        container = self.cregistry.get(ContainerRequest(
-            model_id=job.args.feature,
-            file_args=media_files,
-            run_config=job.args.runconfig.model,
-            job_id=job.args.q.qhit + "-" + datetime.now().strftime("%Y%m%d%H%M") + "-" + str(uuid())[0:6]
-        ))
-        #reqresources = self.cregistry.get_model_config(job.args.feature).resources
-        tagging_done = threading.Event()
-        uid = self.system_tagger.start(container, tagging_done)
-        job.state.container = container
-        job.state.taghandle = uid
-        job.tagging_done = tagging_done
-
-    def _enter_upload_stage(self, job: TagJob, data: Any) -> None:
-        logger.info("transitioning to upload stage", extra={"jobid": job.get_id()})
-        job.state.status.status = "Uploading tags"
-        self._run_upload(job)
-
-    def _start_job_thread(self, job: TagJob) -> str:
-        """
-        Checks if job is startable, if so sends an async message to start it and returns
-        """
-
-        jobid = job.get_id()
-
-        if jobid in self.jobstore.active_jobs:
-            return f"{jobid} is already running"
-
-        self.jobstore.active_jobs[jobid] = job
-
-        threading.Thread(target=self._run_job, args=(job,), daemon=True).start()
-
-        return "Job started successfully"
-
-    def _run_job(self, job: TagJob) -> None:
-        jobid = job.get_id()
-
-        logger.info("starting job thread", extra={"jobid": jobid})
-
-        # 1. start fetching
-        assert job.state.status.status == "Starting"
-
-        # transition to fetching
-        self._submit(JobTransition(job_id=jobid, data=None))
-        assert job.state.status.status == "Fetching content"
-
-        try:
-            stream = job.args.runconfig.stream
-            assert stream is not None
-            dl_res = self.fetcher.download(
-                job.args.q, 
-                DownloadRequest(
-                    stream_name=stream,
-                    scope=job.args.scope,
-                    preserve_track=job.args.feature if not job.args.replace else "",
-                ),
-                exit_event=job.stop_event
-            )
-            if job.stop_event.is_set():
-                return
-        except Exception as e:
-            self._end_job(jobid, "Failed", e)
-            return
-
-        if len(dl_res.successful_sources) == 0:
-            # Nothing left to tag
-            logger.info("No media to tag, ending job", extra={"jobid": jobid, "successful_sources": dl_res.successful_sources, "failed_sources": dl_res.failed})
-            self._end_job(jobid, "Completed", None)
-            return
-
-        self._submit(JobTransition(job_id=jobid, data=dl_res))
-        assert job.state.status.status == "Tagging content"
-
-        assert job.tagging_done is not None
-        job.tagging_done.wait()
-
-        if job.stop_event.is_set():
-            return
-
-        status = self.system_tagger.status(job.state.taghandle)
-        if status.status != "Completed":
-            self._end_job(jobid, "Failed", RuntimeError(f"Tagging job ended with status: {status.status}"))
-            return
-
-        # start upload
-        self._submit(JobTransition(job_id=jobid, data=None))
-        assert job.state.status.status == "Uploading tags"
-
-        if job.stop_event.is_set():
-            return
-
-        # Set job to completed
-        self._submit(JobTransition(job_id=jobid, data=None))
-        assert job.state.status.status == "Completed"
 
     def _set_stop_state(
             self, 
@@ -480,15 +493,13 @@ class FabricTagger:
         return res
 
     def _upload_all(self) -> None:
-        """Upload tags for all jobs (called from actor thread)"""
+        """Upload tags for all jobs"""
+
+        # we only need active jobs, because we also run an upload at the end of the tagging stage as well
         jobs = list(self.jobstore.active_jobs.values())
-        jobs += list(self.jobstore.inactive_jobs.values())
-        
+
         for job in jobs:
-            try:
-                self._run_upload(job)
-            except Exception as e:
-                self._set_stop_state(job.get_id(), "Failed", "Tag upload failed", e)
+            self._run_upload(job)
 
     def _run_upload(self, job: TagJob) -> None:
         """Run upload for a job"""
@@ -517,7 +528,7 @@ class FabricTagger:
 
     def __upload_tags(self, job: TagJob) -> None:
         """Upload tags for a job (called from actor thread)"""
-        if job.state.status.status not in ("Uploading tags", "Tagging content"):
+        if job.state.media is None:
             return
 
         assert job.state.media is not None
@@ -615,3 +626,4 @@ class FabricTagger:
                     stream = "audio"
                 config.stream = stream
         return args
+    
