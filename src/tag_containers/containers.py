@@ -51,7 +51,7 @@ class TagContainer:
             raise ValueError("No files provided")
         self.file_type = file_types[0]
         if self.file_type not in ["video", "audio", "image"]:
-            raise BadRequestError(f"Unsupported file type: {self.file_type}")
+            raise BadRequestError(f"Unsupported file type: {self.media_files[0]}")
         # check that no file has the same basename
         self.basename_to_source = {os.path.basename(f): f for f in self.media_files}
         if len(self.basename_to_source) != len(self.media_files):

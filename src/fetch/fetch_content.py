@@ -330,9 +330,8 @@ class Fetcher:
                 f"Invalid codec type for live: {stream_metadata.codec_type}. Must be 'video' or 'audio'."
             )
 
-        output_path = os.path.join(req.output_dir, q.qhit, req.stream_name)
-        if not os.path.exists(output_path):
-            os.makedirs(output_path)
+        if not os.path.exists(req.output_dir):
+            os.makedirs(req.output_dir)
 
         tmp_path = tempfile.mkdtemp()
 
@@ -379,7 +378,7 @@ class Fetcher:
                 continue
 
             filename = f"{idx_str}_{part_hash}{'.mp4' if stream_metadata.codec_type == 'video' else '.m4a'}"
-            save_path = os.path.join(output_path, filename)
+            save_path = os.path.join(req.output_dir, filename)
 
             # Skip if file exists and not replacing
             if os.path.exists(save_path):
@@ -462,9 +461,8 @@ class Fetcher:
         q: Content, 
         req: DownloadRequest
     ) -> DownloadResult:
-        output_path = os.path.join(req.output_dir, q.qhit, "assets")
-        if not os.path.exists(output_path):
-            os.makedirs(output_path)
+        if not os.path.exists(req.output_dir):
+            os.makedirs(req.output_dir)
 
         scope = req.scope
         assert isinstance(scope, AssetScope)
@@ -505,7 +503,7 @@ class Fetcher:
         to_download = []
         
         for asset in assets_to_process:
-            save_path = os.path.join(output_path, encode_path(asset))
+            save_path = os.path.join(req.output_dir, encode_path(asset))
             if os.path.exists(save_path):
                 already_downloaded.append(asset)
             else:
@@ -518,14 +516,14 @@ class Fetcher:
 
         # Download new assets
         assets_to_download = [asset for asset, _ in to_download]
-        newly_downloaded = self._download_concurrent(q, to_download, output_path)
+        newly_downloaded = self._download_concurrent(q, to_download, req.output_dir)
 
         # Combine all successful assets (already downloaded + newly downloaded)
         all_successful_assets = already_downloaded + newly_downloaded
         
         # Create successful sources for all available assets
         successful_sources = [
-            Source(name=asset, filepath=os.path.join(output_path, encode_path(asset)), offset=0) 
+            Source(name=asset, filepath=os.path.join(req.output_dir, encode_path(asset)), offset=0) 
             for asset in all_successful_assets
         ]
         

@@ -559,6 +559,7 @@ class FabricTagger:
         media_to_source = {s.filepath: s for s in job.state.media.successful_sources}
 
         assert job.state.container is not None
+        # TODO: fix for live
         outputs = job.state.container.tags()
         new_outputs = [out for out in outputs if media_to_source[out.source_media].name not in job.state.uploaded_sources]
 
@@ -581,7 +582,9 @@ class FabricTagger:
         job.state.uploaded_sources.extend(media_to_source[out.source_media].name for out in new_outputs)
 
     def _output_dir_from_q(self, q: Content) -> str:
-        return os.path.join(self.cfg.media_dir, q.qhit)
+        out = os.path.join(self.cfg.media_dir, q.qhit)
+        os.makedirs(out, exist_ok=True)
+        return out
 
     def _validate_args(self, args: TagArgs) -> None:
         """Validate args (called from actor thread)"""

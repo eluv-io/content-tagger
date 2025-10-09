@@ -17,6 +17,7 @@ from src.tags.tagstore.types import TagstoreConfig
 from src.tagging.scheduling.model import SysConfig
 from src.fetch.model import FetcherConfig
 from src.tag_containers.model import ModelConfig, RegistryConfig
+from src.tagging.fabric_tagging.model import FabricTaggerConfig
 
 load_dotenv()
 
@@ -54,8 +55,15 @@ def test_dir():
     test_dir = os.path.abspath(test_dir)
     return test_dir
 
+
 @pytest.fixture(scope="session")
-def test_config(test_dir):
+def tagger_config(test_dir) -> FabricTaggerConfig:
+    media_path = os.path.join(test_dir, "media")
+    os.makedirs(media_path, exist_ok=True)
+    return FabricTaggerConfig(media_dir=media_path)
+
+@pytest.fixture(scope="session")
+def test_config(test_dir, tagger_config):
     """Create test configuration."""
     return AppConfig(
         tag_converter=TagConverterConfig(
@@ -75,7 +83,6 @@ def test_config(test_dir):
         ),
         system=SysConfig(gpus=["gpu", "disabled", "gpu"], resources={"cpu_juice": 16}),
         fetcher=FetcherConfig(
-            parts_dir=os.path.join(test_dir, "parts"),
             max_downloads=4,
             author="tagger"
         ),
@@ -89,7 +96,8 @@ def test_config(test_dir):
                     image="localhost/test_model:latest"
                 )
             }
-        )
+        ),
+        tagger=tagger_config
     )
 
 @pytest.fixture() 
@@ -177,6 +185,7 @@ def test_video_model(client):
     jobid = tagstore.find_jobs(q=get_content(auth, qid), stream='video')[0]
     tags = tagstore.find_tags(jobid=jobid, q=get_content(auth, qid))
     tags = sorted(tags, key=lambda x: x.start_time)
+    # TODO: this randomly gave 124 one time and I can't reproduce it
     assert len(tags) == 122
     next_tag = 'hello1'
     for tag in tags:

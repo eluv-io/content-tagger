@@ -7,6 +7,7 @@ from unittest.mock import Mock
 
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.tags.tagstore.rest_tagstore import RestTagstore
+from src.tagging.fabric_tagging.model import FabricTaggerConfig
 from src.tags.conversion import TagConverter, TagConverterConfig
 from src.common.content import Content, ContentConfig, ContentFactory
 
@@ -22,6 +23,17 @@ def temp_dir():
     temp_path = tempfile.mkdtemp()
     yield temp_path
     shutil.rmtree(temp_path, ignore_errors=True)
+
+@pytest.fixture
+def media_dir(temp_dir: str) -> str:
+    """Create a media directory for testing"""
+    media_path = os.path.join(temp_dir, "media")
+    os.makedirs(media_path, exist_ok=True)
+    return media_path
+
+@pytest.fixture
+def tagger_config(media_dir) -> FabricTaggerConfig:
+    return FabricTaggerConfig(media_dir=media_dir)
 
 @pytest.fixture
 def tag_converter() -> TagConverter:

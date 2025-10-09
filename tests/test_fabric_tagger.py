@@ -9,7 +9,7 @@ from src.tags.tagstore.rest_tagstore import RestTagstore
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tagging.fabric_tagging.model import FabricTaggerConfig
 from src.tagging.scheduling.scheduler import ContainerScheduler
-from src.tag_containers.model import ModelConfig, ModelOutput
+from src.tag_containers.model import MediaInput, ModelConfig, ModelOutput
 from src.tagging.scheduling.model import SysConfig
 from src.tagging.fabric_tagging.model import RunConfig, TagArgs
 from src.tag_containers.model import ContainerRequest
@@ -21,16 +21,19 @@ from src.common.errors import MissingResourceError
 class FakeTagContainer:
     """Fake TagContainer that simulates work and asynchronous behavior."""
     
-    def __init__(self, fileargs, feature, work_duration: float = 0.25):
+    def __init__(self, media: MediaInput, feature, work_duration: float = 0.25):
         """
         Initialize the FakeTagContainer.
-
+    
         Args:
             fileargs (list[str]): List of file paths to process.
             feature (str): The feature being tagged.
             work_duration (float): Time in seconds to simulate work.
         """
-        self.fileargs = fileargs
+        if isinstance(media, str):
+            self.fileargs = [os.path.join(media, f) for f in os.listdir(media)]
+        else:
+            self.fileargs = media
         self.feature = feature
         self.work_duration = work_duration
         self.is_started = False
@@ -152,7 +155,7 @@ class FakeContainerRegistry:
         self.containers = {}
         
     def get(self, req: ContainerRequest) -> FakeTagContainer:
-        container_key = f"{req.model_id}_{len(req.media_input)}"
+        container_key = f"{req.model_id}_{req.media_input}"
         if container_key not in self.containers:
             self.containers[container_key] = FakeTagContainer(req.media_input, req.model_id)
         return self.containers[container_key]
@@ -175,31 +178,26 @@ class FakeContainerRegistry:
         return mock_cfg
 
 @pytest.fixture
-def fake_media_files(temp_dir):
-    """Create fake media files for testing"""
-    video1 = os.path.join(temp_dir, "video1.mp4")
-    video2 = os.path.join(temp_dir, "video2.mp4")
-    
-    # Create empty files
-    with open(video1, 'w') as f:
-        f.write("fake video content 1")
-    with open(video2, 'w') as f:
-        f.write("fake video content 2")
-    
-    return [video1, video2]
-
-
-@pytest.fixture
-def fake_fetcher(fake_media_files):
+def fake_fetcher():
     """Create a fake fetcher that returns empty media files"""
     class FakeFetcher:
         def __init__(self, timeout=0.1):
             self.timeout = timeout
 
         def download(self, content: Content, req: DownloadRequest, exit_event=None) -> DownloadResult:
+            """Create fake media files for testing"""
+            video1 = os.path.join(req.output_dir, "video1.mp4")
+            video2 = os.path.join(req.output_dir, "video2.mp4")
+            
+            # Create empty files
+            with open(video1, 'w') as f:
+                f.write("fake video content 1")
+            with open(video2, 'w') as f:
+                f.write("fake video content 2")
+
             # Simulate successful download
             sources = []
-            for i, filepath in enumerate(fake_media_files):
+            for i, filepath in enumerate([video1, video2]):
                 source = Source(
                     filepath=filepath,
                     name=f"part_{i}.mp4",
@@ -239,15 +237,14 @@ def fake_container_registry():
 
 
 @pytest.fixture
-def fabric_tagger(system_tagger, fake_container_registry, tag_store, fake_fetcher):
+def fabric_tagger(system_tagger, fake_container_registry, tag_store, fake_fetcher, tagger_config):
     """Create a FabricTagger instance for testing"""
     tagger = FabricTagger(
         system_tagger=system_tagger,
         cregistry=fake_container_registry,
         tagstore=tag_store,
         fetcher=fake_fetcher,
-        # sho
-        cfg=FabricTaggerConfig(media_dir="")
+        cfg=tagger_config
     )
     yield tagger
     if not tagger.shutdown_requested:

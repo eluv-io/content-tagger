@@ -76,7 +76,7 @@ def test_live_container_add_media(temp_dir):
     
     try:
         # Start the container
-        container.run_live(gpuidx=None)
+        container.start(gpuidx=None)
         
         # Wait for container to be ready
         time.sleep(1)

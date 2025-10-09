@@ -6,6 +6,7 @@ from src.fetch.model import AssetScope, DownloadRequest, FetcherConfig, VideoSco
 from src.tags.tagstore.filesystem_tagstore import Tag
 from src.common.content import Content
 from src.common.errors import MissingResourceError
+from tests.conftest import temp_dir
 
 VOD_QHIT = "iq__3C58dDYxsn5KKSWGYrfYr44ykJRm"
 LEGACY_VOD_QHIT = "iq__cebzuQ8BqsWZyoUdnTXCe23fUgz"
@@ -19,7 +20,6 @@ def fetcher_config(temp_dir: str) -> FetcherConfig:
     
     return FetcherConfig(
         max_downloads=2,
-        parts_dir=parts_path,
         author="tagger"
     )
 
@@ -88,7 +88,8 @@ def assets_content(qfactory, tag_store) -> Content:
 def test_download_with_replace_true(
     fetcher: Fetcher, 
     request,
-    content_fixture: str
+    content_fixture: str,
+    media_dir: str
 ):
     """Test downloading with replace=True using different content fixtures"""
     vod_content = request.getfixturevalue(content_fixture)
@@ -102,6 +103,7 @@ def test_download_with_replace_true(
             start_time=0,
             end_time=60
         ),
+        output_dir=media_dir,
         preserve_track="track"
     )
     
@@ -143,6 +145,7 @@ def test_download_with_replace_true(
             start_time=0,
             end_time=60
         ),
+        output_dir=media_dir,
         preserve_track="track2"
     )
 
@@ -158,6 +161,7 @@ def test_download_with_replace_true(
             start_time=0,
             end_time=60
         ),
+        output_dir=media_dir,
         preserve_track=""
     )
 
@@ -172,6 +176,7 @@ def test_download_with_replace_true(
             start_time=0,
             end_time=60
         ),
+        output_dir=os.path.join(media_dir, "audio"),
         preserve_track="track"
     )
 
@@ -184,13 +189,15 @@ def test_download_with_replace_true(
 
 def test_fetch_assets_with_preserve_track(
     fetcher: Fetcher, 
-    assets_content: Content
+    assets_content: Content,
+    media_dir: str
 ):
     req1 = DownloadRequest(
         stream_name="assets",
         scope=AssetScope(
             assets=None
         ),
+        output_dir=media_dir,
         preserve_track=""
     )
     
@@ -206,6 +213,7 @@ def test_fetch_assets_with_preserve_track(
         scope=AssetScope(
             assets=selected_assets
         ),
+        output_dir=media_dir,
         preserve_track=""
     )
 
@@ -250,6 +258,7 @@ def test_fetch_assets_with_preserve_track(
         scope=AssetScope(
             assets=selected_assets
         ),
+        output_dir=media_dir,
         preserve_track="asset_track"
     )
 
@@ -270,6 +279,7 @@ def test_fetch_assets_with_preserve_track(
         scope=AssetScope(
             assets=selected_assets
         ),
+        output_dir=media_dir,
         preserve_track="different_track"
     )
 
@@ -312,6 +322,7 @@ def test_fetch_assets_with_preserve_track(
         scope=AssetScope(
             assets=selected_assets
         ),
+        output_dir=media_dir,
         preserve_track="asset_track"
     )
 
