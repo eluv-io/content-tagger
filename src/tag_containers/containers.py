@@ -1,19 +1,22 @@
-from copy import deepcopy
-import uuid
+
 from podman import PodmanClient
 from src.common.logging import logger
 import json
 import os
-from datetime import datetime
 from copy import copy
+import socket
+from urllib.parse import unquote
+import time
 
 from common_ml.utils.files import get_file_type
 from common_ml.video_processing import get_fps
 
 from src.tag_containers.model import FrameTag
-from src.common.errors import MissingResourceError, BadRequestError
+from src.common.errors import BadRequestError
 from src.tags.tagstore.types import Tag
 from src.tag_containers.model import *
+
+logger = logger.bind(name="TagContainer")
 
 class TagContainer:
 
@@ -59,6 +62,9 @@ class TagContainer:
     def start(
         self, 
         gpuidx: int | None,
+        # only used for live containers
+        # TODO: ugly
+        stdin_open: bool = False
     ) -> None:
         os.makedirs(self.cfg.tags_dir, exist_ok=True)
         
@@ -84,22 +90,11 @@ class TagContainer:
             }
         ]
 
-        # Calculate paths from perspective of the container working directory "/elv"
-        relative_paths = []
-        for f in self.media_files:
-            if not os.path.exists(f):
-                raise FileNotFoundError(f"File {f} not found")
-            elif not os.path.isfile(f):
-                raise IsADirectoryError(f"{f} is a directory")
-            elif not os.path.isabs(f):
-                raise ValueError(f"{f} must be an absolute path")
-            
-            rel_path = os.path.relpath(f, self.media_dir)
-            relative_paths.append(f"media/{rel_path}")
+        cmd = self._get_args(self._get_relative_paths(self.media_files))
 
         kwargs = {
             "image": self.cfg.model_config.image,
-            "command": relative_paths + ["--config", f"{json.dumps(self.cfg.run_config)}"],
+            "command": cmd,
             "mounts": volumes,
             "remove": True,
             "network_mode": "host",
@@ -111,61 +106,9 @@ class TagContainer:
             }
         }
 
-        if gpuidx is not None:
-            kwargs["devices"] = [f"nvidia.com/gpu={gpuidx}"]
-
-        container = self.pclient.containers.create(**kwargs)
-        container.start()
-        self.container = container
-
-        self, 
-        gpuidx: int | None,
-    ) -> None:
-        os.makedirs(self.cfg.tags_dir, exist_ok=True)
-        volumes = [
-            {
-                "source": self.cfg.tags_dir,
-                # convention for containers to store tags in /elv/tags
-                "target": "/elv/tags",
-                "type": "bind",
-            },
-            {
-                "source": self.cfg.cache_dir,
-                # convention for python modules to store cache in /root/.cache
-                "target": "/root/.cache",
-                "type": "bind",
-                "read_only": False
-            }
-        ]
-
-        for f in self.cfg.file_args:
-            if not os.path.exists(f):
-                raise FileNotFoundError(f"File {f} not found")
-            elif not os.path.isfile(f):
-                raise IsADirectoryError(f"{f} is a directory")
-            elif not os.path.isabs(f):
-                raise ValueError(f"{f} must be an absolute path")
-            # mount the file
-            volumes.append({
-                "source": f,
-                "target": f"/elv/{os.path.basename(f)}",
-                "type": "bind",
-                "read_only": True
-            })
-
-        kwargs = {
-            "image": self.cfg.model_config.image,
-            "command": [f"{os.path.basename(f)}" for f in self.cfg.file_args] + ["--config", f"{json.dumps(self.cfg.run_config)}"],
-            "mounts": volumes,
-            "remove": True,
-            "network_mode": "host",
-            "log_config": {
-                "Type": "k8s-file",
-                "Config": {
-                    "path": self.cfg.logs_path
-                }
-            }
-        }
+        if stdin_open:
+            kwargs["stdin_open"] = True
+            kwargs["tty"] = False
 
         if gpuidx is not None:
             kwargs["devices"] = [f"nvidia.com/gpu={gpuidx}"]
@@ -187,7 +130,7 @@ class TagContainer:
         if self.container is None:
             return False
         self.container.reload()
-        return self.container.status == "running" or self.container.status == "created"
+        return self.container.status == "running"
 
     def exit_code(self) -> int | None:
         """Returns exit code if available, else None"""
@@ -208,7 +151,7 @@ class TagContainer:
         if not os.path.exists(self.cfg.tags_dir):
             # hasn't started
             return []
-        
+
         tag_files = []
         for fpath in os.listdir(self.cfg.tags_dir):
             tag_files.append(os.path.join(self.cfg.tags_dir, fpath))
@@ -220,7 +163,27 @@ class TagContainer:
 
     def required_resources(self) -> SystemResources:
         return copy(self.cfg.model_config.resources)
-
+    
+    def _get_relative_paths(self, media_files: list[str]) -> list[str]:
+        # Calculate paths from perspective of the container working directory "/elv"
+        relative_paths = []
+        for f in media_files:
+            if not os.path.exists(f):
+                raise FileNotFoundError(f"File {f} not found")
+            elif not os.path.isfile(f):
+                raise IsADirectoryError(f"{f} is a directory")
+            elif not os.path.isabs(f):
+                raise ValueError(f"{f} must be an absolute path")
+            
+            rel_path = os.path.relpath(f, self.media_dir)
+            relative_paths.append(f"media/{rel_path}")
+        return relative_paths
+    
+    def _get_args(self, media_files: list[str]) -> list[str]:
+        """Get command line arguments for the container"""
+        cmd = media_files + ["--config", f"{json.dumps(self.cfg.run_config)}"]
+        return cmd
+    
     def _files_to_tags(self, tagged_files: list[str]) -> list[ModelOutput]:
 
         if self.file_type == "image":
@@ -413,53 +376,80 @@ class TagContainer:
             max_depth = max(max_depth, depth)
         
         return max_depth
+    
+class LiveTagContainer(TagContainer):
 
-class ContainerRegistry:
-    """
-    Get runnable containers through identifier
-    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.stdin_socket = None
 
-    def __init__(self, cfg: RegistryConfig):
-        self.pclient = PodmanClient()
-        self.cfg = cfg
-        os.makedirs(self.cfg.base_dir, exist_ok=True)
-        os.makedirs(self.cfg.cache_dir, exist_ok=True)
+    def add_media(self, new_media: list[str]) -> None:
+        if not self.is_running():
+            logger.warning("Container is not running, cannot add media", extra={"handle": self.name()})
+            return
+        
+        assert self.stdin_socket is not None
+        
+        media_files = self._get_relative_paths(new_media)
 
-    def get(self, req: ContainerRequest) -> TagContainer:
-        if req.job_id is not None:
-            jobid = req.job_id
-        else:
-            jobid = datetime.now().strftime("%Y%m%d_%H%M%S") + "-" + str(uuid.uuid4())[:6]
-            logger.warning(f"User request {req} did not give jobid, generating default: {jobid}")
+        logger.info(f"Adding {len(media_files)} media files to live container: {media_files[:2]}...]")
 
-        jobpath = os.path.join(self.cfg.base_dir, req.model_id, jobid)
-        tags_path = os.path.join(jobpath, 'tags')
-        logs_path = os.path.join(jobpath, 'log.out')
+        msg = "\n".join(media_files) + "\n"
+        self.stdin_socket.sendall(msg.encode())
 
-        cache_path = self.cfg.cache_dir
+    # TODO: need to verify that tagger handles the exceptions nicely
+    def run_live(self, gpuidx: int | None) -> None:
+        super().start(gpuidx, True)
+        timeout = 10
+        start = time.time()
+        has_started = False
+        while time.time() - start < timeout:
+            if self.is_running():
+                has_started = True
+                break
+            time.sleep(0.1)
+        if not has_started:
+            raise RuntimeError(f"Container did not start in time: {self.name()}")
+        self.stdin_socket = self._open_container_stdin(self.container)
+        # add initial media files to stdin
+        if self.media_files:
+            self.add_media(self.media_files)
 
-        modelcfg = self.cfg.model_configs.get(req.model_id)
-        if not modelcfg:
-            raise MissingResourceError(f"Model {req.model_id} not found")
+    def start(self, gpuidx: int | None, stdin_open: bool=False) -> None:
+        raise NotImplementedError("Use run_live() to start a live container")
 
-        ccfg = ContainerSpec(
-            id=jobid,
-            file_args=req.file_args,
-            run_config=req.run_config,
-            logs_path=logs_path,
-            cache_dir=cache_path,
-            tags_dir=tags_path,
-            model_config=modelcfg
-        )
+    def stop(self) -> None:
+        if self.stdin_socket:
+            try:
+                self.stdin_socket.close()
+            except Exception as e:
+                logger.error(f"Error closing stdin socket: {e}")
+            self.stdin_socket = None
+        super().stop()
 
-        return TagContainer(self.pclient, ccfg)
+    def _get_args(self, media_files: list[str]) -> list[str]:
+        args = ["--config", f"{json.dumps(self.cfg.run_config)}"]
+        args.append("--live")
+        return args
+    
+    def _open_container_stdin(self, container):    
+        ## assume podman is on the same machine via unix socket
+        consocket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        consocket.connect(unquote(container.client.base_url.netloc))
 
-    def get_model_config(self, model: str) -> ModelConfig:
-        return deepcopy(self.cfg.model_configs[model])
+        ## we have to do this manually, because once the podman socket server accepts the POST
+        ## it then converts the socket into a "raw" socket for writing directly to the container's stdin
+        msg = f"POST /v5.4.0/libpod/containers/{container.id}/attach?stdin=1&stdout=0&stderr=0 HTTP/1.0\r\n\r\n".encode()
+        consocket.sendall(msg)
 
-    def services(self) -> list[str]:
-        """
-        Returns a list of available services
-        """
-        # TODO: check if the image exists
-        return list(self.cfg.model_configs.keys())
+        ## response looks like this: 'HTTP/1.1 200 OK\r\nContent-Type: application/vnd.docker.raw-stream\r\n\r\n'
+        response = consocket.recv(4096)
+        
+        logger.debug(f"socket response: {response}")
+        
+        ## make sure we successfully opened the connection
+        ## be slightly flexible but otherwise pretty strict
+        if response[0:15] != bytes("HTTP/1.1 200 OK", "utf-8") and response[0:15] != bytes("HTTP/1.0 200 OK", "utf-8"):
+            raise Exception(f"Did not successfully open stdin for container: {response}")
+        
+        return consocket
