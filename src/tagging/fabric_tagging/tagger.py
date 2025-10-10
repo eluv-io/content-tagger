@@ -170,6 +170,7 @@ class FabricTagger:
         for feature in args.features:
             stream = args.features[feature].stream
             assert stream is not None
+
             # TODO: why again do we start job before fetching?
             tsjob = self.tagstore.start_job(
                 qhit=request.q.qhit,
@@ -179,8 +180,30 @@ class FabricTagger:
                 q=request.q
             )
 
+            stop_event = threading.Event()
+
+            dreq = DownloadRequest(
+                preserve_track=feature if not args.replace else "",
+                output_dir=self._output_dir_from_q(request.q),
+                scope=args.scope,
+            )
+
+            worker = self.fetcher.get_worker(request.q, dreq, stop_event)
+
+            state = JobState(
+                status=JobStatus.starting(),
+                taghandle="",
+                uploaded_sources=[],
+                message="",
+                media=MediaState(
+                    downloaded=[],
+                    worker=worker
+                ),
+                container=None
+            )
+
             job = TagJob(
-                state=JobState.starting(),
+                state=state,
                 args=JobArgs(
                     q=request.q,
                     feature=feature,
@@ -190,7 +213,7 @@ class FabricTagger:
                 ),
                 media_dir=self._output_dir_from_q(request.q),
                 upload_job=tsjob.id,
-                stop_event=threading.Event(),
+                stop_event=stop_event,
                 tagging_done=None,
             )
 
@@ -245,12 +268,6 @@ class FabricTagger:
             assert stream is not None
             dl_res = self.fetcher.download(
                 job.args.q, 
-                DownloadRequest(
-                    stream_name=stream,
-                    scope=job.args.scope,
-                    preserve_track=job.args.feature if not job.args.replace else "",
-                    output_dir=job.media_dir
-                ),
                 exit_event=job.stop_event
             )
             

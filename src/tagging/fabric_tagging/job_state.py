@@ -18,18 +18,6 @@ class JobState:
     media: MediaState
     container: TagContainer | None
 
-    # TODO: move to tagger to initialize
-    @staticmethod
-    def starting() -> 'JobState':
-        return JobState(
-            status=JobStatus.starting(),
-            taghandle="",
-            uploaded_sources=[],
-            message="",
-            media=None,
-            container=None
-        )
-
 @dataclass
 class TagJob:
     args: JobArgs
