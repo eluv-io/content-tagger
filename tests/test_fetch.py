@@ -6,6 +6,7 @@ from src.fetch.model import AssetScope, DownloadRequest, FetcherConfig, VideoSco
 from src.tags.tagstore.filesystem_tagstore import Tag
 from src.common.content import Content
 from src.common.errors import MissingResourceError
+from src.fetch.coordinator import FetchContext
 from tests.conftest import temp_dir
 
 VOD_QHIT = "iq__3C58dDYxsn5KKSWGYrfYr44ykJRm"
@@ -19,14 +20,18 @@ def fetcher_config(temp_dir: str) -> FetcherConfig:
     os.makedirs(parts_path, exist_ok=True)
     
     return FetcherConfig(
-        max_downloads=2,
         author="tagger"
     )
 
 @pytest.fixture
-def fetcher(fetcher_config: FetcherConfig, tag_store) -> Fetcher:
+def fetch_context() -> FetchContext:
+    """Create a FetchContext for testing"""
+    return FetchContext(max_concurrent=2)
+
+@pytest.fixture
+def fetcher(fetcher_config: FetcherConfig, fetch_context: FetchContext, tag_store) -> Fetcher:
     """Create a Fetcher instance for testing"""
-    return Fetcher(config=fetcher_config, ts=tag_store)
+    return Fetcher(config=fetcher_config, context=fetch_context, ts=tag_store)
 
 @pytest.fixture
 def legacy_vod_content(qfactory, tag_store) -> Content:
@@ -98,8 +103,8 @@ def test_download_with_replace_true(
 
     """Test downloading with replace=True"""
     req = DownloadRequest(
-        stream_name="video",
         scope=VideoScope(
+            stream="video",
             start_time=0,
             end_time=60
         ),
@@ -108,8 +113,9 @@ def test_download_with_replace_true(
     )
     
     # Download once
-    result1 = fetcher.download(vod_content, req)
-    assert len(result1.successful_sources) == 2
+    worker = fetcher.get_worker(vod_content, req)
+    result1 = worker.download()
+    assert len(result1.sources) == 2
     assert len(result1.failed) == 0
 
     tagstore = fetcher.ts
@@ -122,7 +128,7 @@ def test_download_with_replace_true(
         q=vod_content
     )
 
-    first_source = result1.successful_sources[0].name
+    first_source = result1.sources[0].name
 
     tag = Tag(
         start_time=0,
@@ -135,13 +141,24 @@ def test_download_with_replace_true(
 
     tagstore.upload_tags([tag], job.id, q=vod_content)
 
-    result2 = fetcher.download(vod_content, req)
-    assert len(result2.successful_sources) == 1
+    req2 = DownloadRequest(
+        scope=VideoScope(
+            stream="video",
+            start_time=0,
+            end_time=60
+        ),
+        output_dir=media_dir,
+        preserve_track="track"
+    )
+    
+    worker2 = fetcher.get_worker(vod_content, req2)
+    result2 = worker2.download()
+    assert len(result2.sources) == 1
     assert len(result2.failed) == 0
 
-    req = DownloadRequest(
-        stream_name="video",
+    req3 = DownloadRequest(
         scope=VideoScope(
+            stream="video",
             start_time=0,
             end_time=60
         ),
@@ -150,14 +167,15 @@ def test_download_with_replace_true(
     )
 
     # shouldn't replace track2
-    result3 = fetcher.download(vod_content, req)
-    assert len(result3.successful_sources) == 2
+    worker3 = fetcher.get_worker(vod_content, req3)
+    result3 = worker3.download()
+    assert len(result3.sources) == 2
     assert len(result3.failed) == 0
 
     # don't set preserve_track
-    req = DownloadRequest(
-        stream_name="video",
+    req4 = DownloadRequest(
         scope=VideoScope(
+            stream="video",
             start_time=0,
             end_time=60
         ),
@@ -165,14 +183,15 @@ def test_download_with_replace_true(
         preserve_track=""
     )
 
-    result4 = fetcher.download(vod_content, req)
-    assert len(result4.successful_sources) == 2
+    worker4 = fetcher.get_worker(vod_content, req4)
+    result4 = worker4.download()
+    assert len(result4.sources) == 2
     assert len(result4.failed) == 0
 
     # audio instead
-    req = DownloadRequest(
-        stream_name="audio",
+    req5 = DownloadRequest(
         scope=VideoScope(
+            stream="audio",
             start_time=0,
             end_time=60
         ),
@@ -181,8 +200,9 @@ def test_download_with_replace_true(
     )
 
     try:
-        result5 = fetcher.download(vod_content, req)
-        assert len(result5.successful_sources) == 2
+        worker5 = fetcher.get_worker(vod_content, req5)
+        result5 = worker5.download()
+        assert len(result5.sources) == 2
         assert len(result5.failed) == 0
     except MissingResourceError:
         pass
@@ -193,7 +213,6 @@ def test_fetch_assets_with_preserve_track(
     media_dir: str
 ):
     req1 = DownloadRequest(
-        stream_name="assets",
         scope=AssetScope(
             assets=None
         ),
@@ -201,15 +220,15 @@ def test_fetch_assets_with_preserve_track(
         preserve_track=""
     )
     
-    result1 = fetcher.download(assets_content, req1)
-    assert len(result1.successful_sources) > 0, "Should have downloaded some assets"
+    worker1 = fetcher.get_worker(assets_content, req1)
+    result1 = worker1.download()
+    assert len(result1.sources) > 0, "Should have downloaded some assets"
     assert len(result1.failed) == 0, "Should have no failed downloads initially"
     
-    all_asset_names = [source.name for source in result1.successful_sources]
+    all_asset_names = [source.name for source in result1.sources]
     selected_assets = all_asset_names[:3]
     
     req2 = DownloadRequest(
-        stream_name="assets",
         scope=AssetScope(
             assets=selected_assets
         ),
@@ -217,12 +236,13 @@ def test_fetch_assets_with_preserve_track(
         preserve_track=""
     )
 
-    result2 = fetcher.download(assets_content, req2)
-    assert len(result2.successful_sources) == len(selected_assets), "Should return all requested assets"
+    worker2 = fetcher.get_worker(assets_content, req2)
+    result2 = worker2.download()
+    assert len(result2.sources) == len(selected_assets), "Should return all requested assets"
     assert len(result2.failed) == 0, "Should have no failed downloads"
     
     # Verify the returned assets match what we requested
-    returned_asset_names = [source.name for source in result2.successful_sources]
+    returned_asset_names = [source.name for source in result2.sources]
     assert set(returned_asset_names) == set(selected_assets), "Returned assets should match requested assets"
     
     # Third test: Add tags for some assets and test preserve_track functionality
@@ -254,7 +274,6 @@ def test_fetch_assets_with_preserve_track(
     tagstore.upload_tags(tags, jobid, q=assets_content)
     
     req3 = DownloadRequest(
-        stream_name="assets",
         scope=AssetScope(
             assets=selected_assets
         ),
@@ -262,8 +281,9 @@ def test_fetch_assets_with_preserve_track(
         preserve_track="asset_track"
     )
 
-    result3 = fetcher.download(assets_content, req3)
-    returned_asset_names_after_tagging = [source.name for source in result3.successful_sources]
+    worker3 = fetcher.get_worker(assets_content, req3)
+    result3 = worker3.download()
+    returned_asset_names_after_tagging = [source.name for source in result3.sources]
     
     for tagged_asset in assets_to_tag:
         assert tagged_asset not in returned_asset_names_after_tagging, f"Tagged asset {tagged_asset} should be excluded when preserve_track is set"
@@ -275,7 +295,6 @@ def test_fetch_assets_with_preserve_track(
     
     # Fifth test: fetch assets with different preserve_track - should return all assets
     req4 = DownloadRequest(
-        stream_name="assets",
         scope=AssetScope(
             assets=selected_assets
         ),
@@ -283,8 +302,9 @@ def test_fetch_assets_with_preserve_track(
         preserve_track="different_track"
     )
 
-    result4 = fetcher.download(assets_content, req4)
-    returned_asset_names_different_track = [source.name for source in result4.successful_sources]
+    worker4 = fetcher.get_worker(assets_content, req4)
+    result4 = worker4.download()
+    returned_asset_names_different_track = [source.name for source in result4.sources]
     assert set(returned_asset_names_different_track) == set(selected_assets), "Should return all assets when preserve_track doesn't match"
     
     # Upload tags to selected tags with author="user" and track="another track", check that downloading again
@@ -318,7 +338,6 @@ def test_fetch_assets_with_preserve_track(
         assert tag in uploaded_tags, f"Tag {tag} was not found in uploaded tags"
 
     req5 = DownloadRequest(
-        stream_name="assets",
         scope=AssetScope(
             assets=selected_assets
         ),
@@ -326,8 +345,9 @@ def test_fetch_assets_with_preserve_track(
         preserve_track="asset_track"
     )
 
-    result5 = fetcher.download(assets_content, req5)
-    returned_asset_names_after_tagging = [source.name for source in result5.successful_sources]
+    worker5 = fetcher.get_worker(assets_content, req5)
+    result5 = worker5.download()
+    returned_asset_names_after_tagging = [source.name for source in result5.sources]
 
     assert len(returned_asset_names_after_tagging) >= 1
 

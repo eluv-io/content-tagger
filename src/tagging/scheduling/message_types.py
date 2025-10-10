@@ -5,6 +5,7 @@ import queue
 from dataclasses import dataclass
 
 from src.tagging.scheduling.model import *
+from src.tag_containers.containers import TagContainer
 
 
 class MessageType(Enum):

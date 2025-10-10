@@ -5,7 +5,7 @@ from typing import Literal
 import time
 
 from src.common.content import Content
-from src.fetch.model import AssetScope, VideoScope
+from src.fetch.model import Scope
 
 @dataclass
 class FabricTaggerConfig:
@@ -21,7 +21,8 @@ class RunConfig:
 @dataclass
 class TagArgs:
     features: dict[str, RunConfig]
-    scope: AssetScope | VideoScope
+    # TODO: weirdness regarding stream. should have its own class in tagger
+    scope: Scope
     replace: bool
 
     def __str__(self):
@@ -59,7 +60,7 @@ class JobArgs:
     feature: str
     replace: bool
     runconfig: RunConfig
-    scope: AssetScope | VideoScope
+    scope: Scope
 
     def __str__(self):
         return f"JobArgs(q={self.q}, feature={self.feature}, replace={self.replace}, runconfig={self.runconfig}, scope={self.scope})"
@@ -71,6 +72,7 @@ class JobID:
     """
     qhit: str
     feature: str
+    # TODO: weirdness
     stream: str
 
     def __hash__(self):

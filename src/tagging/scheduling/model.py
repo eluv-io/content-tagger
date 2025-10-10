@@ -1,10 +1,9 @@
 from typing import Literal
 from dataclasses import dataclass
-import threading
 import time
 
 from src.common.model import SystemResources
-from src.tag_containers.containers import TagContainer
+
 
 JobStateDescription = Literal["Queued", "Running", "Completed", "Failed", "Stopped"]
 

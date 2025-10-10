@@ -1,21 +1,14 @@
-from collections import defaultdict
-import timeit
+
 from requests.exceptions import HTTPError
-import os
-import threading
-import tempfile
-import shutil
 from fractions import Fraction
-from copy import deepcopy
-from common_ml.video_processing import unfrag_video
-from common_ml.utils.files import get_file_type, encode_path
-from common_ml.utils.metrics import timeit
+
 from src.common.logging import logger
 
 from src.common.content import Content
 from src.common.errors import MissingResourceError, BadRequestError
-from src.fetch.model import AssetScope, DownloadRequest, VideoScope, DownloadResult, Source, StreamMetadata
-from src.fetch.model import FetcherConfig, DownloadResult
+from src.fetch.model import *
+from src.fetch.coordinator import FetchContext
+from src.fetch.workers import *
 from src.tags.tagstore.abstract import Tagstore
 
 logger = logger.bind(name="Fetcher")
@@ -24,51 +17,82 @@ class Fetcher:
     def __init__(
         self,
         config: FetcherConfig,
-        # used to prevent fetching of tagged parts/assets
-        # TODO: probably should disentangle and pass in the already tagged sources directly into download
+        context: FetchContext,
         ts: Tagstore,
     ):
         self.config = config
         self.ts = ts
-        # sem to keep total IO reasonable
-        self.dl_sem = threading.Semaphore(config.max_downloads)
-        # maps (qhit, stream) to lock to prevent unnecessary stream download duplication
-        self.stream_locks = defaultdict(threading.Lock)
+        self.ctx = context
 
-    def download(
-        self,
-        q: Content,
-        req: DownloadRequest,
-        # to enable graceful shutdown
-        exit_event: threading.Event | None = None,
-    ) -> DownloadResult:
-        """
-        Downloads video/audio or static file data from a content object
-        """
+    def get_worker(
+            self, 
+            q: Content, 
+            req: DownloadRequest, 
+            exit: threading.Event | None = None
+    ) -> DownloadWorker:
+        meta = self._get_metadata(q, req.scope)
+        ignore_sources = self._get_ignored_sources(q, req.preserve_track, req.scope)
+        if isinstance(req.scope, VideoScope):
+            assert isinstance(meta, VideoMetadata)
+            return VodWorker(
+                q=q,
+                scope=req.scope,
+                context=self.ctx,
+                meta=meta,
+                ignore_parts=ignore_sources,
+                output_dir=req.output_dir,
+                exit=exit
+            )
+        elif isinstance(req.scope, AssetScope):
+            assert isinstance(meta, AssetMetadata)
+            return AssetWorker(
+                q=q,
+                scope=req.scope,
+                context=self.ctx,
+                meta=meta,
+                ignore_assets=ignore_sources,
+                output_dir=req.output_dir,
+                exit=exit
+            )
+        elif isinstance(req.scope, LiveScope):
+            assert isinstance(meta, VideoMetadata)
+            return LiveWorker(
+                q=q,
+                scope=req.scope,
+                context=self.ctx,
+                meta=meta,
+                ignore_parts=[],
+                output_dir=req.output_dir,
+                exit=exit
+            )
+        else:
+            raise BadRequestError(f"Unknown scope type: {type(req.scope)}")
 
-        logger.debug("received download request", extra={"qid": q.qid, "req": req})
-        stream_key = (q.qhit, req.stream_name)
-        with self.stream_locks[stream_key]:
-            with self.dl_sem:
-                if req.stream_name == "assets":
-                    return self._fetch_assets(q, req)
-                return self._download_stream(q, req, exit_event)
+    def _get_ignored_sources(self, q: Content, preserve_track: str, scope: Scope) -> list[str]:
+        if not preserve_track:
+            return []
+        if isinstance(scope, VideoScope) or isinstance(scope, AssetScope):
+            # TODO: could get slow, doesn't work with pagination in case of real tagstore.
+            existing_tags = self.ts.find_tags(
+                author=self.config.author, 
+                qhit=q.qid,
+                track=preserve_track,
+                q=q
+            )
+            return list(set(tag.source for tag in existing_tags))
+        return []
+    
+    def _get_metadata(self, q: Content, scope: Scope) -> MediaMetadata:
+        if isinstance(scope, VideoScope):
+            return self._fetch_stream_metadata(q, scope.stream)
+        elif isinstance(scope, AssetScope):
+            return AssetMetadata()
+        elif isinstance(scope, LiveScope):
+            return self._fetch_livestream_metadata(q, scope.stream)
+        else:
+            raise BadRequestError(f"Unknown scope type: {type(scope)}")
 
-    def _download_stream(
-        self,
-        q: Content,
-        req: DownloadRequest,
-        exit_event: threading.Event | None = None,
-    ) -> DownloadResult:
-        req = deepcopy(req)
-
-        scope = req.scope
-        assert isinstance(scope, VideoScope)
-
-        stream_metadata = self._fetch_stream_metadata(q, req.stream_name)
-        return self._download_parts(q, req, stream_metadata, exit_event)
-
-    def _fetch_stream_metadata(self, q: Content, stream_name: str) -> StreamMetadata:
+    def _fetch_stream_metadata(self, q: Content, stream_name: str) -> VideoMetadata:
         """Fetches metadata for a stream based on content type."""
         if self._is_live(q):
             return self._fetch_livestream_metadata(q, stream_name)
@@ -98,8 +122,8 @@ class Fetcher:
                 return stream_name
             
         return "audio"
-                
-    def _fetch_vod_metadata(self, q: Content, stream_name: str) -> StreamMetadata:
+
+    def _fetch_vod_metadata(self, q: Content, stream_name: str) -> VideoMetadata:
         """Fetches metadata for modern VOD content."""
         try:
             transcodes = q.content_object_metadata(
@@ -162,11 +186,11 @@ class Fetcher:
             fps = self._parse_fps(transcode_meta["rate"])
 
 
-        return StreamMetadata(
+        return VideoMetadata(
             parts=parts, part_duration=part_duration, fps=fps, codec_type=codec_type
         )
 
-    def _fetch_legacy_vod_metadata(self, q: Content, stream_name: str) -> StreamMetadata:
+    def _fetch_legacy_vod_metadata(self, q: Content, stream_name: str) -> VideoMetadata:
         """Fetches metadata for legacy VOD content."""
         try:
             streams = q.content_object_metadata(
@@ -175,7 +199,7 @@ class Fetcher:
             )
         except HTTPError as e:
             raise HTTPError(f"Failed to retrieve streams for {q.qhit}") from e
-        
+
         assert isinstance(streams, dict)
 
         if stream_name not in streams:
@@ -199,13 +223,13 @@ class Fetcher:
         if codec_type == "video":
             fps = self._parse_fps(streams[stream_name]["rate"])
 
-        return StreamMetadata(
+        return VideoMetadata(
             parts=parts, part_duration=part_duration, fps=fps, codec_type=codec_type
         )
 
     def _fetch_livestream_metadata(
         self, q: Content, stream_name: str
-    ) -> StreamMetadata:
+    ) -> VideoMetadata:
         """Fetches metadata for livestream content."""
         try:
             periods = q.content_object_metadata(
@@ -305,129 +329,8 @@ class Fetcher:
             if part["finalization_time"] != 0 and part["size"] > 0
         ]
 
-        return StreamMetadata(
+        return VideoMetadata(
             parts=parts, part_duration=part_duration, fps=fps, codec_type=codec_type
-        )
-
-    def _download_parts(
-        self,
-        q: Content,
-        req: DownloadRequest,
-        stream_metadata: StreamMetadata,
-        exit_event: threading.Event | None = None,
-    ) -> DownloadResult:
-        """
-        Downloads the parts from the stream and returns them. 
-        
-        If req.replace is True, doesn't return already tagged tags.
-
-        Returns:
-            DownloadResult containing successful_sources and failed_part_hashes
-        """
-
-        if stream_metadata.codec_type not in ["video", "audio"]:
-            raise BadRequestError(
-                f"Invalid codec type for live: {stream_metadata.codec_type}. Must be 'video' or 'audio'."
-            )
-
-        if not os.path.exists(req.output_dir):
-            os.makedirs(req.output_dir)
-
-        tmp_path = tempfile.mkdtemp()
-
-        successful_sources = []
-        failed_parts = []
-
-        scope = req.scope
-        assert isinstance(scope, VideoScope)
-        start_time, end_time = scope.start_time, scope.end_time
-
-        to_download = stream_metadata.parts
-
-        logger.info(f"Downloading stream {req.stream_name} with {len(to_download)} total parts.")
-
-        tagged_parts = []
-        if req.preserve_track:
-            existing_tags = self.ts.find_tags(
-                author=self.config.author, 
-                qhit=q.qid, 
-                stream=req.stream_name, 
-                track=req.preserve_track,
-                q=q
-            )
-            tagged_parts = {tag.source for tag in existing_tags}
-
-        if req.preserve_track and tagged_parts:
-            logger.info(f"Filtering {len(tagged_parts)} already tagged parts")
-
-        for idx, part_hash in enumerate(to_download):
-            if exit_event is not None and exit_event.is_set():
-                break
-
-            if part_hash in tagged_parts:
-                continue
-
-            pstart = idx * stream_metadata.part_duration
-            pend = (idx + 1) * stream_metadata.part_duration
-            idx_str = str(idx).zfill(4)
-
-            # Check if part is within time range
-            if not (
-                start_time <= pstart < end_time
-            ) and not (start_time <= pend < end_time):
-                continue
-
-            filename = f"{idx_str}_{part_hash}{'.mp4' if stream_metadata.codec_type == 'video' else '.m4a'}"
-            save_path = os.path.join(req.output_dir, filename)
-
-            # Skip if file exists and not replacing
-            if os.path.exists(save_path):
-                source = Source(
-                    name=part_hash,
-                    filepath=save_path,
-                    offset=pstart,
-                )
-                successful_sources.append(source)
-                continue
-
-            tmpfile = os.path.join(tmp_path, f"{idx_str}_{part_hash}")
-
-            try:
-                q.download_part(save_path=tmpfile, part_hash=part_hash)
-
-                if stream_metadata.codec_type == "video":
-                    unfrag_video(tmpfile, save_path)
-                else:
-                    shutil.move(tmpfile, save_path)
-
-                source = Source(
-                    name=part_hash,
-                    filepath=save_path,
-                    offset=pstart,
-                )
-                successful_sources.append(source)
-
-            except Exception as e:
-                if os.path.exists(save_path):
-                    # Remove the corrupt file if it exists
-                    os.remove(save_path)
-                failed_parts.append(part_hash)
-                logger.error(
-                    f"Failed to download part {part_hash} for {q.qhit}: {str(e)}"
-                )
-                continue
-
-            # check that length of the file is equal to the part length
-            # if not last_part and stream_metadata.codec_type == "video":
-            #     actual_duration = get_video_length(save_path)
-            #     assert abs(actual_duration - stream_metadata.part_duration) < 1e-3
-
-            # TODO: check for audio as well. 
-
-        shutil.rmtree(tmp_path, ignore_errors=True)
-
-        return DownloadResult(
-            successful_sources=successful_sources, failed=failed_parts, stream_meta=stream_metadata
         )
 
     def _is_live(self, q: Content) -> bool:
@@ -455,86 +358,3 @@ class Fetcher:
             num, den = rat.split("/")
             return float(num) / float(den)
         return float(rat)
-    
-    def _fetch_assets(
-        self, 
-        q: Content, 
-        req: DownloadRequest
-    ) -> DownloadResult:
-        if not os.path.exists(req.output_dir):
-            os.makedirs(req.output_dir)
-
-        scope = req.scope
-        assert isinstance(scope, AssetScope)
-
-        if scope.assets is None:
-            assets_meta = q.content_object_metadata(metadata_subtree='assets')
-            assert isinstance(assets_meta, dict)
-            assets_meta = list(assets_meta.values())
-            assets = []
-            for ameta in assets_meta:
-                filepath = ameta.get("file")["/"]
-                assert filepath.startswith("./files/")
-                # strip leading term
-                filepath = filepath[8:]
-                assets.append(filepath)
-        else:
-            assets = scope.assets
-
-        total_assets = len(assets)
-        assets = [asset for asset in assets if get_file_type(asset) == "image"]
-        logger.info(f"Found {len(assets)} image assets out of {total_assets} assets for {q.qhit}")
-        if len(assets) == 0:
-            raise MissingResourceError(f"No image assets found in {q.qhit}")
-
-        tagged_assets = []
-        if req.preserve_track:
-            existing_tags = self.ts.find_tags(author=self.config.author, qhit=q.qhit, stream="assets", track=req.preserve_track, q=q)
-            tagged_assets = [tag.source for tag in existing_tags]
-
-        if tagged_assets:
-            logger.info(f"Filtering {len(tagged_assets)} already tagged assets")
-
-        # Filter out already tagged assets
-        assets_to_process = [asset for asset in assets if asset not in tagged_assets]
-        
-        # Separate assets that already exist vs need downloading
-        already_downloaded = []
-        to_download = []
-        
-        for asset in assets_to_process:
-            save_path = os.path.join(req.output_dir, encode_path(asset))
-            if os.path.exists(save_path):
-                already_downloaded.append(asset)
-            else:
-                to_download.append((asset, save_path))
-
-        if already_downloaded:
-            logger.info(f"{len(already_downloaded)} assets already retrieved for {q.qhit}")
-
-        logger.info(f"{len(to_download)} assets need to be downloaded for {q.qhit}")
-
-        # Download new assets
-        assets_to_download = [asset for asset, _ in to_download]
-        newly_downloaded = self._download_concurrent(q, to_download, req.output_dir)
-
-        # Combine all successful assets (already downloaded + newly downloaded)
-        all_successful_assets = already_downloaded + newly_downloaded
-        
-        # Create successful sources for all available assets
-        successful_sources = [
-            Source(name=asset, filepath=os.path.join(req.output_dir, encode_path(asset)), offset=0) 
-            for asset in all_successful_assets
-        ]
-        
-        # Failed assets are those we tried to download but couldn't
-        failed_assets = set(assets_to_download) - set(newly_downloaded)
-        failed = list(failed_assets)
-        
-        return DownloadResult(successful_sources=successful_sources, failed=failed, stream_meta=None)
-
-    def _download_concurrent(self, q: Content, file_jobs: list[tuple[str, str]], output_path: str) -> list[str]:
-        with timeit("Downloading assets"):
-            status = q.download_files(dest_path=output_path, file_jobs=file_jobs)
-        assert isinstance(status, list) and len(status) == len(file_jobs)
-        return [asset for (asset, _), error in zip(file_jobs, status) if error is None]

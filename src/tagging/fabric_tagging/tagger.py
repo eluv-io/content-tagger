@@ -11,7 +11,7 @@ from uuid import uuid4 as uuid
 import os
 
 from src.tags.tagstore.types import Tag
-from src.fetch.model import DownloadRequest, LiveDownloadResult
+from src.fetch.model import *
 from src.tag_containers.containers import LiveTagContainer
 from src.tag_containers.model import ContainerRequest
 from src.tag_containers.registry import ContainerRegistry
@@ -170,6 +170,7 @@ class FabricTagger:
         for feature in args.features:
             stream = args.features[feature].stream
             assert stream is not None
+            # TODO: why again do we start job before fetching?
             tsjob = self.tagstore.start_job(
                 qhit=request.q.qhit,
                 track=feature,
@@ -582,13 +583,11 @@ class FabricTagger:
 
     def __upload_tags(self, job: TagJob) -> None:
         """Upload tags for a job (called from actor thread)"""
-        if job.state.media is None:
+        if job.state.media is None or job.state.container is None:
             return
 
         assert job.state.media is not None
         media_to_source = {s.filepath: s for s in job.state.media.sources}
-
-        assert job.state.container is not None
 
         outputs = job.state.container.tags()
         new_outputs = [out for out in outputs if out.source_media in media_to_source \

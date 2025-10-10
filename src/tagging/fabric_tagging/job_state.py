@@ -2,12 +2,12 @@ import threading
 
 from src.tagging.fabric_tagging.model import *
 from src.tag_containers.containers import TagContainer
-from src.fetch.model import Source, StreamMetadata
+from src.fetch.model import Source, DownloadWorker
 
 @dataclass
 class MediaState:
-    sources: list[Source]
-    stream_meta: StreamMetadata | None
+    downloaded: list[Source]
+    worker: DownloadWorker
 
 @dataclass
 class JobState:
@@ -15,9 +15,10 @@ class JobState:
     taghandle: str
     uploaded_sources: list[str]
     message: str
-    media: MediaState | None
+    media: MediaState
     container: TagContainer | None
 
+    # TODO: move to tagger to initialize
     @staticmethod
     def starting() -> 'JobState':
         return JobState(

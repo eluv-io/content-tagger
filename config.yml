@@ -30,9 +30,10 @@ system:
   gpus: ["gpu", "disabled", "gpu", "gpu", "disabled"]
 
 fetcher:
-  max_downloads: 16
-  parts_dir: data/parts
   author: tagger
+
+fetch_coordinator:
+  max_downloads: 16
 
 tagger:
   media_dir: data/parts

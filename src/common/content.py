@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any
 
 from elv_client_py import ElvClient
 
@@ -49,7 +49,7 @@ class Content:
     def token(self) -> str:
         return self._client.token
 
-    def content_object_versions(self) -> Dict[str, Any]:
+    def content_object_versions(self) -> dict[str, Any]:
         """Get all versions of the content object."""
         return self._client.content_object_versions(object_id=self.qid, library_id=self.qlib)
     
