@@ -40,6 +40,10 @@ class VodWorker(DownloadWorker):
         with self.ctx.permit((self.q.qhit, str(self.scope.stream))):
             return self._download()
 
+    @property
+    def path(self) -> str:
+        return self.output_dir
+
     def _download(self) -> DownloadResult:
         """
         Downloads the parts from the stream and returns them. 
@@ -170,6 +174,10 @@ class AssetWorker(DownloadWorker):
         with self.ctx.permit((self.q.qhit, "assets")):
             return self._download()
 
+    @property
+    def path(self) -> str:
+        return self.output_dir
+
     def _download(self) -> DownloadResult:
         """
         Downloads asset files (images) from the content object.
@@ -283,4 +291,8 @@ class LiveWorker(DownloadWorker):
         raise NotImplementedError("LiveWorker is not implemented yet.")
     
     def metadata(self) -> MediaMetadata:
+        raise NotImplementedError("LiveWorker is not implemented yet.")
+    
+    @property
+    def path(self) -> str:
         raise NotImplementedError("LiveWorker is not implemented yet.")

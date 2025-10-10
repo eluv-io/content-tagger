@@ -69,3 +69,7 @@ class DownloadWorker(Protocol):
 
     def download(self) -> DownloadResult:
         ...
+
+    @property
+    def path(self) -> str:
+        ...

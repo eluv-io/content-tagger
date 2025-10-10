@@ -2,12 +2,15 @@
 from requests.exceptions import HTTPError
 from fractions import Fraction
 
+from common_ml.utils.metrics import timeit
+
 from src.common.logging import logger
 
 from src.common.content import Content
 from src.common.errors import MissingResourceError, BadRequestError
 from src.fetch.model import *
 from src.fetch.coordinator import FetchContext
+from src.fetch.cache import cache_by_qhash
 from src.fetch.workers import *
 from src.tags.tagstore.abstract import Tagstore
 
@@ -30,8 +33,10 @@ class Fetcher:
             req: DownloadRequest, 
             exit: threading.Event | None = None
     ) -> DownloadWorker:
-        meta = self._get_metadata(q, req.scope)
-        ignore_sources = self._get_ignored_sources(q, req.preserve_track, req.scope)
+        with timeit(f"Getting media metadata: qhit={q.qhit}, scope={req.scope}"):
+            meta = self._get_metadata(q, req.scope)
+        with timeit(f"Getting ignored sources: qhit={q.qhit}, scope={req.scope}, track={req.preserve_track}"):
+            ignore_sources = self._get_ignored_sources(q, req.preserve_track, req.scope)
         if isinstance(req.scope, VideoScope):
             assert isinstance(meta, VideoMetadata)
             return VodWorker(
@@ -92,6 +97,7 @@ class Fetcher:
         else:
             raise BadRequestError(f"Unknown scope type: {type(scope)}")
 
+    @cache_by_qhash
     def _fetch_stream_metadata(self, q: Content, stream_name: str) -> VideoMetadata:
         """Fetches metadata for a stream based on content type."""
         if self._is_live(q):
@@ -227,6 +233,8 @@ class Fetcher:
             parts=parts, part_duration=part_duration, fps=fps, codec_type=codec_type
         )
 
+    # TODO: may need to have this thing take in a livestream qid instead and then forward to the qwt
+    @cache_by_qhash
     def _fetch_livestream_metadata(
         self, q: Content, stream_name: str
     ) -> VideoMetadata:
@@ -333,6 +341,7 @@ class Fetcher:
             parts=parts, part_duration=part_duration, fps=fps, codec_type=codec_type
         )
 
+    @cache_by_qhash
     def _is_live(self, q: Content) -> bool:
         """Check if content is a live stream."""
         if not q.qhit.startswith("tqw__"):
@@ -344,6 +353,7 @@ class Fetcher:
             return False
         return True
 
+    @cache_by_qhash
     def _is_legacy_vod(self, q: Content) -> bool:
         """Check if content is legacy VOD format."""
         try:
