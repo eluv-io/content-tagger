@@ -7,7 +7,6 @@ from src.tags.tagstore.filesystem_tagstore import Tag
 from src.common.content import Content
 from src.common.errors import MissingResourceError
 from src.fetch.coordinator import FetchContext
-from tests.conftest import temp_dir
 
 VOD_QHIT = "iq__3C58dDYxsn5KKSWGYrfYr44ykJRm"
 LEGACY_VOD_QHIT = "iq__cebzuQ8BqsWZyoUdnTXCe23fUgz"
@@ -356,11 +355,3 @@ def test_fetch_assets_with_preserve_track(
         # tagged before
         assert assetname not in assets_to_tag
         assert assetname in untagged_assets
-
-def test_find_default_audio_stream(
-    fetcher: Fetcher,
-    vod_content: Content,
-):
-    result = fetcher._find_default_audio_stream(vod_content)
-
-    assert result == "stereo"

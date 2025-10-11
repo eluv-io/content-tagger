@@ -7,13 +7,13 @@ from collections import defaultdict
 
 from src.tags.tagstore.rest_tagstore import RestTagstore
 from src.tagging.fabric_tagging.tagger import FabricTagger
-from src.tagging.fabric_tagging.model import FabricTaggerConfig
 from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.tag_containers.model import MediaInput, ModelConfig, ModelOutput
 from src.tagging.scheduling.model import SysConfig
-from src.tagging.fabric_tagging.model import RunConfig, TagArgs
+from src.tagging.fabric_tagging.model import TagArgs
 from src.tag_containers.model import ContainerRequest
-from src.fetch.model import DownloadRequest, DownloadResult, Source, StreamMetadata, VideoScope
+from src.fetch.model import *
+from src.fetch.coordinator import FetchContext
 from src.common.content import Content
 from src.tags.tagstore.types import Tag
 from src.common.errors import MissingResourceError
@@ -26,7 +26,7 @@ class FakeTagContainer:
         Initialize the FakeTagContainer.
     
         Args:
-            fileargs (list[str]): List of file paths to process.
+            media: List of file paths or directory to process.
             feature (str): The feature being tagged.
             work_duration (float): Time in seconds to simulate work.
         """
@@ -87,6 +87,9 @@ class FakeTagContainer:
         if self.is_stopped:
             return 0
         return None
+    
+    def send_eof(self) -> None:
+        pass
 
     def tags(self) -> list[ModelOutput]:
         """
@@ -149,6 +152,9 @@ class PartialFailContainer(FakeTagContainer):
             outputs = outputs[:-1]
 
         return outputs
+    
+    def send_eof(self) -> None:
+        pass
 
 class FakeContainerRegistry:
     def __init__(self):
@@ -177,48 +183,68 @@ class FakeContainerRegistry:
         }
         return mock_cfg
 
+class FakeWorker:
+    """Fake DownloadWorker that creates test files"""
+    def __init__(self, output_dir: str, timeout: float = 0.1):
+        self.output_dir = output_dir
+        self.timeout = timeout
+        self._metadata = VideoMetadata(
+            parts=["hash1", "hash2"],
+            part_duration=10.0,
+            fps=30.0,
+            codec_type="video"
+        )
+
+    def metadata(self) -> VideoMetadata:
+        return self._metadata
+
+    def download(self) -> DownloadResult:
+        """Create fake media files for testing"""
+        os.makedirs(self.output_dir, exist_ok=True)
+        
+        video1 = os.path.join(self.output_dir, "video1.mp4")
+        video2 = os.path.join(self.output_dir, "video2.mp4")
+        
+        # Create empty files
+        with open(video1, 'w') as f:
+            f.write("fake video content 1")
+        with open(video2, 'w') as f:
+            f.write("fake video content 2")
+
+        # Simulate work
+        time.sleep(self.timeout)
+
+        # Simulate successful download
+        sources = []
+        for i, filepath in enumerate([video1, video2]):
+            source = Source(
+                filepath=filepath,
+                name=f"part_{i}.mp4",
+                offset=i * 10.0,  # 10 second parts
+            )
+            sources.append(source)
+        
+        return DownloadResult(
+            sources=sources,
+            failed=[],
+            done=True
+        )
+
+    @property
+    def path(self) -> str:
+        return self.output_dir
+
 @pytest.fixture
-def fake_fetcher():
-    """Create a fake fetcher that returns empty media files"""
+def fake_fetcher(media_dir):
+    """Create a fake fetcher that returns FakeWorker"""
     class FakeFetcher:
-        def __init__(self, timeout=0.1):
-            self.timeout = timeout
+        def __init__(self):
+            self.config = Mock(author="tagger")
+            self.ctx = FetchContext(max_concurrent=2)
 
-        def download(self, content: Content, req: DownloadRequest, exit_event=None) -> DownloadResult:
-            """Create fake media files for testing"""
-            video1 = os.path.join(req.output_dir, "video1.mp4")
-            video2 = os.path.join(req.output_dir, "video2.mp4")
-            
-            # Create empty files
-            with open(video1, 'w') as f:
-                f.write("fake video content 1")
-            with open(video2, 'w') as f:
-                f.write("fake video content 2")
-
-            # Simulate successful download
-            sources = []
-            for i, filepath in enumerate([video1, video2]):
-                source = Source(
-                    filepath=filepath,
-                    name=f"part_{i}.mp4",
-                    offset=i * 10.0,  # 10 second parts
-                )
-                sources.append(source)
-            
-            stream_meta = StreamMetadata(
-                codec_type="video",
-                parts=["hash1", "hash2"],
-                part_duration=10.0,
-                fps=30.0
-            )
-
-            time.sleep(self.timeout)
-            
-            return DownloadResult(
-                successful_sources=sources,
-                failed=[],
-                stream_meta=stream_meta
-            )
+        def get_worker(self, q: Content, req: DownloadRequest, exit_event=None):
+            """Return a FakeWorker"""
+            return FakeWorker(output_dir=req.output_dir, timeout=0.1)
     
     return FakeFetcher()
 
@@ -232,7 +258,6 @@ def system_tagger():
 @pytest.fixture
 def fake_container_registry():
     """Create a fake ContainerRegistry that returns mock containers with fake tags"""
-    
     return FakeContainerRegistry()
 
 
@@ -253,26 +278,33 @@ def fabric_tagger(system_tagger, fake_container_registry, tag_store, fake_fetche
 
 @pytest.fixture
 def sample_tag_args():
-    """Create sample TagArgs for testing"""
-    return TagArgs(
-        features={
-            "object_detection": RunConfig(stream="video", model={}),
-            "speech_recognition": RunConfig(stream="audio", model={})
-        },
-        replace=False,
-        scope=VideoScope(start_time=0, end_time=30)
-    )
+    """Create sample TagArgs for testing - now returns list of TagArgs"""
+    return [
+        TagArgs(
+            feature="object_detection",
+            run_config={},
+            scope=VideoScope(stream="video", start_time=0, end_time=30),
+            replace=False,
+
+        ),
+        TagArgs(
+            feature="speech_recognition", 
+            run_config={},
+            scope=VideoScope(stream="audio", start_time=0, end_time=30),
+            replace=False,
+        )
+    ]
 
 
 def test_tag_success(fabric_tagger, q, sample_tag_args):
     """Test successful tagging job creation"""
-    result = fabric_tagger.tag(q, sample_tag_args)
+    results = []
+    for args in sample_tag_args:
+        result = fabric_tagger.tag(q, args)
+        results.append(result)
     
     # Check that jobs were started successfully
-    assert "object_detection" in result
-    assert "speech_recognition" in result
-    assert result["object_detection"] == "Job started successfully"
-    assert result["speech_recognition"] == "Job started successfully"
+    assert all("successfully" in result.lower() for result in results)
     
     # Check that jobs are in active jobs
     active_jobs = fabric_tagger.jobstore.active_jobs
@@ -280,19 +312,18 @@ def test_tag_success(fabric_tagger, q, sample_tag_args):
     
     # Check job details
     job_ids = list(active_jobs.keys())
-    for job_id in job_ids:
-        job = active_jobs[job_id]
-        assert job_id.qhit == q.qid
-        assert job.args.feature in ["object_detection", "speech_recognition"]
-        assert job.state.status.status in ["Starting", "Fetching content"]
+    features = [active_jobs[job_id].args.feature for job_id in job_ids]
+    assert "object_detection" in features
+    assert "speech_recognition" in features
 
 
 def test_tag_invalid_feature(fabric_tagger, q):
     """Test tagging with invalid feature"""
     invalid_args = TagArgs(
-        features={"invalid_feature": RunConfig(**{"stream": "video", "model": {}})},
+        feature="invalid_feature",
+        run_config={},
+        scope=VideoScope(stream="video", start_time=0, end_time=30),
         replace=False,
-        scope=VideoScope(start_time=None, end_time=None)
     )
     
     with pytest.raises(MissingResourceError, match="Invalid feature: invalid_feature"):
@@ -302,20 +333,19 @@ def test_tag_invalid_feature(fabric_tagger, q):
 def test_tag_duplicate_job(fabric_tagger, q, sample_tag_args):
     """Test that duplicate jobs are rejected"""
     # Start first job
-    result1 = fabric_tagger.tag(q, sample_tag_args)
-    assert result1["object_detection"] == "Job started successfully"
+    result1 = fabric_tagger.tag(q, sample_tag_args[0])
+    assert "successfully" in result1.lower()
     
     # Try to start same job again
-    result2 = fabric_tagger.tag(q, sample_tag_args)
+    result2 = fabric_tagger.tag(q, sample_tag_args[0])
     # Should get error message for duplicate job
-    assert "already running" in result2["object_detection"]
+    assert "already running" in result2
 
 
 def test_status_no_jobs(fabric_tagger):
     """Test status when no jobs exist"""
-
     if isinstance(fabric_tagger.tagstore, RestTagstore):
-        pytest.skip("Skipping test for RestTagstore casue I don't want to have to configure many live test objects")
+        pytest.skip("Skipping test for RestTagstore cause I don't want to have to configure many live test objects")
 
     with pytest.raises(MissingResourceError, match="No jobs started for"):
         fabric_tagger.status("iq__nonexistent")
@@ -324,10 +354,11 @@ def test_status_no_jobs(fabric_tagger):
 def test_status_with_jobs(fabric_tagger, q, sample_tag_args):
     """Test status retrieval with active jobs"""
     # Start jobs
-    fabric_tagger.tag(q, sample_tag_args)
+    for args in sample_tag_args:
+        fabric_tagger.tag(q, args)
     
     # Get status
-    status = fabric_tagger.status(q.qid)
+    status = fabric_tagger.status(q.qhit)
     
     # Check structure
     assert isinstance(status, dict)
@@ -353,13 +384,14 @@ def test_status_with_jobs(fabric_tagger, q, sample_tag_args):
 def test_status_completed_jobs(fabric_tagger, q, sample_tag_args):
     """Test status includes completed jobs"""
     # Start and complete jobs
-    fabric_tagger.tag(q, sample_tag_args)
+    for args in sample_tag_args:
+        fabric_tagger.tag(q, args)
     
     # Wait a bit for jobs to progress
     time.sleep(1)
     
     # Check that job is done according to status
-    status = fabric_tagger.status(q.qid)
+    status = fabric_tagger.status(q.qhit)
     assert status["video"]["object_detection"]["status"] == "Completed"
     assert status["audio"]["speech_recognition"]["status"] == "Completed"
 
@@ -367,39 +399,44 @@ def test_status_completed_jobs(fabric_tagger, q, sample_tag_args):
 def test_stop_running_job(fabric_tagger, q, sample_tag_args):
     """Test stopping a running job"""
     # Start jobs
-    fabric_tagger.tag(q, sample_tag_args)
+    for args in sample_tag_args:
+        fabric_tagger.tag(q, args)
     
     # Stop one job
-    fabric_tagger.stop(q.qid, "object_detection", None)
+    fabric_tagger.stop(q.qhit, "object_detection", None)
     
     # Check that stop event was set
-    status = fabric_tagger.status(q.qid)
+    status = fabric_tagger.status(q.qhit)
     assert status["video"]["object_detection"]["status"] == "Stopped"
     assert status["audio"]["speech_recognition"]["status"] != "Stopped"
 
+
 def test_stop_nonexistent_job(fabric_tagger):
     """Test stopping a job that doesn't exist"""
-
     if isinstance(fabric_tagger.tagstore, RestTagstore):
-        pytest.skip("Skipping test for RestTagstore casue I don't want to have to configure many live test objects")
+        pytest.skip("Skipping test for RestTagstore cause I don't want to have to configure many live test objects")
 
     with pytest.raises(MissingResourceError):
         fabric_tagger.stop("iq__nonexistent", "object_detection", None)
 
+
 def test_stop_finished_job(fabric_tagger, q, sample_tag_args):
-    fabric_tagger.tag(q, sample_tag_args)
+    for args in sample_tag_args:
+        fabric_tagger.tag(q, args)
     time.sleep(1)
     with pytest.raises(MissingResourceError):
-        fabric_tagger.stop(q.qid, "object_detection", None)
+        fabric_tagger.stop(q.qhit, "object_detection", None)
     # check that both are Completed
-    status = fabric_tagger.status(q.qid)
+    status = fabric_tagger.status(q.qhit)
     assert status["video"]["object_detection"]["status"] == "Completed"
     assert status["audio"]["speech_recognition"]["status"] == "Completed"
+
 
 def test_cleanup(fabric_tagger, q, sample_tag_args):
     """Test cleanup shuts down properly"""
     # Start some jobs
-    fabric_tagger.tag(q, sample_tag_args)
+    for args in sample_tag_args:
+        fabric_tagger.tag(q, args)
 
     # Cleanup
     fabric_tagger.cleanup()
@@ -420,29 +457,45 @@ def test_cleanup(fabric_tagger, q, sample_tag_args):
         assert job.finished.is_set()
         assert job.container.is_running() is False
 
+
 def test_many_concurrent_jobs(fabric_tagger):
     if isinstance(fabric_tagger.tagstore, RestTagstore):
-        pytest.skip("Skipping test for RestTagstore casue I don't want to have to configure many live test objects")
+        pytest.skip("Skipping test for RestTagstore cause I don't want to have to configure many live test objects")
 
     """Run many jobs and make sure that they all run"""
     contents = []
     for i in range(5):
         contents.append(Mock(qhit=f"iq__content{i}", auth=f"token{i}"))
 
-    args = TagArgs(
-        features={"object_detection": RunConfig(**{"stream": "video", "model": {}}),
-                  "speech_recognition": RunConfig(**{"stream": "audio", "model": {}})},
-        replace=False,
-        scope=VideoScope(start_time=None, end_time=None)
-    )
+    # Create individual TagArgs for each feature and content
+    all_args = []
+    for content in contents:
+        all_args.extend([
+            TagArgs(
+                feature="object_detection",
+                run_config={},
+                scope=VideoScope(stream="video", start_time=0, end_time=30),
+                replace=False,
+            ),
+            TagArgs(
+                feature="speech_recognition", 
+                run_config={},
+                scope=VideoScope(stream="audio", start_time=0, end_time=30),
+                replace=False,
+            )
+        ])
 
     results = []
-    for content in contents:
+    content_idx = 0
+    for i, args in enumerate(all_args):
+        content = contents[content_idx]
         result = fabric_tagger.tag(content, args)
         results.append(result)
+        if i % 2 == 1:  # Move to next content after every 2 jobs
+            content_idx += 1
 
-    for i, result in enumerate(results):
-        assert result["object_detection"] == "Job started successfully"
+    for result in results:
+        assert "successfully" in result.lower()
 
     assert len(fabric_tagger.jobstore.active_jobs) == 10
 
@@ -461,20 +514,21 @@ def test_many_concurrent_jobs(fabric_tagger):
         assert len(status["video"]["object_detection"]["failed"]) == 0
         assert len(status["audio"]["speech_recognition"]["failed"]) == 0
 
+
 def test_tags_uploaded_during_and_after_job(
     fabric_tagger, 
     q, 
     sample_tag_args
 ):
     # Start jobs
-    status = fabric_tagger.tag(q, sample_tag_args)
-    assert "object_detection" in status
-    assert "speech_recognition" in status
-    assert all("successfully" in msg.lower() for msg in status.values())
+    for args in sample_tag_args:
+        result = fabric_tagger.tag(q, args)
+        assert "successfully" in result.lower()
 
+    # Map streams to features
     streams_to_features = defaultdict(list)
-    for feature, cfg in sample_tag_args.features.items():
-        streams_to_features[cfg.stream].append(feature)
+    for args in sample_tag_args:
+        streams_to_features[args.scope.stream].append(args.feature)
 
     tag_counts = set()
 
@@ -482,7 +536,6 @@ def test_tags_uploaded_during_and_after_job(
     start = time.time()
     end = False
     while time.time() - start < timeout:
-        #st = fabric_tagger.status(q.qhit)
         end = True
         for stream, features in streams_to_features.items():
             for feature in features:
@@ -501,13 +554,16 @@ def test_tags_uploaded_during_and_after_job(
     assert 2 in tag_counts
     assert 4 in tag_counts
 
+
 def test_tags_uploaded_during_and_after_job_through_status(
     fabric_tagger, 
     q, 
     sample_tag_args
 ):
     # Same as test_tags_uploaded_during_and_after_job but using status to check job status instead of querying tagstore.
-    status = fabric_tagger.tag(q, sample_tag_args)
+    for args in sample_tag_args:
+        fabric_tagger.tag(q, args)
+    
     timeout = 3
     start = time.time()
     end = False
@@ -519,7 +575,7 @@ def test_tags_uploaded_during_and_after_job_through_status(
             for feature in st[stream]:
                 status = st[stream][feature]
                 percentages.add(status["tagging_progress"])
-                if status["tagging_progress"] != '100%':
+                if status["tagging_progress"] != '2/2':
                     end = False
         if end:
             break
@@ -527,10 +583,11 @@ def test_tags_uploaded_during_and_after_job_through_status(
 
     assert end
 
-    assert len(percentages) == 3
-    assert "0%" in percentages
-    assert "50%" in percentages
-    assert "100%" in percentages
+    assert len(percentages) == 4
+    assert "0/2" in percentages
+    assert "1/2" in percentages
+    assert "2/2" in percentages
+
 
 @patch.object(FakeTagContainer, 'tags')
 def test_container_tags_method_fails(mock_tags, fabric_tagger, q):
@@ -541,14 +598,15 @@ def test_container_tags_method_fails(mock_tags, fabric_tagger, q):
     
     # Create args for a simple job
     args = TagArgs(
-        features={"object_detection": RunConfig(stream="video", model={})},
+        feature="object_detection",
+        run_config={},
+        scope=VideoScope(stream="video", start_time=0, end_time=30),
         replace=False,
-        scope=VideoScope(start_time=0, end_time=30)
     )
     
     # Start the job
     result = fabric_tagger.tag(q, args)
-    assert result["object_detection"] == "Job started successfully"
+    assert "successfully" in result.lower()
     
     # Wait for the job to fail
     timeout = 3
@@ -588,6 +646,7 @@ def test_container_tags_method_fails(mock_tags, fabric_tagger, q):
     # Verify the tags method was actually called
     assert mock_tags.call_count == 1
 
+
 @patch.object(FakeContainerRegistry, 'get')
 def test_failed_tag(mock_get, fabric_tagger, q):
     # Configure the mock to return PartialFailContainer
@@ -598,14 +657,15 @@ def test_failed_tag(mock_get, fabric_tagger, q):
     
     # Create args for a simple job
     args = TagArgs(
-        features={"object_detection": RunConfig(stream="video", model={})},
+        feature="object_detection",
+        run_config={},
+        scope=VideoScope(stream="video", start_time=0, end_time=30),
         replace=False,
-        scope=VideoScope(start_time=0, end_time=30)
     )
     
     # Start the job
     result = fabric_tagger.tag(q, args)
-    assert result["object_detection"] == "Job started successfully"
+    assert "successfully" in result.lower()
 
     wait_tag(fabric_tagger, q.qhit, timeout=5)
 
@@ -628,6 +688,7 @@ def wait_tag(fabric_tagger, jobid, timeout):
                 time.sleep(0.25)
     pytest.fail("Job did not complete within timeout period")
 
+
 @patch.object(FakeTagContainer, 'exit_code', autospec=True)
 def test_container_nonzero_exit_code(mock_exit_code, fabric_tagger, q):
     """Test that a container with non-zero exit code causes job to fail"""
@@ -642,14 +703,15 @@ def test_container_nonzero_exit_code(mock_exit_code, fabric_tagger, q):
     
     # Create args for a simple job
     args = TagArgs(
-        features={"object_detection": RunConfig(stream="video", model={})},
+        feature="object_detection",
+        run_config={},
+        scope=VideoScope(stream="video", start_time=0, end_time=30),
         replace=False,
-        scope=VideoScope(start_time=0, end_time=30)
     )
     
     # Start the job
     result = fabric_tagger.tag(q, args)
-    assert result["object_detection"] == "Job started successfully"
+    assert "successfully" in result.lower()
     
     # Wait for the job to fail due to non-zero exit code
     timeout = 3

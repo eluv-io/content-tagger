@@ -10,6 +10,7 @@ from src.common.logging import logger
 from server import create_app
 from app_config import AppConfig
 import podman
+from src.api.tagging.dto_mapping import _find_default_audio_stream
 from src.common.content import Content, ContentConfig, ContentFactory
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tags.conversion import TagConverterConfig
@@ -17,7 +18,7 @@ from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.tags.tagstore.types import TagstoreConfig
 from src.tags.tagstore.abstract import Tagstore
 from src.tagging.scheduling.model import SysConfig
-from src.fetch.model import DownloadRequest, DownloadResult, FetcherConfig, LiveDownloadResult
+from src.fetch.model import DownloadRequest, FetcherConfig
 from src.fetch.fetch_content import Fetcher
 from src.tag_containers.model import ModelConfig, RegistryConfig
 from src.tagging.fabric_tagging.model import FabricTaggerConfig
@@ -389,3 +390,10 @@ def test_double_run(client):
     print(duration)
     assert duration < 2, f"Stop request took too long: {duration}s which is over 2s limit"
     assert response.status_code == 200
+
+def test_find_default_audio_stream(
+):
+    q = get_content(get_auth(test_objects['vod']), test_objects['vod'])
+    result = _find_default_audio_stream(q)
+
+    assert result == "stereo"

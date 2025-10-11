@@ -550,7 +550,7 @@ class FabricTagger:
         res = {
             "status": status.status,
             "time_running": end - status.time_started,
-            "tagging_progress": f"{total_tagged}/{total_sources * 100}" if total_sources > 0 else "0/0",
+            "tagging_progress": f"{total_tagged}/{total_sources}" if total_sources > 0 else "0/0",
             "failed": status.failed,
         }
         if state.message:
