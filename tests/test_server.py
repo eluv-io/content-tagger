@@ -1,4 +1,3 @@
-from threading import Event
 import pytest
 import os
 import shutil
@@ -6,20 +5,19 @@ import time
 import json
 from dotenv import load_dotenv
 from src.common.logging import logger
+from src.common.content import Content
 
 from server import create_app
 from app_config import AppConfig
 import podman
 from src.api.tagging.dto_mapping import _find_default_audio_stream
-from src.common.content import Content, ContentConfig, ContentFactory
+from src.common.content import ContentConfig, ContentFactory
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tags.conversion import TagConverterConfig
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.tags.tagstore.types import TagstoreConfig
-from src.tags.tagstore.abstract import Tagstore
 from src.tagging.scheduling.model import SysConfig
-from src.fetch.model import DownloadRequest, FetcherConfig
-from src.fetch.fetch_content import Fetcher
+from src.fetch.model import *
 from src.tag_containers.model import ModelConfig, RegistryConfig
 from src.tagging.fabric_tagging.model import FabricTaggerConfig
 
@@ -53,27 +51,60 @@ def get_content(auth: str, qhit: str):
 
     return q
 
-class FakeLiveFetcher(Fetcher):
-    def __init__(self, config: FetcherConfig, ts: Tagstore):
-        super().__init__(config, ts)
+class FakeLiveWorker:
+    """Fake DownloadWorker that simulates live streaming by returning one source at a time"""
+    
+    def __init__(self, real_worker: DownloadWorker, last_res_has_media: bool=False):
+        self.real_worker = real_worker
         self.call_count = 0
-
-    def download(self, q: Content, req: DownloadRequest, exit_event: Event | None = None) -> LiveDownloadResult:
-        res = super().download(q, req, exit_event)
-        # TODO: think about how the LiveFetcher should signal that it's done
+        self._all_sources = None
+        self.last_res_has_media = last_res_has_media
+    
+    def metadata(self) -> MediaMetadata:
+        return self.real_worker.metadata()
+    
+    @property 
+    def path(self) -> str:
+        return self.real_worker.path
+    
+    def download(self) -> DownloadResult:
+        # Get all sources on first call
+        if self._all_sources is None:
+            real_result = self.real_worker.download()
+            self._all_sources = real_result.sources
+            self._failed = real_result.failed
+        
+        # Simulate live streaming delay
         time.sleep(2)
-        if self.call_count >= len(res.successful_sources):
-            return LiveDownloadResult.ended()
-        live_res = LiveDownloadResult(
-            successful_sources=res.successful_sources[self.call_count:self.call_count+1],
-            failed=res.failed,
-            stream_meta=res.stream_meta,
-            done=False
-        )
 
         self.call_count += 1
 
-        return live_res
+        idx = self.call_count - 1
+        
+        # Return one source at a time
+        if idx < len(self._all_sources):
+            # We have a source to return
+            if idx == len(self._all_sources) - 1 and self.last_res_has_media:
+                # Last source AND we want to include it with done=True
+                return DownloadResult(
+                    sources=[self._all_sources[idx]],
+                    failed=self._failed,
+                    done=True
+                )
+            else:
+                # Not the last source, OR last source but we don't want done=True yet
+                return DownloadResult(
+                    sources=[self._all_sources[idx]],
+                    failed=[],  # Don't report failures until the end
+                    done=False
+                )
+        else:
+            # No more sources - final empty call (only reached if last_res_has_media=False)
+            return DownloadResult(
+                sources=[],
+                failed=self._failed,
+                done=True
+            )
 
 @pytest.fixture(scope="session")
 def test_dir():
@@ -108,8 +139,8 @@ def test_config(test_dir, tagger_config):
         ),
         system=SysConfig(gpus=["gpu", "disabled", "gpu"], resources={"cpu_juice": 16}),
         fetcher=FetcherConfig(
-            max_downloads=4,
-            author="tagger"
+            author="tagger",
+            max_downloads=4
         ),
         container_registry=RegistryConfig(
             base_dir=os.path.join(test_dir, "stuff"),
@@ -224,7 +255,8 @@ def test_video_model(client):
 
     assert completed, "Timeout waiting for jobs to complete"
 
-def test_live_video_model(app, test_config):
+@pytest.mark.parametrize("last_res_has_media", [True, False])
+def test_live_video_model(app, last_res_has_media):
     """Test the live tagging workflow with FakeLiveFetcher."""
     # Get auth tokens
     qid = test_objects['vod']
@@ -235,14 +267,24 @@ def test_live_video_model(app, test_config):
     tagstore = tagger.tagstore
     
     # Create FakeLiveFetcher with the same config
-    fake_fetcher = FakeLiveFetcher(test_config.fetcher, tagstore)
-    tagger.fetcher = fake_fetcher
+    original_get_worker = tagger.fetcher.get_worker
     
-    # Override _is_live to return True for this job
-    original_is_live = tagger._is_live
-    def mock_is_live(job):
-        return True
-    tagger._is_live = mock_is_live
+    # Store reference to the FakeLiveWorker so we can access its call_count
+    fake_worker_ref: list[FakeLiveWorker | None] = [None]
+    
+    # NOTE: ugliest thing i've ever seen
+    def fake_get_worker(q: Content, req: DownloadRequest, exit=None) -> DownloadWorker:
+        if fake_worker_ref[0] is not None:
+            return fake_worker_ref[0]
+        real_worker = original_get_worker(q, req, exit)
+        fake_worker = FakeLiveWorker(real_worker, last_res_has_media)
+        fake_worker_ref[0] = fake_worker  # Store reference
+        return fake_worker
+    
+    # Replace with our version
+    tagger.fetcher.get_worker = fake_get_worker
+    
+    tagger._is_live = lambda q: True
     
     # Create test client
     client = app.test_client()
@@ -269,8 +311,12 @@ def test_live_video_model(app, test_config):
     completed = wait_for_jobs_completion(client, [qid], timeout=60)
     assert completed, "Timeout waiting for live job to complete"
     
-    # Verify the fetcher was called 5 times (once for each part)
-    assert fake_fetcher.call_count == 5, f"Expected 5 fetch calls, got {fake_fetcher.call_count}"
+    # Calculate expected call count based on last_res_has_media
+    expected_calls = 5 if last_res_has_media else 6
+    
+    # Verify the fetcher was called the expected number of times
+    assert fake_worker_ref[0] is not None, "FakeLiveWorker was not created"
+    assert fake_worker_ref[0].call_count == expected_calls, f"Expected {expected_calls} fetch calls, got {fake_worker_ref[0].call_count}"
     
     # Get tags and verify results
     jobid = tagstore.find_jobs(q=get_content(auth, qid), stream='video')[0]
@@ -286,8 +332,8 @@ def test_live_video_model(app, test_config):
         assert tag.text == next_tag, f"Expected {next_tag}, got {tag.text}"
         next_tag = 'hello2' if next_tag == 'hello1' else 'hello1'
         assert 'frame_tags' in tag.additional_info
-    
-    logger.info(f"Live test completed successfully with {fake_fetcher.call_count} fetch calls")
+
+    logger.info(f"Live test completed successfully with {fake_worker_ref[0].call_count} fetch calls (last_res_has_media={last_res_has_media})")
 
 def test_asset_tag(client):
     """Test asset tagging."""

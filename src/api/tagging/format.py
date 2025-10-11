@@ -1,13 +1,15 @@
 
 from dataclasses import dataclass
 from common_ml.types import Data
-from src.fetch.model import AssetScope
-from src.tagging.fabric_tagging.model import TagArgs
 
 @dataclass
-class ModelParams:
-    stream: str
+class ModelParams(Data):
+    stream: str | None
     run_config: dict
+
+    @staticmethod
+    def from_dict(data: dict) -> 'ModelParams':
+        return ModelParams(stream=data.get('stream'), run_config=data.get('model', {}))
 
 @dataclass
 class TagAPIArgs(Data):
@@ -22,7 +24,7 @@ class TagAPIArgs(Data):
 
     @staticmethod
     def from_dict(data: dict) -> 'TagAPIArgs':
-        features = {feature: ModelParams(**cfg) for feature, cfg in data['features'].items()}
+        features = {feature: ModelParams.from_dict(cfg) for feature, cfg in data['features'].items()}
         return TagAPIArgs(features=features, start_time=data.get('start_time', None), end_time=data.get('end_time', None), replace=data.get('replace', False))
 
     def __str__(self) -> str:
@@ -42,5 +44,5 @@ class ImageTagAPIArgs(Data):
 
     @staticmethod
     def from_dict(data: dict) -> 'ImageTagAPIArgs':
-        features = {feature: ModelParams(stream='assets', **cfg) for feature, cfg in data['features'].items()}
+        features = {feature: ModelParams.from_dict(cfg) for feature, cfg in data['features'].items()}
         return ImageTagAPIArgs(features=features, assets=data.get('assets', None), replace=data.get('replace', False))

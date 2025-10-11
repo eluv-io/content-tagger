@@ -13,7 +13,6 @@ from src.tagging.scheduling.model import SysConfig
 from src.tagging.fabric_tagging.model import TagArgs
 from src.tag_containers.model import ContainerRequest
 from src.fetch.model import *
-from src.fetch.coordinator import FetchContext
 from src.common.content import Content
 from src.tags.tagstore.types import Tag
 from src.common.errors import MissingResourceError
@@ -239,8 +238,7 @@ def fake_fetcher(media_dir):
     """Create a fake fetcher that returns FakeWorker"""
     class FakeFetcher:
         def __init__(self):
-            self.config = Mock(author="tagger")
-            self.ctx = FetchContext(max_concurrent=2)
+            self.config = Mock(author="tagger", max_downloads=2)
 
         def get_worker(self, q: Content, req: DownloadRequest, exit_event=None):
             """Return a FakeWorker"""

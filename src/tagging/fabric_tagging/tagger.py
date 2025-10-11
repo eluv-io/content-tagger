@@ -690,4 +690,4 @@ class FabricTagger:
         return False
 
     def _is_live_job(self, job: TagJob) -> bool:
-        return False
+        return self._is_live(job.args.q)

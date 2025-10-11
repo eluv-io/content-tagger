@@ -4,15 +4,38 @@ import tempfile
 from loguru import logger
 import shutil
 from copy import deepcopy
+from contextlib import contextmanager
+import threading
 
 from common_ml.video_processing import unfrag_video
 from common_ml.utils.files import get_file_type, encode_path
 
-from src.fetch.coordinator import FetchContext
 from src.fetch.model import *
 from src.common.content import Content
 from src.common.errors import BadRequestError
 from src.fetch.model import DownloadResult
+
+StreamKey = tuple[str, str]
+
+class FetchContext:
+    def __init__(self, max_concurrent: int):
+        self._sem = threading.Semaphore(max_concurrent)
+        self._locks: dict[StreamKey, threading.Lock] = {}
+        self._locks_mu = threading.Lock()
+
+    def _get_lock(self, key: StreamKey) -> threading.Lock:
+        with self._locks_mu:
+            return self._locks.setdefault(key, threading.Lock())
+
+    @contextmanager
+    def permit(self, key: StreamKey):
+        self._sem.acquire()
+        try:
+            lock = self._get_lock(key)
+            with lock:
+                yield
+        finally:
+            self._sem.release()
 
 class VodWorker(DownloadWorker):
     def __init__(

@@ -9,7 +9,6 @@ from src.common.logging import logger
 from src.common.content import Content
 from src.common.errors import MissingResourceError, BadRequestError
 from src.fetch.model import *
-from src.fetch.coordinator import FetchContext
 from src.fetch.cache import cache_by_qhash
 from src.fetch.workers import *
 from src.tags.tagstore.abstract import Tagstore
@@ -20,12 +19,11 @@ class Fetcher:
     def __init__(
         self,
         config: FetcherConfig,
-        context: FetchContext,
         ts: Tagstore,
     ):
         self.config = config
         self.ts = ts
-        self.ctx = context
+        self.ctx = FetchContext(config.max_downloads)
 
     def get_worker(
             self, 

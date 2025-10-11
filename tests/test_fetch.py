@@ -6,7 +6,6 @@ from src.fetch.model import AssetScope, DownloadRequest, FetcherConfig, VideoSco
 from src.tags.tagstore.filesystem_tagstore import Tag
 from src.common.content import Content
 from src.common.errors import MissingResourceError
-from src.fetch.coordinator import FetchContext
 
 VOD_QHIT = "iq__3C58dDYxsn5KKSWGYrfYr44ykJRm"
 LEGACY_VOD_QHIT = "iq__cebzuQ8BqsWZyoUdnTXCe23fUgz"
@@ -19,18 +18,14 @@ def fetcher_config(temp_dir: str) -> FetcherConfig:
     os.makedirs(parts_path, exist_ok=True)
     
     return FetcherConfig(
-        author="tagger"
+        author="tagger",
+        max_downloads=2
     )
 
 @pytest.fixture
-def fetch_context() -> FetchContext:
-    """Create a FetchContext for testing"""
-    return FetchContext(max_concurrent=2)
-
-@pytest.fixture
-def fetcher(fetcher_config: FetcherConfig, fetch_context: FetchContext, tag_store) -> Fetcher:
+def fetcher(fetcher_config: FetcherConfig, tag_store) -> Fetcher:
     """Create a Fetcher instance for testing"""
-    return Fetcher(config=fetcher_config, context=fetch_context, ts=tag_store)
+    return Fetcher(config=fetcher_config, ts=tag_store)
 
 @pytest.fixture
 def legacy_vod_content(qfactory, tag_store) -> Content:

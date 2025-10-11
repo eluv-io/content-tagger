@@ -2,12 +2,9 @@ from dataclasses import dataclass
 from typing import Protocol
 
 @dataclass
-class FetchContextConfig:
-    max_downloads: int
-
-@dataclass
 class FetcherConfig:
     author: str
+    max_downloads: int
 
 @dataclass
 class Source:
