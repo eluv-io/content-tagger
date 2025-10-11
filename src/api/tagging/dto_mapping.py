@@ -41,20 +41,9 @@ def map_video_tag_dto(
 
     return res
 
-def map_asset_tag_dto(args: ImageTagAPIArgs, registry: ContainerRegistry) -> list[TagArgs]:
+def map_asset_tag_dto(args: ImageTagAPIArgs) -> list[TagArgs]:
     res = []
     for feature, config in args.features.items():
-        if config.stream is not None:
-            stream = config.stream
-        else:
-            model_config = registry.get_model_config(feature)
-            model_type = model_config.type
-            if model_type in ("video", "frame"):
-                stream = "video"
-            else:
-                stream = "audio"
-            config.stream = stream
-
         res.append(TagArgs(feature=feature, run_config=config.run_config, scope=AssetScope(assets=args.assets), replace=args.replace))
         
     return res

@@ -24,8 +24,8 @@ class AssetScope(Scope):
 @dataclass
 class VideoScope(Scope):
     stream: str
-    start_time: int = 0
-    end_time: float | int = float("inf")
+    start_time: int
+    end_time: float | int
 
 @dataclass
 class LiveScope(Scope):

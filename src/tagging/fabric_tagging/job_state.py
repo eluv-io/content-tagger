@@ -2,7 +2,7 @@ import threading
 
 from src.tagging.fabric_tagging.model import *
 from src.tag_containers.containers import TagContainer
-from src.fetch.model import Source, DownloadWorker
+from src.fetch.model import *
 
 @dataclass
 class MediaState:
@@ -11,24 +11,31 @@ class MediaState:
 
 @dataclass
 class JobState:
+    """Mutable state of the tagging job."""
     status: JobStatus
     taghandle: str
     uploaded_sources: list[str]
     message: str
     media: MediaState
+    upload_job: str
     container: TagContainer | None
+    tagging_done: threading.Event | None
 
 @dataclass
 class TagJob:
+    """Context of the tagging job."""
     args: JobArgs
     state: JobState
-    upload_job: str
     stop_event: threading.Event
-    tagging_done: threading.Event | None
 
     def get_id(self) -> JobID:
-        assert self.args.runconfig.stream is not None
-        return JobID(qhit=self.args.q.qhit, feature=self.args.feature, stream=self.args.runconfig.stream)
+        if isinstance(self.args.scope, AssetScope):
+            stream = "assets"
+        elif isinstance(self.args.scope, VideoScope):
+            stream = self.args.scope.stream
+        else:
+            raise ValueError(f"unknown scope type: {type(self.args.scope)}")
+        return JobID(qhit=self.args.q.qhit, feature=self.args.feature, stream=stream)
 
 @dataclass
 class JobStore:

@@ -29,7 +29,7 @@ def handle_tag(qhit: str) -> Response:
 
     tagger: FabricTagger = current_app.config["state"]["tagger"]
 
-    tag_args = map_video_tag_dto(args, tagger.cregistry)
+    tag_args = map_video_tag_dto(args, tagger.cregistry, q)
     status_by_feature = {}
     for tag_arg in tag_args:
         status_by_feature[tag_arg.run_config] = tagger.tag(q, tag_arg)
@@ -49,13 +49,12 @@ def handle_image_tag(qhit: str) -> Response:
 
     tagger: FabricTagger = current_app.config["state"]["tagger"]
 
-    tag_args = map_asset_tag_dto(args, tagger.cregistry)
+    tag_args = map_asset_tag_dto(args)
     status_by_feature = {}
     for tag_arg in tag_args:
         status_by_feature[tag_arg.run_config] = tagger.tag(q, tag_arg)
     
     return Response(response=json.dumps(status_by_feature), status=200, mimetype='application/json')
-
 
 def handle_status(qhit: str) -> Response:
     q = _get_authorized_content(qhit)
@@ -65,7 +64,6 @@ def handle_status(qhit: str) -> Response:
     res = tagger.status(q.qhit)
 
     return Response(response=json.dumps(res), status=200, mimetype='application/json')
-
 
 def handle_stop(
         qhit: str, 
