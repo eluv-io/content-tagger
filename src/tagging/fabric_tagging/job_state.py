@@ -23,7 +23,6 @@ class TagJob:
     args: JobArgs
     state: JobState
     upload_job: str
-    media_dir: str
     stop_event: threading.Event
     tagging_done: threading.Event | None
 

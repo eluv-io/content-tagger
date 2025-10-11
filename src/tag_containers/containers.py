@@ -163,6 +163,10 @@ class TagContainer:
 
     def required_resources(self) -> SystemResources:
         return copy(self.cfg.model_config.resources)
+
+    def send_eof(self) -> None:
+        logger.info(f"Standard container received EOF (noop), no more media will be sent.", extra={"handle": self.name()})
+        pass
     
     def _get_relative_paths(self, media_files: list[str]) -> list[str]:
         # Calculate paths from perspective of the container working directory "/elv"
@@ -424,7 +428,7 @@ class LiveTagContainer(TagContainer):
         if self.media_files:
             self.add_media(self.media_files)
 
-    def stop(self) -> None:
+    def send_eof(self) -> None:
         if self.stdin_socket:
             try:
                 try:
@@ -434,9 +438,13 @@ class LiveTagContainer(TagContainer):
                 finally:
                     self.stdin_socket.close()
             except Exception as e:
-                logger.error(f"Error closing stdin socket: {e}")
-            finally:
-                self.stdin_socket = None
+                logger.opt(exception=e).error("Error closing stdin socket", extra={"handle": self.name()})
+        else:
+            logger.error("No stdin socket to close", extra={"handle": self.name()})
+            raise RuntimeError("No stdin socket to close")
+
+    def stop(self) -> None:
+        self.send_eof()
         super().stop()
 
     def _get_args(self, media_files: list[str]) -> list[str]:

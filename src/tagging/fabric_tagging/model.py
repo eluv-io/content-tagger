@@ -61,9 +61,10 @@ class JobArgs:
     replace: bool
     runconfig: RunConfig
     scope: Scope
+    retry_fetch: bool
 
     def __str__(self):
-        return f"JobArgs(q={self.q}, feature={self.feature}, replace={self.replace}, runconfig={self.runconfig}, scope={self.scope})"
+        return f"JobArgs(q={self.q}, feature={self.feature}, replace={self.replace}, runconfig={self.runconfig}, scope={self.scope}, retry_fetch={self.retry_fetch})"
 
 @dataclass
 class JobID:
