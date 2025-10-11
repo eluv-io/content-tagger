@@ -8,6 +8,7 @@ from src.common.errors import BadRequestError
 from src.api.auth import get_authorization
 from src.common.content import Content, ContentFactory
 from src.tagging.fabric_tagging.tagger import FabricTagger
+from src.api.tagging.dto_mapping import *
 
 def handle_tag(qhit: str) -> Response:
     q = _get_authorized_content(qhit)
@@ -28,9 +29,12 @@ def handle_tag(qhit: str) -> Response:
 
     tagger: FabricTagger = current_app.config["state"]["tagger"]
 
-    status = tagger.tag(q, args.to_tag_args())
-
-    return Response(response=json.dumps(status), status=200, mimetype='application/json')
+    tag_args = map_video_tag_dto(args, tagger.cregistry)
+    status_by_feature = {}
+    for tag_arg in tag_args:
+        status_by_feature[tag_arg.run_config] = tagger.tag(q, tag_arg)
+    
+    return Response(response=json.dumps(status_by_feature), status=200, mimetype='application/json')
 
 def handle_image_tag(qhit: str) -> Response:
     q = _get_authorized_content(qhit)
@@ -43,16 +47,14 @@ def handle_image_tag(qhit: str) -> Response:
     except TypeError as e:
         return Response(response=json.dumps({'error': str(e)}), status=400, mimetype='application/json')
 
-    # TODO: belongs in FabricTagger
-    # for feature, run_config in args.features.items():
-    #     if not config["services"][feature].get("frame_level", False):
-    #         return Response(response=json.dumps({'error': f"Image tagging for {feature} is not supported"}), status=400, mimetype='application/json')
-
     tagger: FabricTagger = current_app.config["state"]["tagger"]
 
-    status = tagger.tag(q, args.to_tag_args())
-
-    return Response(response=json.dumps(status), status=200, mimetype='application/json')
+    tag_args = map_asset_tag_dto(args, tagger.cregistry)
+    status_by_feature = {}
+    for tag_arg in tag_args:
+        status_by_feature[tag_arg.run_config] = tagger.tag(q, tag_arg)
+    
+    return Response(response=json.dumps(status_by_feature), status=200, mimetype='application/json')
 
 
 def handle_status(qhit: str) -> Response:

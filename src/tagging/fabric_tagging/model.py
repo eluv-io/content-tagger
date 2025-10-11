@@ -12,21 +12,14 @@ class FabricTaggerConfig:
     media_dir: str
 
 @dataclass
-class RunConfig:
-    # model config, used to overwrite the model level config
-    model: dict = field(default_factory=dict)
-    # stream name to run the model on, None to use the default stream. "assets" is a special case which will tag image assets
-    stream: str | None = None
-
-@dataclass
 class TagArgs:
-    features: dict[str, RunConfig]
-    # TODO: weirdness regarding stream. should have its own class in tagger
+    feature: str
+    run_config: dict
     scope: Scope
     replace: bool
 
     def __str__(self):
-        return f"TagArgs(features={self.features}, scope={self.scope}, replace={self.replace})"
+        return f"TagArgs(run_config={self.run_config}, scope={self.scope}, replace={self.replace})"
 
 JobStateDescription = Literal[
     "Fetching content",
@@ -59,7 +52,7 @@ class JobArgs:
     q: Content
     feature: str
     replace: bool
-    runconfig: RunConfig
+    runconfig: dict
     scope: Scope
     retry_fetch: bool
 
