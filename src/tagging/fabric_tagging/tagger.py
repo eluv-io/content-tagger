@@ -92,7 +92,7 @@ class FabricTagger:
         if error:
             logger.opt(exception=error).error("job ended with error", extra={"jobid": jobid, "status": status})
         request = StopRequest(qhit=jobid.qhit, feature=jobid.feature, stream=jobid.stream, status=status)
-        return self._submit(request)
+        return self._submit_async(request)
 
     def _submit(self, req: Request) -> Any:
         logger.info("submitting synchronous request", extra={"type": type(req), "request": req})
@@ -161,78 +161,83 @@ class FabricTagger:
     def _handle_tag_request(self, message: Message):
         assert isinstance(message.data, TagRequest)
         request: TagRequest = message.data
+
+        q = request.q
+        args = request.args
     
-        self._validate_args(request.args)
-        args = self._assign_default_streams(request.args)
-        logger.info("processing tag request", extra={"qhit": request.q.qhit, "args": args})
+        self._validate_args(args)
+        logger.info("processing tag request", extra={"qhit": q.qhit, "args": args})
 
-        is_live = self._is_live(request.q)
-        
-        status = {}
-        for feature in args.features:
-            stream = args.features[feature].stream
-            assert stream is not None
+        is_live = self._is_live(q)
 
-            # TODO: we should start job before the first upload tags event instead
-            tsjob = self.tagstore.start_job(
-                qhit=request.q.qhit,
-                track=feature,
-                stream=stream,
-                author="tagger",
-                q=request.q
-            )
+        job = self._create_job(q, args.feature, args, is_live)
 
-            stop_event = threading.Event()
-
-            # TODO: scope weirdness with stream
-            worker = self.fetcher.get_worker(
-                request.q, 
-                DownloadRequest(
-                    preserve_track=feature if not args.replace else "",
-                    output_dir=self._output_dir_from_q(request.q),
-                    scope=args.scope,
-                ), 
-                stop_event
-            )
-
-            job = TagJob(
-                state=JobState(
-                    status=JobStatus.starting(),
-                    taghandle="",
-                    uploaded_sources=[],
-                    message="",
-                    media=MediaState(
-                        downloaded=[],
-                        worker=worker
-                    ),
-                    container=None
-                ),
-                args=JobArgs(
-                    q=request.q,
-                    feature=feature,
-                    replace=args.replace,
-                    runconfig=args.features[feature],
-                    scope=args.scope,
-                    # retry fetches in case of live tagging
-                    retry_fetch=is_live
-                ),
-                upload_job=tsjob.id,
-                stop_event=stop_event,
-                tagging_done=None,
-            )
-
-            jobid = job.get_id()
-            if jobid in self.jobstore.active_jobs:
-                status[feature] = f"{jobid} is already running"
-                continue
-
+        jobid = job.get_id()
+        if jobid in self.jobstore.active_jobs:
+            message.response_mailbox.put(Response(data=f"{jobid} is already running", error=None))
+        else:
             self.jobstore.active_jobs[jobid] = job
-            status[feature] = "Job started successfully"
 
-            # Submit message to enter fetching phase (async)
             self._submit_async(EnterFetchingPhase(job_id=jobid))
 
-        message.response_mailbox.put(Response(data=status, error=None))
+            message.response_mailbox.put(Response(data="Job started successfully", error=None))
+
+    def _create_job(self, q: Content, feature: str, args: TagArgs, is_live: bool) -> TagJob:
+        """
+        Initialize the starting state for a job and important context for its runtime
+        """
+
+        # TODO: we should start job before the first upload tags event instead of doing it here before anything
+        # has even happened yet.
+        tsjob = self.tagstore.start_job(
+            qhit=q.qhit,
+            track=feature,
+            # TODO: change
+            stream=args.scope.stream if isinstance(args.scope, VideoScope) and args.scope.stream else "assets",
+            author="tagger",
+            q=q
+        )
+
+        # for user to stop the job
+        stop_event = threading.Event()
+
+        worker = self.fetcher.get_worker(
+            q, 
+            DownloadRequest(
+                preserve_track=feature if not args.replace else "",
+                output_dir=self._output_dir_from_q(q),
+                scope=args.scope,
+            ),
+            stop_event
+        )
+
+        job = TagJob(
+            state=JobState(
+                status=JobStatus.starting(),
+                taghandle="",
+                uploaded_sources=[],
+                message="",
+                media=MediaState(
+                    downloaded=[],
+                    worker=worker
+                ),
+                upload_job=tsjob.id,
+                tagging_done=None,
+                container=None
+            ),
+            args=JobArgs(
+                q=q,
+                feature=feature,
+                replace=args.replace,
+                runconfig=args.run_config,
+                scope=args.scope,
+                # retry fetches in case of live tagging
+                retry_fetch=is_live
+            ),
+            stop_event=stop_event,   
+        )
+
+        return job
 
     def _handle_enter_fetching_phase(self, message: Message):
         """Updates states and then starts fetching in background thread"""
@@ -268,21 +273,17 @@ class FabricTagger:
         logger.info("starting fetching work", extra={"jobid": jobid})
 
         try:
-            stream = job.args.runconfig.stream
-            assert stream is not None
             dl_res = job.state.media.worker.download()
-
-            if job.stop_event.is_set():
-                # TODO: centralize this stop check somewhere
-                return
         except Exception as e:
             if job.args.retry_fetch:
                 retry_delay = 5
                 logger.opt(exception=e).error(f"error during fetching but retry is set to true, retrying in {retry_delay} seconds", extra={"jobid": jobid})
                 threading.Timer(retry_delay, lambda: self._submit_async(EnterFetchingPhase(job_id=jobid))).start()
             else:
-                # TODO: this thing blocks, do we need that behavior?
                 self._end_job(jobid, "Failed", e)
+            return
+
+        if job.stop_event.is_set():
             return
 
         self._submit(EnterTaggingPhase(job_id=jobid, data=dl_res))
@@ -345,7 +346,7 @@ class FabricTagger:
         container = self.cregistry.get(ContainerRequest(
             model_id=job.args.feature,
             media_input=media_input,
-            run_config=job.args.runconfig.model,
+            run_config=job.args.runconfig,
             live=self._is_live_job(job),
             job_id=job.args.q.qhit + "-" + datetime.now().strftime("%Y%m%d%H%M") + "-" + str(uuid())[0:6]
         ))
@@ -354,7 +355,7 @@ class FabricTagger:
         uid = self.system_tagger.start(container, tagging_done)
         job.state.container = container
         job.state.taghandle = uid
-        job.tagging_done = tagging_done
+        job.state.tagging_done = tagging_done
 
         # Start tagging in background thread
         threading.Thread(
@@ -368,8 +369,8 @@ class FabricTagger:
         jobid = job.get_id()
         logger.info("waiting for tagging to complete", extra={"jobid": jobid})
 
-        assert job.tagging_done is not None
-        job.tagging_done.wait()
+        assert job.state.tagging_done is not None
+        job.state.tagging_done.wait()
 
         if job.stop_event.is_set():
             logger.info("tagging was stopped by the user", extra={"jobid": jobid})
@@ -428,7 +429,8 @@ class FabricTagger:
         res = defaultdict(dict)
         for jid in jobids:
             job = active_jobs.get(jid) or inactive_jobs[jid]
-            stream, feature = job.args.runconfig.stream, job.args.feature
+            feature = job.args.feature
+            stream = job.args.scope.stream if isinstance(job.args.scope, VideoScope) and job.args.scope.stream else "assets"
             res[stream][feature] = self._summarize_status(job.state)
 
         message.response_mailbox.put(Response(data=dict(res), error=None))
@@ -607,15 +609,19 @@ class FabricTagger:
         logger.info("uploading new tags", extra={"jobid": job.get_id(), "num_tags": len(new_outputs)})
 
         stream_meta = job.state.media.worker.metadata()
+        fps = None
+        if isinstance(stream_meta, VideoMetadata):
+            # in order to map the frame tags to their appropriate timestamps
+            fps = stream_meta.fps
         tags2upload = []
         for out in new_outputs:
             original_src = media_to_source[out.source_media]
             for tag in out.tags:
                 tag.source = original_src.name
-                tag.jobid = job.upload_job
-                tags2upload.append(self._fix_tag_offsets(tag, original_src.offset, stream_meta.fps if stream_meta else None))
+                tag.jobid = job.state.upload_job
+                tags2upload.append(self._fix_tag_offsets(tag, original_src.offset, fps))
 
-        self.tagstore.upload_tags(tags2upload, job.upload_job, q=job.args.q)
+        self.tagstore.upload_tags(tags2upload, job.state.upload_job, q=job.args.q)
 
         job.state.uploaded_sources.extend(media_to_source[out.source_media].name for out in new_outputs)
 
@@ -629,15 +635,13 @@ class FabricTagger:
         services = self.cregistry.services()
         modconfigs = self.cregistry.cfg.model_configs
 
-        for feature in args.features:
-            if feature not in services:
-                raise MissingResourceError(
-                    f"Invalid feature: {feature}. Available features: {', '.join(services)}"
-                )
+        feature = args.feature
+        if feature not in services:
+            raise MissingResourceError(
+                f"Invalid feature: {feature}. Available features: {', '.join(services)}"
+            )
 
-            if isinstance(args, TagArgs):
-                continue
-
+        if isinstance(args.scope, AssetScope):
             modeltype = modconfigs[feature].type
 
             if modeltype != "frame":
@@ -682,21 +686,8 @@ class FabricTagger:
         tag.additional_info["frame_tags"] = adjusted
         return tag
     
-    def _assign_default_streams(self, args: TagArgs) -> TagArgs:
-        """Assign default streams (called from actor thread)"""
-        for feature, config in args.features.items():
-            if config.stream is None:
-                model_config = self.cregistry.get_model_config(feature)
-                model_type = model_config.type
-                if model_type in ("video", "frame"):
-                    stream = "video"
-                else:
-                    stream = "audio"
-                config.stream = stream
-        return args
-    
     def _is_live(self, q: Content) -> bool:
-        return False #job.args.q.is_live
+        return False
 
     def _is_live_job(self, job: TagJob) -> bool:
         return False
