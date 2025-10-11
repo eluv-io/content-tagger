@@ -102,32 +102,11 @@ class Fetcher:
         """Fetches metadata for a stream based on content type."""
         if self._is_live(q):
             return self._fetch_livestream_metadata(q, stream_name)
-        
-        if stream_name == "audio":
-            # NOTE: kinda janky logic but stream_name "audio" is special-cased to mean "default audio stream"
-            logger.info(f"Finding default audio stream for {q.qhit}")
-            stream_name = self._find_default_audio_stream(q)
 
         if self._is_legacy_vod(q):
             return self._fetch_legacy_vod_metadata(q, stream_name)
         else:
             return self._fetch_vod_metadata(q, stream_name)
-        
-    def _find_default_audio_stream(self, q: Content) -> str:
-        streams = q.content_object_metadata(
-            metadata_subtree="offerings/default/media_struct/streams",
-            resolve_links=False,
-        )
-
-        assert isinstance(streams, dict)
-
-        for stream_name, stream_info in streams.items():
-            if stream_info.get("codec_type") == "audio" and \
-                stream_info.get("language") == "en" and \
-                stream_info.get("channels") == 2:
-                return stream_name
-            
-        return "audio"
 
     def _fetch_vod_metadata(self, q: Content, stream_name: str) -> VideoMetadata:
         """Fetches metadata for modern VOD content."""

@@ -6,8 +6,13 @@ from src.api.tagging.format import *
 from src.fetch.model import *
 from src.tag_containers.registry import ContainerRegistry
 from src.tagging.fabric_tagging.model import TagArgs
+from src.common.content import Content
 
-def map_video_tag_dto(args: TagAPIArgs, registry: ContainerRegistry) -> list[TagArgs]:
+def map_video_tag_dto(
+        args: TagAPIArgs, 
+        registry: ContainerRegistry,
+        q: Content
+) -> list[TagArgs]:
     res = []
     for feature, config in args.features.items():
         if config.stream is not None:
@@ -18,7 +23,7 @@ def map_video_tag_dto(args: TagAPIArgs, registry: ContainerRegistry) -> list[Tag
             if model_type in ("video", "frame"):
                 stream = "video"
             else:
-                stream = "audio"
+                stream = _find_default_audio_stream(q)
             config.stream = stream
 
         start_time = args.start_time
@@ -53,3 +58,21 @@ def map_asset_tag_dto(args: ImageTagAPIArgs, registry: ContainerRegistry) -> lis
         res.append(TagArgs(feature=feature, run_config=config.run_config, scope=AssetScope(assets=args.assets), replace=args.replace))
         
     return res
+
+def _find_default_audio_stream(q: Content) -> str:
+    # TODO: will this work for live?
+    
+    streams = q.content_object_metadata(
+        metadata_subtree="offerings/default/media_struct/streams",
+        resolve_links=False,
+    )
+
+    assert isinstance(streams, dict)
+
+    for stream_name, stream_info in streams.items():
+        if stream_info.get("codec_type") == "audio" and \
+            stream_info.get("language") == "en" and \
+            stream_info.get("channels") == 2:
+            return stream_name
+        
+    return "audio"
