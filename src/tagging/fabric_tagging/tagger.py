@@ -386,10 +386,6 @@ class FabricTagger:
         if status.status != "Completed":
             self._end_job(jobid, "Failed", RuntimeError(f"Tagging job ended with status: {status.status}"))
             return
-        
-        # NOTE: this is important even though we have the background upload ticks because there could be a small
-        # race condition where we move the job to inactive before the next upload tick runs so we miss some end tags.
-        self._run_upload(job)
 
         # Request transition to complete phase
         self._submit(EnterCompletePhase(job_id=jobid))
@@ -407,6 +403,10 @@ class FabricTagger:
         job = self.jobstore.active_jobs[jobid]
 
         logger.info("entering complete phase", extra={"jobid": jobid})
+
+        # NOTE: we need this one final upload to catch any straggler tags that came in after the last upload tick,
+        # before we move to inactive
+        self._run_upload(job)
 
         assert job.state.media is not None
         # see if there are any missing sources.
@@ -612,8 +612,10 @@ class FabricTagger:
 
         if not new_outputs:
             return
+        
+        total_tags = sum(len(out.tags) for out in new_outputs)
 
-        logger.info("uploading new tags", extra={"jobid": job.get_id(), "num_tags": len(new_outputs)})
+        logger.info("uploading new tags", extra={"jobid": job.get_id(), "num_outputs": len(new_outputs), "num_tags": total_tags})
 
         stream_meta = job.state.media.worker.metadata()
         fps = None
