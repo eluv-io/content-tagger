@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from src.tagging.scheduling.model import *
 from src.tag_containers.containers import TagContainer
 
-
 class MessageType(Enum):
     START_JOB = "start_job"
     STOP_JOB = "stop_job"

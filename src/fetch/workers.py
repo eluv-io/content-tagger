@@ -29,8 +29,10 @@ class FetchContext:
 
     @contextmanager
     def permit(self, key: StreamKey):
+        # throttle total API calls
         self._sem.acquire()
         try:
+            # avoid downloading the same stream from two places
             lock = self._get_lock(key)
             with lock:
                 yield

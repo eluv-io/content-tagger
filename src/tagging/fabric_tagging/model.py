@@ -1,6 +1,6 @@
     
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal
 import time
 
@@ -14,8 +14,12 @@ class FabricTaggerConfig:
 @dataclass
 class TagArgs:
     feature: str
+    # arbitrary params to pass to the model container
     run_config: dict
+    # scope of the tagging job w.r.t the content
     scope: Scope
+    # if false, then the tagger will ignore tagging of a media source if the (source, model) pair
+    # already exists in the tagstore.
     replace: bool
 
     def __str__(self):
@@ -54,6 +58,8 @@ class JobArgs:
     replace: bool
     runconfig: dict
     scope: Scope
+    # whether to retry fetching content if it fails or end the tagging job. 
+    # important for the livestream case where momentary failures can be expected.
     retry_fetch: bool
 
     def __str__(self):

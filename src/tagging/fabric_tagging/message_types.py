@@ -40,7 +40,9 @@ class EnterFetchingPhase:
 
 @dataclass
 class EnterTaggingPhase:
-    """Request to enter tagging phase"""
+    """Request to enter tagging phase. 
+    
+    Passes along the fetched data to tag."""
     job_id: JobID
     data: DownloadResult
 
@@ -49,7 +51,7 @@ class EnterTaggingPhase:
 
 @dataclass
 class EnterCompletePhase:
-    """Request to enter complete phase"""
+    """Request to enter complete phase to signal job completion."""
     job_id: JobID
 
     def __str__(self):
@@ -57,6 +59,7 @@ class EnterCompletePhase:
 
 @dataclass
 class UploadTick:
+    """Request to trigger an upload tick for tags to be uploaded to the tagstore."""
     def __str__(self):
         return "UploadTick()"
 

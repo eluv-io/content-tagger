@@ -80,7 +80,7 @@ class Content:
         return f"Content(qhit={self.qhit}, qid={self.qid}, qhash={self.qhash}, qlib={self.qlib})"
 
 class ContentFactory:
-
+    # Useful for dependency injection to avoid having to pass cfg around everywhere
     def __init__(self, cfg: ContentConfig):
         self.cfg = cfg
 

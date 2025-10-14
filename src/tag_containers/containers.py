@@ -159,9 +159,11 @@ class TagContainer:
         return self._files_to_tags(tag_files)
     
     def name(self) -> str:
+        """A human friendly name for the container, useful for logging"""
         return f"{self.cfg.id}_{self.cfg.model_config.image}"
 
     def required_resources(self) -> SystemResources:
+        """Returns the system resources required by this container to run."""
         return copy(self.cfg.model_config.resources)
 
     def send_eof(self) -> None:

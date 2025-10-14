@@ -13,6 +13,9 @@ def map_video_tag_dto(
         registry: ContainerRegistry,
         q: Content
 ) -> list[TagArgs]:
+    """
+    Map video tagging API arguments to internal TagArgs structures.
+    """
     res = []
     for feature, config in args.features.items():
         if config.stream is not None:

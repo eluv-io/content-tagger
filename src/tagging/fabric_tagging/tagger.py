@@ -72,7 +72,6 @@ class FabricTagger:
         self._schedule_upload_tick()
 
     def tag(self, q: Content, args: TagArgs) -> dict:
-        logger.info("queueing a new tag request", extra={"qhit": q.qhit, "args": args})
         request = TagRequest(q=q, args=args)
         return self._submit(request)
 
@@ -89,12 +88,14 @@ class FabricTagger:
         return self._submit(request)
 
     def _end_job(self, jobid: JobID, status: Literal["Stopped", "Failed", "Completed"], error: Exception | None) -> None:
+        """Used to abort a job early in case of error."""
         if error:
             logger.opt(exception=error).error("job ended with error", extra={"jobid": jobid, "status": status})
         request = StopRequest(qhit=jobid.qhit, feature=jobid.feature, stream=jobid.stream, status=status)
         return self._submit_async(request)
 
     def _submit(self, req: Request) -> Any:
+        """synchronous request - adds a message to the mailbox and blocks till it gets a response"""
         logger.info("submitting synchronous request", extra={"type": type(req), "request": req})
         if self.shutdown_requested:
             raise RuntimeError("FabricTagger received shutdown signal, cannot accept new requests")
@@ -103,17 +104,18 @@ class FabricTagger:
         self.mailbox.put(message)
         response = caller_mailbox.get()
         if response.error:
+            # actor stores the exception so it can be safely re-raised here in the caller thread
             raise response.error
         return response.data
 
     def _submit_async(self, req: Request) -> None:
+        """asynchronous request - adds a message to the mailbox and returns immediately."""
         if not isinstance(req, UploadTick):
             logger.info("submitting async request", extra={"type": type(req), "request": req})
         message = Message(req, queue.Queue())
         self.mailbox.put(message)
 
     def _schedule_upload_tick(self):
-        """Schedule periodic upload tick"""
         if not self.shutdown_requested:
             self.upload_timer = threading.Timer(0.2, lambda: self._submit_async(UploadTick()))
             self.upload_timer.start()
@@ -278,12 +280,14 @@ class FabricTagger:
             if job.args.retry_fetch:
                 retry_delay = 5
                 logger.opt(exception=e).error(f"error during fetching but retry is set to true, retrying in {retry_delay} seconds", extra={"jobid": jobid})
+                # TODO: need to test this
                 threading.Timer(retry_delay, lambda: self._submit_async(EnterFetchingPhase(job_id=jobid))).start()
             else:
                 self._end_job(jobid, "Failed", e)
             return
 
         if job.stop_event.is_set():
+            # 
             return
 
         self._submit(EnterTaggingPhase(job_id=jobid, data=dl_res))
@@ -307,8 +311,10 @@ class FabricTagger:
         new_sources = []
         for s in dl_res.sources:
             if s.name not in job.state.media.downloaded:
+                # yes, this is O(n^2) but n is small
                 new_sources.append(s)
             else:
+                # the downloader is supposed to avoid duplicates, but just in case
                 logger.error("Got a duplicate source, ignoring", extra={"jobid": jobid, "source": s.name})
 
         job.state.media.downloaded += new_sources
@@ -335,7 +341,7 @@ class FabricTagger:
 
     def _send_media(self, container: TagContainer, new_media: list[Source]) -> None:
         """
-        Reads the DownloadResult from the job.state
+        Send the new media to the container for tagging via stdin
         """
         # right now this is a special class but in the future all containers will operate via stdin
         assert isinstance(container, LiveTagContainer)
@@ -357,7 +363,7 @@ class FabricTagger:
         job.state.taghandle = uid
         job.state.tagging_done = tagging_done
 
-        # Start tagging in background thread
+        # dumb waiter thread, just waits on the event and then runs an upload
         threading.Thread(
             target=self._do_tagging, 
             args=(job,), 
@@ -381,10 +387,8 @@ class FabricTagger:
             self._end_job(jobid, "Failed", RuntimeError(f"Tagging job ended with status: {status.status}"))
             return
         
-        # NOTE: We could let the background uploader do this as well, but we do it here for two reasons:
-        # 1. In the case of VOD tagging it's simply faster to do it here
-        # 2. In the case of live tagging, since we will re-enter the fetch phase after tagging
-        #    and thus get new media, it's possible that we will miss the upload window on some tags.
+        # NOTE: this is important even though we have the background upload ticks because there could be a small
+        # race condition where we move the job to inactive before the next upload tick runs so we miss some end tags.
         self._run_upload(job)
 
         # Request transition to complete phase
@@ -405,6 +409,8 @@ class FabricTagger:
         logger.info("entering complete phase", extra={"jobid": jobid})
 
         assert job.state.media is not None
+        # see if there are any missing sources.
+        # TODO: I think there is a slight bug where if a source HAS no tags at all, we will think it is missing.
         for source in job.state.media.downloaded:
             if source.name not in job.state.uploaded_sources:
                 job.state.status.failed.append(source.name)
@@ -467,15 +473,13 @@ class FabricTagger:
         # Stop system tagger jobs in background thread
         def stop_system_jobs():
             for job in jobs:
-                if not job.state.status.status == "Tagging content":
-                    continue
-                try:
-                    self.system_tagger.stop(job.state.taghandle)
-                except Exception as e:
-                    logger.error(f"Error stopping job {job.get_id()}: {e}")
+                if job.state.container is not None:
+                    try:
+                        self.system_tagger.stop(job.state.taghandle)
+                    except Exception as e:
+                        logger.opt(exception=e).error(f"error stopping job", extra={"jobid": job.get_id()})
 
-        if any(job.state.status == "Tagging content" for job in jobs):
-            threading.Thread(target=stop_system_jobs, daemon=True).start()
+        threading.Thread(target=stop_system_jobs, daemon=True).start()
 
         message.response_mailbox.put(Response(data=None, error=None))
 
@@ -497,7 +501,7 @@ class FabricTagger:
         try:
             self._upload_all()
         except Exception as e:
-            logger.exception(f"unexpected error in uploader: {e}")
+            logger.opt(exception=e).error("unexpected error in uploader")
         self._schedule_upload_tick()
         message.response_mailbox.put(Response(data=None, error=None))
 
@@ -529,6 +533,7 @@ class FabricTagger:
             job.state.message = message
 
             if job.stop_event:
+                # for signalling background threads to stop
                 job.stop_event.set()
 
             self.jobstore.inactive_jobs[jobid] = job
@@ -589,13 +594,15 @@ class FabricTagger:
                 logger.opt(exception=e).error("error stopping job", extra={"jobid": job.get_id()})
 
         if job.state.status.status == "Tagging content" and job.state.taghandle is not None:
+            # run in background thread to avoid blocking the main thread
             threading.Thread(target=cleanup, daemon=True).start()
 
     def __upload_tags(self, job: TagJob) -> None:
-        """Upload tags for a job (called from actor thread)"""
+        """Upload tags for a job"""
         if job.state.media is None or job.state.container is None:
             return
 
+        # type checker hint cause it doesn't understand the above condition
         assert job.state.media is not None
         media_to_source = {s.filepath: s for s in job.state.media.downloaded}
 
@@ -621,7 +628,13 @@ class FabricTagger:
                 tag.jobid = job.state.upload_job
                 tags2upload.append(self._fix_tag_offsets(tag, original_src.offset, fps))
 
-        self.tagstore.upload_tags(tags2upload, job.state.upload_job, q=job.args.q)
+        try:
+            self.tagstore.upload_tags(tags2upload, job.state.upload_job, q=job.args.q)
+        except Exception as e:
+            # just keep going in case it's a transient error, we should still have a reference to the tags on disk as long as the tagger doesn't die too.
+            # NOTE: it's possible that if the container ends around the time the tagstore is down we can miss some tags.
+            # TODO: we could add a retry for stopped jobs as well but it's overkill for now.
+            logger.opt(exception=e).error("unexpected error in uploader")
 
         job.state.uploaded_sources.extend(media_to_source[out.source_media].name for out in new_outputs)
 
@@ -650,7 +663,9 @@ class FabricTagger:
                 )
 
     def _fix_tag_offsets(self, tag: Tag, offset: float, fps: float | None) -> Tag:
-        """Fix tag offsets (called from actor thread)"""
+        """Fix tag timestamps & frame indices. The model outputs timestamps relative to the start of the media file
+        but this will help place it relative to the full content object (or do nothing for assets).
+        """
         if tag.start_time is not None:
             tag.start_time += int(offset * 1000)
         if tag.end_time is not None:
@@ -687,7 +702,8 @@ class FabricTagger:
         return tag
     
     def _is_live(self, q: Content) -> bool:
+        # TODO: implement
         return False
 
     def _is_live_job(self, job: TagJob) -> bool:
-        return self._is_live(job.args.q)
+        return self._is_live(job.args.q) 
