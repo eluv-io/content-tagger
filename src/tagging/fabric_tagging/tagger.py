@@ -96,7 +96,7 @@ class FabricTagger:
 
     def _submit(self, req: Request) -> Any:
         """synchronous request - adds a message to the mailbox and blocks till it gets a response"""
-        logger.info("submitting synchronous request", extra={"type": type(req), "request": req})
+        logger.info("submitting synchronous request", extra={"request": req, "queue_size": self.mailbox.qsize()})
         if self.shutdown_requested:
             raise RuntimeError("FabricTagger received shutdown signal, cannot accept new requests")
         caller_mailbox = queue.Queue()
@@ -111,7 +111,7 @@ class FabricTagger:
     def _submit_async(self, req: Request) -> None:
         """asynchronous request - adds a message to the mailbox and returns immediately."""
         if not isinstance(req, UploadTick):
-            logger.info("submitting async request", extra={"type": type(req), "request": req})
+            logger.info("submitting async request", extra={"request": req, "queue_size": self.mailbox.qsize()})
         message = Message(req, queue.Queue())
         self.mailbox.put(message)
 
@@ -287,7 +287,6 @@ class FabricTagger:
             return
 
         if job.stop_event.is_set():
-            # 
             return
 
         self._submit(EnterTaggingPhase(job_id=jobid, data=dl_res))

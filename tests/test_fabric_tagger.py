@@ -436,6 +436,8 @@ def test_cleanup(fabric_tagger, q, sample_tag_args):
     for args in sample_tag_args:
         fabric_tagger.tag(q, args)
 
+    time.sleep(1)
+
     # Cleanup
     fabric_tagger.cleanup()
 
