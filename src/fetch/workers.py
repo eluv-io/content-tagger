@@ -309,15 +309,112 @@ class AssetWorker(FetchSession):
         return [asset for (asset, _), error in zip(file_jobs, status) if error is None]
 
 class LiveWorker(FetchSession):
-    def __init__(self, *args, **kwargs):
-        raise NotImplementedError("LiveWorker is not implemented yet.")
+    def __init__(
+            self,
+            q: Content,
+            scope: LiveScope,
+            rate_limiter: FetchRateLimiter,
+            meta: VideoMetadata,
+            output_dir: str,
+            max_duration: int,
+            exit: threading.Event | None = None
+    ):
+        self.q = q
+        self.scope = scope
+        self.rl = rate_limiter
+        self.meta = meta
+        self.output_dir = output_dir
+        self.exit = exit
+        self.call_count = 0
+        self.max_duration = max_duration * 60
     
-    def download(self) -> DownloadResult:
-        raise NotImplementedError("LiveWorker is not implemented yet.")
-    
-    def metadata(self) -> MediaMetadata:
-        raise NotImplementedError("LiveWorker is not implemented yet.")
+    def metadata(self) -> VideoMetadata:
+        return deepcopy(self.meta)
     
     @property
     def path(self) -> str:
-        raise NotImplementedError("LiveWorker is not implemented yet.")
+        return self.output_dir
+    
+    def download(self) -> DownloadResult:
+        with self.rl.permit((self.q.qhit, str(self.scope.stream))):
+            return self._download()
+    
+    def _download(self) -> DownloadResult:
+        """
+        Downloads a single segment from a live stream.
+        
+        Returns:
+            DownloadResult containing the downloaded segment.
+            done is always False for live streams (they never end).
+        """
+        
+        if not os.path.exists(self.output_dir):
+            os.makedirs(self.output_dir)
+        
+        if self.exit and self.exit.is_set():
+            return DownloadResult(
+                sources=[],
+                failed=[],
+                done=True
+            )
+        
+        chunk_size = self.scope.chunk_size
+        idx = self.call_count
+        
+        # Create filename for this segment
+        filename = f"segment_{chunk_size}_{str(idx).zfill(4)}.mp4"
+        save_path = os.path.join(self.output_dir, filename)
+        
+        try:
+            # Download the live segment
+            # Note: We ignore segment_idx and segment_length for now as per instructions
+            segment_info = self.q.live_media_segment(
+                object_id=self.q.qhit,
+                dest_path=save_path
+            )
+            
+            # Override the segment info as per instructions
+            # Use call_count for calculations
+            offset = self.call_count * chunk_size
+            
+            source = Source(
+                name=f"segment_{chunk_size}_{idx}",
+                filepath=save_path,
+                offset=float(offset)
+            )
+            
+            self.call_count += 1
+            
+            logger.info(
+                f"Downloaded live segment {idx} for {self.q.qhit}",
+                extra={"segment": idx, "offset": offset, "chunk_size": chunk_size}
+            )
+
+            if offset >= self.max_duration:
+                logger.info(f"Reached max duration of {self.max_duration} seconds for live stream {self.q.qhit}")
+                return DownloadResult(
+                    sources=[source],
+                    failed=[],
+                    done=True
+                )
+            
+            return DownloadResult(
+                sources=[source],
+                failed=[],
+                done=False  # Live streams never end
+            )
+            
+        except Exception as e:
+            logger.error(
+                f"Failed to download live segment {idx} for {self.q.qhit}: {str(e)}"
+            )
+            
+            # If download fails, we can either retry or mark as failed
+            # For now, mark as failed and continue
+            self.call_count += 1
+            
+            return DownloadResult(
+                sources=[],
+                failed=[f"segment_{chunk_size}_{idx}"],
+                done=False  # Still not done, can retry or continue
+            )
