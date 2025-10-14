@@ -15,7 +15,7 @@ from src.tags.tagstore.abstract import Tagstore
 
 logger = logger.bind(name="Fetcher")
 
-class Fetcher:
+class FetchFactory:
     def __init__(
         self,
         config: FetcherConfig,
@@ -24,14 +24,14 @@ class Fetcher:
         self.config = config
         self.ts = ts
         # help rate limit & avoid double downloads
-        self.ctx = FetchContext(config.max_downloads)
+        self.rl = FetchRateLimiter(config.max_downloads)
 
-    def get_worker(
+    def get_session(
             self, 
             q: Content, 
             req: DownloadRequest, 
             exit: threading.Event | None = None
-    ) -> DownloadWorker:
+    ) -> FetchSession:
         with timeit(f"Getting media metadata: qhit={q.qhit}, scope={req.scope}"):
             meta = self._get_metadata(q, req.scope)
         with timeit(f"Getting already tagged sources so we can ignore them: qhit={q.qhit}, scope={req.scope}, track={req.preserve_track}"):
@@ -42,7 +42,7 @@ class Fetcher:
             return VodWorker(
                 q=q,
                 scope=req.scope,
-                context=self.ctx,
+                rate_limiter=self.rl,
                 meta=meta,
                 ignore_parts=ignore_sources,
                 output_dir=req.output_dir,
@@ -53,7 +53,7 @@ class Fetcher:
             return AssetWorker(
                 q=q,
                 scope=req.scope,
-                context=self.ctx,
+                rate_limiter=self.rl,
                 meta=meta,
                 ignore_assets=ignore_sources,
                 output_dir=req.output_dir,
@@ -64,7 +64,7 @@ class Fetcher:
             return LiveWorker(
                 q=q,
                 scope=req.scope,
-                context=self.ctx,
+                rate_limiter=self.rl,
                 meta=meta,
                 ignore_parts=[],
                 output_dir=req.output_dir,

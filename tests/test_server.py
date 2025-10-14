@@ -51,10 +51,10 @@ def get_content(auth: str, qhit: str):
 
     return q
 
-class FakeLiveWorker:
+class FakeLiveWorker(FetchSession):
     """Fake DownloadWorker that simulates live streaming by returning one source at a time"""
     
-    def __init__(self, real_worker: DownloadWorker, last_res_has_media: bool=False):
+    def __init__(self, real_worker: FetchSession, last_res_has_media: bool=False):
         self.real_worker = real_worker
         self.call_count = 0
         self._all_sources = None
@@ -267,13 +267,13 @@ def test_live_video_model(app, last_res_has_media):
     tagstore = tagger.tagstore
     
     # Create FakeLiveFetcher with the same config
-    original_get_worker = tagger.fetcher.get_worker
+    original_get_worker = tagger.fetcher.get_session
     
     # Store reference to the FakeLiveWorker so we can access its call_count
     fake_worker_ref: list[FakeLiveWorker | None] = [None]
     
     # NOTE: ugliest thing i've ever seen
-    def fake_get_worker(q: Content, req: DownloadRequest, exit=None) -> DownloadWorker:
+    def fake_get_worker(q: Content, req: DownloadRequest, exit=None) -> FetchSession:
         if fake_worker_ref[0] is not None:
             return fake_worker_ref[0]
         real_worker = original_get_worker(q, req, exit)
@@ -282,7 +282,7 @@ def test_live_video_model(app, last_res_has_media):
         return fake_worker
     
     # Replace with our version
-    tagger.fetcher.get_worker = fake_get_worker
+    tagger.fetcher.get_session = fake_get_worker
     
     tagger._is_live = lambda q: True
     

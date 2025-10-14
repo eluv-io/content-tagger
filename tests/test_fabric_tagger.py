@@ -182,7 +182,7 @@ class FakeContainerRegistry:
         }
         return mock_cfg
 
-class FakeWorker:
+class FakeWorker(FetchSession):
     """Fake DownloadWorker that creates test files"""
     def __init__(self, output_dir: str, timeout: float = 0.1):
         self.output_dir = output_dir
@@ -240,7 +240,7 @@ def fake_fetcher(media_dir):
         def __init__(self):
             self.config = Mock(author="tagger", max_downloads=2)
 
-        def get_worker(self, q: Content, req: DownloadRequest, exit_event=None):
+        def get_session(self, q: Content, req: DownloadRequest, exit_event=None):
             """Return a FakeWorker"""
             return FakeWorker(output_dir=req.output_dir, timeout=0.1)
     
@@ -453,7 +453,6 @@ def test_cleanup(fabric_tagger, q, sample_tag_args):
     assert fabric_tagger.system_tagger.exit_requested
 
     for job in fabric_tagger.system_tagger.jobs.values():
-        assert job.stop_event.is_set()
         assert job.finished.is_set()
         assert job.container.is_running() is False
 

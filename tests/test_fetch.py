@@ -1,7 +1,7 @@
 import pytest
 import os
 
-from src.fetch.fetch_content import Fetcher
+from src.fetch.factory import FetchFactory
 from src.fetch.model import AssetScope, DownloadRequest, FetcherConfig, VideoScope
 from src.tags.tagstore.filesystem_tagstore import Tag
 from src.common.content import Content
@@ -23,9 +23,9 @@ def fetcher_config(temp_dir: str) -> FetcherConfig:
     )
 
 @pytest.fixture
-def fetcher(fetcher_config: FetcherConfig, tag_store) -> Fetcher:
-    """Create a Fetcher instance for testing"""
-    return Fetcher(config=fetcher_config, ts=tag_store)
+def fetcher(fetcher_config: FetcherConfig, tag_store) -> FetchFactory:
+    """Create a FetchFactory instance for testing"""
+    return FetchFactory(config=fetcher_config, ts=tag_store)
 
 @pytest.fixture
 def legacy_vod_content(qfactory, tag_store) -> Content:
@@ -85,7 +85,7 @@ def assets_content(qfactory, tag_store) -> Content:
 
 @pytest.mark.parametrize("content_fixture", ["vod_content", "legacy_vod_content"])
 def test_download_with_replace_true(
-    fetcher: Fetcher, 
+    fetcher: FetchFactory, 
     request,
     content_fixture: str,
     media_dir: str
@@ -107,7 +107,7 @@ def test_download_with_replace_true(
     )
     
     # Download once
-    worker = fetcher.get_worker(vod_content, req)
+    worker = fetcher.get_session(vod_content, req)
     result1 = worker.download()
     assert len(result1.sources) == 2
     assert len(result1.failed) == 0
@@ -145,7 +145,7 @@ def test_download_with_replace_true(
         preserve_track="track"
     )
     
-    worker2 = fetcher.get_worker(vod_content, req2)
+    worker2 = fetcher.get_session(vod_content, req2)
     result2 = worker2.download()
     assert len(result2.sources) == 1
     assert len(result2.failed) == 0
@@ -161,7 +161,7 @@ def test_download_with_replace_true(
     )
 
     # shouldn't replace track2
-    worker3 = fetcher.get_worker(vod_content, req3)
+    worker3 = fetcher.get_session(vod_content, req3)
     result3 = worker3.download()
     assert len(result3.sources) == 2
     assert len(result3.failed) == 0
@@ -177,7 +177,7 @@ def test_download_with_replace_true(
         preserve_track=""
     )
 
-    worker4 = fetcher.get_worker(vod_content, req4)
+    worker4 = fetcher.get_session(vod_content, req4)
     result4 = worker4.download()
     assert len(result4.sources) == 2
     assert len(result4.failed) == 0
@@ -194,7 +194,7 @@ def test_download_with_replace_true(
     )
 
     try:
-        worker5 = fetcher.get_worker(vod_content, req5)
+        worker5 = fetcher.get_session(vod_content, req5)
         result5 = worker5.download()
         assert len(result5.sources) == 2
         assert len(result5.failed) == 0
@@ -202,7 +202,7 @@ def test_download_with_replace_true(
         pass
 
 def test_fetch_assets_with_preserve_track(
-    fetcher: Fetcher, 
+    fetcher: FetchFactory, 
     assets_content: Content,
     media_dir: str
 ):
@@ -213,8 +213,8 @@ def test_fetch_assets_with_preserve_track(
         output_dir=media_dir,
         preserve_track=""
     )
-    
-    worker1 = fetcher.get_worker(assets_content, req1)
+
+    worker1 = fetcher.get_session(assets_content, req1)
     result1 = worker1.download()
     assert len(result1.sources) > 0, "Should have downloaded some assets"
     assert len(result1.failed) == 0, "Should have no failed downloads initially"
@@ -230,7 +230,7 @@ def test_fetch_assets_with_preserve_track(
         preserve_track=""
     )
 
-    worker2 = fetcher.get_worker(assets_content, req2)
+    worker2 = fetcher.get_session(assets_content, req2)
     result2 = worker2.download()
     assert len(result2.sources) == len(selected_assets), "Should return all requested assets"
     assert len(result2.failed) == 0, "Should have no failed downloads"
@@ -275,7 +275,7 @@ def test_fetch_assets_with_preserve_track(
         preserve_track="asset_track"
     )
 
-    worker3 = fetcher.get_worker(assets_content, req3)
+    worker3 = fetcher.get_session(assets_content, req3)
     result3 = worker3.download()
     returned_asset_names_after_tagging = [source.name for source in result3.sources]
     
@@ -296,7 +296,7 @@ def test_fetch_assets_with_preserve_track(
         preserve_track="different_track"
     )
 
-    worker4 = fetcher.get_worker(assets_content, req4)
+    worker4 = fetcher.get_session(assets_content, req4)
     result4 = worker4.download()
     returned_asset_names_different_track = [source.name for source in result4.sources]
     assert set(returned_asset_names_different_track) == set(selected_assets), "Should return all assets when preserve_track doesn't match"
@@ -339,7 +339,7 @@ def test_fetch_assets_with_preserve_track(
         preserve_track="asset_track"
     )
 
-    worker5 = fetcher.get_worker(assets_content, req5)
+    worker5 = fetcher.get_session(assets_content, req5)
     result5 = worker5.download()
     returned_asset_names_after_tagging = [source.name for source in result5.sources]
 

@@ -18,7 +18,7 @@ from src.tag_containers.registry import ContainerRegistry
 from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.common.content import Content
 from src.common.errors import MissingResourceError
-from src.fetch.fetch_content import Fetcher
+from src.fetch.factory import FetchFactory
 from src.tags.tagstore.abstract import Tagstore
 from src.tagging.fabric_tagging.message_types import *
 from src.tagging.fabric_tagging.job_state import *
@@ -51,7 +51,7 @@ class FabricTagger:
             system_tagger: ContainerScheduler,
             cregistry: ContainerRegistry,
             tagstore: Tagstore,
-            fetcher: Fetcher,
+            fetcher: FetchFactory,
             cfg: FabricTaggerConfig
         ):
 
@@ -203,7 +203,7 @@ class FabricTagger:
         # for user to stop the job
         stop_event = threading.Event()
 
-        worker = self.fetcher.get_worker(
+        worker = self.fetcher.get_session(
             q, 
             DownloadRequest(
                 preserve_track=feature if not args.replace else "",

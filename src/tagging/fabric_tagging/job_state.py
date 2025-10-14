@@ -11,7 +11,7 @@ class MediaState:
     # also used to help the uploader know how to compute the offset
     downloaded: list[Source]
     # used to get media
-    worker: DownloadWorker
+    worker: FetchSession
 
 @dataclass
 class JobState:

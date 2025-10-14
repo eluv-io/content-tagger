@@ -17,7 +17,7 @@ from src.fetch.model import DownloadResult
 
 StreamKey = tuple[str, str]
 
-class FetchContext:
+class FetchRateLimiter:
     def __init__(self, max_concurrent: int):
         self._sem = threading.Semaphore(max_concurrent)
         self._locks: dict[StreamKey, threading.Lock] = {}
@@ -39,12 +39,12 @@ class FetchContext:
         finally:
             self._sem.release()
 
-class VodWorker(DownloadWorker):
+class VodWorker(FetchSession):
     def __init__(
             self,
             q: Content,
             scope: VideoScope,
-            context: FetchContext, 
+            rate_limiter: FetchRateLimiter,
             meta: VideoMetadata, 
             ignore_parts: list[str],
             output_dir: str,
@@ -52,7 +52,7 @@ class VodWorker(DownloadWorker):
     ):
         self.q = q
         self.scope = scope
-        self.ctx = context
+        self.rl = rate_limiter
         self.meta = meta
         self.output_dir = output_dir
         self.ignore_parts = set(ignore_parts)
@@ -62,7 +62,7 @@ class VodWorker(DownloadWorker):
         return deepcopy(self.meta)
 
     def download(self) -> DownloadResult:
-        with self.ctx.permit((self.q.qhit, str(self.scope.stream))):
+        with self.rl.permit((self.q.qhit, str(self.scope.stream))):
             return self._download()
 
     @property
@@ -173,12 +173,12 @@ class VodWorker(DownloadWorker):
             done=True
         )
 
-class AssetWorker(DownloadWorker):
+class AssetWorker(FetchSession):
     def __init__(
             self,
             q: Content,
             scope: AssetScope,
-            context: FetchContext,
+            rate_limiter: FetchRateLimiter,
             meta: AssetMetadata,
             ignore_assets: list[str],
             output_dir: str,
@@ -186,7 +186,7 @@ class AssetWorker(DownloadWorker):
     ):
         self.q = q
         self.scope = scope
-        self.ctx = context
+        self.rl = rate_limiter
         self.meta = meta
         self.output_dir = output_dir
         self.ignore_assets = set(ignore_assets)
@@ -196,7 +196,7 @@ class AssetWorker(DownloadWorker):
         return deepcopy(self.meta)
     
     def download(self) -> DownloadResult:
-        with self.ctx.permit((self.q.qhit, "assets")):
+        with self.rl.permit((self.q.qhit, "assets")):
             return self._download()
 
     @property
@@ -308,7 +308,7 @@ class AssetWorker(DownloadWorker):
         assert isinstance(status, list) and len(status) == len(file_jobs)
         return [asset for (asset, _), error in zip(file_jobs, status) if error is None]
 
-class LiveWorker(DownloadWorker):
+class LiveWorker(FetchSession):
     def __init__(self, *args, **kwargs):
         raise NotImplementedError("LiveWorker is not implemented yet.")
     

@@ -60,7 +60,7 @@ class DownloadResult:
     # so the tagger knows when to stop the job
     done: bool
 
-class DownloadWorker(Protocol):
+class FetchSession(Protocol):
     """"""
 
     def metadata(self) -> MediaMetadata:

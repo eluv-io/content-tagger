@@ -13,7 +13,7 @@ import os
 from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tags.tagstore.factory import create_tagstore
-from src.fetch.fetch_content import Fetcher
+from src.fetch.factory import FetchFactory
 from src.common.content import ContentFactory
 from src.tag_containers.registry import ContainerRegistry
 from src.tags.conversion import TagConverter
@@ -77,7 +77,7 @@ def boot_state(app: Flask, cfg: AppConfig) -> None:
 
     system_tagger = ContainerScheduler(cfg.system)
     tagstore = create_tagstore(cfg.tagstore)
-    fetcher = Fetcher(cfg.fetcher, tagstore)
+    fetcher = FetchFactory(cfg.fetcher, tagstore)
     container_registry = ContainerRegistry(cfg.container_registry)
 
     app_state["tagger"] = FabricTagger(
