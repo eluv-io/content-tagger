@@ -1,9 +1,10 @@
 import json
 
 from flask import Response, request, current_app
+from src.api.tagging.dto_mapping import tag_args_from_req
 from src.common.logging import logger
 
-from src.api.tagging.format import TagAPIArgs, ImageTagAPIArgs
+from src.api.tagging.format import ImageTagAPIArgs
 from src.common.errors import BadRequestError
 from src.api.auth import get_authorization
 from src.common.content import Content, ContentFactory
@@ -13,17 +14,7 @@ from src.api.tagging.dto_mapping import *
 def handle_tag(qhit: str) -> Response:
     q = _get_authorized_content(qhit)
 
-    try:
-        body = request.json
-        if body is None:
-            raise BadRequestError("Missing request body")
-        args = TagAPIArgs.from_dict(body)
-    except BadRequestError as e:
-        raise e
-    except Exception as e:
-        logger.exception(e)
-        raise BadRequestError(
-            "Invalid arguments. Please check your request body.") from e
+    args = tag_args_from_req(q)
 
     logger.debug(args)
 

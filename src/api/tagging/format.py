@@ -1,19 +1,21 @@
 
+import dacite
+
 from dataclasses import dataclass
 from common_ml.types import Data
 
 @dataclass
 class ModelParams(Data):
     stream: str | None
-    run_config: dict
+    model: dict
 
     @staticmethod
     def from_dict(data: dict) -> 'ModelParams':
-        return ModelParams(stream=data.get('stream'), run_config=data.get('model', {}))
+        return ModelParams(stream=data.get('stream'), model=data.get('model', {}))
 
 @dataclass
 class TagAPIArgs(Data):
-    # maps feature name to RunConfig
+    # maps feature name to ModelParams
     features: dict[str, ModelParams]
     # start_time in milliseconds (defaults to 0)
     start_time: int | None=None
@@ -46,3 +48,15 @@ class ImageTagAPIArgs(Data):
     def from_dict(data: dict) -> 'ImageTagAPIArgs':
         features = {feature: ModelParams.from_dict(cfg) for feature, cfg in data['features'].items()}
         return ImageTagAPIArgs(features=features, assets=data.get('assets', None), replace=data.get('replace', False))
+    
+@dataclass
+class LiveTagAPIArgs(Data):
+    # maps feature name to ModelParams
+    features: dict[str, ModelParams]
+    
+    segment_length: int
+    max_duration: int | None
+
+    @staticmethod
+    def from_dict(data: dict) -> 'LiveTagAPIArgs':
+        return dacite.from_dict(data_class=LiveTagAPIArgs, data=data)
