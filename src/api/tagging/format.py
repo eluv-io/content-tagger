@@ -1,13 +1,13 @@
 
 import dacite
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from common_ml.types import Data
 
 @dataclass
 class ModelParams(Data):
-    stream: str | None
-    model: dict
+    stream: str | None = None
+    model: dict = field(default_factory=dict)
 
     @staticmethod
     def from_dict(data: dict) -> 'ModelParams':
