@@ -18,6 +18,20 @@ def test_qid():
     return "iq__3C58dDYxsn5KKSWGYrfYr44ykJRm"
 
 @pytest.fixture
+def live_q():
+    token = os.getenv("LIVE_AUTH")
+    if not token:
+        pytest.skip("LIVE_AUTH not set in environment")
+    cfg = ContentConfig(
+        config_url="https://host-76-74-29-5.contentfabric.io/config?self&qspace=main", 
+        parts_url="http://192.168.96.203/config?self&qspace=main",
+        live_media_url="https://host-76-74-29-5.contentfabric.io/config?self&qspace=main"
+    )
+    factory = ContentFactory(cfg=cfg)
+    q = factory.create_content(qhit="iq__HPzDaWpfmQzj2Afa3XFq2cpun5n", auth=token)
+    return q
+
+@pytest.fixture
 def temp_dir():
     """Create a temporary directory for tests"""
     temp_path = tempfile.mkdtemp()

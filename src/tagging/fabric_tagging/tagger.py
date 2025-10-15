@@ -170,7 +170,7 @@ class FabricTagger:
         self._validate_args(args)
         logger.info("processing tag request", extra={"qhit": q.qhit, "args": args})
 
-        is_live = self._is_live(q)
+        is_live = isinstance(args.scope, LiveScope)
 
         job = self._create_job(q, args.feature, args, is_live)
 
@@ -352,7 +352,7 @@ class FabricTagger:
             model_id=job.args.feature,
             media_input=media_input,
             run_config=job.args.runconfig,
-            live=self._is_live_job(job),
+            live=isinstance(job.args.scope, LiveScope),
             job_id=job.args.q.qhit + "-" + datetime.now().strftime("%Y%m%d%H%M") + "-" + str(uuid())[0:6]
         ))
         
@@ -701,10 +701,3 @@ class FabricTagger:
 
         tag.additional_info["frame_tags"] = adjusted
         return tag
-    
-    def _is_live(self, q: Content) -> bool:
-        # TODO: implement
-        return False
-
-    def _is_live_job(self, job: TagJob) -> bool:
-        return self._is_live(job.args.q) 

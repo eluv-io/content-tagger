@@ -314,9 +314,8 @@ class LiveWorker(FetchSession):
             q: Content,
             scope: LiveScope,
             rate_limiter: FetchRateLimiter,
-            meta: VideoMetadata,
+            meta: LiveMetadata,
             output_dir: str,
-            max_duration: int,
             exit: threading.Event | None = None
     ):
         self.q = q
@@ -326,9 +325,8 @@ class LiveWorker(FetchSession):
         self.output_dir = output_dir
         self.exit = exit
         self.call_count = 0
-        self.max_duration = max_duration * 60
     
-    def metadata(self) -> VideoMetadata:
+    def metadata(self) -> LiveMetadata:
         return deepcopy(self.meta)
     
     @property
@@ -365,56 +363,41 @@ class LiveWorker(FetchSession):
         filename = f"segment_{chunk_size}_{str(idx).zfill(4)}.mp4"
         save_path = os.path.join(self.output_dir, filename)
         
-        try:
-            # Download the live segment
-            # Note: We ignore segment_idx and segment_length for now as per instructions
-            segment_info = self.q.live_media_segment(
-                object_id=self.q.qhit,
-                dest_path=save_path
-            )
-            
-            # Override the segment info as per instructions
-            # Use call_count for calculations
-            offset = self.call_count * chunk_size
-            
-            source = Source(
-                name=f"segment_{chunk_size}_{idx}",
-                filepath=save_path,
-                offset=float(offset)
-            )
-            
-            self.call_count += 1
-            
-            logger.info(
-                f"Downloaded live segment {idx} for {self.q.qhit}",
-                extra={"segment": idx, "offset": offset, "chunk_size": chunk_size}
-            )
+        # Download the live segment
+        # Note: We ignore segment_idx and segment_length for now as per instructions
+        segment_info = self.q.live_media_segment(
+            object_id=self.q.qhit,
+            dest_path=save_path
+        )
+        
+        # Override the segment info as per instructions
+        # Use call_count for calculations
+        offset = self.call_count * chunk_size
+        
+        source = Source(
+            name=f"segment_{chunk_size}_{idx}",
+            filepath=save_path,
+            offset=float(offset)
+        )
+        
+        self.call_count += 1
+        
+        logger.info(
+            f"Downloaded live segment {idx} for {self.q.qhit}",
+            extra={"segment": idx, "offset": offset, "chunk_size": chunk_size}
+        )
 
-            if offset >= self.max_duration:
-                logger.info(f"Reached max duration of {self.max_duration} seconds for live stream {self.q.qhit}")
-                return DownloadResult(
-                    sources=[source],
-                    failed=[],
-                    done=True
-                )
-            
+        if self.scope.max_duration is not None \
+            and offset >= self.scope.max_duration:
+            logger.info(f"Reached max duration of {self.scope.max_duration} seconds for live stream {self.q.qhit}")
             return DownloadResult(
                 sources=[source],
                 failed=[],
-                done=False  # Live streams never end
+                done=True
             )
-            
-        except Exception as e:
-            logger.error(
-                f"Failed to download live segment {idx} for {self.q.qhit}: {str(e)}"
-            )
-            
-            # If download fails, we can either retry or mark as failed
-            # For now, mark as failed and continue
-            self.call_count += 1
-            
-            return DownloadResult(
-                sources=[],
-                failed=[f"segment_{chunk_size}_{idx}"],
-                done=False  # Still not done, can retry or continue
-            )
+        
+        return DownloadResult(
+            sources=[source],
+            failed=[],
+            done=False  # Live streams never end
+        )

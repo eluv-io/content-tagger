@@ -28,6 +28,7 @@ class VideoScope(Scope):
 class LiveScope(Scope):
     stream: str
     chunk_size: int
+    max_duration: int | None
 
 class MediaMetadata: ...
 
@@ -40,6 +41,10 @@ class VideoMetadata(MediaMetadata):
 
 @dataclass
 class AssetMetadata(MediaMetadata): ...
+
+@dataclass
+class LiveMetadata(MediaMetadata):
+    fps: float
 
 @dataclass
 class DownloadRequest:

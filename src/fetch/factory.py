@@ -60,13 +60,12 @@ class FetchFactory:
                 exit=exit
             )
         elif isinstance(req.scope, LiveScope):
-            assert isinstance(meta, VideoMetadata)
+            assert isinstance(meta, LiveMetadata)
             return LiveWorker(
                 q=q,
                 scope=req.scope,
                 rate_limiter=self.rl,
                 meta=meta,
-                ignore_parts=[],
                 output_dir=req.output_dir,
                 exit=exit
             )
@@ -94,7 +93,7 @@ class FetchFactory:
             # no important metadata for assets yet
             return AssetMetadata()
         elif isinstance(scope, LiveScope):
-            return self._fetch_livestream_metadata(q, scope.stream)
+            return LiveMetadata(fps=50.0)   ## TODO: fetch real fps
         else:
             raise BadRequestError(f"Unknown scope type: {type(scope)}")
 

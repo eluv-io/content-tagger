@@ -9,6 +9,7 @@ from src.api.auth import parse_qhit
 class ContentConfig:
     config_url: str
     parts_url: str
+    live_media_url: str
 
 class Content:
     """Content object representation and API wrapper.
@@ -32,6 +33,9 @@ class Content:
         parts_client = ElvClient.from_configuration_url(
             cfg.parts_url, static_token=auth)
 
+        live_client = ElvClient.from_configuration_url(
+            cfg.live_media_url, static_token=auth)
+
         # will raise HTTPError if auth is invalid or qhit is not found
         qinfo = client.content_object(**parse_qhit(qhit))
 
@@ -45,6 +49,7 @@ class Content:
         self.qhit = qhit
         self._client = client
         self._parts_client = parts_client
+        self._live_client = live_client
 
     def token(self) -> str:
         return self._client.token
@@ -52,6 +57,10 @@ class Content:
     def content_object_versions(self) -> dict[str, Any]:
         """Get all versions of the content object."""
         return self._client.content_object_versions(object_id=self.qid, library_id=self.qlib)
+
+    def live_media_segment(self, **kwargs):
+        # forward without library id
+        return self._live_client.live_media_segment(**kwargs)
     
     def download_part(self, **kwargs) -> None:
         """Download a part of the content object."""

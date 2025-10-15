@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import patch
 import os
 import shutil
 import time
@@ -43,7 +44,8 @@ def get_content(auth: str, qhit: str):
     
     cfg = ContentConfig(
         config_url="https://host-154-14-185-98.contentfabric.io/config?self&qspace=main", 
-        parts_url="https://host-154-14-185-98.contentfabric.io/config?self&qspace=main"
+        parts_url="https://host-154-14-185-98.contentfabric.io/config?self&qspace=main",
+        live_media_url="https://host-76-74-29-5.contentfabric.io/config?self&qspace=main"
     )
     factory = ContentFactory(cfg=cfg)
     
@@ -132,7 +134,8 @@ def test_config(test_dir, tagger_config):
         root_dir=test_dir,
         content=ContentConfig(
             config_url="https://main.net955305.contentfabric.io/config",
-            parts_url="http://192.168.96.203/config?self&qspace=main"
+            parts_url="http://192.168.96.203/config?self&qspace=main",
+            live_media_url="https://host-76-74-29-5.contentfabric.io/config?self&qspace=main"
         ),
         tagstore=TagstoreConfig(
             base_dir=os.path.join(test_dir, "tags")
@@ -256,6 +259,7 @@ def test_video_model(client):
     assert completed, "Timeout waiting for jobs to complete"
 
 @pytest.mark.parametrize("last_res_has_media", [True, False])
+@patch('src.api.tagging.dto_mapping._is_live', return_value=True)
 def test_live_video_model(app, last_res_has_media):
     """Test the live tagging workflow with FakeLiveFetcher."""
     # Get auth tokens
@@ -283,8 +287,6 @@ def test_live_video_model(app, last_res_has_media):
     
     # Replace with our version
     tagger.fetcher.get_session = fake_get_worker
-    
-    tagger._is_live = lambda q: True
     
     # Create test client
     client = app.test_client()
@@ -334,6 +336,98 @@ def test_live_video_model(app, last_res_has_media):
         assert 'frame_tags' in tag.additional_info
 
     logger.info(f"Live test completed successfully with {fake_worker_ref[0].call_count} fetch calls (last_res_has_media={last_res_has_media})")
+
+@patch('src.api.tagging.dto_mapping._is_live')
+def test_real_live_stream(is_live, app, live_q):
+    """Test real live stream tagging with LiveWorker."""
+    is_live.return_value = True
+    qid = live_q.qid
+    auth = live_q._client.token
+    
+    tagger: FabricTagger = app.config["state"]["tagger"]
+    tagstore = tagger.tagstore
+    
+    # Create test client
+    client = app.test_client()
+    
+    # Start live tagging with test_model
+    # Use small chunk_size and max_duration for faster testing
+    response = client.post(
+        f"/{qid}/tag?authorization={auth}", 
+        json={
+            "features": {
+                "test_model": {
+                    "model": {"tags": ["hello1", "hello2"]}
+                }
+            },
+            "max_duration": 20,
+            "segment_length": 4,
+            "replace": True
+        }
+    )
+    assert response.status_code == 200
+    
+    # Wait for some segments to be processed (but not completion since it's live)
+    # Check status periodically
+    start_time = time.time()
+    timeout = 25
+    segments_found = False
+    
+    while time.time() - start_time < timeout:
+        response = client.get(f"/{qid}/status?authorization={auth}")
+        if response.status_code == 200:
+            result = response.get_json()
+            print(json.dumps(result, indent=2))
+            
+            # Check if we have the test_model job
+            if 'video' in result and 'test_model' in result['video']:
+                status = result['video']['test_model']['status']
+                progress = result['video']['test_model']['tagging_progress']
+                
+                # Once we see progress or completion, we know segments were processed
+                if progress != "0%" or status == "Completed":
+                    segments_found = True
+                    break
+        
+        time.sleep(3)
+    
+    assert segments_found, "No segments were processed within timeout"
+    
+    # Stop the live job (since it won't stop on its own without max_duration being reached)
+    response = client.post(f"/{qid}/stop/test_model?authorization={auth}")
+    assert response.status_code == 200
+    
+    # Wait a bit for the stop to take effect
+    time.sleep(2)
+    
+    # Verify final status is Stopped or Completed
+    response = client.get(f"/{qid}/status?authorization={auth}")
+    assert response.status_code == 200
+    result = response.get_json()
+    
+    final_status = result['video']['test_model']['status']
+    assert final_status in ['Stopped', 'Completed'], f"Expected Stopped or Completed, got {final_status}"
+    
+    # Get tags and verify we have some
+    try:
+        jobid = tagstore.find_jobs(q=live_q, stream='video')[0]
+        tags = tagstore.find_tags(jobid=jobid, q=live_q)
+        tags = sorted(tags, key=lambda x: x.start_time)
+        
+        # Should have at least some tags from the segments
+        assert len(tags) > 0, "Expected at least some tags from live stream"
+        
+        # Verify tags alternate between hello1 and hello2
+        next_tag = 'hello1'
+        for tag in tags:
+            assert tag.text == next_tag, f"Expected {next_tag}, got {tag.text}"
+            next_tag = 'hello2' if next_tag == 'hello1' else 'hello1'
+            assert 'frame_tags' in tag.additional_info
+        
+        logger.info(f"Live stream test completed successfully with {len(tags)} tags")
+    except IndexError:
+        # If no jobs found, that's also acceptable since we might have stopped before any tags were uploaded
+        logger.info("No tags were uploaded before job was stopped")
 
 def test_asset_tag(client):
     """Test asset tagging."""
