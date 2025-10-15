@@ -125,11 +125,12 @@ class FabricTagger:
         logger.info("FabricTagger actor started")
 
         while not self.shutdown_requested:
-            message = self.mailbox.get(timeout=1.0)
             try:
-                self._handle_message(message)
+                message = self.mailbox.get(timeout=1.0)
             except queue.Empty:
                 continue
+            try:
+                self._handle_message(message)
             except Exception as e:
                 logger.opt(exception=e).error("error in actor loop", extra={"message": message.data})
                 time.sleep(0.2)
@@ -195,7 +196,7 @@ class FabricTagger:
             qhit=q.qhit,
             track=feature,
             # TODO: change
-            stream=args.scope.stream if isinstance(args.scope, VideoScope) and args.scope.stream else "assets",
+            stream=args.scope.stream if isinstance(args.scope, VideoScope | LiveScope) and args.scope.stream else "assets",
             author="tagger",
             q=q
         )
@@ -378,7 +379,7 @@ class FabricTagger:
         job.state.tagging_done.wait()
 
         if job.stop_event.is_set():
-            logger.info("tagging was stopped by the user", extra={"jobid": jobid})
+            logger.info("tagging was stopped via stop event", extra={"jobid": jobid})
             return
 
         status = self.system_tagger.status(job.state.taghandle)
@@ -435,7 +436,7 @@ class FabricTagger:
         for jid in jobids:
             job = active_jobs.get(jid) or inactive_jobs[jid]
             feature = job.args.feature
-            stream = job.args.scope.stream if isinstance(job.args.scope, VideoScope) and job.args.scope.stream else "assets"
+            stream = job.args.scope.stream if isinstance(job.args.scope, VideoScope | LiveScope) and job.args.scope.stream else "assets"
             res[stream][feature] = self._summarize_status(job.state)
 
         message.response_mailbox.put(Response(data=dict(res), error=None))

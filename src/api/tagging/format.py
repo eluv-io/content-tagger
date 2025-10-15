@@ -53,9 +53,9 @@ class ImageTagAPIArgs(Data):
 class LiveTagAPIArgs(Data):
     # maps feature name to ModelParams
     features: dict[str, ModelParams]
-    
-    segment_length: int
-    max_duration: int | None
+
+    segment_length: int = 4
+    max_duration: int | None = None
 
     @staticmethod
     def from_dict(data: dict) -> 'LiveTagAPIArgs':

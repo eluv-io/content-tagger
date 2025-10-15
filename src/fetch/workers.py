@@ -6,6 +6,7 @@ import shutil
 from copy import deepcopy
 from contextlib import contextmanager
 import threading
+import time
 
 from common_ml.video_processing import unfrag_video
 from common_ml.utils.files import get_file_type, encode_path
@@ -345,6 +346,8 @@ class LiveWorker(FetchSession):
             DownloadResult containing the downloaded segment.
             done is always False for live streams (they never end).
         """
+
+        time.sleep(1)
         
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
@@ -395,7 +398,7 @@ class LiveWorker(FetchSession):
                 failed=[],
                 done=True
             )
-        
+
         return DownloadResult(
             sources=[source],
             failed=[],

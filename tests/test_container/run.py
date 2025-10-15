@@ -20,7 +20,7 @@ class DummyModel(FrameModel):
     def set_config(self, config):
         self.config = config
 
-    def tag(self, frame) -> List[FrameTag]:
+    def tag(self, img) -> List[FrameTag]:
         tag = self.tags[self.idx]
         self.idx = (self.idx + 1) % len(self.tags)
         return [FrameTag(text=tag, box={"x1": 0, "y1": 0, "x2": 0, "y2": 0}, confidence=1.0)]
@@ -51,7 +51,17 @@ def run(file_paths: List[str], runtime_config: str | None = None):
     cfg = get_runtime_config(runtime_config)
     model = DummyModel(run_config=cfg)
     out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tags')
-    default_tag(model, file_paths, out_path)
+    try:
+        default_tag(model, file_paths, out_path)
+    except Exception as e:
+        _dump_error_tags(file_paths, e)
+
+def _dump_error_tags(media_files: list[str], e: Exception) -> None:
+    for media_file in media_files:
+        tag = {"start_time": 0, "end_time": 0, "text": f"Error: {str(e)}"}
+        out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tags')
+        with open(os.path.join(out_path, f'{os.path.basename(media_file)}_tags.json'), 'w') as f:
+            json.dump([tag], f)
 
 def get_tag_fn(runtime_config: str | None = None):
     """Create a tag function with the specified configuration"""
@@ -64,9 +74,12 @@ def get_tag_fn(runtime_config: str | None = None):
         for filepath in file_paths:
             print(f"Got {filepath}")
             sys.stdout.flush()
-        
-        default_tag(model, file_paths, out_path)
-    
+
+        try:
+            default_tag(model, file_paths, out_path)
+        except Exception as e:
+            _dump_error_tags(file_paths, e)
+
     return tag_fn
 
 if __name__ == '__main__':

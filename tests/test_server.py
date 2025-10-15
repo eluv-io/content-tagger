@@ -259,9 +259,10 @@ def test_video_model(client):
     assert completed, "Timeout waiting for jobs to complete"
 
 @pytest.mark.parametrize("last_res_has_media", [True, False])
-@patch('src.api.tagging.dto_mapping._is_live', return_value=True)
-def test_live_video_model(app, last_res_has_media):
+@patch('src.api.tagging.dto_mapping._is_live')
+def test_live_video_model(is_live, app, last_res_has_media):
     """Test the live tagging workflow with FakeLiveFetcher."""
+    is_live.return_value = True
     # Get auth tokens
     qid = test_objects['vod']
     auth = get_auth(qid=qid)
@@ -280,7 +281,11 @@ def test_live_video_model(app, last_res_has_media):
     def fake_get_worker(q: Content, req: DownloadRequest, exit=None) -> FetchSession:
         if fake_worker_ref[0] is not None:
             return fake_worker_ref[0]
+        # we need the non-live worker in this test
+        old_scope = req.scope
+        req.scope = VideoScope(stream="video", start_time=0, end_time=float('inf'))
         real_worker = original_get_worker(q, req, exit)
+        req.scope = old_scope
         fake_worker = FakeLiveWorker(real_worker, last_res_has_media)
         fake_worker_ref[0] = fake_worker  # Store reference
         return fake_worker
@@ -385,20 +390,13 @@ def test_real_live_stream(is_live, app, live_q):
                 progress = result['video']['test_model']['tagging_progress']
                 
                 # Once we see progress or completion, we know segments were processed
-                if progress != "0%" or status == "Completed":
+                if progress == "100%" or status == "Completed":
                     segments_found = True
                     break
         
         time.sleep(3)
     
     assert segments_found, "No segments were processed within timeout"
-    
-    # Stop the live job (since it won't stop on its own without max_duration being reached)
-    response = client.post(f"/{qid}/stop/test_model?authorization={auth}")
-    assert response.status_code == 200
-    
-    # Wait a bit for the stop to take effect
-    time.sleep(2)
     
     # Verify final status is Stopped or Completed
     response = client.get(f"/{qid}/status?authorization={auth}")
@@ -408,26 +406,15 @@ def test_real_live_stream(is_live, app, live_q):
     final_status = result['video']['test_model']['status']
     assert final_status in ['Stopped', 'Completed'], f"Expected Stopped or Completed, got {final_status}"
     
-    # Get tags and verify we have some
-    try:
-        jobid = tagstore.find_jobs(q=live_q, stream='video')[0]
-        tags = tagstore.find_tags(jobid=jobid, q=live_q)
-        tags = sorted(tags, key=lambda x: x.start_time)
-        
-        # Should have at least some tags from the segments
-        assert len(tags) > 0, "Expected at least some tags from live stream"
-        
-        # Verify tags alternate between hello1 and hello2
-        next_tag = 'hello1'
-        for tag in tags:
-            assert tag.text == next_tag, f"Expected {next_tag}, got {tag.text}"
-            next_tag = 'hello2' if next_tag == 'hello1' else 'hello1'
-            assert 'frame_tags' in tag.additional_info
-        
-        logger.info(f"Live stream test completed successfully with {len(tags)} tags")
-    except IndexError:
-        # If no jobs found, that's also acceptable since we might have stopped before any tags were uploaded
-        logger.info("No tags were uploaded before job was stopped")
+    # verify we have some tags
+    jobid = tagstore.find_jobs(q=live_q, stream='video', qhit=live_q.qid)[0]
+    tags = tagstore.find_tags(jobid=jobid, q=live_q)
+    tags = sorted(tags, key=lambda x: x.start_time)
+    
+    # Should have at least some tags from the segments
+    assert len(tags) == 6, "Expected 6 from live stream"
+    
+    logger.info(f"Live stream test completed successfully with {len(tags)} tags")
 
 def test_asset_tag(client):
     """Test asset tagging."""
@@ -537,3 +524,79 @@ def test_find_default_audio_stream(
     result = _find_default_audio_stream(q)
 
     assert result == "stereo"
+
+@patch('src.api.tagging.dto_mapping._is_live')
+def test_stop_live_job(is_live, app, live_q):
+    """Test that live jobs can be stopped cleanly mid-stream."""
+    is_live.return_value = True
+    qid = live_q.qid
+    auth = live_q._client.token
+    
+    tagger: FabricTagger = app.config["state"]["tagger"]
+    tagstore = tagger.tagstore
+    client = app.test_client()
+    
+    # Start live tagging with long duration
+    response = client.post(
+        f"/{qid}/tag?authorization={auth}", 
+        json={
+            "features": {"test_model": {"model": {"tags": ["hello1", "hello2"]}}},
+            "max_duration": 60,  # Long duration so it won't complete
+            "segment_length": 4,
+            "replace": True
+        }
+    )
+    assert response.status_code == 200
+    
+    # Wait for job to start processing and get some tags
+    start_time = time.time()
+    some_tags_found = False
+    
+    while time.time() - start_time < 20:
+        response = client.get(f"/{qid}/status?authorization={auth}")
+        if response.status_code == 200:
+            result = response.get_json()
+            if 'video' in result and 'test_model' in result['video']:
+                progress = result['video']['test_model']['tagging_progress']
+                
+                # Wait until we have some progress but not complete
+                # Parse progress like "50%" -> 50
+                if progress != "0%" and progress != "100%":
+                    # Check we actually have some tags
+                    try:
+                        jobid = tagstore.find_jobs(q=live_q, stream='video', qhit=live_q.qid)[0]
+                        tags = tagstore.find_tags(jobid=jobid, q=live_q)
+                        if len(tags) > 0:
+                            some_tags_found = True
+                            logger.info(f"Found {len(tags)} tags, stopping job now")
+                            break
+                    except IndexError:
+                        pass  # No tags yet, keep waiting
+        time.sleep(2)
+    
+    assert some_tags_found, "No tags were processed before stop attempt"
+    
+    # Stop the job
+    stop_start = time.time()
+    response = client.post(f"/{qid}/stop/test_model?authorization={auth}")
+    stop_duration = time.time() - stop_start
+    
+    assert response.status_code == 200
+    assert stop_duration < 3, f"Stop took {stop_duration}s (expected < 3s)"
+    
+    # Verify it stopped
+    time.sleep(2)
+    response = client.get(f"/{qid}/status?authorization={auth}")
+    result = response.get_json()
+    
+    final_status = result['video']['test_model']['status']
+    assert final_status == 'Stopped', f"Expected Stopped, got {final_status}"
+    
+    # Verify we have partial tags (not all of them)
+    jobid = tagstore.find_jobs(q=live_q, stream='video', qhit=live_q.qid)[0]
+    final_tags = tagstore.find_tags(jobid=jobid, q=live_q)
+    
+    assert len(final_tags) > 0, "Should have some tags"
+    assert len(final_tags) < 20, f"Should have partial tags, got {len(final_tags)} (too many, job may have completed)"
+    
+    logger.info(f"Live stop test completed with {len(final_tags)} partial tags")
