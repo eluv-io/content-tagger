@@ -4,6 +4,7 @@ These functions map between the API DTOs and service layer structs.
 
 from flask import request
 from loguru import logger
+from requests import HTTPError
 
 from src.api.tagging.format import *
 from src.fetch.model import *
@@ -108,4 +109,12 @@ def tag_args_from_req(q: Content) -> TagAPIArgs | LiveTagAPIArgs:
     return args
     
 def _is_live(q: Content) -> bool:
-    return False
+    try:
+        edge_write_token = q.content_object_metadata(
+            metadata_subtree="live_recording/status/edge_write_token",
+            resolve_links=False,
+        )
+    except HTTPError:
+        return False
+
+    return isinstance(edge_write_token, str) and edge_write_token.startswith("tqw__")

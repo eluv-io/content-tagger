@@ -342,10 +342,8 @@ def test_live_video_model(is_live, app, last_res_has_media):
 
     logger.info(f"Live test completed successfully with {fake_worker_ref[0].call_count} fetch calls (last_res_has_media={last_res_has_media})")
 
-@patch('src.api.tagging.dto_mapping._is_live')
-def test_real_live_stream(is_live, app, live_q):
+def test_real_live_stream(app, live_q):
     """Test real live stream tagging with LiveWorker."""
-    is_live.return_value = True
     qid = live_q.qid
     auth = live_q._client.token
     
@@ -525,10 +523,13 @@ def test_find_default_audio_stream(
 
     assert result == "stereo"
 
-@patch('src.api.tagging.dto_mapping._is_live')
-def test_stop_live_job(is_live, app, live_q):
+def test_is_live(live_q):
+    """Test the _is_live function."""
+    from src.api.tagging.dto_mapping import _is_live
+    assert _is_live(live_q) == True
+
+def test_stop_live_job(app, live_q):
     """Test that live jobs can be stopped cleanly mid-stream."""
-    is_live.return_value = True
     qid = live_q.qid
     auth = live_q._client.token
     
