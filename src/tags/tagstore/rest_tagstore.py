@@ -156,6 +156,10 @@ class RestTagstore(Tagstore):
             params['limit'] = filters['limit']
         if 'offset' in filters:
             params['start'] = filters['offset']
+
+        # if no limit, then specify a high limit to avoid default limit
+        if 'limit' not in params:
+            params['limit'] = 100000
         
         response = self.session.get(
             f"{self.base_url}/{qhit}/tags", 
