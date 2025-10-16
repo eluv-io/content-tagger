@@ -61,11 +61,10 @@ class FetchFactory:
             )
         elif isinstance(req.scope, LiveScope):
             assert isinstance(meta, LiveMetadata)
-            return LiveWorker(
+            return LivePartWorker(
                 q=q,
                 scope=req.scope,
                 rate_limiter=self.rl,
-                meta=meta,
                 output_dir=req.output_dir,
                 exit=exit
             )

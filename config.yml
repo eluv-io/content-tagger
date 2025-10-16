@@ -4,7 +4,7 @@ content:
   live_media_url: https://host-76-74-29-5.contentfabric.io/config?self&qspace=main
 
 tagstore:
-  base_dir: data/tags
+  base_url: http://localhost:8102
 
 tag_converter:
   name_mapping:
