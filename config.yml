@@ -4,7 +4,7 @@ content:
   live_media_url: https://host-76-74-29-5.contentfabric.io/config?self&qspace=main
 
 tagstore:
-  base_url: http://localhost:8102
+  base_url: https://ai.contentfabric.io/tagstore
 
 tag_converter:
   name_mapping:
@@ -92,8 +92,20 @@ container_registry:
       resources: {
         "gpu": 1
       }
-    test:
-      image: "localhost/test:latest"
+    music:
+      image: "ml-004.eluvio:5100/music:latest"
+      type: "audio"
+      resources: {
+        "cpu_juice": 10
+      }
+    breakdance:
+      image: "localhost/breakdance"
+      type: "video"
+      resources: {
+        "gpu": 1
+      }
+    test_model:
+      image: "localhost/test_model:latest"
       type: "video"
       resources: {
         "gpu": 1
