@@ -216,6 +216,27 @@ def get_flask_app():
                 threading.Thread(target=_video_tag, args=(job, _get_authorization(request), args.start_time, args.end_time)).start()
         return Response(response=json.dumps({'message': f'Tagging started on {qhit}'}), status=200, mimetype='application/json')
     
+    tokencache = None
+    tokentime = 0
+    def _get_admin_token():
+        nonlocal tokencache, tokentime
+
+        if tokencache and (time.time() - tokentime) < 15:
+            return tokencache
+        
+        token = os.environ.get("ADMIN_TOKEN", None)
+
+        if not token:    
+            ## read from file
+            token_file = ".admin_token"
+            if os.path.exists(token_file):
+                with open(token_file, 'r') as f:
+                    token = f.read().strip()
+    
+        tokencache = token
+        tokentime = time.time()
+        return token
+    
     def _video_tag(job: Job, authorization: str, start_time: Optional[int], end_time: Optional[int]) -> None:
         part_download_client = ElvClient.from_configuration_url(config_url=config["fabric"]["parts_url"], static_token=authorization)
         media_files, failed = _download_content(job, part_download_client, start_time=start_time, end_time=end_time)
@@ -743,7 +764,13 @@ def get_flask_app():
     @app.route('/<qhit>/status', methods=['GET'])
     def status(qhit: str) -> Response:
         """Get the status of all tag jobs for a given qhit"""
-        _, error_response = _get_client(request, qhit, config["fabric"]["config_url"])
+
+        auth = _get_authorization(request)
+        if auth == _get_admin_token():
+            error_response = None
+        else:
+            _, error_response = _get_client(request, qhit, config["fabric"]["config_url"])
+            
         if error_response:
             return error_response
         with lock:
@@ -761,7 +788,33 @@ def get_flask_app():
             for feature in list(res[stream].keys()):
                 res[stream][feature] = asdict(res[stream][feature])
         return Response(response=json.dumps(res), status=200, mimetype='application/json')
+
     
+    @app.route('/allstatus', methods=['GET'])
+    def allstatus() -> Response:
+        """Get the status of all tag jobs"""
+
+        auth = _get_authorization(request)
+        if auth == _get_admin_token():
+            pass
+        else:
+            return Response(response=json.dumps({'error': 'Unauthorized'}), status=403, mimetype='application/json')
+        
+        with lock:
+            res = defaultdict(dict)
+            qhits = set(active_jobs.keys()) | set(inactive_jobs.keys())
+            for qhit in qhits:
+                jobs = set(active_jobs[qhit].keys()) | set(inactive_jobs[qhit].keys())
+                for job in jobs:
+                    stream, feature = job
+                    res[qhit] = defaultdict(dict)
+                    if job in active_jobs[qhit]:
+                        res[qhit][stream][feature] = asdict(_get_job_status(active_jobs[qhit][job]))
+                    else:
+                        res[qhit][stream][feature] = asdict(_get_job_status(inactive_jobs[qhit][job]))
+
+        return Response(response=json.dumps(res), status=200, mimetype='application/json')
+
     @app.route('/<qhit>/stop/<feature>', methods=['POST'])
     def stop(qhit: str, feature: str) -> Response:
         _, error_response = _get_client(request, qhit, config["fabric"]["config_url"])

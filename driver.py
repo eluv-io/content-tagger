@@ -98,6 +98,10 @@ def get_write_token(qhit: str, config: str) -> str:
     write_token = json.loads(out)["q"]["write_token"]
     return write_token
 
+def allstatus(auth: str):
+    res = requests.get(f"{server}/allstatus", params={"authorization": auth})
+    return response_force_dict(res)
+
 def get_status(qhit: str, auth: str):
     res = requests.get(f"{server}/{qhit}/status", params={"authorization": auth})
     return response_force_dict(res)
@@ -303,7 +307,10 @@ def main():
             
             reset_quickstatus = True
             
-            if user_input in [ "status", "s"]:
+            if user_input in [ "statusall", "sall"]:
+                res = allstatus(os.environ.get("ADMIN_TOKEN", ""))
+                print(json.dumps(res, indent=2))
+            elif user_input in [ "status", "s"]:
                 reset_quickstatus = False
                 statuses = {}
                 for qhit in contents:
