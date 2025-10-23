@@ -333,6 +333,7 @@ class FabricTagger:
         if dl_res.done:
             # signal to container to stop accepting new media and shut down when done
             if job.state.container:
+                # TODO: BAD, need better way
                 job.state.container.send_eof()
         else:
             self._submit_async(EnterFetchingPhase(job_id=jobid))
@@ -396,6 +397,7 @@ class FabricTagger:
         jobid = message.data.job_id
 
         if jobid not in self.jobstore.active_jobs:
+            # TODO: test we should hit here if we stop a job during tagging
             logger.warning(f"Received EnterCompletePhase for inactive job: {jobid}")
             message.response_mailbox.put(Response(data=None, error=None))
             return
@@ -621,6 +623,7 @@ class FabricTagger:
         fps = None
         if isinstance(stream_meta, VideoMetadata):
             # in order to map the frame tags to their appropriate timestamps
+            # TODO: missing this
             fps = stream_meta.fps
         tags2upload = []
         for out in new_outputs:

@@ -390,6 +390,7 @@ class LiveTagContainer(TagContainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.stdin_socket = None
+        self.eof = False
 
     def add_media(self, new_media: list[str]) -> None:
         if not self.is_running():
@@ -414,6 +415,9 @@ class LiveTagContainer(TagContainer):
 
     # TODO: need to verify that tagger handles the exceptions nicely
     def start(self, gpuidx: int | None, stdin_open: bool=True) -> None:
+        if self.eof:
+            # TODO: not optimal, 
+            raise RuntimeError("Live container has already received EOF, cannot start again.")
         super().start(gpuidx, True)
         timeout = 10
         start = time.time()
@@ -431,6 +435,7 @@ class LiveTagContainer(TagContainer):
             self.add_media(self.media_files)
 
     def send_eof(self) -> None:
+        self.eof = True
         if self.stdin_socket:
             try:
                 try:
@@ -442,8 +447,7 @@ class LiveTagContainer(TagContainer):
             except Exception as e:
                 logger.opt(exception=e).error("Error closing stdin socket", extra={"handle": self.name()})
         else:
-            logger.error("No stdin socket to close", extra={"handle": self.name()})
-            raise RuntimeError("No stdin socket to close")
+            logger.warning("No stdin socket to close", extra={"handle": self.name()})
 
     def stop(self) -> None:
         self.send_eof()
