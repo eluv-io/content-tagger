@@ -327,6 +327,7 @@ class LiveWorker(FetchSession):
         self.output_dir = output_dir
         self.exit = exit
         self.call_count = 0
+        self.offset = 0.0
     
     def metadata(self) -> LiveMetadata:
         return deepcopy(self.meta)
@@ -363,36 +364,36 @@ class LiveWorker(FetchSession):
         chunk_size = self.scope.chunk_size
         idx = self.call_count
         
-        # Create filename for this segment
         filename = f"segment_{chunk_size}_{str(idx).zfill(4)}.mp4"
         save_path = os.path.join(self.output_dir, filename)
         
-        # Download the live segment
-        # Note: We ignore segment_idx and segment_length for now as per instructions
         segment_info = self.q.live_media_segment(
             object_id=self.q.qhit,
-            dest_path=save_path
+            dest_path=save_path,
+            segment_idx=idx,
+            segment_length=chunk_size,
         )
-        
-        # Override the segment info as per instructions
-        # Use call_count for calculations
-        offset = self.call_count * chunk_size
+
+        seg_dur = segment_info.actual_duration
         
         source = Source(
             name=f"segment_{chunk_size}_{idx}",
             filepath=save_path,
-            offset=float(offset)
+            offset=self.offset
         )
+
+        self.offset += seg_dur
         
+        # TODO: use returned idx instead when it's ready
         self.call_count += 1
         
         logger.info(
             f"Downloaded live segment {idx} for {self.q.qhit}",
-            extra={"segment": idx, "offset": offset, "chunk_size": chunk_size}
+            extra={"segment": idx, "offset": self.offset, "chunk_size": chunk_size}
         )
 
         if self.scope.max_duration is not None \
-            and offset >= self.scope.max_duration:
+            and self.offset >= self.scope.max_duration:
             logger.info(f"Reached max duration of {self.scope.max_duration} seconds for live stream {self.q.qhit}")
             return DownloadResult(
                 sources=[source],
@@ -429,7 +430,7 @@ class LivePartWorker(FetchSession):
             cfg=ContentConfig(
                 parts_url="https://host-154-14-185-98.contentfabric.io/config?self&qspace=main",
                 config_url="https://host-154-14-185-98.contentfabric.io/config?self&qspace=main",
-                live_media_url="https://host-76-74-29-5.contentfabric.io/config?self&qspace=main"
+                live_media_url="https://host-76-74-34-204.contentfabric.io/config?self&qspace=main"
             )
         )
         self.scope = scope
