@@ -25,7 +25,7 @@ def live_q():
     cfg = ContentConfig(
         config_url="https://host-76-74-29-5.contentfabric.io/config?self&qspace=main", 
         parts_url="http://192.168.96.203/config?self&qspace=main",
-        live_media_url="https://host-76-74-29-5.contentfabric.io/config?self&qspace=main"
+        live_media_url="https://host-76-74-34-204.contentfabric.io/config?self&qspace=main"
     )
     factory = ContentFactory(cfg=cfg)
     q = factory.create_content(qhit="iq__HPzDaWpfmQzj2Afa3XFq2cpun5n", auth=token)
@@ -70,7 +70,7 @@ def qfactory() -> ContentFactory:
     cfg = ContentConfig(
         config_url="https://host-154-14-185-98.contentfabric.io/config?self&qspace=main", 
         parts_url="http://192.168.96.203/config?self&qspace=main",
-        live_media_url="https://host-76-74-29-5.contentfabric.io/config?self&qspace=main"
+        live_media_url="https://host-76-74-34-204.contentfabric.io/config?self&qspace=main"
     )
     factory = ContentFactory(cfg=cfg)
     return factory
@@ -122,7 +122,7 @@ def rest_tagstore(q: Content) -> RestTagstore:
     ts = RestTagstore(base_url=host)
 
     if host:
-        jobids = ts.find_jobs(q=q)
+        jobids = ts.find_jobs(q=q, limit=1000)
         for jobid in jobids:
             ts.delete_job(jobid, q=q)
 

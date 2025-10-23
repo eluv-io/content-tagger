@@ -53,7 +53,7 @@ class RestTagstore(Tagstore):
         }
         
         response = self.session.post(
-            f"{self.base_url}/{qhit}/jobs", 
+            f"{self.base_url}/{qhit}/batches", 
             json=job_data,
             headers=self._get_headers(q)
         )
@@ -62,7 +62,7 @@ class RestTagstore(Tagstore):
             self._log_response_and_raise(response)
         
         result = response.json()
-        job_id = result["job_id"]
+        job_id = result["batch_id"]
         
         # Create UploadJob object with the returned job_id
         job = UploadJob(
@@ -100,7 +100,7 @@ class RestTagstore(Tagstore):
         
         # Upload tags
         upload_data = {
-            "job_id": jobid,
+            "batch_id": jobid,
             "tags": api_tags
         }
         
@@ -141,7 +141,7 @@ class RestTagstore(Tagstore):
         
         if 'jobid' in filters:
             # TODO: probably should change to job_id everywhere
-            params['job_id'] = filters['jobid']
+            params['batch_id'] = filters['jobid']
         if 'track' in filters:
             params['track'] = filters['track']
         if 'author' in filters:
@@ -182,7 +182,7 @@ class RestTagstore(Tagstore):
                 text=api_tag['tag'],
                 additional_info=api_tag.get('additional_info', {}),
                 source=api_tag.get('source', ''),
-                jobid=api_tag['job_id']
+                jobid=api_tag['batch_id']
             )
             
             # Apply source filter if specified
@@ -227,7 +227,7 @@ class RestTagstore(Tagstore):
             params['start'] = filters['offset']
         
         response = self.session.get(
-            f"{self.base_url}/{qhit}/jobs", 
+            f"{self.base_url}/{qhit}/batches", 
             params=params,
             headers=self._get_headers(q)
         )
@@ -236,7 +236,7 @@ class RestTagstore(Tagstore):
             self._log_response_and_raise(response)
         
         result = response.json()
-        jobs = result.get('jobs', [])
+        jobs = result.get('batches', [])
         
         # Extract job IDs
         job_ids = [str(job['id']) for job in jobs]
@@ -255,8 +255,8 @@ class RestTagstore(Tagstore):
         # Build query parameters
         params = {}
         
-        if 'job_id' in query_filters:
-            params['job_id'] = query_filters['job_id']
+        if 'batch_id' in query_filters:
+            params['batch_id'] = query_filters['batch_id']
         if 'track' in query_filters:
             params['track'] = query_filters['track']
         if 'author' in query_filters:
@@ -301,7 +301,7 @@ class RestTagstore(Tagstore):
         params['limit'] = 1
         
         response = self.session.get(
-            f"{self.base_url}/{qhit}/jobs", 
+            f"{self.base_url}/{qhit}/batches", 
             params=params,
             headers=self._get_headers(q)
         )
@@ -322,7 +322,7 @@ class RestTagstore(Tagstore):
         
         try:
             response = self.session.get(
-                f"{self.base_url}/{qhit}/jobs/{jobid}",
+                f"{self.base_url}/{qhit}/batches/{jobid}",
                 headers=self._get_headers(q)
             )
             
@@ -359,7 +359,7 @@ class RestTagstore(Tagstore):
         qhit = q.qid
         
         response = self.session.delete(
-            f"{self.base_url}/{qhit}/jobs/{jobid}",
+            f"{self.base_url}/{qhit}/batches/{jobid}",
             headers=self._get_headers(q)
         )
         
