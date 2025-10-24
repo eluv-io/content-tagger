@@ -9,6 +9,7 @@ from typing import Any
 from datetime import datetime
 from uuid import uuid4 as uuid
 import os
+from src.common.logging.timing import timeit
 
 from src.tags.tagstore.types import Tag
 from src.fetch.model import *
@@ -140,7 +141,8 @@ class FabricTagger:
     def _handle_message(self, message: Message):
         try:
             if isinstance(message.data, TagRequest):
-                self._handle_tag_request(message)
+                with timeit(f"handling tag request: {message.data}"):
+                    self._handle_tag_request(message)
             elif isinstance(message.data, StatusRequest):
                 self._handle_status_request(message)
             elif isinstance(message.data, StopRequest):
@@ -148,11 +150,14 @@ class FabricTagger:
             elif isinstance(message.data, CleanupRequest):
                 self._handle_cleanup_request(message)
             elif isinstance(message.data, UploadTick):
-                self._handle_upload_tick(message)
+                with timeit(f"handling upload request: {message.data}"):
+                    self._handle_upload_tick(message)
             elif isinstance(message.data, EnterFetchingPhase):
-                self._handle_enter_fetching_phase(message)
+                with timeit(f"handling start fetch request: {message.data}"):
+                    self._handle_enter_fetching_phase(message)
             elif isinstance(message.data, EnterTaggingPhase):
-                self._handle_enter_tagging_phase(message)
+                with timeit(f"handling start tag request: {message.data}"):
+                    self._handle_enter_tagging_phase(message)
             elif isinstance(message.data, EnterCompletePhase):
                 self._handle_enter_complete_phase(message)
             else:
@@ -271,26 +276,26 @@ class FabricTagger:
 
         In the case of live jobs, if fetching fails, it will retry after a delay.
         """
+        with timeit("fetching work"):
+            jobid = job.get_id()
+            logger.info("starting fetching work", extra={"jobid": jobid})
 
-        jobid = job.get_id()
-        logger.info("starting fetching work", extra={"jobid": jobid})
+            try:
+                dl_res = job.state.media.worker.download()
+            except Exception as e:
+                if job.args.retry_fetch:
+                    retry_delay = 5
+                    logger.opt(exception=e).error(f"error during fetching but retry is set to true, retrying in {retry_delay} seconds", extra={"jobid": jobid})
+                    # TODO: need to test this
+                    threading.Timer(retry_delay, lambda: self._submit_async(EnterFetchingPhase(job_id=jobid))).start()
+                else:
+                    self._end_job(jobid, "Failed", e)
+                return
 
-        try:
-            dl_res = job.state.media.worker.download()
-        except Exception as e:
-            if job.args.retry_fetch:
-                retry_delay = 5
-                logger.opt(exception=e).error(f"error during fetching but retry is set to true, retrying in {retry_delay} seconds", extra={"jobid": jobid})
-                # TODO: need to test this
-                threading.Timer(retry_delay, lambda: self._submit_async(EnterFetchingPhase(job_id=jobid))).start()
-            else:
-                self._end_job(jobid, "Failed", e)
-            return
+            if job.stop_event.is_set():
+                return
 
-        if job.stop_event.is_set():
-            return
-
-        self._submit(EnterTaggingPhase(job_id=jobid, data=dl_res))
+            self._submit_async(EnterTaggingPhase(job_id=jobid, data=dl_res))
 
     def _handle_enter_tagging_phase(self, message: Message):
         """Update state and start tagging in background thread"""
@@ -328,7 +333,8 @@ class FabricTagger:
             if not job.state.container:
                 self._start_new_container(job)
             else:
-                self._send_media(job.state.container, new_sources)
+                with timeit("sending new media to container"):
+                    self._send_media(job.state.container, new_sources)
 
         if dl_res.done:
             # signal to container to stop accepting new media and shut down when done
@@ -595,8 +601,9 @@ class FabricTagger:
             except Exception as e:
                 logger.opt(exception=e).error("error stopping job", extra={"jobid": job.get_id()})
 
-        if job.state.status.status == "Tagging content" and job.state.taghandle is not None:
+        if job.state.taghandle is not None:
             # run in background thread to avoid blocking the main thread
+            logger.info("cleaning up job in background thread due to failed upload", extra={"jobid": job.get_id()})
             threading.Thread(target=cleanup, daemon=True).start()
 
     def __upload_tags(self, job: TagJob) -> None:
@@ -608,7 +615,8 @@ class FabricTagger:
         assert job.state.media is not None
         media_to_source = {s.filepath: s for s in job.state.media.downloaded}
 
-        outputs = job.state.container.tags()
+        with timeit("getting tags from container"):
+            outputs = job.state.container.tags()
         new_outputs = [out for out in outputs if out.source_media in media_to_source \
                        and media_to_source[out.source_media].name not in job.state.uploaded_sources]
 
@@ -619,22 +627,25 @@ class FabricTagger:
 
         logger.info("uploading new tags", extra={"jobid": job.get_id(), "num_outputs": len(new_outputs), "num_tags": total_tags})
 
-        stream_meta = job.state.media.worker.metadata()
+        with timeit("getting stream metadata"):
+            stream_meta = job.state.media.worker.metadata()
         fps = None
         if isinstance(stream_meta, VideoMetadata):
             # in order to map the frame tags to their appropriate timestamps
             # TODO: missing this
             fps = stream_meta.fps
         tags2upload = []
-        for out in new_outputs:
-            original_src = media_to_source[out.source_media]
-            for tag in out.tags:
-                tag.source = original_src.name
-                tag.jobid = job.state.upload_job
-                tags2upload.append(self._fix_tag_offsets(tag, original_src.offset, fps))
+        with timeit("getting tag offsets"):
+            for out in new_outputs:
+                original_src = media_to_source[out.source_media]
+                for tag in out.tags:
+                    tag.source = original_src.name
+                    tag.jobid = job.state.upload_job
+                    tags2upload.append(self._fix_tag_offsets(tag, original_src.offset, fps))
 
         try:
-            self.tagstore.upload_tags(tags2upload, job.state.upload_job, q=job.args.q)
+            with timeit("uploading tags to tagstore"):
+                self.tagstore.upload_tags(tags2upload, job.state.upload_job, q=job.args.q)
         except Exception as e:
             # just keep going in case it's a transient error, we should still have a reference to the tags on disk as long as the tagger doesn't die too.
             # NOTE: it's possible that if the container ends around the time the tagstore is down we can miss some tags.

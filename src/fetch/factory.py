@@ -2,7 +2,7 @@
 from requests.exceptions import HTTPError
 from fractions import Fraction
 
-from common_ml.utils.metrics import timeit
+from src.common.logging.timing import timeit
 
 from src.common.logging import logger
 

@@ -4,7 +4,7 @@ import tempfile
 import shutil
 from src.common.logging import logger
 from elv_client_py import ElvClient
-from common_ml.utils.metrics import timeit
+from src.common.logging.timing import timeit
 from src.common.content import Content
 from src.tags.tagstore.abstract import Tagstore
 from src.tags.conversion import TagConverter, get_latest_tags_for_content
