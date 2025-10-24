@@ -7,6 +7,7 @@ from copy import copy
 import socket
 from urllib.parse import unquote
 import time
+from functools import lru_cache
 
 from common_ml.utils.files import get_file_type
 from common_ml.video_processing import get_fps
@@ -252,14 +253,13 @@ class TagContainer:
                 outputs.append(model_out)
 
         return outputs
+    
+    @lru_cache(maxsize=1024)
+    def _get_fps(self, video_file: str) -> float:
+        return get_fps(video_file)
 
     def _output_from_tags(self, source_video: str, tag_files: list[str]) -> ModelOutput | None:
         ftype = get_file_type(source_video)
-
-        if ftype == "video":
-            fps = get_fps(source_video)
-        else:
-            fps = None
     
         vid_tags = None
         frame_tags = None
@@ -270,7 +270,6 @@ class TagContainer:
                     with open(tag_file, 'r') as f:
                         vid_tags = json.load(f)
                 elif tag_file.endswith("_frametags.json"):
-
                     with open(tag_file, 'r') as f:
                         frame_tags = json.load(f)
             except Exception as e:
@@ -279,6 +278,11 @@ class TagContainer:
         
         if vid_tags is None:
             return None
+        
+        if frame_tags and ftype == "video":
+            fps = self._get_fps(source_video)
+        else:
+            fps = None
 
         # Convert video tags to Tag objects with enhanced additional_info
         tags = []
@@ -416,7 +420,7 @@ class LiveTagContainer(TagContainer):
     # TODO: need to verify that tagger handles the exceptions nicely
     def start(self, gpuidx: int | None, stdin_open: bool=True) -> None:
         if self.eof:
-            # TODO: not optimal, 
+            # TODO: not optimal
             raise RuntimeError("Live container has already received EOF, cannot start again.")
         super().start(gpuidx, True)
         timeout = 10
