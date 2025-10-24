@@ -326,8 +326,7 @@ class LiveWorker(FetchSession):
         self.meta = meta
         self.output_dir = output_dir
         self.exit = exit
-        self.call_count = 0
-        self.offset = 0.0
+        self.next_idx = 0
     
     def metadata(self) -> LiveMetadata:
         return deepcopy(self.meta)
@@ -348,8 +347,6 @@ class LiveWorker(FetchSession):
             DownloadResult containing the downloaded segment.
             done is always False for live streams (they never end).
         """
-
-        time.sleep(1)
         
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
@@ -362,8 +359,9 @@ class LiveWorker(FetchSession):
             )
         
         chunk_size = self.scope.chunk_size
-        idx = self.call_count
+        idx = self.next_idx
         
+        # TODO: filename weirdness on first segment
         filename = f"segment_{chunk_size}_{str(idx).zfill(4)}.mp4"
         save_path = os.path.join(self.output_dir, filename)
         
@@ -374,26 +372,25 @@ class LiveWorker(FetchSession):
             segment_length=chunk_size,
         )
 
-        seg_dur = segment_info.actual_duration
+        seg_offset = segment_info.seg_offset_millis / 1000
+        seg_idx = segment_info.seg_num
+        seg_size = segment_info.actual_duration
         
         source = Source(
             name=f"segment_{chunk_size}_{idx}",
             filepath=save_path,
-            offset=self.offset
+            offset=seg_offset
         )
 
-        self.offset += seg_dur
-        
-        # TODO: use returned idx instead when it's ready
-        self.call_count += 1
-        
         logger.info(
-            f"Downloaded live segment {idx} for {self.q.qhit}",
-            extra={"segment": idx, "offset": self.offset, "chunk_size": chunk_size}
+            f"Downloaded live segment {seg_idx} for {self.q.qhit}",
+            extra={"segment": seg_idx, "offset": seg_offset, "seg_size": seg_size}
         )
+
+        self.next_idx = seg_idx + 1
 
         if self.scope.max_duration is not None \
-            and self.offset >= self.scope.max_duration:
+            and seg_offset + seg_size >= self.scope.max_duration:
             logger.info(f"Reached max duration of {self.scope.max_duration} seconds for live stream {self.q.qhit}")
             return DownloadResult(
                 sources=[source],
@@ -406,7 +403,7 @@ class LiveWorker(FetchSession):
             failed=[],
             done=False  # Live streams never end
         )
-    
+
 class LivePartWorker(FetchSession):
     def __init__(
         self,

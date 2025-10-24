@@ -2,7 +2,7 @@ import pytest
 import os
 
 from src.fetch.factory import FetchFactory
-from src.fetch.model import AssetScope, DownloadRequest, FetcherConfig, VideoScope
+from src.fetch.model import AssetScope, DownloadRequest, FetcherConfig, VideoScope, LiveScope
 from src.tags.tagstore.filesystem_tagstore import Tag
 from src.common.content import Content
 from src.common.errors import MissingResourceError
@@ -10,6 +10,11 @@ from src.common.errors import MissingResourceError
 VOD_QHIT = "iq__3C58dDYxsn5KKSWGYrfYr44ykJRm"
 LEGACY_VOD_QHIT = "iq__cebzuQ8BqsWZyoUdnTXCe23fUgz"
 ASSETS_QHIT = "iq__cebzuQ8BqsWZyoUdnTXCe23fUgz"
+
+@pytest.fixture
+def fetcher(fetcher_config: FetcherConfig, tag_store) -> FetchFactory:
+    """Create a FetchFactory instance for testing"""
+    return FetchFactory(config=fetcher_config, ts=tag_store)
 
 @pytest.fixture
 def fetcher_config(temp_dir: str) -> FetcherConfig:
@@ -21,11 +26,6 @@ def fetcher_config(temp_dir: str) -> FetcherConfig:
         author="tagger",
         max_downloads=2
     )
-
-@pytest.fixture
-def fetcher(fetcher_config: FetcherConfig, tag_store) -> FetchFactory:
-    """Create a FetchFactory instance for testing"""
-    return FetchFactory(config=fetcher_config, ts=tag_store)
 
 @pytest.fixture
 def legacy_vod_content(qfactory, tag_store) -> Content:
@@ -350,3 +350,98 @@ def test_fetch_assets_with_preserve_track(
         # tagged before
         assert assetname not in assets_to_tag
         assert assetname in untagged_assets
+
+def test_live_worker_incremental_segments(
+    fetcher: FetchFactory,
+    live_q: Content,
+    media_dir: str
+):
+    """Test LiveWorker returns incremental segments and respects max_duration"""
+    
+    max_duration = 20  # 20 seconds
+    chunk_size = 4  # 4 second chunks
+    
+    req = DownloadRequest(
+        scope=LiveScope(
+            stream="video",
+            chunk_size=chunk_size,
+            max_duration=max_duration
+        ),
+        output_dir=media_dir,
+        preserve_track=""
+    )
+    
+    worker = fetcher.get_session(live_q, req)
+    
+    # Collect all segments
+    all_sources = []
+    segment_indices = []
+    done = False
+    call_count = 0
+    max_calls = 10  # Safety limit
+
+    last_idx = -1
+    
+    while not done and call_count < max_calls:
+        result = worker.download()
+        call_count += 1
+        
+        # Should return exactly one source per call (or empty when waiting)
+        assert len(result.sources) <= 1, f"Expected at most 1 source, got {len(result.sources)}"
+        
+        if len(result.sources) == 1:
+            source = result.sources[0]
+            all_sources.append(source)
+            
+            # Extract segment index from name like "segment_4_0"
+            name_parts = source.name.split('_')
+            assert len(name_parts) == 3, f"Expected name format 'segment_<size>_<idx>', got {source.name}"
+            assert name_parts[0] == "segment", f"Expected name to start with 'segment', got {source.name}"
+            
+            chunk_size_from_name = int(name_parts[1])
+            seg_idx = int(name_parts[2])
+
+            assert seg_idx == last_idx +1
+            last_idx = seg_idx
+            
+            assert chunk_size_from_name == chunk_size, f"Expected chunk size {chunk_size}, got {chunk_size_from_name}"
+            
+            # Check offset is reasonable
+            assert source.offset >= 0, f"Offset should be non-negative, got {source.offset}"
+            
+            print(f"Call {call_count}: Got segment {seg_idx} at offset {source.offset}s")
+        
+        done = result.done
+        
+        if done:
+            # When done, check that we stopped because of max_duration
+            if len(all_sources) > 0:
+                last_source = all_sources[-1]
+                assert last_source.offset <= max_duration, \
+                    f"Last segment offset {last_source.offset} should be less than max_duration {max_duration}"
+            break
+    
+    # Verify we got some segments
+    assert len(all_sources) > 0, "Should have downloaded at least one segment"
+    
+    # Verify indices are incrementing
+    assert segment_indices == sorted(segment_indices), \
+        f"Segment indices should be in ascending order, got {segment_indices}"
+    
+    # Verify indices are consecutive
+    for i in range(len(segment_indices) - 1):
+        assert segment_indices[i+1] == segment_indices[i] + 1, \
+            f"Segment indices should be consecutive, got gap between {segment_indices[i]} and {segment_indices[i+1]}"
+    
+    # Verify we stopped before max_duration
+    assert done, "Worker should have set done=True when reaching max_duration"
+    
+    # Calculate expected number of segments
+    # Should be roughly max_duration / chunk_size
+    expected_segments = max_duration / chunk_size
+    assert len(all_sources) >= expected_segments * 0.8, \
+        f"Expected at least {expected_segments * 0.8:.0f} segments, got {len(all_sources)}"
+    assert len(all_sources) <= expected_segments * 1.2, \
+        f"Expected at most {expected_segments * 1.2:.0f} segments, got {len(all_sources)}"
+    
+    print(f"LiveWorker test completed: {len(all_sources)} segments downloaded in {call_count} calls")

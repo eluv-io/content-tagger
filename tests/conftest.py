@@ -5,11 +5,14 @@ import pytest
 import dotenv
 from unittest.mock import Mock
 
+from src.api.tagging.dto_mapping import _is_live
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.tags.tagstore.rest_tagstore import RestTagstore
 from src.tagging.fabric_tagging.model import FabricTaggerConfig
 from src.tags.conversion import TagConverter, TagConverterConfig
 from src.common.content import Content, ContentConfig, ContentFactory
+from src.fetch.factory import FetchFactory
+from src.fetch.model import FetcherConfig
 
 dotenv.load_dotenv()
 
@@ -29,6 +32,8 @@ def live_q():
     )
     factory = ContentFactory(cfg=cfg)
     q = factory.create_content(qhit="iq__HPzDaWpfmQzj2Afa3XFq2cpun5n", auth=token)
+    if not _is_live(q):
+        pytest.skip("livestream is not running")
     return q
 
 @pytest.fixture

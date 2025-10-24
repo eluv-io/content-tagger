@@ -1,7 +1,7 @@
 content:
   parts_url: http://192.168.96.203/config?self&qspace=main
   config_url: https://host-154-14-185-98.contentfabric.io/config?self&qspace=main
-  live_media_url: https://host-76-74-34-204.contentfabric.io/config?self&qspace=main
+  live_media_url: https://host-76-74-29-5.contentfabric.io/config?self&qspace=main
 
 tagstore:
   base_url: https://ai.contentfabric.io/tagstore
@@ -28,7 +28,7 @@ system:
   resources: 
     cpu_juice: 100
     ollama: 3
-  gpus: ["gpu", "disabled", "gpu", "gpu", "disabled"]
+  gpus: ["gpu", "disabled", "disabled", "disabled", "disabled"]
 
 fetcher:
   author: tagger
