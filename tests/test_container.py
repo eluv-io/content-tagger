@@ -517,3 +517,93 @@ def test_container_with_directory_input(mock_podman_client, temp_dir):
         
         assert len(video2_output.tags) == 1
         assert video2_output.tags[0].text == "scene2"
+
+def test_tags_get_fps_only_called_with_frame_tags(video_tag_container):
+    """Test that get_fps is only called when frame tags are present"""
+    tags_dir = video_tag_container.cfg.tags_dir
+    
+    # Create video tags without frame tags
+    video_tags_data = [
+        {
+            "start_time": 0,
+            "end_time": 5,
+            "text": "person walking"
+        }
+    ]
+    
+    create_video_tags_file(tags_dir, "video1.mp4", video_tags_data)
+    
+    with patch('src.tag_containers.containers.get_fps') as mock_get_fps:
+        mock_get_fps.return_value = 30.0
+        
+        outputs = video_tag_container.tags()
+        
+        # get_fps should NOT be called since there are no frame tags
+        mock_get_fps.assert_not_called()
+        
+        assert len(outputs) == 1
+        assert len(outputs[0].tags) == 1
+
+def test_tags_get_fps_cached_per_video(video_tag_container):
+    """Test that get_fps is only called once per video file (cached)"""
+    tags_dir = video_tag_container.cfg.tags_dir
+    
+    # Create multiple video tags with frame tags for the same video
+    video_tags_data = [
+        {
+            "start_time": 0,
+            "end_time": 2000,
+            "text": "person walking"
+        },
+        {
+            "start_time": 2000,
+            "end_time": 4000,
+            "text": "car driving"
+        },
+        {
+            "start_time": 4000,
+            "end_time": 6000,
+            "text": "bird flying"
+        }
+    ]
+    
+    frame_tags_data = {
+        "30": [{
+            "text": "person walking",
+            "confidence": 0.9,
+            "box": [100, 100, 200, 200]
+        }],
+        "90": [{
+            "text": "car driving",
+            "confidence": 0.85,
+            "box": [110, 110, 210, 210]
+        }],
+        "150": [{
+            "text": "bird flying",
+            "confidence": 0.8,
+            "box": [120, 120, 220, 220]
+        }]
+    }
+    
+    create_video_tags_file(tags_dir, "video1.mp4", video_tags_data)
+    create_frame_tags_file(tags_dir, "video1.mp4", frame_tags_data)
+    
+    with patch('src.tag_containers.containers.get_fps') as mock_get_fps:
+        mock_get_fps.return_value = 30.0
+        
+        outputs = video_tag_container.tags()
+        video_tag_container.tags()
+        
+        # get_fps should be called exactly once despite multiple tags with frame tags
+        assert mock_get_fps.call_count == 1
+        
+        # Verify the video path passed to get_fps
+        call_args = mock_get_fps.call_args[0]
+        assert call_args[0].endswith("video1.mp4")
+        
+        assert len(outputs) == 1
+        assert len(outputs[0].tags) == 3
+        
+        # Verify all tags have frame_tags
+        for tag in outputs[0].tags:
+            assert "frame_tags" in tag.additional_info

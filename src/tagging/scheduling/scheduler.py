@@ -130,8 +130,6 @@ class ContainerScheduler:
                 if current_time - last_status_log >= status_log_interval:
                     if not self.mailbox.empty():
                         self._log_queue_status()
-                    else:
-                        logger.debug("No new messages")
                     last_status_log = current_time
 
             except Exception as e:
