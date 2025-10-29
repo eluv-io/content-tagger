@@ -189,7 +189,7 @@ def get_flask_app():
         except (KeyError, TypeError) as e:
             return Response(response=json.dumps({'error': f"Invalid input: {str(e)}"}), status=400, mimetype='application/json')
         
-        _, error_response = _get_client(request, qhit, config["fabric"]["parts_url"])
+        client, error_response = _get_client(request, qhit, config["fabric"]["parts_url"])
         if error_response:
             return error_response
         
@@ -204,6 +204,8 @@ def get_flask_app():
                 if run_config.stream is None:
                     # if stream name is not provided, we pick stream based on whether the model is audio/video based
                     run_config.stream = config["services"][feature]["type"]
+                    if run_config.stream == "audio":
+                        run_config.stream = _find_audio_stream(client, qhit)
                 if (run_config.stream, feature) in active_jobs[qhit]:
                     return Response(response=json.dumps({'error': f"{feature} tagging is already in progress for {qhit} on {run_config.stream}"}), status=400, mimetype='application/json')
             for feature, run_config in args.features.items():
@@ -215,6 +217,28 @@ def get_flask_app():
                 active_jobs[qhit][(run_config.stream, feature)] = job
                 threading.Thread(target=_video_tag, args=(job, _get_authorization(request), args.start_time, args.end_time)).start()
         return Response(response=json.dumps({'message': f'Tagging started on {qhit}'}), status=200, mimetype='application/json')
+    
+    def _find_audio_stream(client, qhit):
+        streams = client.content_object_metadata(resolve_links=True, metadata_subtree="offerings/default/media_struct/streams", **parse_qhit(qhit))
+        assert isinstance(streams, dict)
+
+        ret = None
+        for stream_name, stream_info in streams.items():
+            if stream_info.get("codec_type") == "audio" and \
+                stream_info.get("language") == "en" and \
+                stream_info.get("channels") == 2:
+                if ret is None: ret = stream_name
+                logger.debug(f"potential audio stream: {stream_name}")
+                if stream_info.get("default_for_media_type", False):
+                    return stream_name
+            
+        for stream_name, stream_info in streams.items():
+            if stream_info.get("codec_type") == "audio" and \
+                stream_info.get("default_for_media_type", False):
+                return stream_name
+
+        if ret is None: return "audio"
+        return ret
     
     tokencache = None
     tokentime = 0
