@@ -40,7 +40,7 @@ def _fetch_vod_metadata(qhit: str, stream_name: str, client: ElvClient) -> Tuple
         raise HTTPError(f"Failed to retrieve transcodes for {qhit}") from e
 
     try:
-        streams = client.content_object_metadata(metadata_subtree='offerings/default/playout/streams', resolve_links=False, **parse_qhit(qhit))
+        streams = client.content_object_metadata(metadata_subtree='offerings/default/playout/streams', resolve_links=True, **parse_qhit(qhit))
     except HTTPError as e:
         raise HTTPError(f"Failed to retrieve streams for {qhit}") from e
     
