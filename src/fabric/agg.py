@@ -1,3 +1,4 @@
+import asyncio
 from typing import List, Dict, Tuple, Optional
 import json
 from copy import deepcopy
@@ -206,7 +207,9 @@ def _download_missing(client: ElvClient, save_path: str, fabric_path: str, write
     helper(file_info, sub_path="")
     new, changed, old = status
     logger.debug(f"{new} new files found on fabric. {changed} have changed on fabric. {old} files already up to date")
-
+    
+    ## this should be inside of elv-client-py.download_files but avoid having to change dependency lib at the moment 
+    client.semaphore = asyncio.Semaphore(128)
     return client.download_files([("/".join([fabric_path, path]), path) for path in to_download], dest_path=save_path, write_token=write_token)
 
 def _parse_external_tags(tags_path: str) -> Dict[str, List[VideoTag]]:
