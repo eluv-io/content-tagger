@@ -128,7 +128,8 @@ class VodWorker(FetchSession):
                 source = Source(
                     name=part_hash,
                     filepath=save_path,
-                    offset=pstart,
+                    offset=int(pstart * 1000),
+                    wall_clock=None
                 )
                 successful_sources.append(source)
                 continue
@@ -146,7 +147,8 @@ class VodWorker(FetchSession):
                 source = Source(
                     name=part_hash,
                     filepath=save_path,
-                    offset=pstart,
+                    offset=int(pstart * 1000),
+                    wall_clock=None
                 )
                 successful_sources.append(source)
 
@@ -281,7 +283,8 @@ class AssetWorker(FetchSession):
                 source = Source(
                     name=asset,
                     filepath=os.path.join(self.output_dir, encode_path(asset)),
-                    offset=0
+                    offset=0,
+                    wall_clock=None
                 )
                 successful_sources.append(source)
             
@@ -294,7 +297,8 @@ class AssetWorker(FetchSession):
             source = Source(
                 name=asset,
                 filepath=os.path.join(self.output_dir, encode_path(asset)),
-                offset=0
+                offset=0,
+                wall_clock=None
             )
             successful_sources.append(source)
 
@@ -372,25 +376,26 @@ class LiveWorker(FetchSession):
             segment_length=chunk_size,
         )
 
-        seg_offset = segment_info.seg_offset_millis / 1000
+        seg_offset = segment_info.seg_offset_millis
         seg_idx = segment_info.seg_num
-        seg_size = segment_info.actual_duration
+        seg_size = segment_info.actual_duration * 1000
         
         source = Source(
             name=f"segment_{chunk_size}_{idx}",
             filepath=save_path,
-            offset=seg_offset
+            offset=seg_offset,
+            wall_clock=time.time_ns() // 1_000_000
         )
 
         logger.info(
             f"Downloaded live segment {seg_idx} for {self.q.qhit}",
-            extra={"segment": seg_idx, "offset": seg_offset, "seg_size": seg_size}
+            extra={"segment": seg_idx, "offset_sec": seg_offset / 1000, "seg_size_sec": seg_size / 1000}
         )
 
         self.next_idx = seg_idx + 1
 
         if self.scope.max_duration is not None \
-            and seg_offset + seg_size >= self.scope.max_duration:
+            and seg_offset + seg_size >= self.scope.max_duration * 1000:
             logger.info(f"Reached max duration of {self.scope.max_duration} seconds for live stream {self.q.qhit}")
             return DownloadResult(
                 sources=[source],
@@ -549,7 +554,8 @@ class LivePartWorker(FetchSession):
             source = Source(
                 name=part_hash,
                 filepath=save_path,
-                offset=offset
+                offset=int(offset * 1000),
+                wall_clock=None
             )
             return DownloadResult(
                 sources=[source],
@@ -573,7 +579,8 @@ class LivePartWorker(FetchSession):
             source = Source(
                 name=part_hash,
                 filepath=save_path,
-                offset=offset
+                offset=int(offset * 1000),
+                wall_clock=None
             )
             
             logger.info(f"Successfully downloaded part {idx} ({part_hash}) at offset {offset}s")

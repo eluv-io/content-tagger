@@ -50,18 +50,11 @@ class JobStatus:
         )
 
 @dataclass
-class JobArgs:
+class JobArgs(TagArgs):
     q: Content
-    feature: str
-    replace: bool
-    runconfig: dict
-    scope: Scope
     # whether to retry fetching content if it fails or end the tagging job. 
     # important for the livestream case where momentary failures can be expected.
     retry_fetch: bool
-
-    def __str__(self):
-        return f"JobArgs(q={self.q}, feature={self.feature}, replace={self.replace}, runconfig={self.runconfig}, scope={self.scope}, retry_fetch={self.retry_fetch})"
 
 @dataclass
 class JobID:

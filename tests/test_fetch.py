@@ -417,7 +417,7 @@ def test_live_worker_incremental_segments(
             # When done, check that we stopped because of max_duration
             if len(all_sources) > 0:
                 last_source = all_sources[-1]
-                assert last_source.offset <= max_duration, \
+                assert last_source.offset <= max_duration * 1000, \
                     f"Last segment offset {last_source.offset} should be less than max_duration {max_duration}"
             break
     

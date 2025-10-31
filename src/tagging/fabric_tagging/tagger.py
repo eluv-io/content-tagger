@@ -236,15 +236,7 @@ class FabricTagger:
                 tagging_done=threading.Event(),
                 container=None
             ),
-            args=JobArgs(
-                q=q,
-                feature=feature,
-                replace=args.replace,
-                runconfig=args.run_config,
-                scope=args.scope,
-                # retry fetches in case of live tagging
-                retry_fetch=is_live
-            ),
+            args=JobArgs(**args.__dict__, q=q, retry_fetch=is_live),
             stop_event=stop_event,   
         )
 
@@ -364,7 +356,7 @@ class FabricTagger:
         container = self.cregistry.get(ContainerRequest(
             model_id=job.args.feature,
             media_input=media_input,
-            run_config=job.args.runconfig,
+            run_config=job.args.run_config,
             live=isinstance(job.args.scope, LiveScope),
             job_id=job.args.q.qhit + "-" + datetime.now().strftime("%Y%m%d%H%M") + "-" + str(uuid())[0:6]
         ))
@@ -643,7 +635,7 @@ class FabricTagger:
 
         try:
             with timeit("uploading tags to tagstore", min_duration=0.5):
-                self._post_tags(tags2upload, job.state.upload_job, job.args.q, destination_qid=job.args.q.qhit)
+                self._post_tags(tags2upload, job.state.upload_job, job.args.q, destination_qid=job.args.destination_qid)
         except Exception as e:
             # just keep going in case it's a transient error, we should still have a reference to the tags on disk as long as the tagger doesn't die too.
             # NOTE: it's possible that if the container ends around the time the tagstore is down we can miss some tags.

@@ -10,7 +10,10 @@ class FetcherConfig:
 class Source:
     name: str
     filepath: str
-    offset: float
+    # relative to media (in ms)
+    offset: int
+    # absolute unix time (in ms)
+    wall_clock: int | None
 
 class Scope: ...
 

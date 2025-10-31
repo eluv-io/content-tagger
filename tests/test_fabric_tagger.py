@@ -219,7 +219,8 @@ class FakeWorker(FetchSession):
             source = Source(
                 filepath=filepath,
                 name=f"part_{i}.mp4",
-                offset=i * 10.0,  # 10 second parts
+                offset=i * 10000,  # 10 second parts
+                wall_clock=None
             )
             sources.append(source)
         
@@ -466,7 +467,7 @@ def test_many_concurrent_jobs(fabric_tagger):
     """Run many jobs and make sure that they all run"""
     contents = []
     for i in range(5):
-        contents.append(Mock(qhit=f"iq__content{i}", auth=f"token{i}"))
+        contents.append(Mock(qid=f"iq__content{i}", qhit=f"iq__content{i}", auth=f"token{i}"))
 
     # Create individual TagArgs for each feature and content
     all_args = []
@@ -795,11 +796,11 @@ def test_container_nonzero_exit_code(mock_exit_code, fabric_tagger, q):
     inactive_job = list(fabric_tagger.jobstore.inactive_jobs.values())[0]
     assert inactive_job.state.container.exit_code() == 1
 
-def test_destination_qid_uploads_to_correct_qhit(sample_tag_args, fabric_tagger: FabricTagger, q, test_qid2):
+def test_destination_qid_uploads_to_correct_qhit(sample_tag_args, fabric_tagger: FabricTagger, q, q2):
     """Test that when destination_qid is set, tags are uploaded to that qhit instead of source"""
 
     for args in sample_tag_args:
-        args.destination_qid = test_qid2
+        args.destination_qid = q2.qid
         fabric_tagger.tag(q, args)
 
     # Wait for job to complete
@@ -807,7 +808,7 @@ def test_destination_qid_uploads_to_correct_qhit(sample_tag_args, fabric_tagger:
     time.sleep(0.5)
     
     # Verify tags were uploaded to destination_qhit
-    tag_count_destination = fabric_tagger.tagstore.count_tags(qhit=test_qid2, q=q)
+    tag_count_destination = fabric_tagger.tagstore.count_tags(qhit=q2.qid, q=q2)
     assert tag_count_destination > 0
 
     # Verify no tags were uploaded to source qhit

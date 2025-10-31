@@ -107,6 +107,16 @@ def q(qfactory, test_qid):
 
     return qfactory.create_content(qhit=test_qid, auth=auth_token)
 
+@pytest.fixture
+def q2(qfactory, test_qid2):
+    """Check if TEST_AUTH is set in environment"""
+    auth_token = os.getenv("TEST_AUTH")
+    
+    if not auth_token:
+        return Mock(qid=test_qid2, qhit=test_qid2)
+
+    return qfactory.create_content(qhit=test_qid2, auth=auth_token)
+
 """
 @pytest.fixture
 def q(writable_q, readonly_q, test_qid):
