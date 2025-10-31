@@ -11,7 +11,6 @@ class timeit:
         self.min_duration = min_duration
 
     def __enter__(self):
-        logger.info(f'{self.message}')
         self.start = time.time()
         return self
 

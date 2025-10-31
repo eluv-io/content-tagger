@@ -27,7 +27,7 @@ class JobState:
     upload_job: str
     container: TagContainer | None
     # callers can pass an event to be notified when tagging is done
-    tagging_done: threading.Event | None
+    tagging_done: threading.Event
 
 @dataclass
 class TagJob:

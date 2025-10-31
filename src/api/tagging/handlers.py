@@ -21,7 +21,7 @@ def handle_tag(qhit: str) -> Response:
     tagger: FabricTagger = current_app.config["state"]["tagger"]
 
     tag_args = map_video_tag_dto(args, tagger.cregistry, q)
-    status_by_feature = {}
+    status_by_feature: dict[str, str] = {}
     for tag_arg in tag_args:
         status_by_feature[tag_arg.feature] = tagger.tag(q, tag_arg)
     
