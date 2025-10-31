@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from src.tags.conversion_workflow import upload_tags_to_fabric
 from src.tags.conversion import TagConverter, TagConverterConfig
 from src.tags.tagstore.abstract import Tagstore
-from src.tags.tagstore.types import Tag
+from src.tags.tagstore.model import Tag
 from src.common.content import Content
 
 load_dotenv()

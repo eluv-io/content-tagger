@@ -8,7 +8,7 @@ from src.fetch.model import FetcherConfig
 from src.tag_containers.model import RegistryConfig
 from src.tagging.scheduling.model import SysConfig
 from src.tags.conversion import TagConverterConfig
-from src.tags.tagstore.types import TagstoreConfig
+from src.tags.tagstore.model import TagstoreConfig
 from src.tagging.fabric_tagging.model import FabricTaggerConfig
 
 @dataclass

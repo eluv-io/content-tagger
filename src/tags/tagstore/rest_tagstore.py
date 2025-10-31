@@ -5,7 +5,7 @@ from dateutil import parser
 from src.common.logging import logger
 
 from src.common.content import Content
-from src.tags.tagstore.types import Tag, UploadJob
+from src.tags.tagstore.model import Tag, UploadJob
 from src.tags.tagstore.abstract import Tagstore
 
 class RestTagstore(Tagstore):

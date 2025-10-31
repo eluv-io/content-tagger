@@ -14,7 +14,7 @@ from common_ml.video_processing import get_fps
 
 from src.tag_containers.model import FrameTag
 from src.common.errors import BadRequestError
-from src.tags.tagstore.types import Tag
+from src.tags.tagstore.model import Tag
 from src.tag_containers.model import *
 
 logger = logger.bind(name="TagContainer")

@@ -1,7 +1,7 @@
 import tempfile
 
 import pytest
-from src.tags.tagstore.types import UploadJob, Tag
+from src.tags.tagstore.model import UploadJob, Tag
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.tags.conversion import TagConverterConfig, get_latest_tags_for_content
 from src.tags.legacy_format import *

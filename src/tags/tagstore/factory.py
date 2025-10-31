@@ -1,6 +1,6 @@
 
 from src.tags.tagstore.abstract import Tagstore
-from src.tags.tagstore.types import TagstoreConfig
+from src.tags.tagstore.model import TagstoreConfig
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.tags.tagstore.rest_tagstore import RestTagstore
 

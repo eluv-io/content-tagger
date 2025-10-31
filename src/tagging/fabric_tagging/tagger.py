@@ -11,7 +11,7 @@ from uuid import uuid4 as uuid
 import os
 from src.common.logging.timing import timeit
 
-from src.tags.tagstore.types import Tag
+from src.tags.tagstore.model import Tag
 from src.fetch.model import *
 from src.tag_containers.containers import LiveTagContainer
 from src.tag_containers.model import ContainerRequest

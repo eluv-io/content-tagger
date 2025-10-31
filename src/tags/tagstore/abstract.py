@@ -1,7 +1,7 @@
 from typing import Protocol
 
 from src.common.content import Content
-from src.tags.tagstore.types import Tag, UploadJob
+from src.tags.tagstore.model import Tag, UploadJob
 
 class Tagstore(Protocol):
     def start_job(self,

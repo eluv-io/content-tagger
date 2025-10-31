@@ -8,7 +8,7 @@ import time
 import uuid
 
 from src.common.content import Content
-from src.tags.tagstore.types import *
+from src.tags.tagstore.model import *
 from src.tags.tagstore.abstract import Tagstore
 
 class FilesystemTagStore(Tagstore):

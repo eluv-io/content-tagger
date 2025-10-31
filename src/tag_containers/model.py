@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing_extensions import Literal
 
-from src.tags.tagstore.types import Tag
+from src.tags.tagstore.model import Tag
 from src.common.model import SystemResources
 
 MediaInput = list[str] | str

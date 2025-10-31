@@ -5,7 +5,7 @@ from copy import deepcopy
 from src.common.content import Content
 from src.tags.tagstore.abstract import Tagstore
 from common_ml.tags import FrameTag, VideoTag
-from src.tags.tagstore.types import UploadJob, Tag
+from src.tags.tagstore.model import UploadJob, Tag
 from src.tags.legacy_format import *
 
 @dataclass
