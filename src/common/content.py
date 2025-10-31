@@ -3,7 +3,7 @@ from typing import Any
 
 from elv_client_py import ElvClient
 
-from src.api.auth import parse_qhit
+from src.common.errors import BadRequestError
 
 @dataclass
 class ContentConfig:
@@ -95,3 +95,18 @@ class ContentFactory:
 
     def create_content(self, qhit: str, auth: str) -> Content:
         return Content(qhit, auth, self.cfg)
+
+def parse_qhit(qhit: str) -> dict[str, str]:
+    """Parse a qhit into a dictionary so it can be passed to elv_client_py functions 
+    and use the correct argument."""
+    if not isinstance(qhit, str):
+        raise BadRequestError(f"qhit must be a string, got {type(qhit)}")
+
+    if qhit.startswith("hq__"):
+        return {"version_hash": qhit}
+    elif qhit.startswith("tqw__"):
+        return {"write_token": qhit}
+    elif qhit.startswith("iq__"):
+        return {"object_id": qhit}
+
+    raise BadRequestError(f"Invalid qhit: {qhit}")

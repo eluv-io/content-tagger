@@ -21,9 +21,7 @@ class TagArgs:
     # if false, then the tagger will ignore tagging of a media source if the (source, model) pair
     # already exists in the tagstore.
     replace: bool
-
-    def __str__(self):
-        return f"TagArgs(run_config={self.run_config}, scope={self.scope}, replace={self.replace})"
+    destination_qid: str
 
 JobStateDescription = Literal[
     "Fetching content",

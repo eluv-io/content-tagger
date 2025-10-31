@@ -8,6 +8,7 @@ class ModelParams:
 @dataclass
 class BaseTagAPIArgs:
     features: dict[str, ModelParams]
+    destination_qid: str = ""
     replace: bool = False
 
 @dataclass

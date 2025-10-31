@@ -283,13 +283,14 @@ def sample_tag_args():
             run_config={},
             scope=VideoScope(stream="video", start_time=0, end_time=30),
             replace=False,
-
+            destination_qid=""
         ),
         TagArgs(
             feature="speech_recognition", 
             run_config={},
             scope=VideoScope(stream="audio", start_time=0, end_time=30),
             replace=False,
+            destination_qid=""
         )
     ]
 
@@ -322,6 +323,7 @@ def test_tag_invalid_feature(fabric_tagger, q):
         run_config={},
         scope=VideoScope(stream="video", start_time=0, end_time=30),
         replace=False,
+        destination_qid=""
     )
     
     with pytest.raises(MissingResourceError, match="Invalid feature: invalid_feature"):
@@ -475,12 +477,14 @@ def test_many_concurrent_jobs(fabric_tagger):
                 run_config={},
                 scope=VideoScope(stream="video", start_time=0, end_time=30),
                 replace=False,
+                destination_qid=""
             ),
             TagArgs(
                 feature="speech_recognition", 
                 run_config={},
                 scope=VideoScope(stream="audio", start_time=0, end_time=30),
                 replace=False,
+                destination_qid=""
             )
         ])
 
@@ -601,6 +605,7 @@ def test_container_tags_method_fails(mock_tags, fabric_tagger, q):
         run_config={},
         scope=VideoScope(stream="video", start_time=0, end_time=30),
         replace=False,
+        destination_qid=q.qid
     )
     
     # Start the job
@@ -658,6 +663,7 @@ def test_start_new_container_fails(mock_process, fabric_tagger, q):
         run_config={},
         scope=VideoScope(stream="video", start_time=0, end_time=30),
         replace=False,
+        destination_qid=q.qid
     )
     
     # Start the job
@@ -706,6 +712,7 @@ def test_failed_tag(mock_get, fabric_tagger, q):
         run_config={},
         scope=VideoScope(stream="video", start_time=0, end_time=30),
         replace=False,
+        destination_qid=q.qid
     )
     
     # Start the job
@@ -752,6 +759,7 @@ def test_container_nonzero_exit_code(mock_exit_code, fabric_tagger, q):
         run_config={},
         scope=VideoScope(stream="video", start_time=0, end_time=30),
         replace=False,
+        destination_qid=q.qid
     )
     
     # Start the job

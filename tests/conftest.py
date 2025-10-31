@@ -11,8 +11,6 @@ from src.tags.tagstore.rest_tagstore import RestTagstore
 from src.tagging.fabric_tagging.model import FabricTaggerConfig
 from src.tags.conversion import TagConverter, TagConverterConfig
 from src.common.content import Content, ContentConfig, ContentFactory
-from src.fetch.factory import FetchFactory
-from src.fetch.model import FetcherConfig
 
 dotenv.load_dotenv()
 

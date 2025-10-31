@@ -25,13 +25,26 @@ def map_video_tag_dto(
         return map_live_tag_dto(args, registry)
     else:
         return map_vod_tag_dto(args, registry, q)
+    
+def _create_tag_args(
+    feature: str,
+    config: ModelParams,
+    scope: Scope,
+    args: BaseTagAPIArgs
+) -> TagArgs:
+    """Create TagArgs - single place to extract common fields from args."""
+    return TagArgs(
+        feature=feature,
+        run_config=config.model,
+        scope=scope,
+        replace=args.replace,
+        destination_qid=args.destination_qid
+    )
 
 def map_vod_tag_dto(args: TagAPIArgs, registry: ContainerRegistry, q: Content) -> list[TagArgs]:
     res = []
     for feature, config in args.features.items():
-        if config.stream is not None:
-            stream = config.stream
-        else:
+        if config.stream is None:
             model_config = registry.get_model_config(feature)
             model_type = model_config.type
             if model_type in ("video", "frame"):
@@ -40,36 +53,41 @@ def map_vod_tag_dto(args: TagAPIArgs, registry: ContainerRegistry, q: Content) -
                 stream = _find_default_audio_stream(q)
             config.stream = stream
 
-        start_time = args.start_time
-        if args.start_time is None:
-            start_time = 0
-        # help the type checker
-        assert isinstance(start_time, int)
+        start_time = args.start_time if args.start_time is not None else 0
+        end_time = args.end_time if args.end_time is not None else float('inf')
 
-        end_time = args.end_time
-        if args.end_time is None:
-            end_time = float('inf')
-        assert isinstance(end_time, int) or isinstance(end_time, float)
-
-        res.append(TagArgs(feature=feature, run_config=config.model, scope=VideoScope(config.stream, start_time=start_time, end_time=end_time), replace=args.replace))
+        res.append(_create_tag_args(
+            feature=feature,
+            config=config,
+            scope=VideoScope(config.stream, start_time=start_time, end_time=end_time),
+            args=args,
+        ))
     return res
 
 def map_live_tag_dto(args: LiveTagAPIArgs, registry: ContainerRegistry) -> list[TagArgs]:
     res = []
     for feature, config in args.features.items():
         model_config = registry.get_model_config(feature)
-        model_type = model_config.type
-        if model_type == "audio":
+        if model_config.type == "audio":
             raise BadRequestError(f"Feature {feature} is of type audio, but live tagging only supports video models")
-        res.append(TagArgs(feature=feature, run_config=config.model, scope=LiveScope("video", chunk_size=args.segment_length, max_duration=args.max_duration), replace=False))
-
+        
+        res.append(_create_tag_args(
+            feature=feature,
+            config=config,
+            scope=LiveScope("video", chunk_size=args.segment_length, max_duration=args.max_duration),
+            args=args,
+        ))
     return res
 
 def map_asset_tag_dto(args: ImageTagAPIArgs) -> list[TagArgs]:
     res = []
     for feature, config in args.features.items():
-        res.append(TagArgs(feature=feature, run_config=config.model, scope=AssetScope(assets=args.assets), replace=args.replace))
-        
+        res.append(_create_tag_args(
+            feature=feature,
+            config=config,
+            scope=AssetScope(assets=args.assets),
+            args=args
+        ))
     return res
 
 def _find_default_audio_stream(q: Content) -> str:

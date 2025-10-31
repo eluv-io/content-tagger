@@ -7,6 +7,7 @@ from flask import Request, Response, make_response
 from requests.exceptions import HTTPError
 
 from src.common.errors import BadRequestError
+from src.common.content import Content, parse_qhit
 
 
 def authenticate(client: ElvClient, qhit: str) -> None:
@@ -38,24 +39,16 @@ def get_client(req: Request, qhi: str, config_url: str) -> ElvClient:
     authenticate(client, qhi)
     return client
 
-
-def parse_qhit(qhit: str) -> Dict[str, str]:
-    """Parse a qhit into a dictionary so it can be passed to elv_client_py functions 
-    and use the correct argument."""
-    if not isinstance(qhit, str):
-        raise BadRequestError(f"qhit must be a string, got {type(qhit)}")
-
-    if qhit.startswith("hq__"):
-        return {"version_hash": qhit}
-    elif qhit.startswith("tqw__"):
-        return {"write_token": qhit}
-    elif qhit.startswith("iq__"):
-        return {"object_id": qhit}
-
-    raise BadRequestError(f"Invalid qhit: {qhit}")
-
-
 def convert_response(resp: requests.Response) -> Response:
     flask_response = make_response(resp.content)
     flask_response.status_code = resp.status_code
     return flask_response
+
+def is_same_auth_ctx(q: Content, other_qhit: str) -> bool:
+    """Check if the other_qhit belongs to the same authorization context as q."""
+    try:
+        q.content_object(**parse_qhit(other_qhit))
+    except HTTPError:
+        return False
+
+    return True
