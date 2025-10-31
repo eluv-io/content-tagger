@@ -15,3 +15,15 @@ class MissingResourceError(Exception):
 
     def __init__(self, message):
         self.message = message
+
+class TaggerRuntimeError(Exception):
+    """Base exception with context"""
+    def __init__(self, message: str, **context):
+        super().__init__(message)
+        self.context = context
+    
+    def __str__(self):
+        if self.context:
+            context_str = ", ".join(f"{k}={v}" for k, v in self.context.items())
+            return f"{super().__str__()} ({context_str})"
+        return super().__str__()

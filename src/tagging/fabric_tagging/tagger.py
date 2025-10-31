@@ -18,7 +18,7 @@ from src.tag_containers.model import ContainerRequest
 from src.tag_containers.registry import ContainerRegistry
 from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.common.content import Content
-from src.common.errors import MissingResourceError
+from src.common.errors import *
 from src.fetch.factory import FetchFactory
 from src.tags.tagstore.abstract import Tagstore
 from src.tagging.fabric_tagging.message_types import *
@@ -303,12 +303,20 @@ class FabricTagger:
         dl_res = message.data.data
 
         if jobid not in self.jobstore.active_jobs:
-            msg = "Received EnterTaggingPhase for inactive job"
-            logger.exception(msg, extra={"jobid": jobid})
-            message.response_mailbox.put(Response(data=None, error=RuntimeError("Job is inactive")))
-            return
+            raise TaggerRuntimeError("Job is inactive", jobid=jobid)
 
         job = self.jobstore.active_jobs[jobid]
+        
+        try:
+            self._process_tagging_phase(job, dl_res)
+            message.response_mailbox.put(Response(data=None, error=None))
+        except Exception as e:
+            self._cleanup_job(job, "Failed", "Tagging phase failed")
+            raise TaggerRuntimeError("Tagging phase failed", jobid=jobid) from e
+
+    def _process_tagging_phase(self, job: TagJob, dl_res: DownloadResult) -> None:
+        """Process download results and update tagging state"""
+        jobid = job.get_id()
         logger.info("entering tagging phase", extra={"jobid": jobid})
 
         job.state.status.status = "Tagging content"
@@ -316,10 +324,8 @@ class FabricTagger:
         new_sources = []
         for s in dl_res.sources:
             if s.name not in job.state.media.downloaded:
-                # yes, this is O(n^2) but n is small
                 new_sources.append(s)
             else:
-                # the downloader is supposed to avoid duplicates, but just in case
                 logger.error("Got a duplicate source, ignoring", extra={"jobid": jobid, "source": s.name})
 
         job.state.media.downloaded += new_sources
@@ -331,23 +337,17 @@ class FabricTagger:
 
         if new_sources:
             if not job.state.container:
-                # NOTE: check error
                 self._start_new_container(job)
             else:
                 with timeit("sending new media to container", min_duration=0.2):
-                    # NOTE: check error
                     self._send_media(job.state.container, new_sources)
 
         if dl_res.done:
             # signal to container to stop accepting new media and shut down when done
             if job.state.container:
-                # TODO: BAD, need better way
-                # NOTE: check error
                 job.state.container.send_eof()
         else:
             self._submit_async(EnterFetchingPhase(job_id=jobid))
-
-        message.response_mailbox.put(Response(data=None, error=None))
 
     def _send_media(self, container: TagContainer, new_media: list[Source]) -> None:
         """
@@ -424,7 +424,7 @@ class FabricTagger:
             if source.name not in job.state.uploaded_sources:
                 job.state.status.failed.append(source.name)
 
-        self._set_stop_state(jobid, "Completed", "", None)
+        self._set_stop_state(jobid, "Completed", "")
 
         message.response_mailbox.put(Response(data=None, error=None))
 
@@ -478,7 +478,7 @@ class FabricTagger:
 
         jobs = [active_jobs[jid] for jid in jobids]
         for job in jobs:
-            self._set_stop_state(job.get_id(), request.status, "", None)
+            self._set_stop_state(job.get_id(), request.status, "")
 
         # Stop system tagger jobs in background thread
         def stop_system_jobs():
@@ -499,7 +499,7 @@ class FabricTagger:
         # Stop all active jobs
         active_jobs = list(self.jobstore.active_jobs.keys())
         for job_id in active_jobs:
-            self._set_stop_state(job_id, "Stopped", "Shutdown requested", None)
+            self._set_stop_state(job_id, "Stopped", "Shutdown requested")
         
         self.shutdown_requested = True
         self.system_tagger.shutdown()
@@ -519,8 +519,7 @@ class FabricTagger:
             self, 
             jobid: JobID, 
             status: JobStateDescription,
-            message: str,
-            error: Exception | None,
+            message: str
         ) -> None:
         """Set job to stopped state (called from actor thread)
         
@@ -529,11 +528,8 @@ class FabricTagger:
         Also sets stop event to signal any asynchronous operations to stop.
         """
 
-        if error:
-            logger.opt(exception=error).error("Job stopped with error", extra={"jobid": jobid, "status": status, "message": message})
-
         if status not in ("Completed", "Failed", "Stopped"):
-            raise ValueError(f"Invalid stop status: {status}")
+            raise TaggerRuntimeError("Invalid stop status", jobid=jobid, status=status, msg=message)
 
         if jobid in self.jobstore.active_jobs:
             job = self.jobstore.active_jobs[jobid]
@@ -549,7 +545,7 @@ class FabricTagger:
             self.jobstore.inactive_jobs[jobid] = job
             del self.jobstore.active_jobs[jobid]
         else:
-            logger.warning(f"Tried to stop an inactive job: {jobid}")
+            logger.warning("Tried to stop an inactive job", extra={"jobid": jobid})
 
     def _summarize_status(self, state: JobState) -> dict:
         """Summarize job status (called from actor thread)
@@ -579,7 +575,6 @@ class FabricTagger:
         jobs = list(self.jobstore.active_jobs.values())
 
         for job in jobs:
-            # NOTE: check error DONE
             self._run_upload(job)
 
     def _run_upload(self, job: TagJob) -> None:
@@ -587,16 +582,16 @@ class FabricTagger:
         try:
             self.__upload_tags(job)
         except Exception as e:
-            self._cleanup_job(job, "Failed", "Tag upload failed", e)
+            logger.opt(exception=e).error("error uploading tags for job", extra={"jobid": job.get_id()})
+            self._cleanup_job(job, "Failed", "Tag upload failed")
 
     def _cleanup_job(
         self, 
         job: TagJob, 
         status: JobStateDescription,
-        msg: str,
-        error: Exception | None,
+        msg: str
     ) -> None:
-        self._set_stop_state(job.get_id(), status, msg, error)
+        self._set_stop_state(job.get_id(), status, msg)
 
         def cleanup():
             try:

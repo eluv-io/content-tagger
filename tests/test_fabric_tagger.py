@@ -645,6 +645,52 @@ def test_container_tags_method_fails(mock_tags, fabric_tagger, q):
     # Verify the tags method was actually called
     assert mock_tags.call_count == 1
 
+@patch.object(FabricTagger, '_start_new_container')
+def test_start_new_container_fails(mock_process, fabric_tagger, q):
+    """Test that when _start_new_container fails, job transitions to Failed state"""
+
+    # Configure the mock to raise an exception
+    mock_process.side_effect = RuntimeError("Simulated tagging phase processing failure")
+    
+    # Create args for a simple job
+    args = TagArgs(
+        feature="object_detection",
+        run_config={},
+        scope=VideoScope(stream="video", start_time=0, end_time=30),
+        replace=False,
+    )
+    
+    # Start the job
+    fabric_tagger.tag(q, args)
+    
+    # Wait for the job to fail
+    timeout = 2
+    start_time = time.time()
+
+    while time.time() - start_time < timeout:
+        status = fabric_tagger.status(q.qhit)
+        job_status = status["video"]["object_detection"]["status"]
+        
+        if job_status == "Failed":
+            break
+        elif job_status in ["Completed", "Stopped"]:
+            pytest.fail(f"Expected job to fail, but got status: {job_status}")
+        
+        time.sleep(0.25)
+    else:
+        pytest.fail("Job did not fail within timeout period")
+    
+    # Verify final status is Failed
+    final_status = fabric_tagger.status(q.qhit)
+    assert final_status["video"]["object_detection"]["status"] == "Failed"
+    assert "message" in final_status["video"]["object_detection"]
+    
+    # Verify the job is moved to inactive jobs
+    assert len(fabric_tagger.jobstore.active_jobs) == 0
+    assert len(fabric_tagger.jobstore.inactive_jobs) == 1
+
+    # Verify _start_new_container was actually called
+    assert mock_process.call_count >= 1
 
 @patch.object(FakeContainerRegistry, 'get')
 def test_failed_tag(mock_get, fabric_tagger, q):
