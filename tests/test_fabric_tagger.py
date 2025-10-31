@@ -14,7 +14,7 @@ from src.tagging.fabric_tagging.model import TagArgs
 from src.tag_containers.model import ContainerRequest
 from src.fetch.model import *
 from src.common.content import Content
-from src.tags.tagstore.types import Tag
+from src.tags.tagstore.model import Tag
 from src.common.errors import MissingResourceError
 
 class FakeTagContainer:
@@ -220,7 +220,7 @@ class FakeWorker(FetchSession):
                 filepath=filepath,
                 name=f"part_{i}.mp4",
                 offset=i * 10000,  # 10 second parts
-                wall_clock=None
+                wall_clock=time.time_ns() // 1_000_000  # current time in ms
             )
             sources.append(source)
         
@@ -814,3 +814,23 @@ def test_destination_qid_uploads_to_correct_qhit(sample_tag_args, fabric_tagger:
     # Verify no tags were uploaded to source qhit
     tag_count_source = fabric_tagger.tagstore.count_tags(qhit=q.qhit, q=q)
     assert tag_count_source == 0
+
+def test_tags_have_timestamp_ms_field(fabric_tagger: FabricTagger, q: Content, sample_tag_args):
+    """Test that uploaded tags include timestamp_ms in additional_info"""
+    
+    for args in sample_tag_args:
+        fabric_tagger.tag(q, args)
+
+    wait_tag(fabric_tagger, q.qhit, timeout=5)
+    
+    tags = fabric_tagger.tagstore.find_tags(
+        qhit=q.qhit,
+        q=q
+    )
+
+    assert len(tags) > 0
+
+    for tag in tags:
+        assert "timestamp_ms" in tag.additional_info
+        assert isinstance(tag.additional_info["timestamp_ms"], int)
+        assert tag.additional_info["timestamp_ms"] > 0

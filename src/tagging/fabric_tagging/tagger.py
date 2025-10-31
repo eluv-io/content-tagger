@@ -631,6 +631,8 @@ class FabricTagger:
             for tag in out.tags:
                 tag.source = original_src.name
                 tag.jobid = job.state.upload_job
+                if original_src.wall_clock:
+                    tag.additional_info["timestamp_ms"] = original_src.wall_clock
                 tags2upload.append(self._fix_tag_offsets(tag, original_src.offset, fps))
 
         try:
