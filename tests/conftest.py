@@ -19,6 +19,10 @@ def test_qid():
     return "iq__3C58dDYxsn5KKSWGYrfYr44ykJRm"
 
 @pytest.fixture
+def test_qid2():
+    return "iq__cebzuQ8BqsWZyoUdnTXCe23fUgz"
+
+@pytest.fixture
 def live_q():
     token = os.getenv("LIVE_AUTH")
     if not token:

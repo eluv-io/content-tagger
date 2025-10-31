@@ -14,9 +14,9 @@ from src.common.content import Content
 from src.common.errors import BadRequestError
 
 def map_video_tag_dto(
-        args: TagAPIArgs | LiveTagAPIArgs, 
-        registry: ContainerRegistry,
-        q: Content
+    args: TagAPIArgs | LiveTagAPIArgs, 
+    registry: ContainerRegistry,
+    q: Content
 ) -> list[TagArgs]:
     """
     Map video tagging API arguments to internal TagArgs structures.

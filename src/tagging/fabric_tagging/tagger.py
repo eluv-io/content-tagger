@@ -197,14 +197,16 @@ class FabricTagger:
         Initialize the starting state for a job and important context for its runtime
         """
 
+        dest_q = self._get_destination_qid(q, args.destination_qid)
+
         # TODO: start job here or before first upload tags event? benefit of here is we catch tagstore errors right away.
         tsjob = self.tagstore.start_job(
-            qhit=q.qhit,
+            qhit=dest_q.qid,
             track=feature,
             # TODO: change
             stream=args.scope.stream if isinstance(args.scope, VideoScope | LiveScope) and args.scope.stream else "assets",
             author="tagger",
-            q=q
+            q=dest_q,
         )
 
         # for user to stop the job
@@ -389,7 +391,6 @@ class FabricTagger:
             logger.info("tagging was stopped via stop event", extra={"jobid": jobid})
             return
 
-        # NOTE: check error
         status = self.system_tagger.status(job.state.taghandle)
         if status.status != "Completed":
             self._end_job(jobid, "Failed", RuntimeError(f"Tagging job ended with status: {status.status}"))
@@ -642,7 +643,7 @@ class FabricTagger:
 
         try:
             with timeit("uploading tags to tagstore", min_duration=0.5):
-                self.tagstore.upload_tags(tags2upload, job.state.upload_job, q=job.args.q)
+                self._post_tags(tags2upload, job.state.upload_job, job.args.q, destination_qid=job.args.q.qhit)
         except Exception as e:
             # just keep going in case it's a transient error, we should still have a reference to the tags on disk as long as the tagger doesn't die too.
             # NOTE: it's possible that if the container ends around the time the tagstore is down we can miss some tags.
@@ -652,6 +653,21 @@ class FabricTagger:
         # TODO: this is good behavior for live case, but for non-live we might prefer to retry the individual tags
         # TODO: we should probably have a generic failed sources field to add to and append there instead of here.
         job.state.uploaded_sources.extend(media_to_source[out.source_media].name for out in new_outputs)
+
+    def _post_tags(self, tags: list[Tag], batch: str, q: Content, destination_qid: str) -> None:
+        """Upload tags to tagstore (called from actor thread)"""
+        if not tags:
+            return
+
+        logger.info("uploading tags", extra={"num_tags": len(tags), "batch": batch, "qhit": q.qhit})
+
+        dest_q = self._get_destination_qid(q, destination_qid)
+
+        try:
+            self.tagstore.upload_tags(tags, batch, q=dest_q)
+        except Exception as e:
+            logger.opt(exception=e).error("error uploading tags", extra={"batch": batch, "source_qid": q.qid, "destination_qid": dest_q.qid})
+            raise
 
     def _output_dir_from_q(self, q: Content) -> str:
         out = os.path.join(self.cfg.media_dir, q.qhit)
@@ -715,3 +731,11 @@ class FabricTagger:
 
         tag.additional_info["frame_tags"] = adjusted
         return tag
+    
+    def _get_destination_qid(self, q: Content, destination_qid: str) -> Content:
+        """Get destination qid (called from actor thread)"""
+        if destination_qid == "" or destination_qid == q.qid:
+            return q
+
+        dest_q = q.get_child(destination_qid)
+        return dest_q

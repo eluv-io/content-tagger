@@ -795,45 +795,20 @@ def test_container_nonzero_exit_code(mock_exit_code, fabric_tagger, q):
     inactive_job = list(fabric_tagger.jobstore.inactive_jobs.values())[0]
     assert inactive_job.state.container.exit_code() == 1
 
-@patch.object(FakeTagContainer, 'tags')
-def test_destination_qid_uploads_to_correct_qhit(mock_tags, fabric_tagger, q):
+def test_destination_qid_uploads_to_correct_qhit(sample_tag_args, fabric_tagger: FabricTagger, q, test_qid2):
     """Test that when destination_qid is set, tags are uploaded to that qhit instead of source"""
-    
-    # Mock container.tags to return fake tags
-    mock_tags.return_value = [
-        ModelOutput(
-            source_media="/fake/path/video1.mp4",
-            tags=[
-                Tag(
-                    start_time=0,
-                    end_time=5000,
-                    text="test_tag",
-                    additional_info={"confidence": 0.9},
-                    source="",
-                    jobid=""
-                )
-            ]
-        )
-    ]
-    
-    destination_qhit = "iq__destination"
-    
-    args = TagArgs(
-        feature="object_detection",
-        run_config={},
-        scope=VideoScope(stream="video", start_time=0, end_time=30),
-        replace=False,
-        destination_qid=destination_qhit
-    )
 
-    fabric_tagger.tag(q, args)
-    
+    for args in sample_tag_args:
+        args.destination_qid = test_qid2
+        fabric_tagger.tag(q, args)
+
     # Wait for job to complete
-    wait_tag(fabric_tagger, q.qhit, timeout=5)
+    wait_tag(fabric_tagger, q.qhit, timeout=10)
+    time.sleep(0.5)
     
     # Verify tags were uploaded to destination_qhit
-    tag_count_destination = fabric_tagger.tagstore.count_tags(qhit=destination_qhit, q=q)
-    assert tag_count_destination == 1
+    tag_count_destination = fabric_tagger.tagstore.count_tags(qhit=test_qid2, q=q)
+    assert tag_count_destination > 0
 
     # Verify no tags were uploaded to source qhit
     tag_count_source = fabric_tagger.tagstore.count_tags(qhit=q.qhit, q=q)

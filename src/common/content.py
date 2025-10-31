@@ -51,6 +51,12 @@ class Content:
         self._parts_client = parts_client
         self._live_client = live_client
 
+        self.cfg = cfg
+
+    def get_child(self, qhit: str) -> "Content":
+        """Get a child content object as a Content instance."""
+        return Content(qhit, self._client.token, self.cfg)
+
     def token(self) -> str:
         return self._client.token
 
