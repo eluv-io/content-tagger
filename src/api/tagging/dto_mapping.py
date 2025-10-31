@@ -3,8 +3,8 @@ These functions map between the API DTOs and service layer structs.
 """
 
 from flask import request
-from loguru import logger
 from requests import HTTPError
+from dacite import from_dict
 
 from src.api.tagging.format import *
 from src.fetch.model import *
@@ -93,18 +93,13 @@ def _find_default_audio_stream(q: Content) -> str:
 def tag_args_from_req(q: Content) -> TagAPIArgs | LiveTagAPIArgs:
     try:
         body = request.json
-        if body is None:
-            raise BadRequestError("Missing request body")
+        assert body is not None
         if _is_live(q):
-            args = LiveTagAPIArgs.from_dict(body)
+            args = from_dict(LiveTagAPIArgs, body)
         else:
-            args = TagAPIArgs.from_dict(body)
-    except BadRequestError as e:
-        raise e
+            args = from_dict(TagAPIArgs, body)
     except Exception as e:
-        logger.exception(e)
-        raise BadRequestError(
-            "Invalid arguments. Please check your request body.") from e
+        raise BadRequestError(f"Invalid request body: {e}") from e
     
     return args
     

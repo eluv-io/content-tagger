@@ -1,6 +1,8 @@
 import json
 
 from flask import Response, request, current_app
+from dacite import from_dict
+
 from src.api.tagging.dto_mapping import tag_args_from_req
 from src.common.logging import logger
 
@@ -32,17 +34,17 @@ def handle_image_tag(qhit: str) -> Response:
 
     try:
         body = request.json
-        if body is None:
-            raise BadRequestError("Missing request body")
-        args = ImageTagAPIArgs.from_dict(body)
-    except TypeError as e:
-        return Response(response=json.dumps({'error': str(e)}), status=400, mimetype='application/json')
+        assert body is not None
+        args = from_dict(ImageTagAPIArgs, body)
+    except Exception as e:
+        raise BadRequestError(f"Invalid request body: {e}") from e
 
     tagger: FabricTagger = current_app.config["state"]["tagger"]
 
     tag_args = map_asset_tag_dto(args)
     status_by_feature = {}
     for tag_arg in tag_args:
+        # TODO: must fix individual tag errors here
         status_by_feature[tag_arg.feature] = tagger.tag(q, tag_arg)
     
     return Response(response=json.dumps(status_by_feature), status=200, mimetype='application/json')
