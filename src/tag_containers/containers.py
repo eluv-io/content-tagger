@@ -227,6 +227,7 @@ class TagContainer:
                     "confidence": image_tag_data.get("confidence", 0.0),
                     "box": image_tag_data.get("box", [])
                 },
+                frame_tags={},
                 source="",
                 batch_id=""
             ))
@@ -294,6 +295,7 @@ class TagContainer:
                 end_time=video_tag_data.get("end_time", 0),
                 text=video_tag_data.get("text", ""),
                 additional_info={},
+                frame_tags={},
                 source="",
                 batch_id=""
             )
@@ -315,7 +317,7 @@ class TagContainer:
                             "confidence": ftag.confidence,
                             "box": ftag.box
                         }
-                    tag.additional_info["frame_tags"] = frame_info
+                    tag.frame_tags = frame_info
 
             tags.append(tag)
 

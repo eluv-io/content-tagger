@@ -16,6 +16,7 @@ class Tag:
     start_time: int
     end_time: int
     text: str
+    frame_tags: dict
     additional_info: dict
     source: str
     batch_id: str

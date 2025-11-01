@@ -128,6 +128,7 @@ def test_download_with_replace_true(
         start_time=0,
         end_time=1,
         text="hello",
+        frame_tags={},
         additional_info={},
         source=first_source,
         batch_id=job.id
@@ -259,6 +260,7 @@ def test_fetch_assets_with_preserve_track(
             start_time=0,
             end_time=1,
             text="test asset tag",
+            frame_tags={},
             additional_info={},
             source=asset_name,
             batch_id=batch_id
@@ -318,6 +320,7 @@ def test_fetch_assets_with_preserve_track(
             start_time=0,
             end_time=1,
             text="asset_track",
+            frame_tags={},
             additional_info={},
             source=asset,
             batch_id=new_job.id

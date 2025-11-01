@@ -47,41 +47,35 @@ def test_upload_tags_to_fabric_full_workflow(
     # First bucket: 0-300,000ms
     obj_tags_bucket1 = [
         Tag(0, 5000, "person", {
-            "frame_tags": {
                 "1000": {"box": {"x1": 10, "y1": 20, "x2": 30, "y2": 40}, "confidence": 0.9},
                 "3000": {"box": {"x1": 15, "y1": 25, "x2": 35, "y2": 45}, "confidence": 0.8}
-            }
-        }, "part_0.mp4", obj_job.id),
+            }, {}, "part_0.mp4", obj_job.id),
         Tag(10000, 15000, "car", {
-            "frame_tags": {
                 "12000": {"box": {"x1": 50, "y1": 60, "x2": 70, "y2": 80}, "confidence": 0.95}
-            }
-        }, "part_0.mp4", obj_job.id)
+            }, {}, "part_0.mp4", obj_job.id)
     ]
     
     asr_tags_bucket1 = [
-        Tag(3001, 6000, "This is a test.", {}, "part_0.mp4", asr_job.id),
-        Tag(1, 3000, "Hello world", {}, "part_0.mp4", asr_job.id),
-        Tag(6001, 9000, "How are you?", {}, "part_0.mp4", asr_job.id)
+        Tag(3001, 6000, "This is a test.", {}, {}, "part_0.mp4", asr_job.id),
+        Tag(1, 3000, "Hello world", {}, {}, "part_0.mp4", asr_job.id),
+        Tag(6001, 9000, "How are you?", {}, {}, "part_0.mp4", asr_job.id)
     ]
     
     shot_tags_bucket1 = [
-        Tag(0, 100000, "", {}, "part_0.mp4", shot_job.id),
-        Tag(100000, 200000, "", {}, "part_0.mp4", shot_job.id)
+        Tag(0, 100000, "", {}, {}, "part_0.mp4", shot_job.id),
+        Tag(100000, 200000, "", {}, {}, "part_0.mp4", shot_job.id)
     ]
     
     # Second bucket: 300,000-600,000ms (5-10 minutes)
     obj_tags_bucket2 = [
         Tag(350000, 355000, "bicycle", {
-            "frame_tags": {
                 "352000": {"box": {"x1": 20, "y1": 30, "x2": 40, "y2": 50}, "confidence": 0.85}
-            }
-        }, "part_1.mp4", obj_job.id)
+            }, {}, "part_1.mp4", obj_job.id)
     ]
     
     asr_tags_bucket2 = [
-        Tag(320000, 323000, "Second bucket speech", {}, "part_1.mp4", asr_job.id),
-        Tag(323000, 326000, "More text here.", {}, "part_1.mp4", asr_job.id)
+        Tag(320000, 323000, "Second bucket speech", {}, {}, "part_1.mp4", asr_job.id),
+        Tag(323000, 326000, "More text here.", {}, {}, "part_1.mp4", asr_job.id)
     ]
     
     tag_store.upload_tags(obj_tags_bucket1 + obj_tags_bucket2, obj_job.id, q=q)
@@ -223,8 +217,8 @@ def test_upload_tags_no_frame_tags(
     asr_job = tag_store.create_batch(q.qid, "audio", "tagger", "asr", q=q)
     
     asr_tags = [
-        Tag(0, 3000, "Speech only test", {}, "part_0.mp4", asr_job.id),
-        Tag(3000, 6000, "No frame tags here.", {}, "part_0.mp4", asr_job.id)
+        Tag(0, 3000, "Speech only test", {}, {}, "part_0.mp4", asr_job.id),
+        Tag(3000, 6000, "No frame tags here.", {}, {}, "part_0.mp4", asr_job.id)
     ]
     
     for tag in asr_tags:

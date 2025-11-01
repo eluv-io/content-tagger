@@ -112,6 +112,7 @@ class FakeTagContainer:
                     start_time=0,
                     end_time=5000,  # 5 seconds in ms
                     text=f"{self.feature}_tag_{i}",
+                    frame_tags={},
                     additional_info={"confidence": 0.9},
                     source="",
                     batch_id=""
@@ -120,6 +121,7 @@ class FakeTagContainer:
                     start_time=5000,
                     end_time=10000,  # 5-10 seconds in ms
                     text=f"{self.feature}_tag_{i}_2",
+                    frame_tags={},
                     additional_info={"confidence": 0.8},
                     source="",
                     batch_id=""

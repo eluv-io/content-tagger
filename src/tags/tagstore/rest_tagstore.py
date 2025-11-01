@@ -180,6 +180,7 @@ class RestTagstore(Tagstore):
                 start_time=api_tag['start_time'],
                 end_time=api_tag['end_time'],
                 text=api_tag['tag'],
+                frame_tags=api_tag.get('frame_tags', {}),
                 additional_info=api_tag.get('additional_info', {}),
                 source=api_tag.get('source', ''),
                 batch_id=api_tag['batch_id']

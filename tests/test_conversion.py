@@ -38,11 +38,11 @@ def sample_job_tags():
     )
     
     obj_tags = [
-        Tag(0, 5000, "person", {}, "part_0.mp4", "job1"),
-        Tag(10000, 15000, "car", {}, "part_0.mp4", "job1"),
-        Tag(20000, 25000, "person", {}, "part_0.mp4", "job1"),
-        Tag(26000, 29000, "dog", {}, "part_0.mp4", "job1"),
-        Tag(30000, 35000, "bicycle", {}, "part_1.mp4", "job1")
+        Tag(0, 5000, "person", {}, {}, "part_0.mp4", "job1"),
+        Tag(10000, 15000, "car", {}, {}, "part_0.mp4", "job1"),
+        Tag(20000, 25000, "person", {}, {}, "part_0.mp4", "job1"),
+        Tag(26000, 29000, "dog", {}, {}, "part_0.mp4", "job1"),
+        Tag(30000, 35000, "bicycle", {}, {}, "part_1.mp4", "job1")
     ]
     
     # ASR job
@@ -56,9 +56,9 @@ def sample_job_tags():
     )
     
     asr_tags = [
-        Tag(1, 3000, "Hello world,", {}, "part_0.mp4", "job2"),
-        Tag(3001, 6000, "How are you?", {}, "part_0.mp4", "job2"),
-        Tag(6001, 9000, "This is a test.", {}, "part_0.mp4", "job2")
+        Tag(1, 3000, "Hello world,", {}, {}, "part_0.mp4", "job2"),
+        Tag(3001, 6000, "How are you?", {}, {}, "part_0.mp4", "job2"),
+        Tag(6001, 9000, "This is a test.", {}, {}, "part_0.mp4", "job2")
     ]
     
     # Shot detection job
@@ -72,10 +72,10 @@ def sample_job_tags():
     )
     
     shot_tags = [
-        Tag(0, 10000, "", {}, "part_0.mp4", "job3"),   # Shot 1
-        Tag(10000, 20000, "", {}, "part_0.mp4", "job3"), # Shot 2
-        Tag(20000, 30000, "", {}, "part_0.mp4", "job3"),  # Shot 3
-        Tag(30000, 40000, "", {}, "part_1.mp4", "job3")  # Continutation of Shot 3
+        Tag(0, 10000, "", {}, {}, "part_0.mp4", "job3"),   # Shot 1
+        Tag(10000, 20000, "", {}, {}, "part_0.mp4", "job3"), # Shot 2
+        Tag(20000, 30000, "", {}, {}, "part_0.mp4", "job3"),  # Shot 3
+        Tag(30000, 40000, "", {}, {}, "part_1.mp4", "job3")  # Continutation of Shot 3
     ]
     
     return [
@@ -106,29 +106,29 @@ def test_get_latest_tags_complex_deduplication():
     
     # Create tags for different sources and jobs
     tags = [
-        Tag(0, 1000, "old_person", {"frame_tags": {"500": {"box": {"x1": 10, "y1": 20, "x2": 30, "y2": 40}, "confidence": 0.8}}}, 
+        Tag(0, 1000, "old_person", {"500": {"box": {"x1": 10, "y1": 20, "x2": 30, "y2": 40}, "confidence": 0.8}}, {}, 
             "part_0.mp4", "job1_old"),
-        Tag(2000, 3000, "old_person_2", {"frame_tags": {"2500": {"box": {"x1": 12, "y1": 22, "x2": 32, "y2": 42}, "confidence": 0.7}}}, 
+        Tag(2000, 3000, "old_person_2", {"2500": {"box": {"x1": 12, "y1": 22, "x2": 32, "y2": 42}, "confidence": 0.7}}, {}, 
             "part_0.mp4", "job1_old"),  # SECOND tag on same source from same job
-        Tag(5000, 6000, "old_car", {}, "part_1.mp4", "job1_old"),
+        Tag(5000, 6000, "old_car", {}, {}, "part_1.mp4", "job1_old"),
         
-        Tag(0, 1000, "old speech one", {}, "part_0.mp4", "job2_old"),
-        Tag(1000, 2000, "old speech two", {}, "part_0.mp4", "job2_old"),  # SECOND ASR tag on same source
+        Tag(0, 1000, "old speech one", {}, {}, "part_0.mp4", "job2_old"),
+        Tag(1000, 2000, "old speech two", {}, {}, "part_0.mp4", "job2_old"),  # SECOND ASR tag on same source
         
-        Tag(0, 1000, "new_person", {"frame_tags": {"500": {"box": {"x1": 15, "y1": 25, "x2": 35, "y2": 45}, "confidence": 0.9}}}, 
+        Tag(0, 1000, "new_person", {"500": {"box": {"x1": 15, "y1": 25, "x2": 35, "y2": 45}, "confidence": 0.9}}, {}, 
             "part_0.mp4", "job3_new"),
-        Tag(1500, 2500, "new_person_2", {"frame_tags": {"2000": {"box": {"x1": 17, "y1": 27, "x2": 37, "y2": 47}, "confidence": 0.85}}}, 
+        Tag(1500, 2500, "new_person_2", {"2000": {"box": {"x1": 17, "y1": 27, "x2": 37, "y2": 47}, "confidence": 0.85}}, {}, 
             "part_0.mp4", "job3_new"),  # SECOND tag on same source from newer job
         
-        Tag(2000, 3000, "face_detected", {"frame_tags": {"2500": {"box": {"x1": 50, "y1": 60, "x2": 70, "y2": 80}, "confidence": 0.95}}}, 
+        Tag(2000, 3000, "face_detected", {"2500": {"box": {"x1": 50, "y1": 60, "x2": 70, "y2": 80}, "confidence": 0.95}}, {}, 
             "part_0.mp4", "job4_face"),
-        Tag(3500, 4500, "face_detected_2", {"frame_tags": {"4000": {"box": {"x1": 52, "y1": 62, "x2": 72, "y2": 82}, "confidence": 0.92}}}, 
+        Tag(3500, 4500, "face_detected_2", {"4000": {"box": {"x1": 52, "y1": 62, "x2": 72, "y2": 82}, "confidence": 0.92}}, {}, 
             "part_0.mp4", "job4_face"),  # SECOND face tag on same source
         
-        Tag(0, 1000, "new speech one", {}, "part_0.mp4", "job5_asr_new"),
-        Tag(1000, 2000, "new speech two", {}, "part_0.mp4", "job5_asr_new"),  # SECOND tag on part_0.mp4
-        Tag(10000, 11000, "more speech one", {}, "part_1.mp4", "job5_asr_new"),
-        Tag(11000, 12000, "more speech two", {}, "part_1.mp4", "job5_asr_new"),  # SECOND tag on part_1.mp4
+        Tag(0, 1000, "new speech one", {}, {}, "part_0.mp4", "job5_asr_new"),
+        Tag(1000, 2000, "new speech two", {}, {}, "part_0.mp4", "job5_asr_new"),  # SECOND tag on part_0.mp4
+        Tag(10000, 11000, "more speech one", {}, {}, "part_1.mp4", "job5_asr_new"),
+        Tag(11000, 12000, "more speech two", {}, {}, "part_1.mp4", "job5_asr_new"),  # SECOND tag on part_1.mp4
     ]
     
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -350,16 +350,12 @@ def test_get_overlays_basic_conversion(tag_converter):
     
     obj_tags = [
         Tag(0, 5000, "person", {
-            "frame_tags": {
-                "1000": {"box": {"x1": 10, "y1": 20, "x2": 30, "y2": 40}, "confidence": 0.9},
-                "3000": {"box": {"x1": 15, "y1": 25, "x2": 35, "y2": 45}, "confidence": 0.8}
-            }
-        }, "part_0.mp4", "job1"),
+            "1000": {"box": {"x1": 10, "y1": 20, "x2": 30, "y2": 40}, "confidence": 0.9},
+            "3000": {"box": {"x1": 15, "y1": 25, "x2": 35, "y2": 45}, "confidence": 0.8}
+        }, {}, "part_0.mp4", "job1"),
         Tag(5000, 10000, "car", {
-            "frame_tags": {
-                "7000": {"box": {"x1": 50, "y1": 60, "x2": 70, "y2": 80}, "confidence": 0.95}
-            }
-        }, "part_0.mp4", "job1")
+            "7000": {"box": {"x1": 50, "y1": 60, "x2": 70, "y2": 80}, "confidence": 0.95}
+        }, {}, "part_0.mp4", "job1")
     ]
     
     job_tags = [JobWithTags(job=obj_job, tags=obj_tags)]
@@ -400,18 +396,14 @@ def test_get_overlays_multiple_features(tag_converter):
     
     obj_tags = [
         Tag(0, 5000, "person", {
-            "frame_tags": {
-                "1000": {"box": {"x1": 10, "y1": 20, "x2": 30, "y2": 40}, "confidence": 0.9}
-            }
-        }, "part_0.mp4", "job1")
+            "1000": {"box": {"x1": 10, "y1": 20, "x2": 30, "y2": 40}, "confidence": 0.9}
+        }, {}, "part_0.mp4", "job1")
     ]
     
     face_tags = [
         Tag(0, 5000, "face", {
-            "frame_tags": {
-                "1000": {"box": {"x1": 12, "y1": 22, "x2": 28, "y2": 38}, "confidence": 0.85}
-            }
-        }, "part_0.mp4", "job2")
+            "1000": {"box": {"x1": 12, "y1": 22, "x2": 28, "y2": 38}, "confidence": 0.85}
+        }, {}, "part_0.mp4", "job2")
     ]
     
     job_tags = [
@@ -448,8 +440,8 @@ def test_get_overlays_no_frame_tags(tag_converter):
     
     # Tags without frame_tags in additional_info
     obj_tags = [
-        Tag(0, 5000, "person", {}, "part_0.mp4", "job1"),
-        Tag(5000, 10000, "car", {"other_data": "value"}, "part_0.mp4", "job1")
+        Tag(0, 5000, "person", {}, {}, "part_0.mp4", "job1"),
+        Tag(5000, 10000, "car", {}, {"other_data": "value"}, "part_0.mp4", "job1")
     ]
     
     job_tags = [JobWithTags(job=obj_job, tags=obj_tags)]
