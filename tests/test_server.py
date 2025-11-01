@@ -254,7 +254,7 @@ def test_video_model(client):
     for tag in tags:
         assert tag.text == next_tag
         next_tag = 'hello2' if next_tag == 'hello1' else 'hello1'
-        assert 'frame_tags' in tag.additional_info
+        assert tag.frame_tags
 
     assert completed, "Timeout waiting for jobs to complete"
 
@@ -338,8 +338,8 @@ def test_live_video_model(is_live, app, last_res_has_media):
     for tag in tags:
         assert tag.text == next_tag, f"Expected {next_tag}, got {tag.text}"
         next_tag = 'hello2' if next_tag == 'hello1' else 'hello1'
-        assert 'frame_tags' in tag.additional_info
-
+        assert tag.frame_tags
+        
     logger.info(f"Live test completed successfully with {fake_worker_ref[0].call_count} fetch calls (last_res_has_media={last_res_has_media})")
 
 def test_real_live_stream(app, live_q):

@@ -47,11 +47,11 @@ def test_upload_tags_to_fabric_full_workflow(
     # First bucket: 0-300,000ms
     obj_tags_bucket1 = [
         Tag(0, 5000, "person", {
-                "1000": {"box": {"x1": 10, "y1": 20, "x2": 30, "y2": 40}, "confidence": 0.9},
-                "3000": {"box": {"x1": 15, "y1": 25, "x2": 35, "y2": 45}, "confidence": 0.8}
+                "1000": {"box": {"x1": 0.1, "y1": 0.2, "x2": 0.3, "y2": 0.4}, "confidence": 0.9},
+                "3000": {"box": {"x1": 0.15, "y1": 0.25, "x2": 0.35, "y2": 0.45}, "confidence": 0.8}
             }, {}, "part_0.mp4", obj_job.id),
         Tag(10000, 15000, "car", {
-                "12000": {"box": {"x1": 50, "y1": 60, "x2": 70, "y2": 80}, "confidence": 0.95}
+                "12000": {"box": {"x1": 0.5, "y1": 0.6, "x2": 0.7, "y2": 0.8}, "confidence": 0.95}
             }, {}, "part_0.mp4", obj_job.id)
     ]
     
@@ -69,7 +69,7 @@ def test_upload_tags_to_fabric_full_workflow(
     # Second bucket: 300,000-600,000ms (5-10 minutes)
     obj_tags_bucket2 = [
         Tag(350000, 355000, "bicycle", {
-                "352000": {"box": {"x1": 20, "y1": 30, "x2": 40, "y2": 50}, "confidence": 0.85}
+                "352000": {"box": {"x1": 0.2, "y1": 0.3, "x2": 0.4, "y2": 0.5}, "confidence": 0.85}
             }, {}, "part_1.mp4", obj_job.id)
     ]
     

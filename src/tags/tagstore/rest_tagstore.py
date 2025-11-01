@@ -94,6 +94,7 @@ class RestTagstore(Tagstore):
                 "end_time": tag.end_time,
                 "tag": tag.text,
                 "source": tag.source,
+                "frame_tags": tag.frame_tags,
                 "additional_info": tag.additional_info
             }
             api_tags.append(api_tag)

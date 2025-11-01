@@ -210,9 +210,9 @@ def test_tags_video_with_frame_tags(video_tag_container):
         
         tag = output.tags[0]
         assert tag.text == "person walking"
-        assert "frame_tags" in tag.additional_info
+        assert tag.frame_tags
         
-        frame_info = tag.additional_info["frame_tags"]
+        frame_info = tag.frame_tags
         # Should only include frames 30 and 90 (within 0-5 second range)
         assert len(frame_info) == 2
         
@@ -328,7 +328,7 @@ def test_tags_frame_tags_no_text_match(video_tag_container):
         tag = outputs[0].tags[0]
         assert tag.text == "person walking"
         # Should not have frame_tags since text doesn't match
-        assert "frame_tags" not in tag.additional_info or len(tag.additional_info.get("frame_tags", [])) == 0
+        assert not tag.frame_tags or len(tag.frame_tags) == 0
 
 
 def test_tags_invalid_json_file(video_tag_container):
@@ -417,8 +417,8 @@ def test_tags_frame_tags_only_overlapping_frames(video_tag_container):
         assert len(outputs) == 1
         tag = outputs[0].tags[0]
         
-        if "frame_tags" in tag.additional_info:
-            frame_tags = tag.additional_info["frame_tags"]
+        if tag.frame_tags:
+            frame_tags = tag.frame_tags
             # Should include frames 60, 90, 120 (timestamps 2, 3, 4)
             frame_indices = [int(fidx) for fidx in frame_tags]
             assert 30 not in frame_indices   # Before range
@@ -460,8 +460,8 @@ def test_tags_case_insensitive_text_matching(video_tag_container):
         assert len(outputs) == 1
         tag = outputs[0].tags[0]
         
-        if "frame_tags" in tag.additional_info:
-            frame_tags = tag.additional_info["frame_tags"]
+        if tag.frame_tags:
+            frame_tags = tag.frame_tags
             # Both frame tags should match despite case differences
             assert len(frame_tags) == 2
 
@@ -606,4 +606,4 @@ def test_tags_get_fps_cached_per_video(video_tag_container):
         
         # Verify all tags have frame_tags
         for tag in outputs[0].tags:
-            assert "frame_tags" in tag.additional_info
+            assert tag.frame_tags

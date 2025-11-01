@@ -126,7 +126,7 @@ class TagConverter:
             feature = job.track
 
             for tag in jt.tags:
-                for frame_idx, frame_info in tag.additional_info.get("frame_tags", {}).items():
+                for frame_idx, frame_info in tag.frame_tags.items():
                     frame_idx = int(frame_idx)
                     if frame_idx not in frame_tags:
                         frame_tags[frame_idx] = {}
