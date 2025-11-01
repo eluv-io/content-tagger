@@ -834,3 +834,34 @@ def test_tags_have_timestamp_ms_field(fabric_tagger: FabricTagger, q: Content, s
         assert "timestamp_ms" in tag.additional_info
         assert isinstance(tag.additional_info["timestamp_ms"], int)
         assert tag.additional_info["timestamp_ms"] > 0
+
+
+def test_source_with_zero_tags_marked_as_failed(fabric_tagger, q):
+    """Test that a source producing zero tags is marked as failed in job status"""
+    
+    # Store the original tags method to call it in the patch
+    original_tags = FakeTagContainer.tags
+    
+    # Patch tags() to remove the second output, simulating zero tags for one source
+    def patched_tags(self):
+        outputs = original_tags(self)  # Call the original method with self
+        if len(outputs) > 1:
+            outputs = outputs[:-1]  # Remove the last output to simulate zero tags for one source
+        return outputs
+    
+    args = TagArgs(
+        feature="object_detection",
+        run_config={},
+        scope=VideoScope(stream="video", start_time=0, end_time=30),
+        replace=False,
+        destination_qid=""
+    )
+    
+    with patch.object(FakeTagContainer, 'tags', new=patched_tags):
+        fabric_tagger.tag(q, args)
+        wait_tag(fabric_tagger, q.qhit, timeout=5)
+    
+    status = fabric_tagger.status(q.qhit)
+    job_status = status["video"]["object_detection"]
+    assert job_status["status"] == "Completed"
+    assert len(job_status["failed"]) == 1
