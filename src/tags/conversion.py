@@ -5,7 +5,7 @@ from copy import deepcopy
 from src.common.content import Content
 from src.tags.tagstore.abstract import Tagstore
 from common_ml.tags import FrameTag, VideoTag
-from src.tags.tagstore.model import UploadJob, Tag
+from src.tags.tagstore.model import Batch, Tag
 from src.tags.legacy_format import *
 
 @dataclass
@@ -18,17 +18,17 @@ class TagConverterConfig:
 
 @dataclass
 class JobWithTags:
-    job: UploadJob
+    job: Batch
     tags: list[Tag]
     
 def get_latest_tags_for_content(q: Content, ts: Tagstore) -> list[JobWithTags]:
     """Get tags from the latest job for each source+track pair for the given content."""
 
-    job_ids = ts.find_jobs(qhit=q.qid, q=q)
+    job_ids = ts.find_batches(qhit=q.qid, q=q)
     if not job_ids:
         return []
 
-    jobs = [ts.get_job(job_id, q=q) for job_id in job_ids]
+    jobs = [ts.get_batch(job_id, q=q) for job_id in job_ids]
     jobs = [job for job in jobs if job is not None]
     jobs.sort(key=lambda job: job.timestamp, reverse=True)  # Newest first
 
@@ -39,7 +39,7 @@ def get_latest_tags_for_content(q: Content, ts: Tagstore) -> list[JobWithTags]:
     for job in jobs:
         new_tags = []
 
-        for tag in ts.find_tags(jobid=job.id, q=q):
+        for tag in ts.find_tags(batch_id=job.id, q=q):
             if (tag.source, job.track) in source_features_tagged:
                 continue
             new_tags.append(tag)

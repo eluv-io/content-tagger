@@ -18,10 +18,10 @@ class Tag:
     text: str
     additional_info: dict
     source: str
-    jobid: str
+    batch_id: str
 
 @dataclass
-class UploadJob:
+class Batch:
     id: str
     qhit: str
     stream: str | None

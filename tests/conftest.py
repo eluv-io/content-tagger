@@ -6,6 +6,7 @@ import dotenv
 from unittest.mock import Mock
 
 from src.api.tagging.dto_mapping import _is_live
+from src.tags.tagstore.abstract import Tagstore
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.tags.tagstore.rest_tagstore import RestTagstore
 from src.tagging.fabric_tagging.model import FabricTaggerConfig
@@ -139,9 +140,9 @@ def rest_tagstore(q: Content) -> RestTagstore:
     ts = RestTagstore(base_url=host)
 
     if host:
-        jobids = ts.find_jobs(q=q, limit=1000)
+        jobids = ts.find_batches(q=q, limit=1000)
         for jobid in jobids:
-            ts.delete_job(jobid, q=q)
+            ts.delete_batch(jobid, q=q)
 
     return ts
 
@@ -153,7 +154,7 @@ def filesystem_tagstore(temp_dir: str) -> FilesystemTagStore:
     return store
 
 @pytest.fixture
-def tag_store(rest_tagstore: RestTagstore, filesystem_tagstore: FilesystemTagStore):
+def tag_store(rest_tagstore: RestTagstore, filesystem_tagstore: FilesystemTagStore) -> Tagstore:
     """Create appropriate tagstore based on TEST_TAGSTORE_HOST environment variable"""
     if os.getenv("TEST_TAGSTORE_HOST"):
         return rest_tagstore

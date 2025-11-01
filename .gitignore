@@ -16,3 +16,4 @@ content_specs
 .env
 test-stuff
 TODO.md
+*.log

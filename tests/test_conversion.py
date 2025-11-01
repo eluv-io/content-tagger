@@ -1,7 +1,7 @@
 import tempfile
 
 import pytest
-from src.tags.tagstore.model import UploadJob, Tag
+from src.tags.tagstore.model import Batch, Tag
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.tags.conversion import TagConverterConfig, get_latest_tags_for_content
 from src.tags.legacy_format import *
@@ -28,7 +28,7 @@ def tag_converter():
 def sample_job_tags():
     """Create sample JobWithTags for testing"""
     # Object detection job
-    obj_job = UploadJob(
+    obj_job = Batch(
         id="job1",
         qhit="iq__test",
         stream="video", 
@@ -46,7 +46,7 @@ def sample_job_tags():
     ]
     
     # ASR job
-    asr_job = UploadJob(
+    asr_job = Batch(
         id="job2",
         qhit="iq__test",
         stream="audio",
@@ -62,7 +62,7 @@ def sample_job_tags():
     ]
     
     # Shot detection job
-    shot_job = UploadJob(
+    shot_job = Batch(
         id="job3",
         qhit="iq__test",
         stream="video",
@@ -91,17 +91,17 @@ def test_get_latest_tags_complex_deduplication():
     # Newer jobs should shadow older ones for the same source+track
     jobs = [
         # Initial jobs for content
-        UploadJob("job1_old", "iq__test", "video", "object_detection", 1640995100.0, "tagger"),
-        UploadJob("job2_old", "iq__test", "audio", "asr", 1640995150.0, "tagger"), 
+        Batch("job1_old", "iq__test", "video", "object_detection", 1640995100.0, "tagger"),
+        Batch("job2_old", "iq__test", "audio", "asr", 1640995150.0, "tagger"), 
         
         # Newer job that should shadow the object_detection from job1_old
-        UploadJob("job3_new", "iq__test", "video", "object_detection", 1640995200.0, "tagger"),
+        Batch("job3_new", "iq__test", "video", "object_detection", 1640995200.0, "tagger"),
         
         # Job with different track for same source as job1
-        UploadJob("job4_face", "iq__test", "video", "face_detection", 1640995180.0, "tagger"),
+        Batch("job4_face", "iq__test", "video", "face_detection", 1640995180.0, "tagger"),
         
         # Another ASR job that should shadow job2_old
-        UploadJob("job5_asr_new", "iq__test", "audio", "asr", 1640995250.0, "tagger"),
+        Batch("job5_asr_new", "iq__test", "audio", "asr", 1640995250.0, "tagger"),
     ]
     
     # Create tags for different sources and jobs
@@ -134,13 +134,13 @@ def test_get_latest_tags_complex_deduplication():
     with tempfile.TemporaryDirectory() as temp_dir:
         tagstore = FilesystemTagStore(temp_dir)
         
-        with patch.object(tagstore, 'find_jobs') as mock_find, \
-             patch.object(tagstore, 'get_job') as mock_get_job, \
+        with patch.object(tagstore, 'find_batches') as mock_find, \
+             patch.object(tagstore, 'get_batch') as mock_get_job, \
              patch.object(tagstore, 'find_tags') as mock_get_tags:
             
             mock_find.return_value = ["job1_old", "job2_old", "job3_new", "job4_face", "job5_asr_new"]
-            mock_get_job.side_effect = lambda jobid, q=None: next((job for job in jobs if job.id == jobid), None)
-            mock_get_tags.side_effect = lambda q=None, **kwargs: [tag for tag in tags if tag.jobid == kwargs.get('jobid', tag.jobid)]
+            mock_get_job.side_effect = lambda batch_id, q=None: next((job for job in jobs if job.id == batch_id), None)
+            mock_get_tags.side_effect = lambda q=None, **kwargs: [tag for tag in tags if tag.batch_id == kwargs.get('batch_id', tag.batch_id)]
 
             #result = get_latest_tags_for_content(MagicMock(qhit="iq__test"), tagstore)
             result = get_latest_tags_for_content(MagicMock(qhit="iq__test"), tagstore)
@@ -346,7 +346,7 @@ def test_dump_tracks_empty_input(tag_converter):
 def test_get_overlays_basic_conversion(tag_converter):
     """Test basic conversion from JobWithTags to Overlay format"""
     # Create job with frame-level tags
-    obj_job = UploadJob("job1", "iq__test", "video", "object_detection", 1640995200.0, "tagger")
+    obj_job = Batch("job1", "iq__test", "video", "object_detection", 1640995200.0, "tagger")
     
     obj_tags = [
         Tag(0, 5000, "person", {
@@ -395,8 +395,8 @@ def test_get_overlays_basic_conversion(tag_converter):
 def test_get_overlays_multiple_features(tag_converter):
     """Test overlay conversion with multiple features in same frame"""
     # Create jobs for different features
-    obj_job = UploadJob("job1", "iq__test", "video", "object_detection", 1640995200.0, "tagger")
-    face_job = UploadJob("job2", "iq__test", "video", "face_detection", 1640995300.0, "tagger")
+    obj_job = Batch("job1", "iq__test", "video", "object_detection", 1640995200.0, "tagger")
+    face_job = Batch("job2", "iq__test", "video", "face_detection", 1640995300.0, "tagger")
     
     obj_tags = [
         Tag(0, 5000, "person", {
@@ -444,7 +444,7 @@ def test_get_overlays_empty_input(tag_converter):
 
 def test_get_overlays_no_frame_tags(tag_converter):
     """Test overlay conversion with tags that have no frame_tags"""
-    obj_job = UploadJob("job1", "iq__test", "video", "object_detection", 1640995200.0, "tagger")
+    obj_job = Batch("job1", "iq__test", "video", "object_detection", 1640995200.0, "tagger")
     
     # Tags without frame_tags in additional_info
     obj_tags = [

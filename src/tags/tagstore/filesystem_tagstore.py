@@ -16,22 +16,22 @@ class FilesystemTagStore(Tagstore):
         self.base_path = base_dir
         os.makedirs(self.base_path, exist_ok=True)
 
-    def start_job(self,
+    def create_batch(self,
         qhit: str,
         track: str,
         stream: str,
         author: str,
         q: Content | None = None
-    ) -> UploadJob:
+    ) -> Batch:
         """
-        Starts a new job with provided metadata
+        Starts a new batch with provided metadata
         """
-        jobid = qhit + "/" + track + "/" + datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + str(uuid.uuid4())[0:4]
-        job_dir = self._get_job_dir(jobid)
-        os.makedirs(job_dir, exist_ok=True)
+        batch_id = qhit + "/" + track + "/" + datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + str(uuid.uuid4())[0:4]
+        batch_dir = self._get_batch_dir(batch_id)
+        os.makedirs(batch_dir, exist_ok=True)
 
-        job = UploadJob(
-            id=jobid,
+        batch = Batch(
+            id=batch_id,
             qhit=qhit,
             track=track,
             stream=stream,
@@ -39,26 +39,26 @@ class FilesystemTagStore(Tagstore):
             author=author
         )
 
-        metadata_path = self._get_job_metadata_path(jobid)
+        metadata_path = self._get_batch_metadata_path(batch_id)
         with open(metadata_path, 'w') as f:
-            json.dump(asdict(job), f, indent=2)
+            json.dump(asdict(batch), f, indent=2)
 
-        return job
+        return batch
 
     def upload_tags(self, 
         tags: list[Tag], 
-        jobid: str,
+        batch_id: str,
         q: Content | None = None
     ) -> None:
         """
-        Upload tags for a specific job, grouped by source
+        Upload tags for a specific batch, grouped by source
         """
         if not tags:
             return
         
-        job_dir = self._get_job_dir(jobid)
-        if not os.path.exists(job_dir):
-            raise ValueError(f"Job {jobid} not found. Call start_job() first.")
+        batch_dir = self._get_batch_dir(batch_id)
+        if not os.path.exists(batch_dir):
+            raise ValueError(f"Batch {batch_id} not found. Call start_batch() first.")
         
         # Group tags by source
         tags_by_source = {}
@@ -69,7 +69,7 @@ class FilesystemTagStore(Tagstore):
         
         # Write each source group to its own file
         for source, source_tags in tags_by_source.items():
-            tags_path = self._get_tags_path(jobid, source)
+            tags_path = self._get_tags_path(batch_id, source)
             
             # Load existing tags if file exists
             existing_tags = []
@@ -107,7 +107,7 @@ class FilesystemTagStore(Tagstore):
         - qhit: str
         - stream: str  
         - track: str
-        - jobid: str  
+        - batch_id: str  
         - sources: List[str] (tags with source in this list)
         - start_time_gte: float
         - start_time_lte: float
@@ -118,27 +118,27 @@ class FilesystemTagStore(Tagstore):
         """
         all_tags = []
         
-        # First, get all jobs that match job-level filters
-        job_filters = {}
+        # First, get all batches that match batch-level filters
+        batch_filters = {}
         if 'qhit' in filters:
-            job_filters['qhit'] = filters['qhit']
+            batch_filters['qhit'] = filters['qhit']
         if 'stream' in filters:
-            job_filters['stream'] = filters['stream']
+            batch_filters['stream'] = filters['stream']
         if 'track' in filters:
-            job_filters['track'] = filters['track']
+            batch_filters['track'] = filters['track']
         if 'author' in filters:
-            job_filters['author'] = filters['author']
+            batch_filters['author'] = filters['author']
         
-        if 'jobid' in filters:
-            # If specific jobid requested, only check that job
-            job_ids = [filters['jobid']]
+        if 'batch_id' in filters:
+            # If specific batch_id requested, only check that batch
+            batch_ids = [filters['batch_id']]
         else:
-            # Get all matching jobs
-            job_ids = self.find_jobs(**job_filters)
+            # Get all matching batches
+            batch_ids = self.find_batches(**batch_filters)
         
-        # Collect tags from matching jobs
-        for job_id in job_ids:
-            tags = self._get_tags_for_job(job_id)
+        # Collect tags from matching batches
+        for batch_id in batch_ids:
+            tags = self._get_tags_for_batch(batch_id)
             all_tags.extend(tags)
         
         # Apply tag-level filters
@@ -176,9 +176,9 @@ class FilesystemTagStore(Tagstore):
         
         return filtered_tags
 
-    def find_jobs(self, q: Content | None = None, **filters) -> list[str]:
+    def find_batches(self, q: Content | None = None, **filters) -> list[str]:
         """
-        Find job IDs with flexible filtering.
+        Find batch IDs with flexible filtering.
         
         Supported filters:
         - qhit: str
@@ -190,89 +190,89 @@ class FilesystemTagStore(Tagstore):
         - limit: int
         - offset: int
         """
-        job_ids = []
+        batch_ids = []
         
         # Iterate through all directories in base_path
         if not os.path.exists(self.base_path):
-            return job_ids
+            return batch_ids
 
-        for job_id, job_dir in self._get_job_ids_with_paths():
+        for batch_id, batch_dir in self._get_batch_ids_with_paths():
 
             # Skip if not a directory
-            if not os.path.isdir(job_dir):
+            if not os.path.isdir(batch_dir):
                 continue
             
-            # Get job metadata to check filters
-            job = self.get_job(job_id)
-            if job is None:
+            # Get batch metadata to check filters
+            batch = self.get_batch(batch_id)
+            if batch is None:
                 continue
             
             # Apply filters
-            if 'qhit' in filters and job.qhit != filters['qhit']:
+            if 'qhit' in filters and batch.qhit != filters['qhit']:
                 continue
-            if 'track' in filters and job.track != filters['track']:
+            if 'track' in filters and batch.track != filters['track']:
                 continue
-            if 'stream' in filters and job.stream != filters['stream']:
+            if 'stream' in filters and batch.stream != filters['stream']:
                 continue
-            if 'author' in filters and job.author != filters['author']:
+            if 'author' in filters and batch.author != filters['author']:
                 continue
-            if 'timestamp_gte' in filters and job.timestamp < filters['timestamp_gte']:
+            if 'timestamp_gte' in filters and batch.timestamp < filters['timestamp_gte']:
                 continue
-            if 'timestamp_lte' in filters and job.timestamp > filters['timestamp_lte']:
+            if 'timestamp_lte' in filters and batch.timestamp > filters['timestamp_lte']:
                 continue
             
-            job_ids.append(job_id)
+            batch_ids.append(batch_id)
         
         # Apply pagination
         if 'offset' in filters:
             offset = filters['offset']
-            job_ids = job_ids[offset:]
+            batch_ids = batch_ids[offset:]
         
         if 'limit' in filters:
             limit = filters['limit']
-            job_ids = job_ids[:limit]
+            batch_ids = batch_ids[:limit]
         
-        return job_ids
+        return batch_ids
 
-    def delete_job(self, jobid: str, q: Content | None = None) -> None:
-        dir = self._get_job_dir(jobid)
+    def delete_batch(self, batch_id: str, q: Content | None = None) -> None:
+        dir = self._get_batch_dir(batch_id)
         shutil.rmtree(dir, ignore_errors=True)
 
     def count_tags(self, q: Content | None = None, **filters) -> int:
         """Count tags matching the given filters without loading all data"""
         return len(self.find_tags(**filters))
 
-    def count_jobs(self, q: Content | None = None, **filters) -> int:
-        """Count jobs matching the given filters"""
-        return len(self.find_jobs(**filters))
+    def count_batches(self, q: Content | None = None, **filters) -> int:
+        """Count batches matching the given filters"""
+        return len(self.find_batches(**filters))
 
-    def get_job(self, jobid: str, q: Content | None=None) -> UploadJob | None:
+    def get_batch(self, batch_id: str, q: Content | None=None) -> Batch | None:
         """
-        Get job metadata
+        Get batch metadata
         """
-        metadata_path = self._get_job_metadata_path(jobid)
+        metadata_path = self._get_batch_metadata_path(batch_id)
         
         if not os.path.exists(metadata_path):
             return None
         
         with open(metadata_path, 'r') as f:
-            job_data = json.load(f)
-            return UploadJob(**job_data)
+            batch_data = json.load(f)
+            return Batch(**batch_data)
 
-    def _get_job_ids_with_paths(self) -> list[tuple[str, str]]:
-        """Get all job IDs with their corresponding paths"""
+    def _get_batch_ids_with_paths(self) -> list[tuple[str, str]]:
+        """Get all batch IDs with their corresponding paths"""
         if not os.path.exists(self.base_path):
             return []
         
-        # jobids are represented by qhit/feature/stream_name, return this path
-        job_ids = []
+        # batch_ids are represented by qhit/feature/stream_name, return this path
+        batch_ids = []
         for qhit in os.listdir(self.base_path):
             for feature in os.listdir(os.path.join(self.base_path, qhit)):
                 for stream_name in os.listdir(os.path.join(self.base_path, qhit, feature)):
-                    job_ids.append(f"{qhit}/{feature}/{stream_name}")
+                    batch_ids.append(f"{qhit}/{feature}/{stream_name}")
 
-        job_dirs = [os.path.join(self.base_path, job_id) for job_id in job_ids]
-        return list(zip(job_ids, job_dirs))
+        batch_dirs = [os.path.join(self.base_path, batch_id) for batch_id in batch_ids]
+        return list(zip(batch_ids, batch_dirs))
 
     def _encode_source_for_filename(self, source: str) -> str:
         """Encode source name for safe filesystem usage"""
@@ -290,31 +290,31 @@ class FilesystemTagStore(Tagstore):
             return base64.b64decode(encoded.encode('ascii')).decode('utf-8')
         return filename
 
-    def _get_job_dir(self, job_id: str) -> str:
-        """Get the directory path for a specific job"""
-        return os.path.join(self.base_path, job_id)
+    def _get_batch_dir(self, batch_id: str) -> str:
+        """Get the directory path for a specific batch"""
+        return os.path.join(self.base_path, batch_id)
 
-    def _get_job_metadata_path(self, job_id: str) -> str:
-        """Get the path to job metadata file"""
-        return os.path.join(self._get_job_dir(job_id), "jobmetadata.json")
+    def _get_batch_metadata_path(self, batch_id: str) -> str:
+        """Get the path to batch metadata file"""
+        return os.path.join(self._get_batch_dir(batch_id), "batchmetadata.json")
 
-    def _get_tags_path(self, job_id: str, source: str) -> str:
+    def _get_tags_path(self, batch_id: str, source: str) -> str:
         """Get the path to tags file for a specific source"""
         encoded_source = self._encode_source_for_filename(source)
-        return os.path.join(self._get_job_dir(job_id), f"{encoded_source}.json")
+        return os.path.join(self._get_batch_dir(batch_id), f"{encoded_source}.json")
 
-    def _get_tags_for_job(self, job_id: str) -> list[Tag]:
-        """Helper method to get all tags for a specific job without filtering"""
+    def _get_tags_for_batch(self, batch_id: str) -> list[Tag]:
+        """Helper method to get all tags for a specific batch without filtering"""
         all_tags = []
-        job_dir = self._get_job_dir(job_id)
+        batch_dir = self._get_batch_dir(batch_id)
         
-        if not os.path.exists(job_dir):
+        if not os.path.exists(batch_dir):
             return all_tags
         
-        # Iterate through all tag files in the job directory
-        for filename in os.listdir(job_dir):
-            if filename.endswith('.json') and filename != 'jobmetadata.json':
-                tags_path = os.path.join(job_dir, filename)
+        # Iterate through all tag files in the batch directory
+        for filename in os.listdir(batch_dir):
+            if filename.endswith('.json') and filename != 'batchmetadata.json':
+                tags_path = os.path.join(batch_dir, filename)
                 try:
                     with open(tags_path, 'r') as f:
                         tag_data = json.load(f)

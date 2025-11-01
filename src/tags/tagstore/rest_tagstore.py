@@ -5,7 +5,7 @@ from dateutil import parser
 from src.common.logging import logger
 
 from src.common.content import Content
-from src.tags.tagstore.model import Tag, UploadJob
+from src.tags.tagstore.model import Tag, Batch
 from src.tags.tagstore.abstract import Tagstore
 
 class RestTagstore(Tagstore):
@@ -32,18 +32,18 @@ class RestTagstore(Tagstore):
             logger.error(f"HTTP {response.status_code} response (non-JSON): {response.text}")
         response.raise_for_status()
 
-    def start_job(self,
+    def create_batch(self,
         qhit: str,
         track: str,
         stream: str,
         author: str,
         q: Content | None = None
-    ) -> UploadJob:
+    ) -> Batch:
         """
-        Starts a new job with provided metadata
+        Starts a new batch with provided metadata
         """
-        # Create job via REST API
-        job_data = {
+        # Create batch via REST API
+        batch_data = {
             "track": track,
             "author": author,
             "additional_info": {
@@ -54,7 +54,7 @@ class RestTagstore(Tagstore):
         
         response = self.session.post(
             f"{self.base_url}/{qhit}/batches", 
-            json=job_data,
+            json=batch_data,
             headers=self._get_headers(q)
         )
         
@@ -62,11 +62,11 @@ class RestTagstore(Tagstore):
             self._log_response_and_raise(response)
         
         result = response.json()
-        job_id = result["batch_id"]
+        batch_id = result["batch_id"]
         
-        # Create UploadJob object with the returned job_id
-        job = UploadJob(
-            id=job_id,
+        # Create Batch object with the returned batch_id
+        batch = Batch(
+            id=batch_id,
             qhit=qhit,
             track=track,
             stream=stream,
@@ -74,11 +74,11 @@ class RestTagstore(Tagstore):
             author=author
         )
         
-        return job
+        return batch
 
-    def upload_tags(self, tags: list[Tag], jobid: str, q: Content | None = None) -> None:
+    def upload_tags(self, tags: list[Tag], batch_id: str, q: Content | None = None) -> None:
         """
-        Upload tags for a specific job
+        Upload tags for a specific batch
         """
         if not tags:
             return
@@ -100,7 +100,7 @@ class RestTagstore(Tagstore):
         
         # Upload tags
         upload_data = {
-            "batch_id": jobid,
+            "batch_id": batch_id,
             "tags": api_tags
         }
         
@@ -121,7 +121,7 @@ class RestTagstore(Tagstore):
         - qhit: str
         - stream: str  
         - track: str
-        - job_id: str
+        - batch_id: str
         - sources: List[str] (tags with source in this list)
         - start_time_gte: float
         - start_time_lte: float
@@ -139,9 +139,9 @@ class RestTagstore(Tagstore):
         # Build query parameters
         params = {}
         
-        if 'jobid' in filters:
-            # TODO: probably should change to job_id everywhere
-            params['batch_id'] = filters['jobid']
+        if 'batch_id' in filters:
+            # TODO: probably should change to batch_id everywhere
+            params['batch_id'] = filters['batch_id']
         if 'track' in filters:
             params['track'] = filters['track']
         if 'author' in filters:
@@ -182,7 +182,7 @@ class RestTagstore(Tagstore):
                 text=api_tag['tag'],
                 additional_info=api_tag.get('additional_info', {}),
                 source=api_tag.get('source', ''),
-                jobid=api_tag['batch_id']
+                batch_id=api_tag['batch_id']
             )
             
             # Apply source filter if specified
@@ -194,9 +194,9 @@ class RestTagstore(Tagstore):
         
         return tags
 
-    def find_jobs(self, q: Content | None = None, **filters) -> list[str]:
+    def find_batches(self, q: Content | None = None, **filters) -> list[str]:
         """
-        Find job IDs with flexible filtering.
+        Find batch IDs with flexible filtering.
         
         Supported filters:
         - qhit: str
@@ -236,12 +236,12 @@ class RestTagstore(Tagstore):
             self._log_response_and_raise(response)
         
         result = response.json()
-        jobs = result.get('batches', [])
+        batches = result.get('batches', [])
         
-        # Extract job IDs
-        job_ids = [str(job['id']) for job in jobs]
+        # Extract batch IDs
+        batch_ids = [str(batch['id']) for batch in batches]
         
-        return job_ids
+        return batch_ids
 
     def count_tags(self, q: Content | None = None, **filters) -> int:
         """Count tags matching the given filters"""
@@ -281,8 +281,8 @@ class RestTagstore(Tagstore):
         result = response.json()
         return result.get('meta', {}).get('total', 0)
 
-    def count_jobs(self, q: Content | None = None, **filters) -> int:
-        """Count jobs matching the given filters"""
+    def count_batches(self, q: Content | None = None, **filters) -> int:
+        """Count batches matching the given filters"""
         # Use the same query but with a high limit to get count from meta
         query_filters = filters.copy()
         query_filters['limit'] = 1  # Just need meta info
@@ -312,17 +312,17 @@ class RestTagstore(Tagstore):
         result = response.json()
         return result.get('meta', {}).get('total', 0)
 
-    def get_job(self, jobid: str, q: Content | None = None) -> UploadJob | None:
+    def get_batch(self, batch_id: str, q: Content | None = None) -> Batch | None:
         """
-        Get job metadata
+        Get batch metadata
         """
-        # Extract qhit from jobid (assuming format: qhit/track/timestamp)
+        # Extract qhit from batch_id (assuming format: qhit/track/timestamp)
         assert q is not None
         qhit = q.qid
         
         try:
             response = self.session.get(
-                f"{self.base_url}/{qhit}/batches/{jobid}",
+                f"{self.base_url}/{qhit}/batches/{batch_id}",
                 headers=self._get_headers(q)
             )
             
@@ -332,34 +332,34 @@ class RestTagstore(Tagstore):
             if not response.ok:
                 self._log_response_and_raise(response)
             
-            job_data = response.json()
+            batch_data = response.json()
             
-            # Convert API job to UploadJob
-            job = UploadJob(
-                id=str(job_data['id']),
+            # Convert API batch to Batch
+            batch = Batch(
+                id=str(batch_data['id']),
                 qhit=qhit,
-                track=job_data['track'],
-                stream=job_data.get('additional_info', {}).get('stream'),
-                timestamp=parser.isoparse(job_data['timestamp'].replace("Z", "+00:00")).timestamp(),
-                author=job_data['author']
+                track=batch_data['track'],
+                stream=batch_data.get('additional_info', {}).get('stream'),
+                timestamp=parser.isoparse(batch_data['timestamp'].replace("Z", "+00:00")).timestamp(),
+                author=batch_data['author']
             )
             
-            return job
+            return batch
             
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 404:
                 return None
             raise
 
-    def delete_job(self, jobid: str, q: Content | None = None) -> None:
+    def delete_batch(self, batch_id: str, q: Content | None = None) -> None:
         """
-        Delete a job and its associated tags
+        Delete a batch and its associated tags
         """
         assert q is not None
         qhit = q.qid
         
         response = self.session.delete(
-            f"{self.base_url}/{qhit}/batches/{jobid}",
+            f"{self.base_url}/{qhit}/batches/{batch_id}",
             headers=self._get_headers(q)
         )
         

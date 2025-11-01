@@ -114,7 +114,7 @@ class FakeTagContainer:
                     text=f"{self.feature}_tag_{i}",
                     additional_info={"confidence": 0.9},
                     source="",
-                    jobid=""
+                    batch_id=""
                 ),
                 Tag(
                     start_time=5000,
@@ -122,7 +122,7 @@ class FakeTagContainer:
                     text=f"{self.feature}_tag_{i}_2",
                     additional_info={"confidence": 0.8},
                     source="",
-                    jobid=""
+                    batch_id=""
                 )
             ]
 
@@ -728,10 +728,10 @@ def test_failed_tag(mock_get, fabric_tagger, q):
     assert len(status["video"]["object_detection"]["failed"]) == 1
 
 
-def wait_tag(fabric_tagger, jobid, timeout):
+def wait_tag(fabric_tagger, batch_id, timeout):
     start = time.time()
     while time.time() - start < timeout:
-        status = fabric_tagger.status(jobid)
+        status = fabric_tagger.status(batch_id)
         for stream in status:
             for feature in status[stream]:
                 if status[stream][feature]["status"] == "Completed":

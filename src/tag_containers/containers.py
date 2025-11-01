@@ -228,7 +228,7 @@ class TagContainer:
                     "box": image_tag_data.get("box", [])
                 },
                 source="",
-                jobid=""
+                batch_id=""
             ))
 
         return ModelOutput(
@@ -295,7 +295,7 @@ class TagContainer:
                 text=video_tag_data.get("text", ""),
                 additional_info={},
                 source="",
-                jobid=""
+                batch_id=""
             )
 
             if frame_tags:

@@ -24,7 +24,7 @@ class JobState:
     message: str
     media: MediaState
     # tagstore job/track id to know where to upload tags
-    upload_job: str
+    tag_batch: str
     container: TagContainer | None
     # callers can pass an event to be notified when tagging is done
     tagging_done: threading.Event

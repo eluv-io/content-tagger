@@ -245,8 +245,8 @@ def test_video_model(client):
     completed = wait_for_jobs_completion(client, [qid], timeout=30)
     assert completed
     tagstore: FilesystemTagStore = client.application.config["state"]["tagger"].tagstore
-    jobid = tagstore.find_jobs(q=get_content(auth, qid), stream='video')[0]
-    tags = tagstore.find_tags(jobid=jobid, q=get_content(auth, qid))
+    jobid = tagstore.find_batches(q=get_content(auth, qid), stream='video')[0]
+    tags = tagstore.find_tags(batch_id=jobid, q=get_content(auth, qid))
     tags = sorted(tags, key=lambda x: x.start_time)
     # TODO: this randomly gave 124 one time and I can't reproduce it
     assert len(tags) == 122
@@ -326,8 +326,8 @@ def test_live_video_model(is_live, app, last_res_has_media):
     assert fake_worker_ref[0].call_count == expected_calls, f"Expected {expected_calls} fetch calls, got {fake_worker_ref[0].call_count}"
     
     # Get tags and verify results
-    jobid = tagstore.find_jobs(q=get_content(auth, qid), stream='video')[0]
-    tags = tagstore.find_tags(jobid=jobid, q=get_content(auth, qid))
+    jobid = tagstore.find_batches(q=get_content(auth, qid), stream='video')[0]
+    tags = tagstore.find_tags(batch_id=jobid, q=get_content(auth, qid))
     tags = sorted(tags, key=lambda x: x.start_time)
     
     # Should have same number of tags as regular video model test
@@ -405,8 +405,8 @@ def test_real_live_stream(app, live_q):
     assert final_status in ['Stopped', 'Completed'], f"Expected Stopped or Completed, got {final_status}"
     
     # verify we have some tags
-    jobid = tagstore.find_jobs(q=live_q, stream='video', qhit=live_q.qid)[0]
-    tags = tagstore.find_tags(jobid=jobid, q=live_q)
+    jobid = tagstore.find_batches(q=live_q, stream='video', qhit=live_q.qid)[0]
+    tags = tagstore.find_tags(batch_id=jobid, q=live_q)
     tags = sorted(tags, key=lambda x: x.start_time)
     
     # Should have at least some tags from the segments
@@ -436,8 +436,8 @@ def test_asset_tag(client):
     status = client.get(f"/{qid}/status?authorization={auth}")
     print(status.get_json())
     tagstore: FilesystemTagStore = client.application.config["state"]["tagger"].tagstore
-    jobid = tagstore.find_jobs(qhit=test_objects['assets'], stream='assets')[0]
-    tags = tagstore.find_tags(jobid=jobid)
+    jobid = tagstore.find_batches(qhit=test_objects['assets'], stream='assets')[0]
+    tags = tagstore.find_tags(batch_id=jobid)
     tags = sorted(tags, key=lambda x: x.start_time)
     assert len(tags) > 0
 
@@ -565,8 +565,8 @@ def test_stop_live_job(app, live_q):
                 if progress != "0%" and progress != "100%":
                     # Check we actually have some tags
                     try:
-                        jobid = tagstore.find_jobs(q=live_q, stream='video', qhit=live_q.qid)[0]
-                        tags = tagstore.find_tags(jobid=jobid, q=live_q)
+                        jobid = tagstore.find_batches(q=live_q, stream='video', qhit=live_q.qid)[0]
+                        tags = tagstore.find_tags(batch_id=jobid, q=live_q)
                         if len(tags) > 0:
                             some_tags_found = True
                             logger.info(f"Found {len(tags)} tags, stopping job now")
@@ -594,8 +594,8 @@ def test_stop_live_job(app, live_q):
     assert final_status == 'Stopped', f"Expected Stopped, got {final_status}"
     
     # Verify we have partial tags (not all of them)
-    jobid = tagstore.find_jobs(q=live_q, stream='video', qhit=live_q.qid)[0]
-    final_tags = tagstore.find_tags(jobid=jobid, q=live_q)
+    jobid = tagstore.find_batches(q=live_q, stream='video', qhit=live_q.qid)[0]
+    final_tags = tagstore.find_tags(batch_id=jobid, q=live_q)
     
     assert len(final_tags) > 0, "Should have some tags"
     assert len(final_tags) < 20, f"Should have partial tags, got {len(final_tags)} (too many, job may have completed)"

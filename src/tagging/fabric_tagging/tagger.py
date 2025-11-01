@@ -200,7 +200,7 @@ class FabricTagger:
         dest_q = self._get_destination_qid(q, args.destination_qid)
 
         # TODO: start job here or before first upload tags event? benefit of here is we catch tagstore errors right away.
-        tsjob = self.tagstore.start_job(
+        tsjob = self.tagstore.create_batch(
             qhit=dest_q.qid,
             track=feature,
             # TODO: change
@@ -232,7 +232,7 @@ class FabricTagger:
                     downloaded=[],
                     worker=worker
                 ),
-                upload_job=tsjob.id,
+                tag_batch=tsjob.id,
                 tagging_done=threading.Event(),
                 container=None
             ),
@@ -630,14 +630,14 @@ class FabricTagger:
             original_src = media_to_source[out.source_media]
             for tag in out.tags:
                 tag.source = original_src.name
-                tag.jobid = job.state.upload_job
+                tag.batch_id = job.state.tag_batch
                 if original_src.wall_clock:
                     tag.additional_info["timestamp_ms"] = original_src.wall_clock
                 tags2upload.append(self._fix_tag_offsets(tag, original_src.offset, fps))
 
         try:
             with timeit("uploading tags to tagstore", min_duration=0.5):
-                self._post_tags(tags2upload, job.state.upload_job, job.args.q, destination_qid=job.args.destination_qid)
+                self._post_tags(tags2upload, job.state.tag_batch, job.args.q, destination_qid=job.args.destination_qid)
         except Exception as e:
             # just keep going in case it's a transient error, we should still have a reference to the tags on disk as long as the tagger doesn't die too.
             # NOTE: it's possible that if the container ends around the time the tagstore is down we can miss some tags.

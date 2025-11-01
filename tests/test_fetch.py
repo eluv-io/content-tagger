@@ -39,9 +39,9 @@ def legacy_vod_content(qfactory, tag_store) -> Content:
     except Exception as e:
         pytest.skip(f"Failed to create legacy VOD content: {e}")
 
-    jobids = tag_store.find_jobs(q=q)
-    for jobid in jobids:
-        tag_store.delete_job(jobid, q=q)
+    batch_ids = tag_store.find_batches(q=q)
+    for batch_id in batch_ids:
+        tag_store.delete_batch(batch_id, q=q)
 
     return q
 
@@ -58,9 +58,9 @@ def vod_content(qfactory, tag_store) -> Content:
     except Exception as e:
         pytest.skip(f"Failed to create modern VOD content: {e}")
 
-    jobids = tag_store.find_jobs(q=q)
-    for jobid in jobids:
-        tag_store.delete_job(jobid, q=q)
+    batch_ids = tag_store.find_batches(q=q)
+    for batch_id in batch_ids:
+        tag_store.delete_batch(batch_id, q=q)
 
     return q
 
@@ -76,9 +76,9 @@ def assets_content(qfactory, tag_store) -> Content:
     except Exception as e:
         pytest.skip(f"Failed to create assets content: {e}")
 
-    jobids = tag_store.find_jobs(q=q)
-    for jobid in jobids:
-        tag_store.delete_job(jobid, q=q)
+    batch_ids = tag_store.find_batches(q=q)
+    for batch_id in batch_ids:
+        tag_store.delete_batch(batch_id, q=q)
 
     return q
 
@@ -114,7 +114,7 @@ def test_download_with_replace_true(
 
     tagstore = fetcher.ts
 
-    job = tagstore.start_job(
+    job = tagstore.create_batch(
         qhit=vod_content.qid,
         stream="video",
         author="tagger",
@@ -130,7 +130,7 @@ def test_download_with_replace_true(
         text="hello",
         additional_info={},
         source=first_source,
-        jobid=job.id
+        batch_id=job.id
     )
 
     tagstore.upload_tags([tag], job.id, q=vod_content)
@@ -242,14 +242,14 @@ def test_fetch_assets_with_preserve_track(
     # Third test: Add tags for some assets and test preserve_track functionality
     tagstore = fetcher.ts
     
-    job = tagstore.start_job(
+    job = tagstore.create_batch(
         qhit=assets_content.qhit,
         stream="assets",
         author=fetcher.config.author,
         track="asset_track",
         q=assets_content
     )
-    jobid = job.id
+    batch_id = job.id
     
     # Tag the first two assets
     assets_to_tag = selected_assets[:2] if len(selected_assets) >= 2 else selected_assets
@@ -261,11 +261,11 @@ def test_fetch_assets_with_preserve_track(
             text="test asset tag",
             additional_info={},
             source=asset_name,
-            jobid=jobid
+            batch_id=batch_id
         )
         tags.append(tag)
     
-    tagstore.upload_tags(tags, jobid, q=assets_content)
+    tagstore.upload_tags(tags, batch_id, q=assets_content)
     
     req3 = DownloadRequest(
         scope=AssetScope(
@@ -304,7 +304,7 @@ def test_fetch_assets_with_preserve_track(
     # Upload tags to selected tags with author="user" and track="another track", check that downloading again
     # returns all the selected assets (tagger author is special)
 
-    new_job = tagstore.start_job(
+    new_job = tagstore.create_batch(
         qhit=assets_content.qhit,
         stream="assets",
         author="user",
@@ -320,13 +320,13 @@ def test_fetch_assets_with_preserve_track(
             text="asset_track",
             additional_info={},
             source=asset,
-            jobid=new_job.id
+            batch_id=new_job.id
         )
         newtags.append(tag)
     tagstore.upload_tags(newtags, new_job.id, q=assets_content)
 
     # Verify that the tags were uploaded correctly
-    uploaded_tags = tagstore.find_tags(jobid=new_job.id, q=assets_content)
+    uploaded_tags = tagstore.find_tags(batch_id=new_job.id, q=assets_content)
     assert len(uploaded_tags) == len(newtags), "Not all tags were uploaded"
     for tag in newtags:
         assert tag in uploaded_tags, f"Tag {tag} was not found in uploaded tags"
