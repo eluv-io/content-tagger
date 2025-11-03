@@ -687,14 +687,14 @@ class FabricTagger:
                     f"{feature} is not frame-level"
                 )
 
-    def _fix_tag_offsets(self, tag: Tag, offset: float, fps: float | None) -> Tag:
+    def _fix_tag_offsets(self, tag: Tag, offset: int, fps: float | None) -> Tag:
         """Fix tag timestamps & frame indices. The model outputs timestamps relative to the start of the media file
         but this will help place it relative to the full content object (or do nothing for assets).
         """
         if tag.start_time is not None:
-            tag.start_time += int(offset * 1000)
+            tag.start_time += offset
         if tag.end_time is not None:
-            tag.end_time += int(offset * 1000)
+            tag.end_time += offset
         if "frame_tags" in tag.additional_info:
             if fps is not None:
                 tag = self._fix_frame_indices(tag, offset, fps)
