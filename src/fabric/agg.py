@@ -448,6 +448,8 @@ def format_tracks(agg_tags: Dict[str, List[AggTag]], tracks: Dict[str, List[Vide
 def feature_to_label(feature: str) -> str:
     if feature == "asr":
         return "Speech to Text"
+    if feature == "asr_es":
+        return "Speech to Text (Spanish)"
     if feature == "caption":
         return "Object Detection"
     if feature == "celeb":
