@@ -352,14 +352,15 @@ def main():
                 else:
                     tracks = models
                 stop(iq, auth, tracks)
-            elif user_input in [ "tag" , "t"]:
-                this_tag_config = tag_config
+            elif user_input in [ "tag" , "t", "replacetag" ]:
+                this_tag_config = deepcopy(tag_config)
+                if user_input == "replacetag":
+                    this_tag_config['replace'] = True
                 iqsub = None
                 if len(user_split) > 1:
                     iqsub = user_split[1]
                 if len(user_split) > 2:
                     track = user_split[2]
-                    this_tag_config = deepcopy(tag_config)
                     this_tag_config['features'] = { track: tag_config['features'][track] }
                 contentsub = [ x for x in contents if iqsub == None or re.search(iqsub, x) ]    
                 tag(contentsub, auth, args.assets, this_tag_config,
