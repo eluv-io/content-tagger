@@ -135,7 +135,7 @@ def test_config(test_dir, tagger_config):
         content=ContentConfig(
             config_url="https://main.net955305.contentfabric.io/config",
             parts_url="http://192.168.96.203/config?self&qspace=main",
-            live_media_url="https://host-76-74-34-204.contentfabric.io/config?self&qspace=main"
+            live_media_url="https://host-76-74-29-5.contentfabric.io/config?self&qspace=main"
         ),
         tagstore=TagstoreConfig(
             base_dir=os.path.join(test_dir, "tags")
@@ -374,7 +374,6 @@ def test_real_live_stream(app, live_q):
     # Check status periodically
     start_time = time.time()
     timeout = 25
-    segments_found = False
     
     while time.time() - start_time < timeout:
         response = client.get(f"/{qid}/status?authorization={auth}")
@@ -410,8 +409,14 @@ def test_real_live_stream(app, live_q):
     tags = sorted(tags, key=lambda x: x.start_time)
     
     # Should have at least some tags from the segments
-    assert len(tags) > 0, "Expected 6 from live stream"
-    
+    assert len(tags) >= 2
+
+    last_wall_clock = 0
+    for tag in tags:
+        assert 'timestamp_ms' in tag.additional_info
+        assert tag.additional_info["timestamp_ms"] > last_wall_clock
+        last_wall_clock = tag.additional_info["timestamp_ms"]
+
     logger.info(f"Live stream test completed successfully with {len(tags)} tags")
 
 def test_asset_tag(client):
