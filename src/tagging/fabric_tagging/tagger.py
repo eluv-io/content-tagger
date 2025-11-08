@@ -623,7 +623,7 @@ class FabricTagger:
         fps = None
         if isinstance(stream_meta, VideoMetadata):
             # in order to map the frame tags to their appropriate timestamps
-            # TODO: missing this
+            # TODO: missing this for live
             fps = stream_meta.fps
         tags2upload = []
         for out in new_outputs:
@@ -631,9 +631,7 @@ class FabricTagger:
             for tag in out.tags:
                 tag.source = original_src.name
                 tag.batch_id = job.state.tag_batch
-                if original_src.wall_clock:
-                    tag.additional_info["timestamp_ms"] = original_src.wall_clock
-                tags2upload.append(self._fix_tag_offsets(tag, original_src.offset, fps))
+                tags2upload.append(self._fix_tag_timing_info(tag, original_src.offset, original_src.wall_clock, fps))
 
         try:
             with timeit("uploading tags to tagstore", min_duration=0.5):
@@ -687,20 +685,20 @@ class FabricTagger:
                     f"{feature} is not frame-level"
                 )
 
-    def _fix_tag_offsets(self, tag: Tag, offset: int, fps: float | None) -> Tag:
+    def _fix_tag_timing_info(self, tag: Tag, offset: int, wall_clock: int | None, fps: float | None) -> Tag:
         """Fix tag timestamps & frame indices. The model outputs timestamps relative to the start of the media file
         but this will help place it relative to the full content object (or do nothing for assets).
         """
-        if tag.start_time is not None:
-            tag.start_time += offset
-        if tag.end_time is not None:
-            tag.end_time += offset
+        tag.start_time += offset
+        tag.end_time += offset
         if "frame_tags" in tag.additional_info:
             if fps is not None:
                 tag = self._fix_frame_indices(tag, offset, fps)
             else:
-                logger.warning(f"Audio stream has frame_tags, removing them: {tag.additional_info['frame_tags']}")
+                logger.warning(f"model returned frame tags, but stream fps is unknown: removing frame tags.")
                 del tag.additional_info["frame_tags"]
+        if wall_clock is not None:
+            tag.additional_info["timestamp_ms"] = wall_clock + tag.start_time
         return tag
 
     def _fix_frame_indices(self, tag: Tag, offset: float, fps: float) -> Tag:

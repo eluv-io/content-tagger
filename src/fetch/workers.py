@@ -349,7 +349,6 @@ class LiveWorker(FetchSession):
         
         Returns:
             DownloadResult containing the downloaded segment.
-            done is always False for live streams (they never end).
         """
         
         if not os.path.exists(self.output_dir):
@@ -390,7 +389,7 @@ class LiveWorker(FetchSession):
 
         logger.info(
             f"Downloaded live segment {seg_idx} for {self.q.qhit}",
-            extra={"segment": seg_idx, "offset_sec": seg_offset / 1000, "seg_size_sec": seg_size / 1000}
+            extra={"segment": seg_idx, "offset_sec": seg_offset / 1000, "seg_size_sec": seg_size / 1000, "wall_clock": wall_clock / 1000}
         )
 
         self.next_idx = seg_idx + 1
