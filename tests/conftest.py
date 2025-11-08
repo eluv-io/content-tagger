@@ -31,10 +31,10 @@ def live_q():
     cfg = ContentConfig(
         config_url="https://host-76-74-29-5.contentfabric.io/config?self&qspace=main", 
         parts_url="http://192.168.96.203/config?self&qspace=main",
-        live_media_url="https://host-76-74-34-204.contentfabric.io/config?self&qspace=main"
+        live_media_url="https://host-76-74-29-5.contentfabric.io/config?self&qspace=main"
     )
     factory = ContentFactory(cfg=cfg)
-    q = factory.create_content(qhit="iq__HPzDaWpfmQzj2Afa3XFq2cpun5n", auth=token)
+    q = factory.create_content(qhit="iq__4DhfZqxgTELQ62tnXi89ShtRnpJh", auth=token)
     if not _is_live(q):
         pytest.skip("livestream is not running")
     return q

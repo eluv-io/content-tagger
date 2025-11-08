@@ -379,12 +379,13 @@ class LiveWorker(FetchSession):
         seg_offset = segment_info.seg_offset_millis
         seg_idx = segment_info.seg_num
         seg_size = segment_info.actual_duration * 1000
+        wall_clock = segment_info.seg_time_epoch_millis
         
         source = Source(
             name=f"segment_{chunk_size}_{idx}",
             filepath=save_path,
             offset=seg_offset,
-            wall_clock=time.time_ns() // 1_000_000
+            wall_clock=wall_clock
         )
 
         logger.info(
