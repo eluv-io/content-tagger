@@ -689,6 +689,8 @@ class FabricTagger:
         """Fix tag timestamps & frame indices. The model outputs timestamps relative to the start of the media file
         but this will help place it relative to the full content object (or do nothing for assets).
         """
+        if wall_clock is not None:
+            tag.additional_info["timestamp_ms"] = wall_clock + tag.start_time
         tag.start_time += offset
         tag.end_time += offset
         if "frame_tags" in tag.additional_info:
@@ -697,8 +699,6 @@ class FabricTagger:
             else:
                 logger.warning(f"model returned frame tags, but stream fps is unknown: removing frame tags.")
                 del tag.additional_info["frame_tags"]
-        if wall_clock is not None:
-            tag.additional_info["timestamp_ms"] = wall_clock + tag.start_time
         return tag
 
     def _fix_frame_indices(self, tag: Tag, offset: float, fps: float) -> Tag:
