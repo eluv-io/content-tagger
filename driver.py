@@ -291,7 +291,7 @@ def main():
                 timeout = None
                 if quickstatus_watch is not None:
                     timeout = 60
-                user_line = get_input(f"{server} > ", timeout = timeout)  # Wait for user input
+                user_line = get_input(f"{time.strftime('%Y-%m%d %H:%M:%S')} {server} > ", timeout = timeout)  # Wait for user input
             else:
                 user_line = input("")
                 
