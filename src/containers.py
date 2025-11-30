@@ -45,7 +45,8 @@ def create_container(client: PodmanClient, feature: str, save_path: str, files: 
             "command": [f"{os.path.basename(p)}" for p in files] + ["--config", f"{json.dumps(run_config)}"], 
             "mounts": volumes, 
             "remove": True, 
-            "network_mode": "host", 
+            "network_mode": "host",
+            "pids_limit": -1,
         }
     if device_idx is not None:
         kwargs["devices"] = [f"nvidia.com/gpu={device_idx}"]
