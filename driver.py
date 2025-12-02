@@ -257,7 +257,9 @@ def main():
         print("reading tag config...")
         with open(conffile, "r") as conf:
            tag_config = json.load(conf)
-
+    else:
+        tag_config = json.loads(args.tag_config)
+        
     if args.contents:
         print("reading contents...")
         with open(args.contents, 'r') as f:
