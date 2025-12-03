@@ -15,6 +15,7 @@ setup(
         'waitress==3.0.0',
         'psutil',
         'dacite',
+        'dateutils',
         'elv-client-py @ git+https://github.com/eluv-io/elv-client-py.git#egg=elv-client-py',
         'common_ml @ git+ssh://git@github.com/eluv-io/common-ml.git#egg=common_ml',
     ]
