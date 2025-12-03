@@ -22,6 +22,6 @@ COPY setup.py .
 RUN /opt/conda/envs/mlpod/bin/pip install .
 
 COPY src ./src
-COPY server.py config.py config.yml .
+COPY server.py app_config.py config.yml .
 
 ENTRYPOINT ["/opt/conda/envs/mlpod/bin/python", "server.py"]
