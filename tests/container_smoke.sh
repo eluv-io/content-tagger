@@ -1,0 +1,123 @@
+#!/bin/bash
+
+systemctl --user start podman.socket
+
+mkdir -p /tmp/datadir
+
+cat <<EOF >/tmp/datadir/config.yml
+content:
+  parts_url: http://192.168.96.203/config?self&qspace=main
+  config_url: https://host-154-14-185-98.contentfabric.io/config?self&qspace=main
+  live_media_url: https://host-76-74-29-5.contentfabric.io/config?self&qspace=main
+
+tagstore:
+  base_url: https://ai.contentfabric.io/tagstore
+
+tag_converter:
+  name_mapping:
+    asr: Speech to Text
+    caption: Object Detection
+    celeb: Celebrity Detection
+    logo: Logo Detection
+    music: Music Detection
+    ocr: Optical Character Recognition
+    shot: Shot Detection
+    llava: LLAVA Caption
+  interval: 10
+  coalesce_tracks: 
+    - asr
+    - french_asr
+  single_tag_tracks:
+    - music_detection
+  max_sentence_words: 250
+
+system:
+  resources: 
+    cpu_juice: 100
+    ollama: 3
+  gpus: [ "gpu" ]
+
+fetcher:
+  author: tagger
+  max_downloads: 16
+
+tagger:
+  media_dir: data/parts
+
+container_registry:
+  base_dir: data/containers
+  cache_dir: data/cache
+  model_configs:
+    llava:
+      image: "localhost/llava:latest"
+      type: "frame"
+      resources: {
+        "ollama": 1
+      }
+    asr: 
+      image: "localhost/asr:latest"
+      type: "audio"
+      resources: {
+        "gpu": 1
+      }
+    french_asr: 
+      image: "localhost/multilingual:latest"
+      type: "audio"
+      resources: {
+        "gpu": 1
+      }
+    caption:
+      image: "localhost/caption:latest"
+      type: "frame"
+      resources: {
+        "gpu": 1
+      }
+    shot:
+      image: "localhost/shot:latest"
+      type: "video"
+      resources: {
+        "gpu": 1
+      }
+    celeb:
+      image: "localhost/celeb:latest"
+      type: "video"
+      resources: {
+        "gpu": 1,
+        "cpu_juice": 35
+      }
+    ocr:
+      image: "localhost/ocr:latest"
+      type: "video"
+      resources: {
+        "gpu": 1
+      }
+    logo:
+      image: "localhost/logo:latest"
+      type: "video"
+      resources: {
+        "gpu": 1
+      }
+    music:
+      image: "ml-004.eluvio:5100/music:latest"
+      type: "audio"
+      resources: {
+        "cpu_juice": 10
+      }
+    breakdance:
+      image: "localhost/breakdance"
+      type: "video"
+      resources: {
+        "gpu": 1
+      }
+    test_model:
+      image: "localhost/test_model:latest"
+      type: "video"
+      resources: {
+        "gpu": 1
+      }
+
+EOF
+
+## podman run -d --name content-tagger-smoke --device nvidia.com/gpu=all -p 19999:8086 -v /run/user/$(id -u)/podman:/run/user/0/podman -v /tmp/datadir:/tmp/datadir content-tagger:latest --directory /tmp/datadir --host 0.0.0.0
+podman run --replace --name content-tagger-smoke --device nvidia.com/gpu=all -p 19999:8086 -v /run/user/$(id -u)/podman:/run/user/0/podman -v /tmp/datadir:/tmp/datadir content-tagger:latest --directory /tmp/datadir --host 0.0.0.0
+
