@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 
 from src.tagging.fabric_tagging.model import *
 from src.tag_containers.containers import TagContainer
+from src.tag_containers.model import ModelTag
 from src.fetch.model import *
 
 @dataclass
@@ -19,8 +20,10 @@ class JobState:
     status: JobStatus
     # internal handle used in the ContainerScheduler to identify the job
     taghandle: str
-    # prevent double uploads to the tagstore
+    # used for status reporting
     uploaded_sources: set[str]
+    # prevent double upload
+    uploaded_tags: set[ModelTag]
     message: str
     media: MediaState
     # tagstore job/track id to know where to upload tags
@@ -28,6 +31,24 @@ class JobState:
     container: TagContainer | None
     # callers can pass an event to be notified when tagging is done
     tagging_done: threading.Event
+
+    @staticmethod
+    def starting(batch_id: str, worker: FetchSession) -> "JobState":
+        """Create a JobState in starting state."""
+        return JobState(
+            status=JobStatus.starting(),
+            taghandle="",
+            uploaded_sources=set(),
+            uploaded_tags=set(),
+            message="",
+            media=MediaState(
+                downloaded=[],
+                worker=worker
+            ),
+            tag_batch=batch_id,
+            tagging_done=threading.Event(),
+            container=None
+        )
 
 @dataclass
 class TagJob:

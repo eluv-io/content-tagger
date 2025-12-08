@@ -200,7 +200,7 @@ class FabricTagger:
         dest_q = self._get_destination_qid(q, args.destination_qid)
 
         # TODO: start job here or before first upload tags event? benefit of here is we catch tagstore errors right away.
-        tsjob = self.tagstore.create_batch(
+        ts_batch = self.tagstore.create_batch(
             qhit=dest_q.qid,
             track=feature,
             # TODO: change
@@ -223,19 +223,7 @@ class FabricTagger:
         )
 
         job = TagJob(
-            state=JobState(
-                status=JobStatus.starting(),
-                taghandle="",
-                uploaded_sources=set(),
-                message="",
-                media=MediaState(
-                    downloaded=[],
-                    worker=worker
-                ),
-                tag_batch=tsjob.id,
-                tagging_done=threading.Event(),
-                container=None
-            ),
+            state=JobState.starting(ts_batch.id, worker=worker),
             args=JobArgs(**args.__dict__, q=q, retry_fetch=is_live),
             stop_event=stop_event,   
         )
@@ -609,9 +597,7 @@ class FabricTagger:
         with timeit("getting tags from container", min_duration=0.5):
             tags = job.state.container.tags()
 
-        # switch to just id'ing the tags
-        new_outputs = [tag for tag in tags if tag.source_media in media_to_source \
-                       and media_to_source[tag.source_media].name not in job.state.uploaded_sources]
+        new_outputs = [t for t in tags if t.source_media in media_to_source and t not in job.state.uploaded_tags]
 
         if not new_outputs:
             return
@@ -631,6 +617,7 @@ class FabricTagger:
             # TODO: missing this for live
             fps = stream_meta.fps
 
+        # convert ModelTag to Tagstore DTO
         tags2upload: list[Tag] = []
         for model_tag in new_outputs:
             original_src = media_to_source[model_tag.source_media]
@@ -644,18 +631,16 @@ class FabricTagger:
                 batch_id=job.state.tag_batch,
             )
             tags2upload.append(self._fix_tag_timing_info(tag, original_src.offset, original_src.wall_clock, fps))
-
+        
         try:
             with timeit("uploading tags to tagstore", min_duration=0.5):
                 self._post_tags(tags2upload, job.state.tag_batch, job.args.q, destination_qid=job.args.destination_qid)
         except Exception as e:
-            # just keep going in case it's a transient error, we should still have a reference to the tags on disk as long as the tagger doesn't die too.
-            # NOTE: it's possible that if the container ends around the time the tagstore is down we can miss some tags.
-            # TODO: we could add a retry for stopped jobs as well but it's overkill for now.
             logger.opt(exception=e).error("unexpected error in uploader")
 
         # TODO: we should have a generic failed sources field to add to and append there instead of here.
         job.state.uploaded_sources.update(media_to_source[out.source_media].name for out in new_outputs)
+        job.state.uploaded_tags.update(new_outputs)
 
     def _post_tags(self, tags: list[Tag], batch: str, q: Content, destination_qid: str) -> None:
         """Upload tags to tagstore (called from actor thread)"""

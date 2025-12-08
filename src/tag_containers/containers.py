@@ -149,7 +149,6 @@ class TagContainer:
         This responsibility is on the container implementation.
         """
         if not os.path.exists(self.cfg.tags_dir):
-            # hasn't started
             return []
 
         tag_files = []
