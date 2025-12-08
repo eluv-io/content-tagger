@@ -631,14 +631,9 @@ class FabricTagger:
                 batch_id=job.state.tag_batch,
             )
             tags2upload.append(self._fix_tag_timing_info(tag, original_src.offset, original_src.wall_clock, fps))
-        
-        try:
-            with timeit("uploading tags to tagstore", min_duration=0.5):
-                self._post_tags(tags2upload, job.state.tag_batch, job.args.q, destination_qid=job.args.destination_qid)
-        except Exception as e:
-            logger.opt(exception=e).error("unexpected error in uploader")
 
-        # TODO: we should have a generic failed sources field to add to and append there instead of here.
+        self._post_tags(tags2upload, job.state.tag_batch, job.args.q, destination_qid=job.args.destination_qid)
+
         job.state.uploaded_sources.update(media_to_source[out.source_media].name for out in new_outputs)
         job.state.uploaded_tags.update(new_outputs)
 
