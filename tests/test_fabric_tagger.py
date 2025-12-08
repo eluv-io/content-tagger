@@ -8,7 +8,7 @@ from collections import defaultdict
 from src.tags.tagstore.rest_tagstore import RestTagstore
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tagging.scheduling.scheduler import ContainerScheduler
-from src.tag_containers.model import MediaInput, ModelConfig, ModelOutput
+from src.tag_containers.model import MediaInput, ModelConfig, ModelTag
 from src.tagging.scheduling.model import SysConfig
 from src.tagging.fabric_tagging.model import TagArgs
 from src.tag_containers.model import ContainerRequest
@@ -90,16 +90,16 @@ class FakeTagContainer:
     def send_eof(self) -> None:
         pass
 
-    def tags(self) -> list[ModelOutput]:
+    def tags(self) -> list[ModelTag]:
         """
         Return fake tags for the media files.
 
         Returns:
-            list[ModelOutput]: List of fake tags for each file.
+            list[ModelTag]: List of fake tags for each file.
         """
         self.tag_call_count += 1
 
-        outputs = []
+        tags = []
         if not self.is_stopped:
             finished_files = self.fileargs[:-1]
         else:
@@ -108,33 +108,27 @@ class FakeTagContainer:
         for i, filepath in enumerate(finished_files):
             # Create fake tags based on the feature
             fake_tags = [
-                Tag(
+                ModelTag(
                     start_time=0,
                     end_time=5000,  # 5 seconds in ms
                     text=f"{self.feature}_tag_{i}",
                     frame_tags={},
-                    additional_info={"confidence": 0.9},
-                    source="",
-                    batch_id=""
+                    source_media=filepath,
+                    track=""
                 ),
-                Tag(
+                ModelTag(
                     start_time=5000,
                     end_time=10000,  # 5-10 seconds in ms
                     text=f"{self.feature}_tag_{i}_2",
                     frame_tags={},
-                    additional_info={"confidence": 0.8},
-                    source="",
-                    batch_id=""
+                    source_media=filepath,
+                    track=""
                 )
             ]
 
-            output = ModelOutput(
-                source_media=filepath,
-                tags=fake_tags
-            )
-            outputs.append(output)
+            tags.extend(fake_tags)
 
-        return outputs
+        return tags
     
     def name(self) -> str:
         return f"FakeContainer-{self.feature}"
@@ -147,12 +141,13 @@ class PartialFailContainer(FakeTagContainer):
     Always fails last tag
     """
 
-    def tags(self) -> list[ModelOutput]:
-        outputs = super().tags()
-        if len(outputs) > 1:
-            outputs = outputs[:-1]
+    def tags(self) -> list[ModelTag]:
+        tags = super().tags()
+        sources = [t.source_media for t in tags]
+        if len(sources) > 1:
+            return [t for t in tags if t.source_media != sources[-1]]
 
-        return outputs
+        return tags
     
     def send_eof(self) -> None:
         pass
@@ -724,10 +719,11 @@ def test_failed_tag(mock_get, fabric_tagger, q):
 
     wait_tag(fabric_tagger, q.qhit, timeout=5)
 
-    # check that one failed
+    # check that only one was updated
     status = fabric_tagger.status(q.qhit)
     assert status["video"]["object_detection"]["status"] == "Completed"
     assert len(status["video"]["object_detection"]["failed"]) == 1
+    #assert status["video"]["object_detection"]["progress"] == "1/2"
 
 
 def wait_tag(fabric_tagger, batch_id, timeout):
@@ -841,15 +837,8 @@ def test_tags_have_timestamp_ms_field(fabric_tagger: FabricTagger, q: Content, s
 def test_source_with_zero_tags_marked_as_failed(fabric_tagger, q):
     """Test that a source producing zero tags is marked as failed in job status"""
     
-    # Store the original tags method to call it in the patch
-    original_tags = FakeTagContainer.tags
-    
-    # Patch tags() to remove the second output, simulating zero tags for one source
-    def patched_tags(self):
-        outputs = original_tags(self)  # Call the original method with self
-        if len(outputs) > 1:
-            outputs = outputs[:-1]  # Remove the last output to simulate zero tags for one source
-        return outputs
+    def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
+        return PartialFailContainer(req.media_input, req.model_id)
     
     args = TagArgs(
         feature="object_detection",
@@ -859,7 +848,7 @@ def test_source_with_zero_tags_marked_as_failed(fabric_tagger, q):
         destination_qid=""
     )
     
-    with patch.object(FakeTagContainer, 'tags', new=patched_tags):
+    with patch.object(FakeContainerRegistry, 'get', side_effect=get_side_effect):
         fabric_tagger.tag(q, args)
         wait_tag(fabric_tagger, q.qhit, timeout=5)
     

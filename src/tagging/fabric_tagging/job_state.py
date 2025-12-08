@@ -20,7 +20,7 @@ class JobState:
     # internal handle used in the ContainerScheduler to identify the job
     taghandle: str
     # prevent double uploads to the tagstore
-    uploaded_sources: list[str]
+    uploaded_sources: set[str]
     message: str
     media: MediaState
     # tagstore job/track id to know where to upload tags

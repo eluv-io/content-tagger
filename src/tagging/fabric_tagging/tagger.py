@@ -226,7 +226,7 @@ class FabricTagger:
             state=JobState(
                 status=JobStatus.starting(),
                 taghandle="",
-                uploaded_sources=[],
+                uploaded_sources=set(),
                 message="",
                 media=MediaState(
                     downloaded=[],
@@ -575,6 +575,7 @@ class FabricTagger:
         try:
             self.__upload_tags(job)
         except Exception as e:
+            # TODO: reaping the job might be a bit aggressive
             logger.opt(exception=e).error("error uploading tags for job", extra={"jobid": job.get_id()})
             self._cleanup_job(job, "Failed", "Tag upload failed")
 
@@ -602,22 +603,26 @@ class FabricTagger:
         if job.state.media is None or job.state.container is None:
             return
 
-        # type checker hint cause it doesn't understand the above condition
         assert job.state.media is not None
         media_to_source = {s.filepath: s for s in job.state.media.downloaded}
 
         with timeit("getting tags from container", min_duration=0.5):
-            # fail case: if this errors, the upload tick will catch it and mark the job as failed
-            outputs = job.state.container.tags()
-        new_outputs = [out for out in outputs if out.source_media in media_to_source \
-                       and media_to_source[out.source_media].name not in job.state.uploaded_sources]
+            tags = job.state.container.tags()
+
+        # switch to just id'ing the tags
+        new_outputs = [tag for tag in tags if tag.source_media in media_to_source \
+                       and media_to_source[tag.source_media].name not in job.state.uploaded_sources]
 
         if not new_outputs:
             return
-        
-        total_tags = sum(len(out.tags) for out in new_outputs)
 
-        logger.info("uploading new tags", extra={"jobid": job.get_id(), "num_outputs": len(new_outputs), "num_tags": total_tags})
+        logger.info(
+            "uploading new tags", 
+            extra={
+                "jobid": job.get_id(), 
+                "num_tags": len(new_outputs)
+            }
+        )
 
         stream_meta = job.state.media.worker.metadata()
         fps = None
@@ -625,13 +630,20 @@ class FabricTagger:
             # in order to map the frame tags to their appropriate timestamps
             # TODO: missing this for live
             fps = stream_meta.fps
-        tags2upload = []
-        for out in new_outputs:
-            original_src = media_to_source[out.source_media]
-            for tag in out.tags:
-                tag.source = original_src.name
-                tag.batch_id = job.state.tag_batch
-                tags2upload.append(self._fix_tag_timing_info(tag, original_src.offset, original_src.wall_clock, fps))
+
+        tags2upload: list[Tag] = []
+        for model_tag in new_outputs:
+            original_src = media_to_source[model_tag.source_media]
+            tag = Tag(
+                start_time=model_tag.start_time,
+                end_time=model_tag.end_time,
+                text=model_tag.text,
+                additional_info={},
+                frame_tags=model_tag.frame_tags,
+                source=original_src.name,
+                batch_id=job.state.tag_batch,
+            )
+            tags2upload.append(self._fix_tag_timing_info(tag, original_src.offset, original_src.wall_clock, fps))
 
         try:
             with timeit("uploading tags to tagstore", min_duration=0.5):
@@ -642,9 +654,8 @@ class FabricTagger:
             # TODO: we could add a retry for stopped jobs as well but it's overkill for now.
             logger.opt(exception=e).error("unexpected error in uploader")
 
-        # TODO: this is good behavior for live case, but for non-live we might prefer to retry the individual tags
-        # TODO: we should probably have a generic failed sources field to add to and append there instead of here.
-        job.state.uploaded_sources.extend(media_to_source[out.source_media].name for out in new_outputs)
+        # TODO: we should have a generic failed sources field to add to and append there instead of here.
+        job.state.uploaded_sources.update(media_to_source[out.source_media].name for out in new_outputs)
 
     def _post_tags(self, tags: list[Tag], batch: str, q: Content, destination_qid: str) -> None:
         """Upload tags to tagstore (called from actor thread)"""

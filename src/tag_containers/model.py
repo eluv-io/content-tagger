@@ -58,16 +58,25 @@ class RegistryConfig:
     base_dir: str
     cache_dir: str
 
-@dataclass
-class ModelOutput:
+@dataclass(frozen=True)
+class ModelTag:
     """
-    Used to group tags with their associated media file.
-
-    In the context of the tagger, this is important to associate tags with their source for the purpose
-    of diff-based tagging
+    Represents a tag produced at the model level
     """
+    start_time: int
+    end_time: int
+    text: str
+    frame_tags: dict
     source_media: str
-    tags: list[Tag]
+    track: str
+
+    def __hash__(self) -> int:
+        return hash((self.start_time, self.end_time, self.text, self.source_media, self.track))
+    
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, ModelTag):
+            return False
+        return (self.start_time, self.end_time, self.text, self.source_media, self.track) == (other.start_time, other.end_time, other.text, other.source_media, other.track)
 
 @dataclass
 class FrameTag:
