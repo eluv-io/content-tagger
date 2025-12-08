@@ -722,8 +722,9 @@ def test_failed_tag(mock_get, fabric_tagger, q):
     # check that only one was updated
     status = fabric_tagger.status(q.qhit)
     assert status["video"]["object_detection"]["status"] == "Completed"
-    assert len(status["video"]["object_detection"]["failed"]) == 1
-    #assert status["video"]["object_detection"]["progress"] == "1/2"
+    assert len(status["video"]["object_detection"]["failed"]) == 0
+    assert status["video"]["object_detection"]["tagging_progress"] == "1/2"
+    assert len(status["video"]["object_detection"]["missing_tags"]) == 1
 
 
 def wait_tag(fabric_tagger, batch_id, timeout):
@@ -834,7 +835,7 @@ def test_tags_have_timestamp_ms_field(fabric_tagger: FabricTagger, q: Content, s
         assert tag.additional_info["timestamp_ms"] > 0
 
 
-def test_source_with_zero_tags_marked_as_failed(fabric_tagger, q):
+def test_source_with_zero_tags_marked_as_missing(fabric_tagger, q):
     """Test that a source producing zero tags is marked as failed in job status"""
     
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
@@ -855,4 +856,4 @@ def test_source_with_zero_tags_marked_as_failed(fabric_tagger, q):
     status = fabric_tagger.status(q.qhit)
     job_status = status["video"]["object_detection"]
     assert job_status["status"] == "Completed"
-    assert len(job_status["failed"]) == 1
+    assert len(job_status["missing_tags"]) == 1

@@ -399,11 +399,10 @@ class FabricTagger:
         self._run_upload(job)
 
         assert job.state.media is not None
-        # see if there are any missing sources.
-        # TODO: I think there is a slight bug where if a source HAS no tags at all, we will think it is missing.
+
         for source in job.state.media.downloaded:
             if source.name not in job.state.uploaded_sources:
-                job.state.status.failed.append(source.name)
+                job.state.missing_tags.add(source.name)
 
         self._set_stop_state(jobid, "Completed", "")
 
@@ -543,6 +542,7 @@ class FabricTagger:
             "status": status.status,
             "time_running": end - status.time_started,
             "tagging_progress": f"{total_tagged}/{total_sources}" if total_sources > 0 else "0/0",
+            "missing_tags": list(state.missing_tags),
             "failed": status.failed,
         }
         if state.message:

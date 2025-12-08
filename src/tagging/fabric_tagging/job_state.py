@@ -24,6 +24,8 @@ class JobState:
     uploaded_sources: set[str]
     # prevent double upload
     uploaded_tags: set[ModelTag]
+    # sources with no corresponding tags
+    missing_tags: set[str]
     message: str
     media: MediaState
     # tagstore job/track id to know where to upload tags
@@ -40,6 +42,7 @@ class JobState:
             taghandle="",
             uploaded_sources=set(),
             uploaded_tags=set(),
+            missing_tags=set(),
             message="",
             media=MediaState(
                 downloaded=[],
