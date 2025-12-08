@@ -55,6 +55,7 @@ class JobArgs(TagArgs):
     # whether to retry fetching content if it fails or end the tagging job. 
     # important for the livestream case where momentary failures can be expected.
     retry_fetch: bool
+    retry_upload: bool
 
 @dataclass
 class JobID:

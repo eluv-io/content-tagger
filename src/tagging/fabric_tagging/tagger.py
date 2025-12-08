@@ -224,7 +224,7 @@ class FabricTagger:
 
         job = TagJob(
             state=JobState.starting(ts_batch.id, worker=worker),
-            args=JobArgs(**args.__dict__, q=q, retry_fetch=is_live),
+            args=JobArgs(**args.__dict__, q=q, retry_upload=is_live, retry_fetch=is_live),
             stop_event=stop_event,   
         )
 
@@ -632,7 +632,13 @@ class FabricTagger:
             )
             tags2upload.append(self._fix_tag_timing_info(tag, original_src.offset, original_src.wall_clock, fps))
 
-        self._post_tags(tags2upload, job.state.tag_batch, job.args.q, destination_qid=job.args.destination_qid)
+        try:
+            self._post_tags(tags2upload, job.state.tag_batch, job.args.q, destination_qid=job.args.destination_qid)
+        except Exception as e:
+            if job.args.retry_upload:
+                logger.opt(exception=e).error("error uploading tags, but retry is set to true, will retry on next upload tick", extra={"jobid": job.get_id()})
+            else:
+                raise
 
         job.state.uploaded_sources.update(media_to_source[out.source_media].name for out in new_outputs)
         job.state.uploaded_tags.update(new_outputs)
