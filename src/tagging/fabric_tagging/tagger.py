@@ -705,20 +705,20 @@ class FabricTagger:
             tag.additional_info["timestamp_ms"] = wall_clock + tag.start_time
         tag.start_time += offset
         tag.end_time += offset
-        if "frame_tags" in tag.additional_info:
+        if tag.frame_tags:
             if fps is not None:
                 tag = self._fix_frame_indices(tag, offset, fps)
             else:
                 logger.warning(f"model returned frame tags, but stream fps is unknown: removing frame tags.")
-                del tag.additional_info["frame_tags"]
+                tag.frame_tags = {}
         return tag
 
     def _fix_frame_indices(self, tag: Tag, offset: float, fps: float) -> Tag:
         """Fix frame indices (called from actor thread)"""
-        if "frame_tags" not in tag.additional_info:
+        if not tag.frame_tags:
             return tag
 
-        frame_tags = tag.additional_info["frame_tags"]
+        frame_tags = tag.frame_tags
         frame_offset = round(offset * fps)
         residual = (offset * fps) - frame_offset
         if not math.isclose(residual, 0.0, abs_tol=1e-6):
@@ -733,7 +733,7 @@ class FabricTagger:
                 continue
             adjusted[frame_idx + frame_offset] = label
 
-        tag.additional_info["frame_tags"] = adjusted
+        tag.frame_tags = adjusted
         return tag
     
     def _get_destination_q(self, q: Content, destination_qid: str) -> Content:
