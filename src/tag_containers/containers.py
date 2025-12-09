@@ -253,33 +253,29 @@ class TagContainer:
     def _output_from_tags(self, source_video: str, tag_files: list[str]) -> list[ModelTag]:
         ftype = get_file_type(source_video)
     
-        vid_tags = None
-        frame_tags = None
+        vid_tags = []
+        frame_tags = {}
 
-        # TODO: handle multiple files containing the tags
         for tag_file in tag_files:
             try:
                 if tag_file.endswith("_tags.json"):
                     with open(tag_file, 'r') as f:
-                        vid_tags = json.load(f)
+                        vid_tags += json.load(f)
                 elif tag_file.endswith("_frametags.json"):
                     with open(tag_file, 'r') as f:
-                        frame_tags = json.load(f)
+                        frame_tags.update(json.load(f))
             except Exception as e:
                 logger.error(f"Error loading tags from {tag_file}: {e}")
                 continue
-        
-        if vid_tags is None:
-            return []
         
         if frame_tags and ftype == "video":
             fps = self._get_fps(source_video)
         else:
             fps = None
 
-        # Convert video tags to ModelTag objects with enhanced additional_info
-        tags = []
+        out = []
 
+        # format as ModelTag and add frame tags if available
         for video_tag_data in vid_tags:
             start_time = video_tag_data.get("start_time", 0)
             end_time = video_tag_data.get("end_time", 0)
@@ -313,15 +309,33 @@ class TagContainer:
                 track=""
             )
 
-            tags.append(tag)
+            out.append(tag)
 
-        return tags
-
+        return out
+        
     def _source_from_tag_file(self, tagfile: str) -> str:
-        """
-        Extract the source from the tag file name.
-        """
-        basename = os.path.basename(tagfile)
+        with open(tagfile, 'r') as f:
+            data = json.load(f)
+        
+        if not isinstance(data, list) or len(data) == 0:
+            return self._source_from_filename(tagfile)
+            
+        sources = set()
+        for entry in data:
+            assert isinstance(entry, dict)
+            if "source_media" in entry:
+                sources.add(entry["source_media"])
+
+        if len(sources) == 1:
+            source_file = sources.pop()
+            return self.basename_to_source[source_file]
+        else:
+            return self._source_from_filename(tagfile)
+
+    def _source_from_filename(self, filename: str) -> str:
+        """Deprecated method for retrieving source media from filename"""
+
+        basename = os.path.basename(filename)
         # remove _tags, _frametags, or _imagetags suffix
         path_parts = basename.split("_")
         if len(path_parts) < 2:

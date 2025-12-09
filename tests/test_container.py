@@ -317,14 +317,14 @@ def test_tags_missing_video_tags_file(video_tag_container):
         assert isinstance(outputs, list)
 
 
-def test_source_from_tag_file(video_tag_container, image_tag_container):
-    source = video_tag_container._source_from_tag_file("video1.mp4_tags.json")
+def test_source_from_filename(video_tag_container: TagContainer, image_tag_container: TagContainer):
+    source = video_tag_container._source_from_filename("video1.mp4_tags.json")
     assert source.endswith("video1.mp4")
     
-    source = video_tag_container._source_from_tag_file("video1.mp4_frametags.json") 
+    source = video_tag_container._source_from_filename("video1.mp4_frametags.json") 
     assert source.endswith("video1.mp4")
     
-    source = image_tag_container._source_from_tag_file("image1.jpg_imagetags.json")
+    source = image_tag_container._source_from_filename("image1.jpg_imagetags.json")
     assert source.endswith("image1.jpg")
 
 
@@ -543,3 +543,115 @@ def test_tags_get_fps_cached_per_video(video_tag_container):
         
         for tag in outputs:
             assert tag.frame_tags
+
+def test_source_from_tag_file_with_source_media_field(video_tag_container):
+    tags_dir = video_tag_container.cfg.tags_dir
+    
+    video_tags_data = [
+        {
+            "start_time": 0,
+            "end_time": 5,
+            "text": "person walking",
+            "source_media": "video1.mp4"
+        },
+        {
+            "start_time": 10,
+            "end_time": 15,
+            "text": "car driving",
+            "source_media": "video1.mp4"
+        }
+    ]
+    
+    tag_file = os.path.join(tags_dir, "arbitrary_name_tags.json")
+    with open(tag_file, 'w') as f:
+        json.dump(video_tags_data, f)
+    
+    source = video_tag_container._source_from_tag_file(tag_file)
+    assert source.endswith("video1.mp4")
+
+def test_source_from_tag_file_fallback_to_filename(video_tag_container):
+    tags_dir = video_tag_container.cfg.tags_dir
+    
+    video_tags_data = [
+        {
+            "start_time": 0,
+            "end_time": 5,
+            "text": "person walking"
+        }
+    ]
+    
+    tag_file = os.path.join(tags_dir, "video1.mp4_tags.json")
+    with open(tag_file, 'w') as f:
+        json.dump(video_tags_data, f)
+    
+    source = video_tag_container._source_from_tag_file(tag_file)
+    assert source.endswith("video1.mp4")
+
+def test_source_from_tag_file_empty_list(video_tag_container):
+    tags_dir = video_tag_container.cfg.tags_dir
+    
+    tag_file = os.path.join(tags_dir, "video1.mp4_tags.json")
+    with open(tag_file, 'w') as f:
+        json.dump([], f)
+    
+    source = video_tag_container._source_from_tag_file(tag_file)
+    assert source.endswith("video1.mp4")
+
+def test_source_from_tag_file_multiple_sources_fallback(video_tag_container):
+    tags_dir = video_tag_container.cfg.tags_dir
+    
+    video_tags_data = [
+        {
+            "start_time": 0,
+            "end_time": 5,
+            "text": "person walking",
+            "source_media": "video1.mp4"
+        },
+        {
+            "start_time": 10,
+            "end_time": 15,
+            "text": "car driving",
+            "source_media": "video2.mp4"
+        }
+    ]
+    
+    tag_file = os.path.join(tags_dir, "video1.mp4_tags.json")
+    with open(tag_file, 'w') as f:
+        json.dump(video_tags_data, f)
+    
+    source = video_tag_container._source_from_tag_file(tag_file)
+    assert source.endswith("video1.mp4")
+
+def test_output_from_tags_video_only(video_tag_container):
+    tags_dir = video_tag_container.cfg.tags_dir
+    
+    video_tags_data = [
+        {
+            "start_time": 0,
+            "end_time": 5000,
+            "text": "person walking"
+        },
+        {
+            "start_time": 10000,
+            "end_time": 15000,
+            "text": "car driving"
+        }
+    ]
+    
+    tag_file = os.path.join(tags_dir, "video1.mp4_tags.json")
+    with open(tag_file, 'w') as f:
+        json.dump(video_tags_data, f)
+    
+    with patch('src.tag_containers.containers.get_fps', return_value=30.0):
+        outputs = video_tag_container._output_from_tags("video1.mp4", [tag_file])
+    
+    assert len(outputs) == 2
+    assert outputs[0].start_time == 0
+    assert outputs[0].end_time == 5000
+    assert outputs[0].text == "person walking"
+    assert outputs[0].source_media == "video1.mp4"
+    
+    assert outputs[1].start_time == 10000
+    assert outputs[1].end_time == 15000
+    assert outputs[1].text == "car driving"
+    assert outputs[1].source_media == "video1.mp4"
