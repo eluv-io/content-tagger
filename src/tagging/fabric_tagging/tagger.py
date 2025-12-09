@@ -176,11 +176,7 @@ class FabricTagger:
         self._validate_args(args)
         logger.info("processing tag request", extra={"qhit": q.qhit, "args": args})
 
-        is_live = isinstance(args.scope, LiveScope)
-
-        # TODO: if this fails, the api request will raise error, but some jobs may already have started.
-        # a better solution would be to try/except in the api layer.
-        job = self._create_job(q, args.feature, args, is_live)
+        job = self._create_job(q, args.feature, args)
 
         jobid = job.get_id()
         if jobid in self.jobstore.active_jobs:
@@ -192,22 +188,14 @@ class FabricTagger:
 
             message.response_mailbox.put(Response(data="Job started successfully", error=None))
 
-    def _create_job(self, q: Content, feature: str, args: TagArgs, is_live: bool) -> TagJob:
+    def _create_job(self, q: Content, feature: str, args: TagArgs) -> TagJob:
         """
         Initialize the starting state for a job and important context for its runtime
         """
 
-        dest_q = self._get_destination_qid(q, args.destination_qid)
+        is_live = isinstance(args.scope, LiveScope)
 
-        # TODO: start job here or before first upload tags event? benefit of here is we catch tagstore errors right away.
-        ts_batch = self.tagstore.create_batch(
-            qhit=dest_q.qid,
-            track=feature,
-            # TODO: change
-            stream=args.scope.stream if isinstance(args.scope, VideoScope | LiveScope) and args.scope.stream else "assets",
-            author="tagger",
-            q=dest_q,
-        )
+        dest_q = self._get_destination_q(q, args.destination_qid)
 
         # for user to stop the job
         stop_event = threading.Event()
@@ -223,8 +211,8 @@ class FabricTagger:
         )
 
         job = TagJob(
-            state=JobState.starting(ts_batch.id, worker=worker),
-            args=JobArgs(**args.__dict__, q=q, retry_upload=is_live, retry_fetch=is_live),
+            state=JobState.starting(worker),
+            args=JobArgs(**args.__dict__, q=q, dest_q=dest_q, retry_upload=is_live, retry_fetch=is_live),
             stop_event=stop_event,   
         )
 
@@ -628,12 +616,12 @@ class FabricTagger:
                 additional_info={},
                 frame_tags=model_tag.frame_tags,
                 source=original_src.name,
-                batch_id=job.state.tag_batch,
+                batch_id=self._get_batch(job, model_tag.track),
             )
             tags2upload.append(self._fix_tag_timing_info(tag, original_src.offset, original_src.wall_clock, fps))
 
         try:
-            self._post_tags(tags2upload, job.state.tag_batch, job.args.q, destination_qid=job.args.destination_qid)
+            self._post_tags(tags2upload, q=job.args.dest_q)
         except Exception as e:
             if job.args.retry_upload:
                 logger.opt(exception=e).error("error uploading tags, but retry is set to true, will retry on next upload tick", extra={"jobid": job.get_id()})
@@ -643,20 +631,47 @@ class FabricTagger:
         job.state.uploaded_sources.update(media_to_source[out.source_media].name for out in new_outputs)
         job.state.uploaded_tags.update(new_outputs)
 
-    def _post_tags(self, tags: list[Tag], batch: str, q: Content, destination_qid: str) -> None:
+    def _get_batch(self, job: TagJob, track: str) -> str:
+
+        if not track:
+            track = self._get_default_track(job.args.feature)
+
+        if track in job.state.batch_by_track:
+            return job.state.batch_by_track[track]
+        
+        ts_batch = self.tagstore.create_batch(
+            qhit=job.args.dest_q.qid,
+            track=track,
+            # TODO: something better
+            stream="tagging",
+            author="tagger",
+            q=job.args.dest_q,
+        )
+
+        job.state.batch_by_track[track] = ts_batch.id
+        return job.state.batch_by_track[track]
+
+    def _post_tags(self, tags: list[Tag], q: Content) -> None:
         """Upload tags to tagstore (called from actor thread)"""
         if not tags:
             return
+        
+        # group by batch
+        batch_to_tags = {}
+        for tag in tags:
+            batch_to_tags.setdefault(tag.batch_id, []).append(tag)
 
-        logger.info("uploading tags", extra={"num_tags": len(tags), "batch": batch, "qhit": q.qhit})
+        logger.info("uploading tags", extra={"num_tags": len(tags), "qhit": q.qhit, "num_batches": len(batch_to_tags)})
 
-        dest_q = self._get_destination_qid(q, destination_qid)
+        for batch, tags in batch_to_tags.items():
+            try:
+                self.tagstore.upload_tags(tags, batch, q=q)
+            except Exception as e:
+                logger.opt(exception=e).error("error uploading tags", extra={"destination qid": q.qid})
+                raise
 
-        try:
-            self.tagstore.upload_tags(tags, batch, q=dest_q)
-        except Exception as e:
-            logger.opt(exception=e).error("error uploading tags", extra={"batch": batch, "source_qid": q.qid, "destination_qid": dest_q.qid})
-            raise
+    def _get_default_track(self, feature: str) -> str:
+        return self.cfg.uploader.track_mapping[feature].name
 
     def _output_dir_from_q(self, q: Content) -> str:
         out = os.path.join(self.cfg.media_dir, q.qhit)
@@ -721,7 +736,7 @@ class FabricTagger:
         tag.additional_info["frame_tags"] = adjusted
         return tag
     
-    def _get_destination_qid(self, q: Content, destination_qid: str) -> Content:
+    def _get_destination_q(self, q: Content, destination_qid: str) -> Content:
         """Get destination qid (called from actor thread)"""
         if destination_qid == "" or destination_qid == q.qid:
             return q

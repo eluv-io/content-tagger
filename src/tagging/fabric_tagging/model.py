@@ -6,10 +6,12 @@ import time
 
 from src.common.content import Content
 from src.fetch.model import Scope
+from src.tagging.uploading.config import UploaderConfig
 
 @dataclass
 class FabricTaggerConfig:
     media_dir: str
+    uploader: UploaderConfig
 
 @dataclass
 class TagArgs:
@@ -18,8 +20,6 @@ class TagArgs:
     run_config: dict
     # scope of the tagging job w.r.t the content
     scope: Scope
-    # if false, then the tagger will ignore tagging of a media source if the (source, model) pair
-    # already exists in the tagstore.
     replace: bool
     destination_qid: str
 
@@ -52,8 +52,7 @@ class JobStatus:
 @dataclass
 class JobArgs(TagArgs):
     q: Content
-    # whether to retry fetching content if it fails or end the tagging job. 
-    # important for the livestream case where momentary failures can be expected.
+    dest_q: Content
     retry_fetch: bool
     retry_upload: bool
 

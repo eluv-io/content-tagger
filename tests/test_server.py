@@ -21,6 +21,7 @@ from src.tagging.scheduling.model import SysConfig
 from src.fetch.model import *
 from src.tag_containers.model import ModelConfig, RegistryConfig
 from src.tagging.fabric_tagging.model import FabricTaggerConfig
+from src.tagging.uploading.config import UploaderConfig, TrackArgs
 
 load_dotenv()
 
@@ -118,7 +119,7 @@ def test_dir():
 def tagger_config(test_dir) -> FabricTaggerConfig:
     media_path = os.path.join(test_dir, "media")
     os.makedirs(media_path, exist_ok=True)
-    return FabricTaggerConfig(media_dir=media_path)
+    return FabricTaggerConfig(media_dir=media_path, uploader=UploaderConfig(track_mapping={"test_model": TrackArgs(name="test_model", label="TEST MODEL")}))
 
 @pytest.fixture(scope="session")
 def test_config(test_dir, tagger_config):
@@ -245,7 +246,7 @@ def test_video_model(client):
     completed = wait_for_jobs_completion(client, [qid], timeout=30)
     assert completed
     tagstore: FilesystemTagStore = client.application.config["state"]["tagger"].tagstore
-    jobid = tagstore.find_batches(q=get_content(auth, qid), stream='video')[0]
+    jobid = tagstore.find_batches(q=get_content(auth, qid))[0]
     tags = tagstore.find_tags(batch_id=jobid, q=get_content(auth, qid))
     tags = sorted(tags, key=lambda x: x.start_time)
     # TODO: this randomly gave 124 one time and I can't reproduce it
@@ -326,7 +327,7 @@ def test_live_video_model(is_live, app, last_res_has_media):
     assert fake_worker_ref[0].call_count == expected_calls, f"Expected {expected_calls} fetch calls, got {fake_worker_ref[0].call_count}"
     
     # Get tags and verify results
-    jobid = tagstore.find_batches(q=get_content(auth, qid), stream='video')[0]
+    jobid = tagstore.find_batches(q=get_content(auth, qid))[0]
     tags = tagstore.find_tags(batch_id=jobid, q=get_content(auth, qid))
     tags = sorted(tags, key=lambda x: x.start_time)
     
@@ -404,7 +405,7 @@ def test_real_live_stream(app, live_q):
     assert final_status in ['Stopped', 'Completed'], f"Expected Stopped or Completed, got {final_status}"
     
     # verify we have some tags
-    jobid = tagstore.find_batches(q=live_q, stream='video', qhit=live_q.qid)[0]
+    jobid = tagstore.find_batches(q=live_q, qhit=live_q.qid)[0]
     tags = tagstore.find_tags(batch_id=jobid, q=live_q)
     tags = sorted(tags, key=lambda x: x.start_time)
     
@@ -441,7 +442,7 @@ def test_asset_tag(client):
     status = client.get(f"/{qid}/status?authorization={auth}")
     print(status.get_json())
     tagstore: FilesystemTagStore = client.application.config["state"]["tagger"].tagstore
-    jobid = tagstore.find_batches(qhit=test_objects['assets'], stream='assets')[0]
+    jobid = tagstore.find_batches(qhit=test_objects['assets'])[0]
     tags = tagstore.find_tags(batch_id=jobid)
     tags = sorted(tags, key=lambda x: x.start_time)
     assert len(tags) > 0
@@ -570,7 +571,7 @@ def test_stop_live_job(app, live_q):
                 if progress != "0%" and progress != "100%":
                     # Check we actually have some tags
                     try:
-                        jobid = tagstore.find_batches(q=live_q, stream='video', qhit=live_q.qid)[0]
+                        jobid = tagstore.find_batches(q=live_q, qhit=live_q.qid)[0]
                         tags = tagstore.find_tags(batch_id=jobid, q=live_q)
                         if len(tags) > 0:
                             some_tags_found = True
@@ -599,7 +600,7 @@ def test_stop_live_job(app, live_q):
     assert final_status == 'Stopped', f"Expected Stopped, got {final_status}"
     
     # Verify we have partial tags (not all of them)
-    jobid = tagstore.find_batches(q=live_q, stream='video', qhit=live_q.qid)[0]
+    jobid = tagstore.find_batches(q=live_q, qhit=live_q.qid)[0]
     final_tags = tagstore.find_tags(batch_id=jobid, q=live_q)
     
     assert len(final_tags) > 0, "Should have some tags"

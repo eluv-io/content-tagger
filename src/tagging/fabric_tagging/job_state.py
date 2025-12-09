@@ -26,16 +26,15 @@ class JobState:
     uploaded_tags: set[ModelTag]
     # sources with no corresponding tags
     missing_tags: set[str]
+    batch_by_track: dict[str, str]
     message: str
     media: MediaState
-    # tagstore job/track id to know where to upload tags
-    tag_batch: str
     container: TagContainer | None
     # callers can pass an event to be notified when tagging is done
     tagging_done: threading.Event
 
     @staticmethod
-    def starting(batch_id: str, worker: FetchSession) -> "JobState":
+    def starting(worker: FetchSession) -> "JobState":
         """Create a JobState in starting state."""
         return JobState(
             status=JobStatus.starting(),
@@ -48,7 +47,7 @@ class JobState:
                 downloaded=[],
                 worker=worker
             ),
-            tag_batch=batch_id,
+            batch_by_track={},
             tagging_done=threading.Event(),
             container=None
         )

@@ -36,6 +36,41 @@ fetcher:
 
 tagger:
   media_dir: data/parts
+  uploader:
+    track_mapping:
+      llava:
+        name: llava_caption
+        label: LLAVA Caption
+      asr:
+        name: speech_to_text
+        label: Speech to Text
+      french_asr:
+        name: french_asr
+        label: French ASR
+      caption:
+        name: object_detection
+        label: Object Detection
+      shot:
+        name: shot_detection
+        label: Shot Detection
+      celeb:
+        name: celebrity_detection
+        label: Celebrity Detection
+      ocr:
+        name: optical_character_recognition
+        label: Optical Character Recognition
+      logo:
+        name: logo_detection
+        label: Logo Detection
+      music:
+        name: music_detection
+        label: Music Detection
+      breakdance:
+        name: breakdance
+        label: Breakdance
+      test_model:
+        name: test_model
+        label: Test Model
 
 container_registry:
   base_dir: data/containers

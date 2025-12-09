@@ -38,7 +38,7 @@ def _create_tag_args(
         run_config=config.model,
         scope=scope,
         replace=args.replace,
-        destination_qid=args.destination_qid
+        destination_qid=args.destination_qid,
     )
 
 def map_vod_tag_dto(args: TagAPIArgs, registry: ContainerRegistry, q: Content) -> list[TagArgs]:

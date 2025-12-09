@@ -12,6 +12,7 @@ from src.tags.tagstore.rest_tagstore import RestTagstore
 from src.tagging.fabric_tagging.model import FabricTaggerConfig
 from src.tags.conversion import TagConverter, TagConverterConfig
 from src.common.content import Content, ContentConfig, ContentFactory
+from src.tagging.uploading.config import UploaderConfig, TrackArgs
 
 dotenv.load_dotenv()
 
@@ -55,7 +56,15 @@ def media_dir(temp_dir: str) -> str:
 
 @pytest.fixture
 def tagger_config(media_dir) -> FabricTaggerConfig:
-    return FabricTaggerConfig(media_dir=media_dir)
+    return FabricTaggerConfig(
+        media_dir=media_dir, 
+        uploader=UploaderConfig(
+            track_mapping={
+                "caption": TrackArgs(name="object_detection", label="Object Detection"),
+                "asr": TrackArgs(name="speech_to_text", label="Speech to Text"),
+            }
+        ),
+    )
 
 @pytest.fixture
 def tag_converter() -> TagConverter:
