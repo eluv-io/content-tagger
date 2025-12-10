@@ -5,7 +5,7 @@ from dateutil import parser
 from src.common.logging import logger
 
 from src.common.content import Content
-from src.tags.tagstore.model import Tag, Batch
+from src.tags.tagstore.model import Tag, Batch, Track
 from src.tags.tagstore.abstract import Tagstore
 
 class RestTagstore(Tagstore):
@@ -32,10 +32,71 @@ class RestTagstore(Tagstore):
             logger.error(f"HTTP {response.status_code} response (non-JSON): {response.text}")
         response.raise_for_status()
 
+    def create_track(self,
+        qhit: str,
+        name: str,
+        label: str,
+        q: Content | None = None
+    ) -> None:
+        """
+        Create a new track with metadata (idempotent)
+        """
+        track_data = {
+            "label": label
+        }
+        
+        response = self.session.post(
+            f"{self.base_url}/{qhit}/tracks/{name}",
+            json=track_data,
+            headers=self._get_headers(q)
+        )
+        
+        # 409 means track already exists - that's fine (idempotent)
+        if response.status_code == 409:
+            logger.debug(f"Track {name} already exists for qhit {qhit}")
+            return
+        
+        if not response.ok:
+            self._log_response_and_raise(response)
+
+    def get_track(self,
+        qhit: str,
+        name: str,
+        q: Content | None = None
+    ) -> Track | None:
+        """
+        Get track metadata
+        """
+        # The API doesn't have a GET /{qid}/tracks/{track} endpoint,
+        # so we need to get all tracks and filter
+        response = self.session.get(
+            f"{self.base_url}/{qhit}/tracks",
+            headers=self._get_headers(q)
+        )
+        
+        if response.status_code == 404:
+            return None
+        
+        if not response.ok:
+            self._log_response_and_raise(response)
+        
+        result = response.json()
+        tracks = result.get('tracks', [])
+        
+        # Find the track with matching name
+        for track_data in tracks:
+            if track_data['name'] == name:
+                return Track(
+                    name=track_data['name'],
+                    label=track_data['label'],
+                    qhit=track_data['qid']
+                )
+        
+        return None
+
     def create_batch(self,
         qhit: str,
         track: str,
-        stream: str,
         author: str,
         q: Content | None = None
     ) -> Batch:
@@ -45,11 +106,7 @@ class RestTagstore(Tagstore):
         # Create batch via REST API
         batch_data = {
             "track": track,
-            "author": author,
-            "additional_info": {
-                "stream": stream,
-                "qhit": qhit
-            }
+            "author": author
         }
         
         response = self.session.post(
@@ -69,7 +126,6 @@ class RestTagstore(Tagstore):
             id=batch_id,
             qhit=qhit,
             track=track,
-            stream=stream,
             timestamp=time.time(),
             author=author
         )
@@ -341,7 +397,6 @@ class RestTagstore(Tagstore):
                 id=str(batch_data['id']),
                 qhit=qhit,
                 track=batch_data['track'],
-                stream=batch_data.get('additional_info', {}).get('stream'),
                 timestamp=parser.isoparse(batch_data['timestamp'].replace("Z", "+00:00")).timestamp(),
                 author=batch_data['author']
             )
