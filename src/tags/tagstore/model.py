@@ -25,16 +25,12 @@ class Tag:
 class Batch:
     id: str
     qhit: str
-    stream: str | None
     track: str
     timestamp: float
     author: str
 
-## Args
-
 @dataclass
-class CreateJobArgs:
+class Track:
     qhit: str
-    track: str
-    stream: str
-    author: str
+    name: str
+    label: str

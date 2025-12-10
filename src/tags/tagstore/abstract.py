@@ -1,13 +1,27 @@
 from typing import Protocol
 
 from src.common.content import Content
-from src.tags.tagstore.model import Tag, Batch
+from src.tags.tagstore.model import *
 
 class Tagstore(Protocol):
+    def create_track(self, 
+        qhit: str,
+        name: str,
+        label: str,
+        q: Content | None=None,
+    ) -> None:
+        ...
+
+    def get_track(self,
+        qhit: str,
+        name: str,
+        q: Content | None=None,
+    ) -> Track | None:
+        ...
+
     def create_batch(self,
         qhit: str,
         track: str,
-        stream: str,
         author: str,
         q: Content | None=None,
     ) -> Batch:

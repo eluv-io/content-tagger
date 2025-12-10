@@ -16,10 +16,51 @@ class FilesystemTagStore(Tagstore):
         self.base_path = base_dir
         os.makedirs(self.base_path, exist_ok=True)
 
+    def create_track(self,
+        qhit: str,
+        name: str,
+        label: str,
+        q: Content | None = None,
+    ) -> None:
+        """
+        Create a new track with metadata
+        """
+        track_dir = self._get_track_dir(qhit, name)
+        os.makedirs(track_dir, exist_ok=True)
+
+        track = Track(
+            name=name,
+            label=label,
+            qhit=qhit
+        )
+
+        metadata_path = self._get_track_metadata_path(qhit, name)
+        with open(metadata_path, 'w') as f:
+            json.dump(asdict(track), f, indent=2)
+
+    def get_track(self,
+        qhit: str,
+        name: str,
+        q: Content | None = None,
+    ) -> Track | None:
+        """
+        Get track metadata
+        """
+        metadata_path = self._get_track_metadata_path(qhit, name)
+        
+        if not os.path.exists(metadata_path):
+            return None
+        
+        try:
+            with open(metadata_path, 'r') as f:
+                track_data = json.load(f)
+                return Track(**track_data)
+        except Exception:
+            return None
+
     def create_batch(self,
         qhit: str,
         track: str,
-        stream: str,
         author: str,
         q: Content | None = None
     ) -> Batch:
@@ -34,7 +75,6 @@ class FilesystemTagStore(Tagstore):
             id=batch_id,
             qhit=qhit,
             track=track,
-            stream=stream,
             timestamp=time.time(),
             author=author
         )
@@ -212,8 +252,6 @@ class FilesystemTagStore(Tagstore):
                 continue
             if 'track' in filters and batch.track != filters['track']:
                 continue
-            if 'stream' in filters and batch.stream != filters['stream']:
-                continue
             if 'author' in filters and batch.author != filters['author']:
                 continue
             if 'timestamp_gte' in filters and batch.timestamp < filters['timestamp_gte']:
@@ -259,20 +297,39 @@ class FilesystemTagStore(Tagstore):
             batch_data = json.load(f)
             return Batch(**batch_data)
 
+    def _get_track_dir(self, qhit: str, track: str) -> str:
+        """Get the directory path for a specific track"""
+        return os.path.join(self.base_path, qhit, track)
+
+    def _get_track_metadata_path(self, qhit: str, track: str) -> str:
+        """Get the path to track metadata file"""
+        return os.path.join(self._get_track_dir(qhit, track), "trackmeta.json")
+
     def _get_batch_ids_with_paths(self) -> list[tuple[str, str]]:
         """Get all batch IDs with their corresponding paths"""
         if not os.path.exists(self.base_path):
             return []
         
-        # batch_ids are represented by qhit/feature/stream_name, return this path
+        # batch_ids are represented by qhit/track/batch_name
         batch_ids = []
         for qhit in os.listdir(self.base_path):
-            for feature in os.listdir(os.path.join(self.base_path, qhit)):
-                for stream_name in os.listdir(os.path.join(self.base_path, qhit, feature)):
-                    batch_ids.append(f"{qhit}/{feature}/{stream_name}")
+            qhit_path = os.path.join(self.base_path, qhit)
+            if not os.path.isdir(qhit_path):
+                continue
+                
+            for track in os.listdir(qhit_path):
+                track_path = os.path.join(qhit_path, track)
+                if not os.path.isdir(track_path):
+                    continue
+                    
+                for batch_name in os.listdir(track_path):
+                    batch_path = os.path.join(track_path, batch_name)
+                    # Skip the trackmeta.json file
+                    if not os.path.isdir(batch_path):
+                        continue
+                    batch_ids.append((f"{qhit}/{track}/{batch_name}", batch_path))
 
-        batch_dirs = [os.path.join(self.base_path, batch_id) for batch_id in batch_ids]
-        return list(zip(batch_ids, batch_dirs))
+        return batch_ids
 
     def _encode_source_for_filename(self, source: str) -> str:
         """Encode source name for safe filesystem usage"""
