@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class TrackArgs:
@@ -6,6 +6,11 @@ class TrackArgs:
     label: str
 
 @dataclass(frozen=True)
+class ModelUploadArgs:
+    default: TrackArgs
+    overrides: dict[str, TrackArgs] = field(default_factory=dict)
+
+@dataclass(frozen=True)
 class UploaderConfig:
-    # map feature id to TrackArgs
-    track_mapping: dict[str, TrackArgs]
+    # map feature name to ModelUploadArgs
+    model_params: dict[str, ModelUploadArgs]

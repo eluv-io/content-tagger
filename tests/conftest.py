@@ -12,7 +12,7 @@ from src.tags.tagstore.rest_tagstore import RestTagstore
 from src.tagging.fabric_tagging.model import FabricTaggerConfig
 from src.tags.conversion import TagConverter, TagConverterConfig
 from src.common.content import Content, ContentConfig, ContentFactory
-from src.tagging.uploading.config import UploaderConfig, TrackArgs
+from src.tagging.uploading.config import ModelUploadArgs, UploaderConfig, TrackArgs
 
 dotenv.load_dotenv()
 
@@ -59,9 +59,16 @@ def tagger_config(media_dir) -> FabricTaggerConfig:
     return FabricTaggerConfig(
         media_dir=media_dir, 
         uploader=UploaderConfig(
-            track_mapping={
-                "caption": TrackArgs(name="object_detection", label="Object Detection"),
-                "asr": TrackArgs(name="speech_to_text", label="Speech to Text"),
+            model_params={
+                "caption": ModelUploadArgs(
+                    default=TrackArgs(name="object_detection", label="Object Detection")
+                ),
+                "asr": ModelUploadArgs(
+                    default=TrackArgs(name="speech_to_text", label="Speech to Text"),
+                    overrides={
+                        "pretty": TrackArgs(name="auto_captions", label="Auto Captions")
+                    }
+                ),
             }
         ),
     )

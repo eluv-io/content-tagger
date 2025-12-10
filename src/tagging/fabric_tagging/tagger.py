@@ -24,6 +24,7 @@ from src.tags.tagstore.abstract import Tagstore
 from src.tagging.fabric_tagging.message_types import *
 from src.tagging.fabric_tagging.job_state import *
 from src.tagging.fabric_tagging.model import *
+from src.tagging.uploading.config import TrackArgs
 
 from src.common.logging import logger
 logger = logger.bind(name="Fabric Tagger")
@@ -632,18 +633,36 @@ class FabricTagger:
         job.state.uploaded_tags.update(new_outputs)
 
     def _get_batch(self, job: TagJob, track: str) -> str:
-
         if not track:
             track = self._get_default_track(job.args.feature)
 
         if track in job.state.batch_by_track:
             return job.state.batch_by_track[track]
+
+        track_args = self._get_override_track(job.args.feature, track)
+
+        try:
+            self.tagstore.create_track(
+                qhit=job.args.dest_q.qid,
+                name=track_args.name,
+                label=track_args.label,
+                q=job.args.dest_q,
+            )
+        except Exception:
+            # track may already exist
+            pass
+
+        db_track = self.tagstore.get_track(
+            qhit=job.args.dest_q.qid,
+            name=track_args.name,
+            q=job.args.dest_q,
+        )
+
+        assert db_track is not None and db_track.name == track_args.name
         
         ts_batch = self.tagstore.create_batch(
             qhit=job.args.dest_q.qid,
-            track=track,
-            # TODO: something better
-            stream="tagging",
+            track=db_track.name,
             author="tagger",
             q=job.args.dest_q,
         )
@@ -671,7 +690,16 @@ class FabricTagger:
                 raise
 
     def _get_default_track(self, feature: str) -> str:
-        return self.cfg.uploader.track_mapping[feature].name
+        return self.cfg.uploader.model_params[feature].default.name
+    
+    def _get_override_track(self, feature: str, track: str) -> TrackArgs:
+        overrides = self.cfg.uploader.model_params[feature].overrides
+        if track in overrides:
+            return overrides[track]
+        return TrackArgs(
+            name=track,
+            label=track.replace("_", " ").title()
+        )
 
     def _output_dir_from_q(self, q: Content) -> str:
         out = os.path.join(self.cfg.media_dir, q.qhit)

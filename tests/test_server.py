@@ -21,7 +21,7 @@ from src.tagging.scheduling.model import SysConfig
 from src.fetch.model import *
 from src.tag_containers.model import ModelConfig, RegistryConfig
 from src.tagging.fabric_tagging.model import FabricTaggerConfig
-from src.tagging.uploading.config import UploaderConfig, TrackArgs
+from src.tagging.uploading.config import ModelUploadArgs, UploaderConfig, TrackArgs
 
 load_dotenv()
 
@@ -119,7 +119,7 @@ def test_dir():
 def tagger_config(test_dir) -> FabricTaggerConfig:
     media_path = os.path.join(test_dir, "media")
     os.makedirs(media_path, exist_ok=True)
-    return FabricTaggerConfig(media_dir=media_path, uploader=UploaderConfig(track_mapping={"test_model": TrackArgs(name="test_model", label="TEST MODEL")}))
+    return FabricTaggerConfig(media_dir=media_path, uploader=UploaderConfig(model_params={"test_model": ModelUploadArgs(default=TrackArgs(name="test_model", label="TEST MODEL"))}))
 
 @pytest.fixture(scope="session")
 def test_config(test_dir, tagger_config):

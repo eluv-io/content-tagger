@@ -39,9 +39,9 @@ def test_upload_tags_to_fabric_full_workflow(
     qhit = q.qid
 
     # Create test jobs in tagstore
-    obj_job = tag_store.create_batch(qhit, track="object", author="tagger", stream="video", q=q)
-    asr_job = tag_store.create_batch(qhit, stream="audio", author="tagger", track="asr", q=q)
-    shot_job = tag_store.create_batch(qhit, stream="video", author="tagger", track="shot", q=q)
+    obj_job = tag_store.create_batch(qhit, track="object", author="tagger", q=q)
+    asr_job = tag_store.create_batch(qhit, author="tagger", track="asr", q=q)
+    shot_job = tag_store.create_batch(qhit, author="tagger", track="shot", q=q)
 
     # Create tags spanning multiple time buckets (5-minute intervals = 300,000ms)
     # First bucket: 0-300,000ms
@@ -214,7 +214,7 @@ def test_upload_tags_no_frame_tags(
     q = writable_q
     
     # Create job with only ASR tags (no frame_tags in additional_info)
-    asr_job = tag_store.create_batch(q.qid, "audio", "tagger", "asr", q=q)
+    asr_job = tag_store.create_batch(q.qid, "tagger", "asr", q=q)
     
     asr_tags = [
         Tag(0, 3000, "Speech only test", {}, {}, "part_0.mp4", asr_job.id),

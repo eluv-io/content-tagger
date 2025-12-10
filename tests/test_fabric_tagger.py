@@ -3,7 +3,6 @@ import pytest
 import os
 import time
 from unittest.mock import Mock, patch
-from collections import defaultdict
 
 from src.tags.tagstore.rest_tagstore import RestTagstore
 from src.tagging.fabric_tagging.tagger import FabricTagger
@@ -14,7 +13,6 @@ from src.tagging.fabric_tagging.model import TagArgs
 from src.tag_containers.model import ContainerRequest
 from src.fetch.model import *
 from src.common.content import Content
-from src.tags.tagstore.model import Tag
 from src.common.errors import MissingResourceError
 
 class FakeTagContainer:
@@ -525,9 +523,9 @@ def test_tags_uploaded_during_and_after_job(
         result = fabric_tagger.tag(q, args)
         assert "successfully" in result.lower()
 
-    track_mapping = fabric_tagger.cfg.uploader.track_mapping
+    track_mapping = fabric_tagger.cfg.uploader.model_params
 
-    tracks = [t.name for t in track_mapping.values()]
+    tracks = [t.default.name for t in track_mapping.values()]
 
     tag_counts = set()
 
@@ -854,3 +852,69 @@ def test_source_with_zero_tags_marked_as_missing(fabric_tagger, q):
     job_status = status["video"]["caption"]
     assert job_status["status"] == "Completed"
     assert len(job_status["missing_tags"]) == 1
+
+def test_track_override_uploads_to_multiple_tracks(fabric_tagger, q):
+    """Test that model tags with different tracks are uploaded to different tagstore tracks"""
+    
+    class MultiTrackContainer(FakeTagContainer):
+        """Container that outputs tags with different tracks"""
+        
+        def tags(self) -> list[ModelTag]:
+            tags = []
+            finished_files = self.fileargs if self.is_stopped else self.fileargs[:-1]
+            
+            for i, filepath in enumerate(finished_files):
+                # Create tags with default track (empty string)
+                tags.append(ModelTag(
+                    start_time=0,
+                    end_time=5000,
+                    text=f"default_track_tag_{i}",
+                    frame_tags={},
+                    source_media=filepath,
+                    track=""
+                ))
+                
+                # Create tags with "pretty" track
+                tags.append(ModelTag(
+                    start_time=5000,
+                    end_time=10000,
+                    text=f"pretty_track_tag_{i}",
+                    frame_tags={},
+                    source_media=filepath,
+                    track="pretty"
+                ))
+            
+            return tags
+    
+    def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
+        return MultiTrackContainer(req.media_input, req.model_id)
+    
+    args = TagArgs(
+        feature="asr",
+        run_config={},
+        scope=VideoScope(stream="audio", start_time=0, end_time=30),
+        replace=False,
+        destination_qid=""
+    )
+    
+    with patch.object(FakeContainerRegistry, 'get', side_effect=get_side_effect):
+        fabric_tagger.tag(q, args)
+        wait_tag(fabric_tagger, q.qhit, timeout=5)
+    
+    # Verify tags were uploaded to both tracks
+    default_track = "speech_to_text"
+    override_track = "auto_captions"
+    
+    default_tags = fabric_tagger.tagstore.find_tags(
+        q=q,
+        track=default_track
+    )
+    
+    override_tags = fabric_tagger.tagstore.find_tags(
+        q=q,
+        track=override_track
+    )
+    
+    # Should have 2 tags per source (2 sources total = 4 tags per track)
+    assert len(default_tags) == 2, f"Expected 2 tags on default track, got {len(default_tags)}"
+    assert len(override_tags) == 2, f"Expected 2 tags on override track, got {len(override_tags)}"

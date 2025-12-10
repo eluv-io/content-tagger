@@ -26,7 +26,7 @@ class FilesystemTagStore(Tagstore):
         Create a new track with metadata
         """
         track_dir = self._get_track_dir(qhit, name)
-        os.makedirs(track_dir, exist_ok=True)
+        os.makedirs(track_dir)
 
         track = Track(
             name=name,
