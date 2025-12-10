@@ -4,6 +4,7 @@ import os
 import time
 from unittest.mock import Mock, patch
 
+from src.tags.tagstore.model import Track
 from src.tags.tagstore.rest_tagstore import RestTagstore
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tagging.scheduling.scheduler import ContainerScheduler
@@ -918,3 +919,29 @@ def test_track_override_uploads_to_multiple_tracks(fabric_tagger, q):
     # Should have 2 tags per source (2 sources total = 4 tags per track)
     assert len(default_tags) == 2, f"Expected 2 tags on default track, got {len(default_tags)}"
     assert len(override_tags) == 2, f"Expected 2 tags on override track, got {len(override_tags)}"
+
+def test_uploaded_track_label(fabric_tagger, q):
+    """Test that uploaded tags have correct track labels based on model params"""
+    
+    args = TagArgs(
+        feature="caption",
+        run_config={},
+        scope=VideoScope(stream="video", start_time=0, end_time=30),
+        replace=False,
+        destination_qid=""
+    )
+    
+    fabric_tagger.tag(q, args)
+    wait_tag(fabric_tagger, q.qhit, timeout=5)
+    
+    track_arg = fabric_tagger.cfg.uploader.model_params["caption"].default
+    
+    track = fabric_tagger.tagstore.get_track(
+        qhit=q.qhit,
+        q=q,
+        name=track_arg.name
+    )
+    
+    assert isinstance(track, Track)
+    assert track.name == track_arg.name
+    assert track.label == track_arg.label
