@@ -110,22 +110,16 @@ class FetchFactory:
 
     def _fetch_vod_metadata(self, q: Content, stream_name: str) -> VideoMetadata:
         """Fetches metadata for modern VOD content."""
-        try:
-            transcodes = q.content_object_metadata(
-                metadata_subtree="transcodes", resolve_links=False
-            )
-        except HTTPError as e:
-            raise HTTPError(f"Failed to retrieve transcodes for {q.qhit}") from e
+        transcodes = q.content_object_metadata(
+            metadata_subtree="transcodes", resolve_links=True
+        )
 
         assert isinstance(transcodes, dict)
 
-        try:
-            streams = q.content_object_metadata(
-                metadata_subtree="offerings/default/playout/streams",
-                resolve_links=False,
-            )
-        except HTTPError as e:
-            raise HTTPError(f"Failed to retrieve streams for {q.qhit}") from e
+        streams = q.content_object_metadata(
+            metadata_subtree="offerings/default/playout/streams",
+            resolve_links=False,
+        )
         
         assert isinstance(streams, dict)
 

@@ -37,7 +37,7 @@ fetcher:
 tagger:
   media_dir: data/parts
   uploader:
-    track_mapping:
+    model_params:
       llava:
         default:
           name: llava_caption
