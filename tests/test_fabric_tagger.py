@@ -945,3 +945,54 @@ def test_uploaded_track_label(fabric_tagger, q):
     assert isinstance(track, Track)
     assert track.name == track_arg.name
     assert track.label == track_arg.label
+
+def test_default_defer_to_model_track(fabric_tagger, q):
+    
+    class MultiTrackContainer(FakeTagContainer):
+        """Container that outputs tags with different tracks"""
+        
+        def tags(self) -> list[ModelTag]:
+            tags = []
+            finished_files = self.fileargs if self.is_stopped else self.fileargs[:-1]
+            
+            for i, filepath in enumerate(finished_files):
+                # Create tags with default track (empty string)
+                tags.append(ModelTag(
+                    start_time=0,
+                    end_time=5000,
+                    text=f"default_track_tag_{i}",
+                    frame_tags={},
+                    source_media=filepath,
+                    track="random_track"
+                ))
+            
+            return tags
+    
+    def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
+        return MultiTrackContainer(req.media_input, req.model_id)
+    
+    args = TagArgs(
+        feature="asr",
+        run_config={},
+        scope=VideoScope(stream="audio", start_time=0, end_time=30),
+        replace=False,
+        destination_qid=""
+    )
+    
+    with patch.object(FakeContainerRegistry, 'get', side_effect=get_side_effect):
+        fabric_tagger.tag(q, args)
+        wait_tag(fabric_tagger, q.qhit, timeout=5)
+    
+    default_tags = fabric_tagger.tagstore.find_tags(
+        q=q,
+        track="random_track"
+    )
+    
+    assert len(default_tags) == 2
+
+    track = fabric_tagger.tagstore.get_track(
+        qhit=q.qhit,
+        q=q,
+        name="random_track"
+    )
+    assert track.label == "Random Track"
