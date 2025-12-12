@@ -17,6 +17,6 @@ setup(
         'dacite',
         'dateutils',
         'elv-client-py @ git+https://github.com/eluv-io/elv-client-py.git#egg=elv-client-py',
-        'common_ml @ git+ssh://git@github.com/eluv-io/common-ml.git#egg=common_ml',
+        'common_ml @ git+https://github.com/eluv-io/common-ml.git#egg=common_ml',
     ]
 )
