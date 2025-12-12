@@ -106,10 +106,42 @@ def get_status(qhit: str, auth: str):
     res = requests.get(f"{server}/{qhit}/status", params={"authorization": auth})
     return response_force_dict(res)
 
-def tag(contents: list, auth: str, assets: bool, params: dict, start_time: float = None, end_time: float = None):
+def tag(contents: list, auth: str, assets: bool, params: dict, start_time: float = None, end_time: float = None, slow = True):
     
     llama_models = ["elv-llamavision:1", "elv-llamavision:2"]
+
+    fetchers = 4  ## let one get started before checking
     for i, qhit in enumerate(contents):
+
+        if False:
+            while fetchers >= 5:
+                status = allstatus(os.environ.get("ADMIN_SECRET", ""))
+                print("allstatus", status)
+
+                fetchers = 0
+                for qhit in contents:
+                    if fetchers > 5: break
+                    status = get_status(qhit, auth)
+                    if status.get("error", None):
+                        ## error is treated as a bad sign, increase fetchers, so likely won't start new jobs
+                        fetchers = fetchers + 1                        
+                    else:
+                        for imgorvid, models in status.items():
+                            for model, stat in models.items():
+                                state = stat.get("status", "??")
+                                line =  "(fetch:%-2d)%-32s/%s:%s" % (fetchers, qhit, model, state) 
+                                print(line, flush = True, end = "\r")
+                                if "Fetching" in state: 
+                                    fetchers = fetchers + 1
+                if fetchers >= 5:
+                    print(f"    (sleep for decrease) fetchers: {fetchers} (                                                                      ", flush = True)
+                    time.sleep(45)
+                else:   
+                    break
+
+            print(f"(fetcher slot available) fetchers: {fetchers} (                                                                      ", flush = True)
+            fetchers = fetchers + 1
+            
         if assets:
             url = f"{server}/{qhit}/image_tag"
         else:
@@ -307,7 +339,7 @@ def main():
             reset_quickstatus = True
             
             if user_input in [ "statusall", "sall"]:
-                res = allstatus(os.environ.get("ADMIN_TOKEN", ""))
+                res = allstatus(os.environ.get("ADMIN_SECRET", ""))
                 print(json.dumps(res, indent=2))
             elif user_input in [ "status", "s"]:
                 reset_quickstatus = False
@@ -450,13 +482,13 @@ def quick_status(auth, qhit, filter = None):
         line = "[%9s] %-32s / %s: %s" % ("", qhit, "err", status['error']) 
         if filter is None or re.search(filter, line):
             print(line, flush = True)
-        return
+        return status
     for imgorvid, models in status.items():
         for model, stat in models.items():
             line =  "[%9s] %-32s / %s: %s" % (stat.get("tagging_progress", ""), qhit, f"({imgorvid}) {model}", stat.get("status", "??") ) 
             if filter is None or re.search(filter, line):
                 print(line)
-
+    return status
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Basic tag driver")
