@@ -244,21 +244,18 @@ h,help                          this help""")
 def main():
     global written
     
-    if args.tag_config != "":
-            tag_config = args.tag_config
-    else:
-        if args.assets:
-            tag_config = assets_params
-        else:
-            tag_config = video_params
-    
     if args.tag_config.startswith('@'):
         conffile = args.tag_config[1:]
         print("reading tag config...")
         with open(conffile, "r") as conf:
            tag_config = json.load(conf)
-    else:
+    elif args.tag_config != "":
         tag_config = json.loads(args.tag_config)
+    else:
+        if args.assets:
+            tag_config = assets_params
+        else:
+            tag_config = video_params
         
     if args.contents:
         print("reading contents...")
