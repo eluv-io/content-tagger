@@ -710,3 +710,31 @@ def test_bad_filename(video_tag_container):
     outputs = video_tag_container.tags()
     
     assert len(outputs) == 0
+
+def test_track_field(video_tag_container):
+    tags_dir = video_tag_container.cfg.tags_dir
+    
+    video_tags_data = [
+        {
+            "start_time": 0,
+            "end_time": 5000,
+            "text": "person walking",
+            "track": "track1"
+        },
+        {
+            "start_time": 10000,
+            "end_time": 15000,
+            "text": "car driving",
+            "track": "track2"
+        }
+    ]
+    
+    tag_file = os.path.join(tags_dir, "video1.mp4_tags.json")
+    with open(tag_file, 'w') as f:
+        json.dump(video_tags_data, f)
+
+    tags = video_tag_container.tags()
+    
+    assert len(tags) == 2
+    assert tags[0].track == "track1"
+    assert tags[1].track == "track2"
