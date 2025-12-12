@@ -655,3 +655,58 @@ def test_output_from_tags_video_only(video_tag_container):
     assert outputs[1].end_time == 15000
     assert outputs[1].text == "car driving"
     assert outputs[1].source_media == "video1.mp4"
+
+def test_source_from_tags(video_tag_container):
+    # test that we can resolve the source name from the tags if it's not in the filename
+    tags_dir = video_tag_container.cfg.tags_dir
+    
+    video_tags_data = [
+        {
+            "start_time": 0,
+            "end_time": 5000,
+            "text": "person walking",
+            "source_media": "video1.mp4"
+        },
+        {
+            "start_time": 10000,
+            "end_time": 15000,
+            "text": "car driving",
+            "source_media": "video1.mp4"
+        }
+    ]
+    
+    tag_file = os.path.join(tags_dir, "asdf_tags.json")
+    with open(tag_file, 'w') as f:
+        json.dump(video_tags_data, f)
+    
+    outputs = video_tag_container.tags()
+    
+    assert len(outputs) == 2
+    assert outputs[0].source_media.endswith("video1.mp4")
+    assert outputs[1].source_media.endswith("video1.mp4")
+
+def test_bad_filename(video_tag_container):
+    tags_dir = video_tag_container.cfg.tags_dir
+    
+    video_tags_data = [
+        {
+            "start_time": 0,
+            "end_time": 5000,
+            "text": "person walking",
+            "source_media": "video1.mp4"
+        },
+        {
+            "start_time": 10000,
+            "end_time": 15000,
+            "text": "car driving",
+            "source_media": "video1.mp4"
+        }
+    ]
+    
+    tag_file = os.path.join(tags_dir, "asdf.json")
+    with open(tag_file, 'w') as f:
+        json.dump(video_tags_data, f)
+    
+    outputs = video_tag_container.tags()
+    
+    assert len(outputs) == 0

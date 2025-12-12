@@ -316,14 +316,14 @@ class TagContainer:
     def _source_from_tag_file(self, tagfile: str) -> str:
         with open(tagfile, 'r') as f:
             data = json.load(f)
-        
-        if not isinstance(data, list) or len(data) == 0:
+
+        if not isinstance(data, list) or not data:
             return self._source_from_filename(tagfile)
             
         sources = set()
         for entry in data:
             assert isinstance(entry, dict)
-            if "source_media" in entry:
+            if entry.get("source_media"):
                 sources.add(entry["source_media"])
 
         if len(sources) == 1:
@@ -339,10 +339,12 @@ class TagContainer:
         # remove _tags, _frametags, or _imagetags suffix
         path_parts = basename.split("_")
         if len(path_parts) < 2:
-            raise ValueError(f"Invalid tag file name: {basename}")
+            return ""
+        
         suffix = path_parts[-1]
         if suffix not in ["tags.json", "frametags.json", "imagetags.json"]:
-            raise ValueError(f"Invalid tag file suffix: {suffix}")
+            return ""
+
         original_filebase = "_".join(path_parts[:-1])
 
         return self.basename_to_source[original_filebase]
