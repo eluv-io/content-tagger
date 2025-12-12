@@ -35,7 +35,7 @@ system:
   resources: 
     cpu_juice: 100
     ollama: 3
-  gpus: [ "gpu" ]
+  gpus: ["gpu", "disabled", "gpu", "disabled", "gpu"]
 
 fetcher:
   author: tagger
@@ -43,6 +43,52 @@ fetcher:
 
 tagger:
   media_dir: data/parts
+  uploader:
+    model_params:
+      llava:
+        default:
+          name: llava_caption
+          label: LLAVA Caption
+      asr:
+        default:
+          name: speech_to_text
+          label: Speech to Text
+      french_asr:
+        default:
+          name: french_asr
+          label: French ASR
+      caption:
+        default:
+          name: object_detection
+          label: Object Detection
+      shot:
+        default:
+          name: shot_detection
+          label: Shot Detection
+      celeb:
+        default:
+          name: celebrity_detection
+          label: Celebrity Detection
+      ocr:
+        default:
+          name: optical_character_recognition
+          label: Optical Character Recognition
+      logo:
+        default:
+          name: logo_detection
+          label: Logo Detection
+      music:
+        default:
+          name: music_detection
+          label: Music Detection
+      breakdance:
+        default:
+          name: breakdance
+          label: Breakdance
+      test_model:
+        default:
+          name: test_model
+          label: Test Model
 
 container_registry:
   base_dir: data/containers
