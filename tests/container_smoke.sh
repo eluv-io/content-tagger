@@ -1,10 +1,12 @@
 #!/bin/bash
 
+datadir="/tmp/container-smoke-tagger-$USER.$$"
+mkdir -p "$datadir"
+
+
 systemctl --user start podman.socket
 
-mkdir -p /tmp/datadir
-
-cat <<EOF >/tmp/datadir/config.yml
+cat <<EOF >"$datadir/config.yml"
 content:
   parts_url: http://192.168.96.203/config?self&qspace=main
   config_url: https://host-154-14-185-98.contentfabric.io/config?self&qspace=main
@@ -35,7 +37,7 @@ system:
   resources: 
     cpu_juice: 100
     ollama: 3
-  gpus: ["gpu", "disabled", "gpu", "disabled", "gpu"]
+  gpus: [ ]
 
 fetcher:
   author: tagger
@@ -164,6 +166,25 @@ container_registry:
 
 EOF
 
-## podman run -d --name content-tagger-smoke --device nvidia.com/gpu=all -p 19999:8086 -v /run/user/$(id -u)/podman:/run/user/0/podman -v /tmp/datadir:/tmp/datadir content-tagger:latest --directory /tmp/datadir --host 0.0.0.0
-podman run --replace --name content-tagger-smoke --device nvidia.com/gpu=all -p 19999:8086 -v /run/user/$(id -u)/podman:/run/user/0/podman -v /tmp/datadir:/tmp/datadir content-tagger:latest --directory /tmp/datadir --host 0.0.0.0
+runcontainer() {
+  exec podman run --replace --name content-tagger-smoke \
+       -v /run/user/$(id -u)/podman:/run/user/0/podman \
+       -v /tmp/datadir:/tmp/datadir \
+       --device nvidia.com/gpu=all -p 19999:8086 \
+       content-tagger:latest --directory /tmp/datadir --host 0.0.0.0
+}
+
+
+
+wait=6
+
+echo
+echo will terminate after $wait seconds...
+echo
+
+runcontainer &
+
+sleep $wait
+
+podman kill content-tagger-smoke
 
