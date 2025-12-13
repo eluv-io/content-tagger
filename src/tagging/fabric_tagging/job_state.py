@@ -3,16 +3,9 @@ from dataclasses import dataclass, field
 
 from src.tagging.fabric_tagging.model import *
 from src.tag_containers.containers import TagContainer
-from src.tag_containers.model import ModelTag
 from src.fetch.model import *
-
-@dataclass
-class MediaState:
-    # used to keep track of sources that need to be downloaded for status
-    # also used to help the uploader know how to compute the offset
-    downloaded: list[Source]
-    # used to get media
-    worker: FetchSession
+from src.tagging.uploading.uploader import UploadSession
+from src.tagging.fabric_tagging.media_state import MediaState
 
 @dataclass
 class JobState:
@@ -20,34 +13,25 @@ class JobState:
     status: JobStatus
     # internal handle used in the ContainerScheduler to identify the job
     taghandle: str
-    # used for status reporting
-    uploaded_sources: set[str]
-    # prevent double upload
-    uploaded_tags: set[ModelTag]
     # sources with no corresponding tags
     missing_tags: set[str]
-    batch_by_track: dict[str, str]
     message: str
     media: MediaState
+    upload_session: UploadSession
     container: TagContainer | None
     # callers can pass an event to be notified when tagging is done
     tagging_done: threading.Event
 
     @staticmethod
-    def starting(worker: FetchSession) -> "JobState":
+    def starting(media: MediaState, upload_session: UploadSession) -> "JobState":
         """Create a JobState in starting state."""
         return JobState(
             status=JobStatus.starting(),
             taghandle="",
-            uploaded_sources=set(),
-            uploaded_tags=set(),
             missing_tags=set(),
             message="",
-            media=MediaState(
-                downloaded=[],
-                worker=worker
-            ),
-            batch_by_track={},
+            media=media,
+            upload_session=upload_session,
             tagging_done=threading.Event(),
             container=None
         )

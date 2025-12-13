@@ -52,7 +52,6 @@ class JobStatus:
 @dataclass
 class JobArgs(TagArgs):
     q: Content
-    dest_q: Content
     retry_fetch: bool
     retry_upload: bool
 
