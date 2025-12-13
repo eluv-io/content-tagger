@@ -17,3 +17,4 @@ content_specs
 test-stuff
 TODO.md
 *.log
+docs/_build

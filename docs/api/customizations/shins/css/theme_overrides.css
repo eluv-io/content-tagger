@@ -1,0 +1,493 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  font-family: Helvetica Neue, sans-serif;
+  font-size: 15px;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+
+  --color-code-background: #f6f8fa;
+
+  --color-black: #000;
+  --color-darkestgray: #222;
+  --color-darkergray: #444;
+  --color-darkgray: #555;
+  --color-mediumgray: #aaa;
+  --color-gray: #ccc;
+  --color-lightgray: #ddd;
+  --color-lightergray: #eee;
+  --color-lightestgray: #f5f5f5;
+  --color-white: #fff;
+
+  --color-palered: #955;
+  --color-mediumred: #a33;
+  --color-red: #f33;
+
+  --color-text-white: #fff;
+  --color-text-lighter: #8c8c8c;
+  --color-text-light: #6c6c6c;
+  --color-text-medium: #444;
+  --color-text-dark: #222;
+  --color-text-black: #000;
+
+  --color-bg-white: #fff;
+  --color-bg-light: #f5f5f5;
+  --color-bg-medium: #eaeaea;
+  --color-bg-dark: #d5d5d5;
+  --color-bg-black: #000;
+
+  --color-lighterblue: #60dfff;
+  --color-lightblue: #0fafff;
+  --color-mediumblue: #1b73e8;
+  --color-darkblue: #003c7e;
+}
+
+body,
+.page-wrapper {
+  background-color: var(--color-bg-white);
+}
+
+a {
+  text-decoration: none;
+  color: var(--color-mediumblue);
+}
+
+a:visited {
+  color: var(--color-mediumblue);
+}
+
+a:hover {
+  color: var(--color-darkblue);
+}
+
+/*
+ * Sidebar
+*/
+
+.toc-wrapper {
+  background-color: var(--color-bg-light);
+  overflow: overlay;
+}
+
+.toc-wrapper ul li a {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+/* Logo */
+.toc-wrapper img.logo {
+  width: 215px;
+  padding: 10px 50px 10px 50px;
+  align-content: center;
+}
+
+/* Search */
+.toc-wrapper .search {
+  margin: 10px 15px;
+}
+
+.toc-wrapper .search input {
+  height: 30px;
+  width: 100%;
+  margin: 0;
+  border: 1px solid var(--color-mediumgray);
+  background-color: var(--color-bg-white);
+  color: var(--color-text-dark);
+}
+
+.toc-wrapper .search::before {
+  top: 8px;
+  left: 5px;
+  color: var(--color-text-dark);
+}
+
+.toc-wrapper ul.search-results.visible {
+  background-color: var(--color-bg-medium);
+  border: 1px solid var(--color-lightgray);
+  height: 40%;
+}
+
+.toc-wrapper ul.search-results li {
+  padding: 0;
+  margin: 0;
+  height: 35px;
+  color: var(--color-text-dark);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.toc-wrapper ul.search-results li a {
+  width: 100%;
+  height: 100%;
+  color: var(--color-text-dark);
+  padding-left: 10px;
+}
+
+.toc-wrapper ul.search-results li a:hover {
+  text-decoration: none;
+  background-color: var(--color-bg-dark);
+}
+
+/* Navbar List */
+.toc-list-h1 ul li {
+  cursor: pointer;
+}
+
+.toc-list-h1 ul li a {
+  color: var(--color-text-dark);
+  height: 35px;
+}
+
+.toc-list-h1 ul li a.toc-link.active,
+.toc-list-h1 ul li a.toc-link.active-parent {
+  background-color: var(--color-lightgray);
+  color: var(--color-text-dark);
+}
+
+.toc-list-h1 ul li a.toc-h2.active {
+  background-color: var(--color-lightgray);
+}
+
+.toc-list-h1 ul li a.toc-link:hover,
+.toc-list-h2 ul li a.toc-link:hover {
+  color: var(--color-text-white);
+  background-color: var(--color-darkgray);
+  cursor: pointer;
+}
+
+.toc-wrapper .toc-list-h2 {
+  background-color: var(--color-bg-light);
+  font-weight: 600;
+}
+
+/*
+ * API Docs
+ */
+
+.page-wrapper .dark-box,
+.content pre,
+.content blockquote {
+  width: 40%;
+}
+
+.content > h1,
+.content > h2,
+.content > h3,
+.content > h4,
+.content > h5,
+.content > h6,
+.content > div,
+.content > p,
+.content > table,
+.content > aside,
+.content > dl {
+  padding: 0 20px;
+  margin-right: 40%;
+}
+
+.content h1 {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 55px;
+  font-size: 22px;
+  font-weight: 600;
+  border-top: 1px solid var(--color-lightgray);
+  border-bottom: 1px solid var(--color-lightgray);
+}
+
+.content h2 {
+  padding: 20px;
+  font-size: 20px;
+  border: 0;
+  font-weight: 600;
+}
+
+.content h3 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.content h4 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.description {
+  margin-bottom: 20px;
+}
+
+.inline pre {
+  float: initial;
+  width: auto;
+  margin: 5px 5px 16px 0;
+  padding: 0;
+}
+
+.content .auth {
+  padding-left: 43px;
+}
+
+.auth pre {
+  float: initial;
+  width: auto;
+  margin: 5px 5px 16px 0;
+  padding: 0;
+}
+
+div.inline pre {
+  float: initial;
+  width: auto;
+  margin: 5px 5px 16px 0;
+  padding: 10px;
+}
+
+.page-wrapper .dark-box {
+  color: var(--color-text-dark);
+  background-color: var(--color-code-background);
+}
+
+.page-wrapper .lang-selector {
+  border: 0;
+  height: 40px;
+  max-width: 41vw;
+  background-color: var(--color-code-background);
+}
+
+.page-wrapper .lang-selector a {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  font-size: 14px;
+  padding: 10px;
+  color: var(--color-text-light);
+}
+
+.page-wrapper .lang-selector a.active,
+.page-wrapper .lang-selector a:hover {
+  color: var(--color-text-white);
+  background-color: var(--color-mediumblue);
+}
+
+.content pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding-top: 1em;
+  padding-bottom: 1em;
+}
+
+.content pre,
+.content blockquote,
+.content blockquote > p {
+  background-color: var(--color-code-background);
+}
+
+.content blockquote > p {
+  color: var(--color-text-light);
+}
+
+.content blockquote {
+
+}
+
+.content blockquote + blockquote {
+  border: 0;
+}
+
+.content blockquote > p {
+  font-weight: bold;
+  font-size: 16px;
+  padding: 10px 25px;
+}
+
+.content aside {
+  padding: 15px 25px;
+}
+
+.content aside.success,
+.content aside.warning {
+  position: relative;
+  background-color: var(--color-bg-dark);
+}
+
+.content aside::before {
+  position: absolute;
+  left: 8px;
+  top: 20px;
+}
+
+.content p code {
+  border-radius: 0;
+  padding: 3px;
+  word-break: normal;
+  hyphens: none;
+}
+
+.content code {
+  word-break: normal;
+  hyphens: auto;
+
+}
+
+/* Tables */
+.content table {
+  font-size: 14px;
+}
+
+.content table td {
+  width: 10%;
+}
+
+.content h3[id$="-parameters"] + table td:last-child,
+.content h3[id$="-responseschema"] + * + table td:last-child,
+.content h3[id="response-headers"] + table td:last-child,
+.content h3[id="properties"] + table td:last-child {
+  width: 100%;
+}
+
+.content h3[id$="-responses"] + table td:nth-child(3) {
+  width: 100%;
+}
+
+.content table thead tr,
+.content table tbody tr,
+.content table tr:last-child {
+  border: 1px solid var(--color-lightgray);
+}
+
+.content table thead th {
+  border: 0;
+}
+
+.content table th code,
+.content table td code {
+  white-space: normal;
+}
+
+/* Code Coloring */
+
+.content pre, .content blockquote {
+  color: #333;
+}
+
+.hljs,
+.hljs-tag,
+.hljs-title,
+.css .hljs-rule,
+.css .hljs-value,
+.aspectj .hljs-function,
+.css .hljs-function .hljs-preprocessor,
+.hljs-pragma {
+  color: var(--color-text-medium);
+}
+
+.hljs-strongemphasis,
+.hljs-strong,
+.hljs-emphasis {
+  color: var(--color-text-medium);
+}
+
+.hljs-bullet,
+.hljs-blockquote,
+.hljs-horizontal_rule,
+.hljs-number,
+.hljs-regexp,
+.alias .hljs-keyword,
+.hljs-literal,
+.hljs-hexcolor {
+  color: #3c5e8b;
+}
+
+.hljs-tag .hljs-value,
+.hljs-code,
+.css .hljs-class,
+.hljs-class .hljs-title:last-child {
+  color: #9f1104;
+}
+
+.hljs-built_in,
+.hljs-keyword,
+.ruby .hljs-class .hljs-keyword:first-child,
+.ruby .hljs-function .hljs-keyword,
+.hljs-function,
+.hljs-change,
+.hljs-winutils,
+.hljs-flow,
+.nginx .hljs-title,
+.tex .hljs-special,
+.hljs-header,
+.hljs-attribute,
+.hljs-symbol,
+.hljs-symbol .hljs-string,
+.hljs-tag .hljs-title,
+.hljs-value,
+.alias .hljs-keyword:first-child,
+.css .hljs-tag,
+.css .unit,
+.css .hljs-important {
+  color: #8e1c72;
+}
+
+.hljs-function .hljs-keyword,
+.hljs-class .hljs-keyword:first-child,
+.hljs-aspect .hljs-keyword:first-child,
+.hljs-constant,
+.hljs-typename,
+.css .hljs-attribute {
+  color: #4753a7;
+}
+
+.hljs-variable,
+.hljs-params,
+.hljs-class .hljs-title,
+.hljs-aspect .hljs-title {
+  color: var(--color-text-medium);
+}
+
+.hljs-string,
+.css .hljs-id,
+.hljs-subst,
+.hljs-type,
+.ruby .hljs-class .hljs-parent,
+.django .hljs-template_tag,
+.django .hljs-variable,
+.smalltalk .hljs-class,
+.django .hljs-filter .hljs-argument,
+.smalltalk .hljs-localvars,
+.smalltalk .hljs-array,
+.hljs-attr_selector,
+.hljs-pseudo,
+.hljs-addition,
+.hljs-stream,
+.hljs-envvar,
+.apache .hljs-tag,
+.apache .hljs-cbracket,
+.tex .hljs-command,
+.hljs-prompt,
+.hljs-link_label,
+.hljs-link_url,
+.hljs-name {
+  color: #378434;
+}
+
+.hljs-comment,
+.hljs-annotation,
+.hljs-pi,
+.hljs-doctype,
+.hljs-deletion,
+.hljs-shebang,
+.apache .hljs-sqbracket,
+.tex .hljs-formula {
+  color: var(--color-text-medium);
+}
+
+.hljs-decorator {
+  color: #ba7f00;
+}

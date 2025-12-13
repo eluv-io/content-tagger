@@ -6,12 +6,12 @@ info:
   description: |
     This service is used for generating and publishing ML tags for content objects in the Content Fabric.
 servers:
-  - url: https://ai.contentfabric.io/tagger (placeholder)
+  - url: https://ai.contentfabric.io/tagging-live
 paths:
   /{qid}/tag:
     post:
-      summary: |
-        Starts a tagging job for the given content object mezzanine based on a given time-range and set of models to run. The job will run asynchronously, and the status can be checked with GET /status
+      summary:
+        Tag a content by qid
       parameters:
         - in: path
           name: qid
@@ -41,9 +41,16 @@ paths:
                   description: End time of tag job. If not specified, it will tag the full duration. (in seconds)
                   default: null
                   example: 10
+                destination_qid:
+                  type: string
+                  description: Content to which tags should be written. Defaults to the same content being tagged.
+                replace:
+                  type: boolean
+                  description: Whether tagging should retag already tagged parts of the content. Set to false to enable diff-based tagging, set to true if you need to retag.
+                  default: false
                 features:
                   type: object
-                  description: Map of model name (e.g., "celeb") to tagging config. Check /list for available models.
+                  description: Map of model identifier to runtime config. Check /list for available model identifiers.
                   additionalProperties:
                     type: object
                     properties:
@@ -53,19 +60,14 @@ paths:
                         example: "audio"
                       model:
                         type: object
-                        description: Model configuration to override defaults. This has no fixed schema and may vary per model. Leave blank to use the default model configuration.
+                        description: Model configuration to override defaults. This has no fixed schema and may vary per model (see model docs). Leave blank to use the default model configuration.
                         example: {"fps": 2, "threshold": 0.5}
-                    required:
-                      - model
                   example:
                     celeb:
                       stream: "video"
                       model:
                         fps: 2
                         allow_single_frame: false
-                replace:
-                  type: boolean
-                  description: If this is set to true, the tagger will retag all parts even if they already exist in the content fabric. If false, then the tagger will only tag parts which do not already have published tags. Note, the tagger will not finalize the write token.
               required:
                 - features
       responses:
