@@ -11,7 +11,7 @@ from src.fetch.model import *
 from src.tag_containers.registry import ContainerRegistry
 from src.tagging.fabric_tagging.model import TagArgs
 from src.common.content import Content
-from src.common.errors import BadRequestError
+from src.common.errors import BadRequestError, MissingResourceError
 
 def map_video_tag_dto(
     args: TagAPIArgs | LiveTagAPIArgs, 
@@ -91,8 +91,6 @@ def map_asset_tag_dto(args: ImageTagAPIArgs) -> list[TagArgs]:
     return res
 
 def _find_default_audio_stream(q: Content) -> str:
-    # TODO: will this work for live?
-    
     streams = q.content_object_metadata(
         metadata_subtree="offerings/default/media_struct/streams",
         resolve_links=False,
@@ -100,13 +98,28 @@ def _find_default_audio_stream(q: Content) -> str:
 
     assert isinstance(streams, dict)
 
-    for stream_name, stream_info in streams.items():
-        if stream_info.get("codec_type") == "audio" and \
-            stream_info.get("language") == "en" and \
-            stream_info.get("channels") == 2:
+    # First pass: filter to only audio streams
+    audio_streams = {
+        name: info for name, info in streams.items()
+        if info.get("codec_type") == "audio"
+    }
+    
+    if not audio_streams:
+        raise MissingResourceError("No audio streams found")
+    
+    for stream_name, stream_info in audio_streams.items():
+        if stream_info.get("language") == "en" and stream_info.get("channels") == 2:
             return stream_name
-        
-    return "audio"
+    
+    for stream_name, stream_info in audio_streams.items():
+        if stream_info.get("language") == "en":
+            return stream_name
+    
+    for stream_name, stream_info in audio_streams.items():
+        if stream_info.get("channels") == 2:
+            return stream_name
+    
+    return list(audio_streams.keys())[0]
 
 def tag_args_from_req(q: Content) -> TagAPIArgs | LiveTagAPIArgs:
     try:

@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import os
 import shutil
 import time
@@ -528,6 +528,46 @@ def test_find_default_audio_stream(
     result = _find_default_audio_stream(q)
 
     assert result == "stereo"
+
+def test_find_default_audio_stream_priority():
+    """Test audio stream selection priority: en+stereo > en > stereo > first"""
+    mock_content = Mock()
+    
+    mock_content.content_object_metadata.return_value = {
+        "audio_es": {"codec_type": "audio", "language": "es", "channels": 2},
+        "audio_en": {"codec_type": "audio", "language": "en", "channels": 2},
+    }
+    assert _find_default_audio_stream(mock_content) == "audio_en"
+    
+    mock_content.content_object_metadata.return_value = {
+        "audio_es": {"codec_type": "audio", "language": "es", "channels": 2},
+        "audio_en": {"codec_type": "audio", "language": "en", "channels": 1},
+    }
+    assert _find_default_audio_stream(mock_content) == "audio_en"
+    
+    mock_content.content_object_metadata.return_value = {
+        "audio_es": {"codec_type": "audio", "language": "es", "channels": 1},
+        "audio_fr": {"codec_type": "audio", "language": "fr", "channels": 2},
+    }
+    assert _find_default_audio_stream(mock_content) == "audio_fr"
+    
+    mock_content.content_object_metadata.return_value = {
+        "audio_es": {"codec_type": "audio", "language": "es", "channels": 1},
+        "audio_fr": {"codec_type": "audio", "language": "fr", "channels": 1},
+    }
+    assert _find_default_audio_stream(mock_content) == "audio_es"
+    
+    mock_content.content_object_metadata.return_value = {
+        "video": {"codec_type": "video"},
+        "audio": {"codec_type": "audio", "language": "es", "channels": 1},
+    }
+    assert _find_default_audio_stream(mock_content) == "audio"
+    
+    mock_content.content_object_metadata.return_value = {
+        "video": {"codec_type": "video"},
+    }
+    with pytest.raises(Exception):
+        _find_default_audio_stream(mock_content)
 
 def test_is_live(live_q):
     """Test the _is_live function."""
