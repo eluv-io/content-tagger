@@ -1,12 +1,9 @@
-
 openapi: 3.0.0
 info:
   title: Content Tagger API
   version: 1.0.0
   description: |
-    This service is used for generating and publishing ML tags for content objects in the Content Fabric.
-servers:
-  - url: https://ai.contentfabric.io/tagging-live
+    API for running ML models on media stored on the content fabric. 
 paths:
   /{qid}/tag:
     post:
@@ -30,46 +27,22 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                start_time:
-                  type: integer
-                  description: Start time of tag job (in seconds)
-                  default: 0
-                end_time:
-                  type: integer
-                  description: End time of tag job. If not specified, it will tag the full duration. (in seconds)
-                  default: null
-                  example: 10
-                destination_qid:
-                  type: string
-                  description: Content to which tags should be written. Defaults to the same content being tagged.
-                replace:
-                  type: boolean
-                  description: Whether tagging should retag already tagged parts of the content. Set to false to enable diff-based tagging, set to true if you need to retag.
-                  default: false
-                features:
-                  type: object
-                  description: Map of model identifier to runtime config. Check /list for available model identifiers.
-                  additionalProperties:
-                    type: object
-                    properties:
-                      stream:
-                        type: string
-                        description: Stream name to tag for the given model. Typically this is "video" for video models and "audio" for audio models. Oftentimes the audio streams have different names so check the mezzanine metadata for the correct stream name.
-                        example: "audio"
-                      model:
-                        type: object
-                        description: Model configuration to override defaults. This has no fixed schema and may vary per model (see model docs). Leave blank to use the default model configuration.
-                        example: {"fps": 2, "threshold": 0.5}
-                  example:
-                    celeb:
-                      stream: "video"
-                      model:
-                        fps: 2
-                        allow_single_frame: false
-              required:
-                - features
+              allOf:
+                - $ref: '#/components/schemas/CommonTaggingParams'
+                - type: object
+                  properties:
+                    start_time:
+                      type: integer
+                      description: Start time of tag job (in seconds)
+                      default: 0
+                    end_time:
+                      type: integer
+                      description: End time of tag job. If not specified, it will tag the full duration. (in seconds)
+                      default: null
+                      example: 10
+                    destination_qid:
+                      type: string
+                      description: Content to which tags should be written. Defaults to the same content being tagged.
       responses:
         '200':
           description: Summary of the given tags
@@ -83,8 +56,8 @@ paths:
                     example: Tagging started on iq__3C58dDYxsn5KKSWGYrfYr44ykJRm
   /{qid}/image_tag:
     post:
-      summary: |
-        Starts an image tagging job for the given content object. This generates tags for image asset files and stores them as raw metadata in the object under /meta/assets. Most of the documentation here is the same as the /tag endpoint.
+      summary:
+        Tag image assets of a content
       parameters:
         - in: path
           name: qid
@@ -103,35 +76,16 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                assets:
-                  type: array
-                  items: 
-                    type: string
-                  example: ["/assets/abc.jpg", "/assets/bar.jpg"]
-                  description: Set of file paths which point to image files to tag. If this is not set, then we will tag all images under /meta/assets.
-                features:
-                  type: object
-                  description: Map of feature name (e.g., "celeb") to tagging config
-                  additionalProperties:
-                    type: object
-                    properties:
-                      model:
-                        type: object
-                        description: Model configuration to override defaults. This has no fixed schema and may vary per model. 
-                        example: {"fps": 2, "threshold": 0.5}
-                    required:
-                      - model
-                  example:
-                    celeb:
-                      model:
-                        ground_truth: "sports"
-                replace:
-                  type: boolean
-                  description: If this is set to true, we will regenerate previously uploaded tag files. Note this will not affect the content until finalization.
-              required:
-                - features
+              allOf:
+                - $ref: '#/components/schemas/CommonTaggingParams'
+                - type: object
+                  properties:
+                    assets:
+                      type: array
+                      items: 
+                        type: string
+                      example: ["/assets/abc.jpg", "/assets/bar.jpg"]
+                      description: Set of file paths which point to image files to tag. If this is not set, then we will tag all images under /meta/assets.
       responses:
         '200':
           description: Summary of the given tags
@@ -245,3 +199,36 @@ paths:
                           "shot",
                           "celeb"
                         ]
+components:
+  schemas:
+    CommonTaggingParams:
+      type: object
+      properties:
+        replace:
+          type: boolean
+          description: Whether tagging should retag already tagged parts of the content. Set to false to enable diff-based tagging, set to true if you need to retag.
+          default: false
+        features:
+          type: object
+          description: Map of model identifier to runtime config. Check /list for available model identifiers.
+          additionalProperties:
+            type: object
+            properties:
+              stream:
+                type: string
+                description: Stream name to tag for the given model. Does not apply to image tagging. Typically this is "video" for video models and "audio" for audio models. Oftentimes the audio streams have different names so check the mezzanine metadata for the correct stream name.
+                example: "audio"
+              model:
+                type: object
+                description: Model configuration to override defaults. This has no fixed schema and may vary per model (see model docs). Leave blank to use the default model configuration.
+                example: {"fps": 2, "threshold": 0.5}
+          example:
+            celeb:
+              model:
+                fps: 2
+            asr:
+              model:
+                prettify: true
+                word_level: false
+      required:
+        - features

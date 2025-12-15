@@ -1,5 +1,5 @@
 import argparse
-from flask import Flask, Response, jsonify
+from flask import Flask, Response, jsonify, send_from_directory
 from flask_cors import CORS
 import json
 from src.common.logging import logger
@@ -63,14 +63,9 @@ def configure_routes(app: Flask) -> None:
     def commit(qhit: str) -> Response:
         return handle_commit(qhit)
 
-    #@app.route('/<qhit>/write', methods=['POST'])
-    #@app.route('/<qhit>/finalize', methods=['POST'])
-    #def finalize(qhit: str) -> Response:
-    #    return handle_finalize(qhit)
-#
-    #@app.route('/<qhit>/aggregate', methods=['POST'])
-    #def aggregate(qhit: str) -> Response:
-    #    return handle_aggregate(qhit)
+    @app.route('/docs')
+    def docs_route():
+        return send_from_directory('docs/api', 'openapi.html')
 
 def boot_state(app: Flask, cfg: AppConfig) -> None:
     app_state = {}
