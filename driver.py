@@ -106,40 +106,24 @@ def get_status(qhit: str, auth: str):
     res = requests.get(f"{server}/{qhit}/status", params={"authorization": auth})
     return response_force_dict(res)
 
-def tag(contents: list, auth: str, assets: bool, params: dict, start_time: float = None, end_time: float = None, slow = True):
+def tag(contents: list, auth: str, assets: bool, params: dict, start_time: float = None, end_time: float = None, slow = False):
     
     llama_models = ["elv-llamavision:1", "elv-llamavision:2"]
-
-    fetchers = 4  ## let one get started before checking
+    
+    fetchers = 99
     for i, qhit in enumerate(contents):
 
-        if False:
+        if slow:
             while fetchers >= 5:
-                status = allstatus(os.environ.get("ADMIN_SECRET", ""))
-                print("allstatus", status)
-
-                fetchers = 0
-                for qhit in contents:
-                    if fetchers > 5: break
-                    status = get_status(qhit, auth)
-                    if status.get("error", None):
-                        ## error is treated as a bad sign, increase fetchers, so likely won't start new jobs
-                        fetchers = fetchers + 1                        
-                    else:
-                        for imgorvid, models in status.items():
-                            for model, stat in models.items():
-                                state = stat.get("status", "??")
-                                line =  "(fetch:%-2d)%-32s/%s:%s" % (fetchers, qhit, model, state) 
-                                print(line, flush = True, end = "\r")
-                                if "Fetching" in state: 
-                                    fetchers = fetchers + 1
+                fetchers = count_fetchers(contents)
+                    
                 if fetchers >= 5:
-                    print(f"    (sleep for decrease) fetchers: {fetchers} (                                                                      ", flush = True)
-                    time.sleep(45)
-                else:   
+                    print(f"    (sleep for decrease) fetchers: {fetchers}                                                                       ", flush = True)
+                    time.sleep(20)
+                else:
+                    print(f"(fetcher slot available) fetchers: {fetchers}                                                                      ", flush = True)
                     break
 
-            print(f"(fetcher slot available) fetchers: {fetchers} (                                                                      ", flush = True)
             fetchers = fetchers + 1
             
         if assets:
@@ -155,11 +139,35 @@ def tag(contents: list, auth: str, assets: bool, params: dict, start_time: float
         if end_time is not None:
             params["end_time"] = end_time
 
-        print(json.dumps(params, indent=2))
+        print(json.dumps(params)) ##, indent=2))
         res = requests.post(url, params={"authorization": auth}, json=params)
         print(response_force_dict(res))
 
         time.sleep(float(os.environ.get("TAGGERV2_START_SLEEP", 0)))
+
+def count_fetchers(qhits):
+    #astatus = allstatus(os.environ["ADMIN_SECRET"])
+    #print(json.dumps(astatus))
+    ##print("allstatus", astatus)
+
+    fetchers = 0
+    for rqhit in qhits:
+        if fetchers > 5: break
+        status = get_status(rqhit, os.environ["ADMIN_SECRET"])
+        if status.get("error", None):
+            pass
+            ## error is treated as a bad sign, increase fetchers, so likely won't start new jobs
+            ## fetchers = fetchers + 1                        
+        else:
+            for imgorvid, models in status.items():
+                for model, stat in models.items():
+                    state = stat.get("status", "??")
+                    line =  "(fetch:%-2d)%-32s/%s:%s                                   " % (fetchers, rqhit, model, state) 
+                    print(line, flush = True, end = "\r")
+                    if "Fetching" in state: 
+                        fetchers = fetchers + 1
+    print("")
+    return fetchers
 
 def is_running(qhit: str, auth: str):
     res = requests.get(f"{server}/{qhit}/status", params={"authorization": auth})
@@ -312,6 +320,7 @@ def main():
     
     quickstatus_watch = None
 
+    slow = args.slow_start
     tty = sys.stdin.isatty()
     if tty:
         help()
@@ -395,7 +404,7 @@ def main():
                     this_tag_config['features'] = { track: tag_config['features'][track] }
                 contentsub = [ x for x in contents if iqsub == None or re.search(iqsub, x) ]    
                 tag(contentsub, auth, args.assets, this_tag_config,
-                    start_time = start_time, end_time = end_time)
+                    start_time = start_time, end_time = end_time, slow = slow)
             elif user_input.startswith("+") or user_input.startswith("-"):
 
                 val = user_input[1:]
@@ -502,5 +511,6 @@ if __name__ == "__main__":
     parser.add_argument("--commit", "--finalize", action="store_true", help="if set, commit (finalize) on fabric after writing on tagger")
     parser.add_argument("--start-time", help="start time in seconds", default = 0)
     parser.add_argument("--end-time", help="end time in seconds", default = None)
+    parser.add_argument("--slow-start", help="slow start jobs to prevent too many fetching", default = False, action = "store_true")
     args = parser.parse_args()
     main()
