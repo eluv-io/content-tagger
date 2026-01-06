@@ -427,7 +427,7 @@ def main():
                     quickstatus_watch = None
                 else:
                     for qhit in contents:
-                        quick_status(auth, qhit, " ".join(user_split[1:]))
+                        quick_status(os.environ.get("ADMIN_SECRET", auth), qhit, " ".join(user_split[1:]))
             elif user_input in [ 'reverse' ]:
                 contents.reverse()
                 print("First element:", contents[0])
