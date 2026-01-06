@@ -248,11 +248,11 @@ def get_flask_app():
         if tokencache and (time.time() - tokentime) < 15:
             return tokencache
         
-        token = os.environ.get("ADMIN_TOKEN", None)
+        token = os.environ.get("ADMIN_SECRET", None)
 
         if not token:    
             ## read from file
-            token_file = ".admin_token"
+            token_file = ".admin_secret"
             if os.path.exists(token_file):
                 with open(token_file, 'r') as f:
                     token = f.read().strip()
