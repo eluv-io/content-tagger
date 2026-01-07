@@ -1,5 +1,9 @@
 from dataclasses import dataclass
 from typing import Any
+import base64
+import dacite
+import json
+import requests
 
 from elv_client_py import ElvClient
 
@@ -32,7 +36,7 @@ class Content:
 
         parts_client = ElvClient.from_configuration_url(
             cfg.parts_url, static_token=auth)
-
+        
         live_client = ElvClient.from_configuration_url(
             cfg.live_media_url, static_token=auth)
 
@@ -63,10 +67,6 @@ class Content:
     def content_object_versions(self) -> dict[str, Any]:
         """Get all versions of the content object."""
         return self._client.content_object_versions(object_id=self.qid, library_id=self.qlib)
-
-    def live_media_segment(self, **kwargs):
-        # forward without library id
-        return self._live_client.live_media_segment(**kwargs)
     
     def download_part(self, **kwargs) -> None:
         """Download a part of the content object."""
@@ -75,6 +75,43 @@ class Content:
         else:
             kwargs["version_hash"] = self.qhash
         return self._parts_client.download_part(library_id=self.qlib, **kwargs)
+    
+    def live_media_segment(
+        self,
+        object_id: str,
+        dest_path: str,
+        segment_idx: int | None = None, 
+        segment_length: int = 4,
+        stream: str = ""
+    ) -> ElvClient.LiveMediaSegment:
+        url = self._live_client.fabric_uris[0]
+        url = '/'.join([url, 'q', object_id, 'rep', 'media', 'segment'])
+        resp = requests.get(
+            url, 
+            params={
+                "authorization": self._client.token,
+                "num": segment_idx,
+                "duration": segment_length,
+                "stream": stream
+            }, 
+            stream=True
+        )
+        if resp.status_code == 200:
+            with open(dest_path, "wb") as file:
+                for chunk in resp.iter_content(chunk_size=8192):
+                    file.write(chunk)
+        else:
+            resp.raise_for_status()
+        info = resp.headers.get('X-Content-Fabric-Segment-Info')
+        # base64 decode
+        if info is None:
+            raise ValueError("No segment info in response")
+        info = base64.b64decode(info).decode('utf-8')
+        segment_info = dacite.from_dict(
+            data_class=ElvClient.LiveMediaSegment,
+            data=json.loads(info)
+        )
+        return segment_info
 
     def __getattr__(self, name):
         attr = getattr(self._client, name)

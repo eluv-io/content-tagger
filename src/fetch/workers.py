@@ -372,6 +372,7 @@ class LiveWorker(FetchSession):
             dest_path=save_path,
             segment_idx=idx,
             segment_length=chunk_size,
+            stream=self.scope.stream
         )
 
         seg_offset = segment_info.seg_offset_millis

@@ -53,13 +53,10 @@ def map_vod_tag_dto(args: TagAPIArgs, registry: ContainerRegistry, q: Content) -
                 stream = _find_default_audio_stream(q)
             config.stream = stream
 
-        start_time = args.start_time if args.start_time is not None else 0
-        end_time = args.end_time if args.end_time is not None else float('inf')
-
         res.append(_create_tag_args(
             feature=feature,
             config=config,
-            scope=VideoScope(config.stream, start_time=start_time, end_time=end_time),
+            scope=VideoScope(config.stream, start_time=args.start_time, end_time=args.end_time),
             args=args,
         ))
     return res
@@ -67,14 +64,16 @@ def map_vod_tag_dto(args: TagAPIArgs, registry: ContainerRegistry, q: Content) -
 def map_live_tag_dto(args: LiveTagAPIArgs, registry: ContainerRegistry) -> list[TagArgs]:
     res = []
     for feature, config in args.features.items():
-        model_config = registry.get_model_config(feature)
-        if model_config.type == "audio":
-            raise BadRequestError(f"Feature {feature} is of type audio, but live tagging only supports video models")
-        
+        if config.stream is None:
+            model_config = registry.get_model_config(feature)
+            if model_config.type == "audio":
+                raise BadRequestError("Live tagging does not currently support audio models without specifying the stream name.")
+            config.stream = "video"
+            
         res.append(_create_tag_args(
             feature=feature,
             config=config,
-            scope=LiveScope("video", chunk_size=args.segment_length, max_duration=args.max_duration),
+            scope=LiveScope(config.stream, chunk_size=args.segment_length, max_duration=args.max_duration),
             args=args,
         ))
     return res
