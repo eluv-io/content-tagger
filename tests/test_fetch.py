@@ -1,6 +1,10 @@
+import shutil
 import pytest
 import os
+import subprocess
+import tempfile
 
+from src.fetch.video_process import center_segment
 from src.fetch.factory import FetchFactory
 from src.fetch.model import AssetScope, DownloadRequest, FetcherConfig, VideoScope, LiveScope
 from src.tags.tagstore.filesystem_tagstore import Tag
@@ -10,6 +14,14 @@ from src.common.errors import MissingResourceError
 VOD_QHIT = "iq__3C58dDYxsn5KKSWGYrfYr44ykJRm"
 LEGACY_VOD_QHIT = "iq__cebzuQ8BqsWZyoUdnTXCe23fUgz"
 ASSETS_QHIT = "iq__cebzuQ8BqsWZyoUdnTXCe23fUgz"
+
+@pytest.fixture
+def segment() -> str:
+    return os.path.join(
+        os.path.dirname(__file__),
+        "test-data",
+        "live_segment.mp4"
+    )
 
 @pytest.fixture
 def fetcher(fetcher_config: FetcherConfig, tag_store) -> FetchFactory:
@@ -450,3 +462,28 @@ def test_live_worker_incremental_segments(
         f"Expected at most {expected_segments * 1.2:.0f} segments, got {len(all_sources)}"
     
     print(f"LiveWorker test completed: {len(all_sources)} segments downloaded in {call_count} calls")
+
+def test_center_segment(segment: str) -> None:
+
+    def get_pts_info(file_path: str) -> float:
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0", 
+             "-show_entries", "frame=pkt_pts_time", "-of", "csv=p=0", file_path],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        pts_times = [float(line) for line in result.stdout.strip().split('\n') if line]
+        return pts_times[0]
+
+    original_pts = get_pts_info(segment)
+    assert original_pts > 0
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        temp_segment_path = os.path.join(tmpdir, "temp_segment.mp4")
+        shutil.copy(segment, temp_segment_path)
+
+        center_segment(temp_segment_path)
+
+        new_pts = get_pts_info(temp_segment_path)
+        assert new_pts == 0

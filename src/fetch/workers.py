@@ -5,7 +5,6 @@ from loguru import logger
 import shutil
 from copy import deepcopy
 from contextlib import contextmanager
-import threading
 
 from common_ml.video_processing import unfrag_video
 from common_ml.utils.files import get_file_type, encode_path
@@ -15,6 +14,7 @@ from src.fetch.model import *
 from src.common.content import Content, ContentConfig
 from src.common.errors import BadRequestError, MissingResourceError
 from src.fetch.model import DownloadResult
+from src.fetch.video_process import center_segment
 
 StreamKey = tuple[str, str]
 
@@ -374,6 +374,8 @@ class LiveWorker(FetchSession):
             segment_length=chunk_size,
             stream=self.scope.stream
         )
+
+        center_segment(save_path)
 
         seg_offset = segment_info.seg_offset_millis
         seg_idx = segment_info.seg_num
