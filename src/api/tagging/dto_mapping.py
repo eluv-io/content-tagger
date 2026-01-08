@@ -4,7 +4,7 @@ These functions map between the API DTOs and service layer structs.
 
 from flask import request
 from requests import HTTPError
-from dacite import from_dict
+from dacite import from_dict, Config
 
 from src.api.tagging.format import *
 from src.fetch.model import *
@@ -125,9 +125,9 @@ def tag_args_from_req(q: Content) -> TagAPIArgs | LiveTagAPIArgs:
         body = request.json
         assert body is not None
         if _is_live(q):
-            args = from_dict(LiveTagAPIArgs, body)
+            args = from_dict(LiveTagAPIArgs, body, config=Config(strict=True))
         else:
-            args = from_dict(TagAPIArgs, body)
+            args = from_dict(TagAPIArgs, body, config=Config(strict=True))
     except Exception as e:
         raise BadRequestError(f"Invalid request body: {e}") from e
     
