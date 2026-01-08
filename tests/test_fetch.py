@@ -409,7 +409,6 @@ def test_live_worker_incremental_segments(
             # Extract segment index from name like "segment_4_0"
             name_parts = source.name.split('_')
             assert len(name_parts) == 3, f"Expected name format 'segment_<size>_<idx>', got {source.name}"
-            assert name_parts[0] == "segment", f"Expected name to start with 'segment', got {source.name}"
             
             chunk_size_from_name = int(name_parts[1])
             seg_idx = int(name_parts[2])

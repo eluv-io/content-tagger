@@ -364,7 +364,7 @@ class LiveWorker(FetchSession):
         idx = self.next_idx
         
         # TODO: filename weirdness on first segment
-        filename = f"segment_{chunk_size}_{str(idx).zfill(4)}.mp4"
+        filename = f"segment_{chunk_size}_{self.scope.stream}_{str(idx).zfill(4)}.mp4"
         save_path = os.path.join(self.output_dir, filename)
         
         segment_info = self.q.live_media_segment(
@@ -375,7 +375,9 @@ class LiveWorker(FetchSession):
             stream=self.scope.stream
         )
 
-        center_segment(save_path)
+        if self.scope.stream == "video":
+            # ideally we can do this in the API just in case we have a different stream name for video
+            center_segment(save_path)
 
         seg_offset = segment_info.seg_offset_millis
         seg_idx = segment_info.seg_num
@@ -383,7 +385,7 @@ class LiveWorker(FetchSession):
         wall_clock = segment_info.seg_time_epoch_millis
         
         source = Source(
-            name=f"segment_{chunk_size}_{idx}",
+            name=f"{self.scope.stream}:segment_{chunk_size}_{idx}",
             filepath=save_path,
             offset=seg_offset,
             wall_clock=wall_clock
