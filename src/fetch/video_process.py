@@ -11,6 +11,18 @@ def center_segment(segment_path: str) -> None:
     with tempfile.NamedTemporaryFile(dir=dir_, delete=False, suffix=".mp4") as tmp:
         tmp_path = tmp.name
 
-    subprocess.run(f"ffmpeg -i {segment_path} -y -map 0 -c copy -avoid_negative_ts make_zero {tmp_path}".split(), check=True)
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-i", segment_path,
+            "-y",
+            "-map", "0",
+            "-c", "copy",
+            "-avoid_negative_ts", "make_zero",
+            tmp_path
+        ],
+        check=True,
+        capture_output=True
+    )
 
     os.replace(tmp_path, segment_path)

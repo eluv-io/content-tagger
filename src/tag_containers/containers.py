@@ -246,7 +246,7 @@ class TagContainer:
 
         return outputs
     
-    @lru_cache(maxsize=1024)
+    @lru_cache(maxsize=None)
     def _get_fps(self, video_file: str) -> float:
         return get_fps(video_file)
 
