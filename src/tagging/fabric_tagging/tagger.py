@@ -266,7 +266,7 @@ class FabricTagger:
             except Exception as e:
                 if job.args.retry_fetch:
                     retry_delay = 5
-                    logger.opt(exception=e).error(f"error during fetching but retry is set to true, retrying in {retry_delay} seconds", extra={"jobid": jobid})
+                    logger.error(f"Error during fetching but retry is set to true, retrying in {retry_delay} seconds\n{str(e)}", extra={"jobid": jobid})
                     threading.Timer(retry_delay, lambda: self._submit_async(EnterFetchingPhase(job_id=jobid))).start()
                 else:
                     self._end_job(jobid, "Failed", e)
@@ -469,7 +469,7 @@ class FabricTagger:
                     try:
                         self.system_tagger.stop(job.state.taghandle)
                     except Exception as e:
-                        logger.opt(exception=e).error(f"error stopping job", extra={"jobid": job.get_id()})
+                        logger.opt(exception=e).error("error stopping job", extra={"jobid": job.get_id()})
 
         threading.Thread(target=stop_system_jobs, daemon=True).start()
 
