@@ -316,6 +316,11 @@ class FabricTagger:
             if s not in job.state.status.failed:
                 job.state.status.failed.append(s)
 
+        if not job.state.container and not new_sources and dl_res.done:
+            logger.info("Fetcher finished with no media, aborting the job.", extra={"jobid": jobid})
+            self._submit_async(EnterCompletePhase(job_id=jobid))
+            return
+
         if new_sources:
             if not job.state.container:
                 self._start_new_container(job)

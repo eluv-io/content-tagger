@@ -996,3 +996,39 @@ def test_default_defer_to_model_track(fabric_tagger, q):
         name="random_track"
     )
     assert track.label == "Random Track"
+
+def test_fetcher_returns_no_sources(fabric_tagger, q):
+    """Test that job completes gracefully when fetcher returns no sources"""
+    
+    def empty_download():
+        return DownloadResult(
+            sources=[],
+            failed=[],
+            done=True
+        )
+    
+    with patch.object(FakeWorker, 'download', side_effect=empty_download):
+        args = TagArgs(
+            feature="caption",
+            run_config={},
+            scope=VideoScope(stream="video", start_time=0, end_time=30),
+            replace=False,
+            destination_qid=""
+        )
+        
+        result = fabric_tagger.tag(q, args)
+        assert "successfully" in result.lower()
+        
+        # Wait for job to complete
+        wait_tag(fabric_tagger, q.qhit, timeout=2)
+        
+        # Verify job completed with no sources
+        final_status = fabric_tagger.status(q.qhit)
+        assert final_status["video"]["caption"]["status"] == "Completed"
+        assert final_status["video"]["caption"]["tagging_progress"] == "0/0"
+        assert len(final_status["video"]["caption"]["missing_tags"]) == 0
+        assert len(final_status["video"]["caption"]["failed"]) == 0
+        
+        # Verify no tags were uploaded
+        tag_count = fabric_tagger.tagstore.count_tags(qhit=q.qhit, q=q)
+        assert tag_count == 0
