@@ -647,3 +647,22 @@ def test_stop_live_job(app, live_q):
     assert len(final_tags) < 20, f"Should have partial tags, got {len(final_tags)} (too many, job may have completed)"
     
     logger.info(f"Live stop test completed with {len(final_tags)} partial tags")
+
+def test_invalid_model_name(client):
+    """Test that requesting a non-existent model returns 400 error."""
+    qid = test_objects['vod']
+    auth = get_auth(qid=qid)
+    
+    # Try to tag with a model that doesn't exist
+    response = client.post(
+        f"/{qid}/tag?authorization={auth}", 
+        json={
+            "features": {
+                "nonexistent_model": {
+                    "model": {"tags": ["test"]}
+                }
+            }
+        }
+    )
+    
+    assert response.status_code == 400

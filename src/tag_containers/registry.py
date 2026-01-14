@@ -56,6 +56,8 @@ class ContainerRegistry:
             return TagContainer(self.pclient, ccfg)
 
     def get_model_config(self, model: str) -> ModelConfig:
+        if model not in self.cfg.model_configs:
+            raise BadRequestError(f"Model {model} not found")
         return deepcopy(self.cfg.model_configs[model])
 
     def services(self) -> list[str]:
