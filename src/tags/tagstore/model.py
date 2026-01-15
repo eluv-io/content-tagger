@@ -7,6 +7,7 @@ from dataclasses import dataclass
 class TagstoreConfig:
     base_dir: str=""
     base_url: str=""
+    timeout: int=10
     auth_token: str | None = None
 
 ## Schema

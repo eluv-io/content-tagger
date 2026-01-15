@@ -9,8 +9,9 @@ from src.tags.tagstore.model import Tag, Batch, Track
 from src.tags.tagstore.abstract import Tagstore
 
 class RestTagstore(Tagstore):
-    def __init__(self, base_url: str):
+    def __init__(self, base_url: str, timeout: int):
         self.base_url = base_url.rstrip('/')
+        self.timeout = timeout
         self.session = requests.Session()
         self.session.headers.update({
             'Content-Type': 'application/json'
@@ -48,7 +49,8 @@ class RestTagstore(Tagstore):
         response = self.session.post(
             f"{self.base_url}/{qhit}/tracks/{name}",
             json=track_data,
-            headers=self._get_headers(q)
+            headers=self._get_headers(q),
+            timeout=self.timeout
         )
         
         # 409 means track already exists - that's fine (idempotent)
@@ -71,7 +73,8 @@ class RestTagstore(Tagstore):
         # so we need to get all tracks and filter
         response = self.session.get(
             f"{self.base_url}/{qhit}/tracks",
-            headers=self._get_headers(q)
+            headers=self._get_headers(q),
+            timeout=self.timeout
         )
         
         if response.status_code == 404:
@@ -112,7 +115,8 @@ class RestTagstore(Tagstore):
         response = self.session.post(
             f"{self.base_url}/{qhit}/batches", 
             json=batch_data,
-            headers=self._get_headers(q)
+            headers=self._get_headers(q),
+            timeout=self.timeout
         )
         
         if not response.ok:
@@ -164,7 +168,8 @@ class RestTagstore(Tagstore):
         response = self.session.post(
             f"{self.base_url}/{qhit}/tags", 
             json=upload_data,
-            headers=self._get_headers(q)
+            headers=self._get_headers(q),
+            timeout=self.timeout
         )
         
         if not response.ok:
@@ -221,7 +226,8 @@ class RestTagstore(Tagstore):
         response = self.session.get(
             f"{self.base_url}/{qhit}/tags", 
             params=params,
-            headers=self._get_headers(q)
+            headers=self._get_headers(q),
+            timeout=self.timeout
         )
         
         if not response.ok:
@@ -287,7 +293,8 @@ class RestTagstore(Tagstore):
         response = self.session.get(
             f"{self.base_url}/{qhit}/batches", 
             params=params,
-            headers=self._get_headers(q)
+            headers=self._get_headers(q),
+            timeout=self.timeout
         )
         
         if not response.ok:
@@ -330,7 +337,8 @@ class RestTagstore(Tagstore):
         response = self.session.get(
             f"{self.base_url}/{qhit}/tags", 
             params=params,
-            headers=self._get_headers(q)
+            headers=self._get_headers(q),
+            timeout=self.timeout
         )
         
         if not response.ok:
@@ -361,7 +369,8 @@ class RestTagstore(Tagstore):
         response = self.session.get(
             f"{self.base_url}/{qhit}/batches", 
             params=params,
-            headers=self._get_headers(q)
+            headers=self._get_headers(q),
+            timeout=self.timeout
         )
         
         if not response.ok:
@@ -381,7 +390,8 @@ class RestTagstore(Tagstore):
         try:
             response = self.session.get(
                 f"{self.base_url}/{qhit}/batches/{batch_id}",
-                headers=self._get_headers(q)
+                headers=self._get_headers(q),
+                timeout=self.timeout
             )
             
             if response.status_code == 404:
@@ -417,7 +427,8 @@ class RestTagstore(Tagstore):
         
         response = self.session.delete(
             f"{self.base_url}/{qhit}/batches/{batch_id}",
-            headers=self._get_headers(q)
+            headers=self._get_headers(q),
+            timeout=self.timeout
         )
         
         if not response.ok:

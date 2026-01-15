@@ -153,7 +153,7 @@ def q(writable_q, readonly_q, test_qid):
 def rest_tagstore(q: Content) -> RestTagstore:
     """Create a RestTagstore using TEST_TAGSTORE_HOST environment variable"""
     host = os.getenv("TEST_TAGSTORE_HOST") or ""
-    ts = RestTagstore(base_url=host)
+    ts = RestTagstore(base_url=host, timeout=10)
 
     if host:
         jobids = ts.find_batches(q=q, limit=1000)
