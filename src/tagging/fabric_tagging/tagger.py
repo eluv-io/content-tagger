@@ -398,8 +398,7 @@ class FabricTagger:
 
         logger.info("entering complete phase", extra={"jobid": jobid})
 
-        # NOTE: we need this one final upload to catch any straggler tags that came in after the last upload tick,
-        # before we move to inactive
+        # catch any remaining tags - this blocks the main thread briefly but it's not called very often
         self._run_upload(job)
 
         for source in job.state.media.downloaded:
@@ -490,12 +489,29 @@ class FabricTagger:
 
     def _handle_upload_tick(self, message: Message):
         assert isinstance(message.data, UploadTick)
+        
+        threading.Thread(
+            target=self._upload_all_background,
+            daemon=True
+        ).start()
+        
+        message.response_mailbox.put(Response(data=None, error=None))
+
+    def _upload_all_background(self) -> None:
+        """Upload tags for all jobs in background thread"""
         try:
             self._upload_all()
         except Exception as e:
             logger.opt(exception=e).error("unexpected error in uploader")
-        self._schedule_upload_tick()
-        message.response_mailbox.put(Response(data=None, error=None))
+        finally:
+            self._schedule_upload_tick()
+
+    def _upload_all(self) -> None:
+        """Upload tags for all jobs"""
+        jobs = list(self.jobstore.active_jobs.values())
+
+        for job in jobs:
+            self._run_upload(job)
 
     def _set_stop_state(
             self, 
@@ -550,15 +566,6 @@ class FabricTagger:
         if state.message:
             res["message"] = state.message
         return res
-
-    def _upload_all(self) -> None:
-        """Upload tags for all jobs"""
-
-        # we only need active jobs, because we also run an upload at the end of the tagging stage as well
-        jobs = list(self.jobstore.active_jobs.values())
-
-        for job in jobs:
-            self._run_upload(job)
 
     def _run_upload(self, job: TagJob) -> None:
         """Run upload for a job"""

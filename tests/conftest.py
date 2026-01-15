@@ -35,7 +35,7 @@ def live_q():
         live_media_url="https://host-76-74-29-5.contentfabric.io/config?self&qspace=main"
     )
     factory = ContentFactory(cfg=cfg)
-    q = factory.create_content(qhit="iq__4DhfZqxgTELQ62tnXi89ShtRnpJh", auth=token)
+    q = factory.create_content(qhit="iq__467CAS4BvPQ39go6aLmX6v3ZaTwD", auth=token)
     if not _is_live(q):
         pytest.skip("livestream is not running")
     return q
