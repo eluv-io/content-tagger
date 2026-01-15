@@ -295,17 +295,6 @@ def test_tags_frame_tags_no_text_match(video_tag_container):
         assert not tag.frame_tags or len(tag.frame_tags) == 0
 
 
-def test_tags_invalid_json_file(video_tag_container):
-    tags_dir = video_tag_container.cfg.tags_dir
-    
-    invalid_file = os.path.join(tags_dir, "video1_tags.json")
-    with open(invalid_file, 'w') as f:
-        f.write("invalid json{")
-    
-    with pytest.raises(Exception):
-        video_tag_container.tags()
-
-
 def test_tags_missing_video_tags_file(video_tag_container):
     tags_dir = video_tag_container.cfg.tags_dir
     
@@ -685,6 +674,36 @@ def test_source_from_tags(video_tag_container):
     assert outputs[0].source_media.endswith("video1.mp4")
     assert outputs[1].source_media.endswith("video1.mp4")
 
+def test_bad_tag_json(video_tag_container):
+    """Test that incomplete/invalid JSON files are handled gracefully"""
+    tags_dir = video_tag_container.cfg.tags_dir
+    
+    # Create a valid tag file
+    valid_tags = [
+        {
+            "start_time": 0,
+            "end_time": 5000,
+            "text": "person walking",
+            "source_media": "video1.mp4"
+        }
+    ]
+    
+    valid_file = os.path.join(tags_dir, "video1.mp4_tags.json")
+    with open(valid_file, 'w') as f:
+        json.dump(valid_tags, f)
+    
+    # Create an invalid/incomplete JSON file (simulates container still writing)
+    invalid_file = os.path.join(tags_dir, "video2.mp4_tags.json")
+    with open(invalid_file, 'w') as f:
+        f.write('{"start_time": 0, "end_time": 5000, "text": "incomplete')  # Incomplete JSON
+    
+    # Should only return tags from valid file, skip invalid one
+    outputs = video_tag_container.tags()
+    
+    assert len(outputs) == 1
+    assert outputs[0].source_media.endswith("video1.mp4")
+    assert outputs[0].text == "person walking"
+
 def test_bad_filename(video_tag_container):
     tags_dir = video_tag_container.cfg.tags_dir
     
@@ -734,7 +753,7 @@ def test_track_field(video_tag_container):
         json.dump(video_tags_data, f)
 
     tags = video_tag_container.tags()
-    
+
     assert len(tags) == 2
     assert tags[0].track == "track1"
     assert tags[1].track == "track2"

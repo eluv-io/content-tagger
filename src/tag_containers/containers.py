@@ -1,4 +1,3 @@
-
 from podman import PodmanClient
 from src.common.logging import logger
 import json
@@ -200,17 +199,39 @@ class TagContainer:
         else:
             raise ValueError(f"Unsupported file type: {self.file_type}")
 
+    def _source_from_tag_file(self, tagfile: str) -> str | None:
+        """Get source media from tag file, returns None if file is invalid/incomplete"""
+        data = self._load_json_file(tagfile)
+        
+        if data is None:
+            return None
+        
+        if not isinstance(data, list) or not data:
+            return self._source_from_filename(tagfile)
+            
+        sources = set()
+        for entry in data:
+            assert isinstance(entry, dict)
+            if entry.get("source_media"):
+                sources.add(entry["source_media"])
+
+        if len(sources) == 1:
+            source_file = sources.pop()
+            return self.basename_to_source[source_file]
+        else:
+            return self._source_from_filename(tagfile)
+
     def _load_image_tags(self, tagged_files: list[str]) -> list[ModelTag]:
         outputs = []
         for tagged_file in tagged_files:
             source = self._source_from_tag_file(tagged_file)
-            image_tags = []
-            try:
-                with open(tagged_file, 'r') as f:
-                    image_tags = json.load(f)
-            except Exception as e:
-                logger.error(f"Error loading image tags from {tagged_file}: {e}")
+            if source is None:
                 continue
+            
+            image_tags = self._load_json_file(tagged_file)
+            if image_tags is None:
+                continue
+            assert isinstance(image_tags, list)
             outputs += self._output_from_image_tags(source, image_tags)
         return outputs
 
@@ -234,6 +255,9 @@ class TagContainer:
 
         for tagged_file in tagged_files:
             source_media = self._source_from_tag_file(tagged_file)
+            if source_media is None:
+                continue
+            
             if source_media not in source_to_tagfiles:
                 source_to_tagfiles[source_media] = []
             source_to_tagfiles[source_media].append(tagged_file)
@@ -315,25 +339,6 @@ class TagContainer:
 
         return out
         
-    def _source_from_tag_file(self, tagfile: str) -> str:
-        with open(tagfile, 'r') as f:
-            data = json.load(f)
-
-        if not isinstance(data, list) or not data:
-            return self._source_from_filename(tagfile)
-            
-        sources = set()
-        for entry in data:
-            assert isinstance(entry, dict)
-            if entry.get("source_media"):
-                sources.add(entry["source_media"])
-
-        if len(sources) == 1:
-            source_file = sources.pop()
-            return self.basename_to_source[source_file]
-        else:
-            return self._source_from_filename(tagfile)
-
     def _source_from_filename(self, filename: str) -> str:
         """Deprecated method for retrieving source media from filename"""
 
@@ -404,6 +409,15 @@ class TagContainer:
             max_depth = max(max_depth, depth)
         
         return max_depth
+    
+    def _load_json_file(self, filepath: str) -> dict | list | None:
+        """Safely load JSON file, returning None if file is incomplete or invalid"""
+        try:
+            with open(filepath, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading JSON from {filepath}: {e}")
+            return None
     
 class LiveTagContainer(TagContainer):
 
