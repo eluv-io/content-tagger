@@ -17,6 +17,7 @@ RUN --mount=type=ssh conda run -n mlpod /opt/conda/envs/mlpod/bin/pip install .
 
 COPY src ./src
 COPY server.py app_config.py config.yml .
+COPY docs/api ./docs/api
 
 COPY version/buildinfo.json version/buildinfo.json
 

@@ -52,8 +52,6 @@ class LiveMetadata(MediaMetadata):
 @dataclass
 class DownloadRequest:
     # used to avoid re-downloading parts if this track has already been tagged
-    # TODO: this logic doesn't belong in the fetcher, we should instead pass in 
-    # the sources to not download from the tagger.
     preserve_track: str
     output_dir: str
     scope: Scope

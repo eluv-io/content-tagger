@@ -63,7 +63,7 @@ def configure_routes(app: Flask) -> None:
     def commit(qhit: str) -> Response:
         return handle_commit(qhit)
 
-    @app.route('/docs')
+    @app.route('/docs', strict_slashes=False)
     def docs_route():
         return send_from_directory('docs/api', 'openapi.html')
 

@@ -37,6 +37,7 @@ fetcher:
 tagger:
   media_dir: data/parts
   uploader:
+    timeout: 10
     model_params:
       llava:
         default:

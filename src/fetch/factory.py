@@ -27,10 +27,10 @@ class FetchFactory:
         self.rl = FetchRateLimiter(config.max_downloads)
 
     def get_session(
-            self, 
-            q: Content, 
-            req: DownloadRequest, 
-            exit: threading.Event | None = None
+        self, 
+        q: Content, 
+        req: DownloadRequest, 
+        exit: threading.Event | None = None
     ) -> FetchSession:
         with timeit(f"Getting media metadata: qhit={q.qhit}, scope={req.scope}"):
             meta = self._get_metadata(q, req.scope)

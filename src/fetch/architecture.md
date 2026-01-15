@@ -11,10 +11,11 @@ This module is responsible for everything regarding downloading media from the c
     - The class that actually downloads the media to the local filesystem. It will return a flag when there is no more media to download.
     - It's useful for carrying all the state associated with downloading media from a content object when running a tag job.
     - Implementing it this way allows us to support starting tagging before downloading the entire media which is especially critical for live tagging.
-- `Fetcher`
-    - Basically just a factory for the `DownloadWorker`s
-    - Currently it depends on the `Tagstore` so that it can query for already tagged sources, but this is deprecated cause it's a violation of responsibility boundaries.
-    - It is useful to use a factory here because it helps us test since we can override via 
+    - implements a `download` method which downloads a single batch and a flag indicating whether more is coming or not.
+- `FetchFactory`
+    - Factory for the `DownloadWorker`s
+    - Currently it depends on the `Tagstore` so that it can query for already tagged sources, might deprecate this cause arguable the factory is doing too much. 
+    - Using a factory is nice cause instantiating the workers has semi-complex logic. Must query metadata, select the worker class based on the request context (asset, live, or vod). Must query tagstore to figure out which media to filter. It also makes mocking and DI easier. 
 
 See `model.py`
 

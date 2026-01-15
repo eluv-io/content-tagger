@@ -1,9 +1,11 @@
 openapi: 3.0.0
 info:
-  title: Content Tagger API
+  title: Eluvio Tagger API
+  x-logo:
+    url: /docs/logo.png
   version: 1.0.0
   description: |
-    API for running ML models on media stored on the content fabric. 
+    API for running ML inference on Fabric content objects
 paths:
   /{qid}/tag:
     post:
