@@ -3,7 +3,7 @@ from collections import defaultdict
 import time
 import queue
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any
 from datetime import datetime
 from uuid import uuid4 as uuid
@@ -96,7 +96,13 @@ class FabricTagger:
 
     def _submit(self, req: Request) -> Any:
         """synchronous request - adds a message to the mailbox and blocks till it gets a response"""
-        logger.info("submitting synchronous request", extra={"request": req, "queue_size": self.mailbox.qsize()})
+        if isinstance(req, EnterTaggingPhase):
+            # avoid logging large data blobs
+            log_req = asdict(req)
+            log_req["data"] = f"<DownloadResult with {len(req.data.sources)} sources>"
+        else:
+            log_req = req
+        logger.info("submitting synchronous request", extra={"request": log_req, "queue_size": self.mailbox.qsize()})
         if self.shutdown_requested:
             raise RuntimeError("FabricTagger received shutdown signal, cannot accept new requests")
         caller_mailbox = queue.Queue()

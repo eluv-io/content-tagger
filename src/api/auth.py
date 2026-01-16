@@ -20,7 +20,7 @@ def authenticate(client: ElvClient, qhit: str) -> None:
 
 
 def get_authorization(req: Request) -> str:
-    """Get the authorization token from the request headers or query parameters. Throws BadRequestError if not found."""
+    """Get the authorization token from the request headers or query parameters."""
     auth = req.headers.get('Authorization', None) or req.args.get(
         'authorization', None)
     if not auth:
@@ -45,7 +45,10 @@ def convert_response(resp: requests.Response) -> Response:
     return flask_response
 
 def is_same_auth_ctx(q: Content, other_qhit: str) -> bool:
-    """Check if the other_qhit belongs to the same authorization context as q."""
+    """Check if the other_qhit belongs to the same authorization context as q.
+    
+    This is used in the tag redirect feature.
+    """
     try:
         q.content_object(**parse_qhit(other_qhit))
     except HTTPError:

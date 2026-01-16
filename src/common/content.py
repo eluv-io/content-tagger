@@ -26,10 +26,10 @@ class Content:
     """
 
     def __init__(
-            self, 
-            qhit: str,
-            auth: str,
-            cfg: ContentConfig
+        self, 
+        qhit: str,
+        auth: str,
+        cfg: ContentConfig
     ):
         client = ElvClient.from_configuration_url(
             cfg.config_url, static_token=auth)
