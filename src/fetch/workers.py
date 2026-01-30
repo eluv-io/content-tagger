@@ -730,14 +730,12 @@ class SkipWorker(FetchSession):
     """
     def __init__(
             self,
-            q: Content,
             scope: TimeRangeScope,
             meta: VideoMetadata,
             ignore_sources: list[str],
             output_dir: str,
             exit: threading.Event | None = None
     ):
-        self.q = q
         self.scope = scope
         self.meta = meta
         self.output_dir = output_dir
@@ -749,17 +747,26 @@ class SkipWorker(FetchSession):
 
     def download(self) -> DownloadResult:
         content_duration = self.meta.part_duration * len(self.meta.parts)
+
+        start_time = self.scope.start_time or 0
         end_time = self.scope.end_time or math.ceil(content_duration)
+
+        # clamp to chunk_size
+        start_time = (start_time // self.scope.chunk_size) * self.scope.chunk_size
+        end_time = math.ceil(end_time / self.scope.chunk_size) * self.scope.chunk_size
+
         intvs = [f'{start}_{start + self.scope.chunk_size}' for start in range(
-            self.scope.start_time or 0,
+            start_time,
             end_time,
             self.scope.chunk_size
         )]
         intvs = [intv for intv in intvs if intv not in self.ignore_sources]
+
         for intv in self.ignore_sources:
             with open(os.path.join(self.output_dir, f'{intv}.json'), 'w') as f:
                 json.dump({"start_time": int(intv.split('_')[0]),
                            "end_time": int(intv.split('_')[1])}, f)
+                
         sources = [
             Source(
                 name=intv,
@@ -768,6 +775,7 @@ class SkipWorker(FetchSession):
                 wall_clock=None
             ) for intv in intvs
         ]
+        
         return DownloadResult(
             sources=sources,
             failed=[],

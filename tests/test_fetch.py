@@ -5,8 +5,8 @@ import subprocess
 import tempfile
 
 from src.fetch.video_process import center_segment
-from src.fetch.factory import FetchFactory
-from src.fetch.model import AssetScope, DownloadRequest, FetcherConfig, VideoScope, LiveScope
+from src.fetch.factory import *
+from src.fetch.model import *
 from src.tags.tagstore.filesystem_tagstore import Tag
 from src.common.content import Content
 from src.common.errors import MissingResourceError
@@ -486,3 +486,40 @@ def test_center_segment(segment: str) -> None:
 
         new_pts = get_pts_info(temp_segment_path)
         assert new_pts == 0
+
+def test_skip_worker(media_dir: str) -> None:
+    """Test SkipWorker functionality"""
+
+    part_duration = 10
+    num_parts = 12
+    start_time = 35
+    chunk_size = 10
+
+    worker = SkipWorker(
+        scope=TimeRangeScope(
+            start_time=start_time,
+            end_time=None,
+            chunk_size=chunk_size,
+            stream="video"
+        ),
+        meta=VideoMetadata(
+            part_duration=part_duration,
+            parts=[f"part_{i}" for i in range(num_parts)],
+            fps=30,
+            codec_type="video"
+        ),
+        ignore_sources=["20_30", "40_50"],
+        output_dir=media_dir
+    )
+
+    result = worker.download()
+
+    assert len(result.sources) == math.ceil(part_duration * num_parts / chunk_size) - 4 # 2 from ignored list, 3 from before start_time, minus intersection
+    assert len(result.failed) == 0
+    source_names = [source.name for source in result.sources]
+    assert "0_10" not in source_names
+    assert "10_20" not in source_names
+    assert "20_30" not in source_names
+    assert "40_50" not in source_names
+    assert "30_40" in source_names
+    assert "50_60" in source_names
