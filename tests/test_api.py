@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, Mock
 from src.api.tagging.dto_mapping import map_video_tag_dto, map_asset_tag_dto
 from src.api.tagging.format import TagAPIArgs, LiveTagAPIArgs, ImageTagAPIArgs, ModelParams
 from src.tagging.fabric_tagging.model import TagArgs
-from src.fetch.model import VideoScope, LiveScope, AssetScope
+from src.fetch.model import TimeRangeScope, VideoScope, LiveScope, AssetScope
 from src.common.content import Content
 from src.tag_containers.registry import ContainerRegistry
 
@@ -12,9 +12,14 @@ def mock_registry():
     """Mock ContainerRegistry for testing."""
     registry = Mock(spec=ContainerRegistry)
     # Mock model configs for different features
-    registry.get_model_config.side_effect = lambda feature: Mock(
-        type="video" if feature == "object_detection" else "audio"
-    )
+    def get_model_config(feature):
+        if feature == "object_detection":
+            return Mock(type="video")
+        elif feature == "joe's processor":
+            return Mock(type="processor")
+        else:
+            return Mock(type="audio")
+    registry.get_model_config.side_effect = get_model_config
     return registry
 
 @pytest.fixture
@@ -168,3 +173,21 @@ def test_asset_multiple_features_with_destination_qid():
     assert len(result) == 3
     for tag_args in result:
         assert tag_args.destination_qid == "iq__shared_destination"
+
+def test_map_dto_with_joes_processor(mock_registry, mock_content):
+    """Test mapping with a processor type model."""
+    args = TagAPIArgs(
+        features={
+            "joe's processor": ModelParams(model={})
+        },
+    )
+    
+    result = map_video_tag_dto(args, mock_registry, mock_content)
+    
+    assert len(result) == 1
+    tag_args = result[0]
+    assert isinstance(tag_args.scope, TimeRangeScope)
+    assert tag_args.scope.start_time == args.start_time
+    assert tag_args.scope.end_time == args.end_time
+    assert tag_args.scope.chunk_size == args.chunk_size
+    assert tag_args.scope.stream == "video"
