@@ -749,7 +749,7 @@ class SkipWorker(FetchSession):
         content_duration = self.meta.part_duration * len(self.meta.parts)
 
         start_time = self.scope.start_time or 0
-        end_time = self.scope.end_time or math.ceil(content_duration)
+        end_time = min(self.scope.end_time or math.ceil(content_duration), math.ceil(content_duration))
 
         # clamp to chunk_size
         start_time = (start_time // self.scope.chunk_size) * self.scope.chunk_size
@@ -762,15 +762,15 @@ class SkipWorker(FetchSession):
         )]
         intvs = [intv for intv in intvs if intv not in self.ignore_sources]
 
-        for intv in self.ignore_sources:
+        for intv in intvs:
             with open(os.path.join(self.output_dir, f'{intv}.json'), 'w') as f:
                 json.dump({"start_time": int(intv.split('_')[0]),
                            "end_time": int(intv.split('_')[1])}, f)
-                
+                 
         sources = [
             Source(
                 name=intv,
-                filepath="",
+                filepath=os.path.join(self.output_dir, f'{intv}.json'),
                 offset=0,
                 wall_clock=None
             ) for intv in intvs
