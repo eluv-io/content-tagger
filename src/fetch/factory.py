@@ -69,22 +69,29 @@ class FetchFactory:
                 output_dir=req.output_dir,
                 exit=exit
             )
+        elif isinstance(req.scope, TimeRangeScope):
+            assert isinstance(meta, VideoMetadata)
+            return SkipWorker(
+                q=q,
+                scope=req.scope,
+                meta=meta,
+                ignore_sources=ignore_sources,
+                output_dir=req.output_dir,
+                exit=exit
+            )
         else:
             raise BadRequestError(f"Unknown scope type: {type(req.scope)}")
 
-    def _get_ignored_sources(self, q: Content, preserve_track: str, scope: Scope) -> list[str]:
+    def _get_ignored_sources(self, q: Content, preserve_track: str) -> list[str]:
         if not preserve_track:
             return []
-        if isinstance(scope, VideoScope) or isinstance(scope, AssetScope):
-            # TODO: could get slow, doesn't work with pagination in case of real tagstore.
-            existing_tags = self.ts.find_tags(
-                author=self.config.author, 
-                qhit=q.qid,
-                track=preserve_track,
-                q=q
-            )
-            return list(set(tag.source for tag in existing_tags))
-        return []
+        existing_tags = self.ts.find_tags(
+            author=self.config.author, 
+            qhit=q.qid,
+            track=preserve_track,
+            q=q
+        )
+        return list(set(tag.source for tag in existing_tags))
     
     def _get_metadata(self, q: Content, scope: Scope) -> MediaMetadata:
         if isinstance(scope, VideoScope):
