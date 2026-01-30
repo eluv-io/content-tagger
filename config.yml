@@ -120,7 +120,7 @@ container_registry:
       }
     celeb:
       image: "localhost/celeb:latest"
-      type: "video"
+      type: "frame"
       resources: {
         "gpu": 1,
         "cpu_juice": 35
