@@ -18,12 +18,19 @@ class Source:
 class Scope: ...
 
 @dataclass
+class TimeRangeScope(Scope):
+    start_time: int | None
+    end_time: int | None
+    chunk_size: int
+
+@dataclass
 class AssetScope(Scope):
     assets: list[str] | None
 
 @dataclass
 class VideoScope(Scope):
     stream: str
+    # in seconds
     start_time: int
     end_time: float | int
 
@@ -35,9 +42,12 @@ class LiveScope(Scope):
 
 class MediaMetadata: ...
 
+class EmptyMetadata(MediaMetadata): ...
+
 @dataclass
 class VideoMetadata(MediaMetadata):
     parts: list[str]
+    # in seconds
     part_duration: float
     fps: float | None
     codec_type: str

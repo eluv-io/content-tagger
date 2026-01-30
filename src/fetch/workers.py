@@ -5,6 +5,8 @@ from loguru import logger
 import shutil
 from copy import deepcopy
 from contextlib import contextmanager
+import math
+import json
 
 from common_ml.video_processing import unfrag_video
 from common_ml.utils.files import get_file_type, encode_path
@@ -42,14 +44,14 @@ class FetchRateLimiter:
 
 class VodWorker(FetchSession):
     def __init__(
-            self,
-            q: Content,
-            scope: VideoScope,
-            rate_limiter: FetchRateLimiter,
-            meta: VideoMetadata, 
-            ignore_parts: list[str],
-            output_dir: str,
-            exit: threading.Event | None = None
+        self,
+        q: Content,
+        scope: VideoScope,
+        rate_limiter: FetchRateLimiter,
+        meta: VideoMetadata, 
+        ignore_parts: list[str],
+        output_dir: str,
+        exit: threading.Event | None = None
     ):
         self.q = q
         self.scope = scope
@@ -721,3 +723,57 @@ class LivePartWorker(FetchSession):
             num, denom = frame_rate.split('/')
             return float(num) / float(denom)
         return float(frame_rate)
+    
+class SkipWorker(FetchSession):
+    """
+    Simple fetcher than simply returns a set of intervals as sources and let's the model handle fetching.
+    """
+    def __init__(
+            self,
+            q: Content,
+            scope: TimeRangeScope,
+            meta: VideoMetadata,
+            ignore_sources: list[str],
+            output_dir: str,
+            exit: threading.Event | None = None
+    ):
+        self.q = q
+        self.scope = scope
+        self.meta = meta
+        self.output_dir = output_dir
+        self.ignore_sources = set(ignore_sources)
+        self.exit = exit
+
+    def metadata(self) -> MediaMetadata:
+        return deepcopy(self.meta)
+
+    def download(self) -> DownloadResult:
+        content_duration = self.meta.part_duration * len(self.meta.parts)
+        end_time = self.scope.end_time or math.ceil(content_duration)
+        intvs = [f'{start}_{start + self.scope.chunk_size}' for start in range(
+            self.scope.start_time or 0,
+            end_time,
+            self.scope.chunk_size
+        )]
+        intvs = [intv for intv in intvs if intv not in self.ignore_sources]
+        for intv in self.ignore_sources:
+            with open(os.path.join(self.output_dir, f'{intv}.json'), 'w') as f:
+                json.dump({"start_time": int(intv.split('_')[0]),
+                           "end_time": int(intv.split('_')[1])}, f)
+        sources = [
+            Source(
+                name=intv,
+                filepath="",
+                offset=0,
+                wall_clock=None
+            ) for intv in intvs
+        ]
+        return DownloadResult(
+            sources=sources,
+            failed=[],
+            done=True
+        )
+    
+    @property
+    def path(self) -> str:
+        return self.output_dir
