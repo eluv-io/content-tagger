@@ -171,9 +171,21 @@ def write(qhit: str, config: str, do_commit: bool, force = False, leave_open = F
     return write_token
 
 def aggregate(qhit: str, config: str, do_commit: bool):
+
+    print("")
+    print("****************************")
+    print("Aggregating is not necessary (tagstore does it on write)")
+    print("")
+    print("Pausing 5 seconds so you can ctrl-c if you want to.")
+    print("****************************")
+    print("")
+    
+    if os.environ.get("TAGGERV3_AGG_NODELAY", None) is not None:
+        time.sleep(5)
+
     auth_token = get_auth(config, qhit)
     write_token = get_write_token(qhit, config)
-    aggregate_url = f"{server}/{qhit}/aggregate?authorization={auth_token}"
+    aggregate_url = f"https://ai.contentfabric.io/tagging/{qhit}/aggregate?authorization={auth_token}"
     resp = requests.post(aggregate_url, params={"write_token": write_token, "replace": "true"})
     respdict = response_force_dict(resp)
     print(respdict)
