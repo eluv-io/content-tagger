@@ -49,8 +49,6 @@ class TagContainer:
         if len(file_types) == 0:
             raise ValueError("No files provided")
         self.file_type = file_types[0]
-        if self.file_type not in ["video", "audio", "image"]:
-            raise BadRequestError(f"Unsupported file type: {self.media_files[0]}")
         # check that no file has the same basename
         self.basename_to_source = {os.path.basename(f): f for f in self.media_files}
         if len(self.basename_to_source) != len(self.media_files):
@@ -194,10 +192,8 @@ class TagContainer:
 
         if self.file_type == "image":
             return self._load_image_tags(tagged_files)
-        elif self.file_type == "video" or self.file_type == "audio":
-            return self._load_video_tags(tagged_files)
         else:
-            raise ValueError(f"Unsupported file type: {self.file_type}")
+            return self._load_video_tags(tagged_files)
 
     def _source_from_tag_file(self, tagfile: str) -> str | None:
         """Get source media from tag file, returns None if file is invalid/incomplete"""

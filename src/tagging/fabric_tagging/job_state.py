@@ -52,6 +52,8 @@ class TagJob:
             stream = self.args.scope.stream
         elif isinstance(self.args.scope, LiveScope):
             stream = "video"
+        elif isinstance(self.args.scope, TimeRangeScope):
+            stream = "video"
         else:
             raise ValueError(f"unknown scope type: {type(self.args.scope)}")
         return JobID(qhit=self.args.q.qhit, feature=self.args.feature, stream=stream)
