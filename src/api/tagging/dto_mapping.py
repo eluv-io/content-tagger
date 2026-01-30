@@ -44,19 +44,25 @@ def _create_tag_args(
 def map_vod_tag_dto(args: TagAPIArgs, registry: ContainerRegistry, q: Content) -> list[TagArgs]:
     res = []
     for feature, config in args.features.items():
+        model_config = registry.get_model_config(feature)
+        model_type = model_config.type
+        
         if config.stream is None:
-            model_config = registry.get_model_config(feature)
-            model_type = model_config.type
-            if model_type in ("video", "frame"):
+            if model_type in ("video", "frame", "processor"):
                 stream = "video"
             else:
                 stream = _find_default_audio_stream(q)
             config.stream = stream
 
+        if model_type == "processor":
+            scope = TimeRangeScope(start_time=args.start_time, end_time=args.end_time, chunk_size=args.chunk_size, stream=config.stream)
+        else:
+            scope = VideoScope(config.stream, start_time=args.start_time, end_time=args.end_time)
+
         res.append(_create_tag_args(
             feature=feature,
             config=config,
-            scope=VideoScope(config.stream, start_time=args.start_time, end_time=args.end_time),
+            scope=scope,
             args=args,
         ))
     return res

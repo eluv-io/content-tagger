@@ -12,7 +12,7 @@ class ModelConfig:
     Describes static attributes of a model
     """
     image: str
-    type: Literal["audio", "video", "frame"]
+    type: Literal["audio", "video", "frame", "processor"]
     resources: SystemResources
 
 @dataclass

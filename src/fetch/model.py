@@ -22,6 +22,7 @@ class TimeRangeScope(Scope):
     start_time: int | None
     end_time: int | None
     chunk_size: int
+    stream: str
 
 @dataclass
 class AssetScope(Scope):
