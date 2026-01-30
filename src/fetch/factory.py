@@ -36,7 +36,7 @@ class FetchFactory:
             meta = self._get_metadata(q, req.scope)
         with timeit(f"Getting already tagged sources so we can ignore them: qhit={q.qhit}, scope={req.scope}, track={req.preserve_track}"):
             # TODO: the real tagstore doesn't have a great way to query for unique values yet. 
-            ignore_sources = self._get_ignored_sources(q, req.preserve_track, req.scope)
+            ignore_sources = self._get_ignored_sources(q, req.preserve_track)
         if isinstance(req.scope, VideoScope):
             assert isinstance(meta, VideoMetadata)
             return VodWorker(
@@ -94,7 +94,7 @@ class FetchFactory:
         return list(set(tag.source for tag in existing_tags))
     
     def _get_metadata(self, q: Content, scope: Scope) -> MediaMetadata:
-        if isinstance(scope, VideoScope):
+        if isinstance(scope, VideoScope) or isinstance(scope, TimeRangeScope):
             return self._fetch_stream_metadata(q, scope.stream)
         elif isinstance(scope, AssetScope):
             # no important metadata for assets yet
