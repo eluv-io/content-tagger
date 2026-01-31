@@ -120,11 +120,11 @@ def _find_default_audio_stream(q: Content) -> str:
     
     return list(audio_streams.keys())[0]
 
-def tag_args_from_req(q: Content) -> TagAPIArgs | LiveTagAPIArgs:
+def tag_args_from_req(is_live: bool) -> TagAPIArgs | LiveTagAPIArgs:
     try:
         body = request.json
         assert body is not None
-        if _is_live(q):
+        if is_live:
             args = from_dict(LiveTagAPIArgs, body, config=Config(strict=True))
         else:
             args = from_dict(TagAPIArgs, body, config=Config(strict=True))
@@ -133,7 +133,7 @@ def tag_args_from_req(q: Content) -> TagAPIArgs | LiveTagAPIArgs:
     
     return args
     
-def _is_live(q: Content) -> bool:
+def is_live(q: Content) -> bool:
     try:
         edge_write_token = q.content_object_metadata(
             metadata_subtree="live_recording/status/edge_write_token",

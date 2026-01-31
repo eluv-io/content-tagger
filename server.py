@@ -20,7 +20,7 @@ from src.tags.conversion import TagConverter
 
 from src.api.tagging.handlers import handle_tag, handle_image_tag, handle_status, handle_stop
 from src.api.upload.handlers import handle_commit
-from src.common.errors import BadRequestError, MissingResourceError
+from src.common.errors import *
 from app_config import AppConfig
 
 def configure_routes(app: Flask) -> None:
@@ -42,6 +42,11 @@ def configure_routes(app: Flask) -> None:
     def handle_missing_resource(e):
         logger.exception(f"Missing resource: {e}")
         return jsonify({'code': 404, 'message': e.message}), 404
+    
+    @app.errorhandler(ExternalServiceError)
+    def handle_external_service_error(e):
+        logger.exception(f"External service error: {e}")
+        return jsonify({'error': "An upstream service that tagging depends on is not available"}), 502
 
     @app.route('/<qhit>/tag', methods=['POST'])
     def tag(qhit: str) -> Response:

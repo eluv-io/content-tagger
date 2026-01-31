@@ -3,11 +3,11 @@ import json
 from flask import Response, request, current_app
 from dacite import from_dict
 
-from src.api.tagging.dto_mapping import tag_args_from_req
+from src.api.tagging.dto_mapping import is_live, tag_args_from_req
 from src.common.logging import logger
 
 from src.api.tagging.format import ImageTagAPIArgs
-from src.common.errors import BadRequestError
+from src.common.errors import *
 from src.api.auth import *
 from src.common.content import Content, ContentFactory
 from src.tagging.fabric_tagging.tagger import FabricTagger
@@ -15,7 +15,14 @@ from src.api.tagging.dto_mapping import *
 
 def handle_tag(qhit: str) -> Response:
     q = _get_authorized_content(qhit)
-    args = tag_args_from_req(q)
+    is_livestream = is_live(q)
+
+    if is_livestream and q._live_client is None:
+        raise ExternalServiceError("Live media client is not configured.")
+    elif not is_livestream and q._parts_client is None:
+        raise ExternalServiceError("Parts client is not configured.")
+
+    args = tag_args_from_req(is_livestream)
     logger.debug(args)
 
     _validate_destination_auth(q, args.destination_qid)

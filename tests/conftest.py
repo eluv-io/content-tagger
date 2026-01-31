@@ -5,7 +5,7 @@ import pytest
 import dotenv
 from unittest.mock import Mock
 
-from src.api.tagging.dto_mapping import _is_live
+from src.api.tagging.dto_mapping import is_live
 from src.tags.tagstore.abstract import Tagstore
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.tags.tagstore.rest_tagstore import RestTagstore
@@ -36,7 +36,7 @@ def live_q():
     )
     factory = ContentFactory(cfg=cfg)
     q = factory.create_content(qhit="iq__467CAS4BvPQ39go6aLmX6v3ZaTwD", auth=token)
-    if not _is_live(q):
+    if not is_live(q):
         pytest.skip("livestream is not running")
     return q
 

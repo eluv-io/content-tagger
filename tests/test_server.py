@@ -29,6 +29,7 @@ load_dotenv()
 test_objects = {
     "vod": "iq__3C58dDYxsn5KKSWGYrfYr44ykJRm", 
     "assets": "iq__4BT8BBNEEDvysXqjZgj4BRA5jVo2", 
+    "live": "iq__467CAS4BvPQ39go6aLmX6v3ZaTwD"
 }
 
 def get_auth(qid: str) -> str:
@@ -37,6 +38,8 @@ def get_auth(qid: str) -> str:
         auth = os.getenv(f"TEST_AUTH")
     elif qid == test_objects['assets']:
         auth = os.getenv(f"ASSETS_AUTH")
+    elif qid == test_objects['live']:
+        auth = os.getenv(f"LIVE_AUTH")
     assert auth is not None
     return auth
 
@@ -109,19 +112,22 @@ class FakeLiveWorker(FetchSession):
                 done=True
             )
 
-@pytest.fixture(scope="session")
+#@pytest.fixture(scope="session")
+@pytest.fixture()
 def test_dir():
     test_dir = os.path.join(os.path.abspath(__file__), '../..', 'test-stuff')
     test_dir = os.path.abspath(test_dir)
     return test_dir
 
-@pytest.fixture(scope="session")
+#@pytest.fixture(scope="session")
+@pytest.fixture()
 def tagger_config(test_dir) -> FabricTaggerConfig:
     media_path = os.path.join(test_dir, "media")
     os.makedirs(media_path, exist_ok=True)
     return FabricTaggerConfig(media_dir=media_path, uploader=UploaderConfig(model_params={"test_model": ModelUploadArgs(default=TrackArgs(name="test_model", label="TEST MODEL"))}))
 
-@pytest.fixture(scope="session")
+#@pytest.fixture(scope="session")
+@pytest.fixture()
 def test_config(test_dir, tagger_config):
     """Create test configuration."""
     return AppConfig(
@@ -174,6 +180,19 @@ def app(test_dir, test_config):
 @pytest.fixture()
 def client(app):
     return app.test_client()
+
+def is_job_success(client, qid, auth):
+    """Check if all jobs for content_id completed successfully."""
+    response = client.get(f"/{qid}/status?authorization={auth}")
+    if response.status_code != 200:
+        return False
+    result = response.get_json()
+    for stream in result:
+        for feature in result[stream]:
+            status = result[stream][feature]['status']
+            if status != 'Completed':
+                return False
+    return True
 
 def wait_for_jobs_completion(client, content_ids, timeout=30):
     """Wait for all jobs to complete."""
@@ -259,8 +278,27 @@ def test_video_model(client):
 
     assert completed, "Timeout waiting for jobs to complete"
 
+def test_bad_parts_url_gives_502(client):
+    """Test that a bad parts url returns 502 error on download_part."""
+    qid = test_objects['vod']
+    auth = get_auth(qid=qid)
+
+    # patch the parts_url to an invalid one
+    cfactory: ContentFactory = client.application.config["state"]["content_factory"]
+    cfactory.cfg.parts_url = "http://invalid-url/config?self&qspace=main"
+
+    response = client.post(
+        f"/{qid}/tag?authorization={auth}", 
+        json={
+            "features": {
+                "test_model": {}
+            }, 
+        }
+    )
+    assert response.status_code == 502
+
 @pytest.mark.parametrize("last_res_has_media", [True, False])
-@patch('src.api.tagging.dto_mapping._is_live')
+@patch('src.api.tagging.handlers.is_live')
 def test_live_video_model(is_live, app, last_res_has_media):
     """Test the live tagging workflow with FakeLiveFetcher."""
     is_live.return_value = True
@@ -318,6 +356,8 @@ def test_live_video_model(is_live, app, last_res_has_media):
     # Wait for job completion
     completed = wait_for_jobs_completion(client, [qid], timeout=60)
     assert completed, "Timeout waiting for live job to complete"
+
+    assert is_job_success(client, qid, auth)
     
     # Calculate expected call count based on last_res_has_media
     expected_calls = 5 if last_res_has_media else 6
@@ -571,8 +611,8 @@ def test_find_default_audio_stream_priority():
 
 def test_is_live(live_q):
     """Test the _is_live function."""
-    from src.api.tagging.dto_mapping import _is_live
-    assert _is_live(live_q) == True
+    from src.api.tagging.dto_mapping import is_live
+    assert is_live(live_q) == True
 
 def test_stop_live_job(app, live_q):
     """Test that live jobs can be stopped cleanly mid-stream."""
@@ -647,6 +687,33 @@ def test_stop_live_job(app, live_q):
     assert len(final_tags) < 20, f"Should have partial tags, got {len(final_tags)} (too many, job may have completed)"
     
     logger.info(f"Live stop test completed with {len(final_tags)} partial tags")
+
+def test_live_tag_with_broken_parts_url(app, live_q):
+    """Test that a bad parts url doesn't interfere with live tagging"""
+    qid = live_q.qid
+    auth = live_q._client.token
+
+    # patch the parts_url to an invalid one
+    cfactory: ContentFactory = app.config["state"]["content_factory"]
+    cfactory.cfg.parts_url = "http://invalid-url/config?self&qspace=main"
+    
+    client = app.test_client()
+    
+    # Start live tagging with long duration
+    response = client.post(
+        f"/{qid}/tag?authorization={auth}", 
+        json={
+            "features": {"test_model": {"model": {"tags": ["hello1", "hello2"]}}},
+            "max_duration": 60,  # Long duration so it won't complete
+            "segment_length": 4,
+            "replace": True
+        }
+    )
+    assert response.status_code == 200
+
+    completed = wait_for_jobs_completion(client, [qid], timeout=30)
+    assert completed
+    assert is_job_success(client, qid, auth)
 
 def test_invalid_model_name(client):
     """Test that requesting a non-existent model returns 400 error."""

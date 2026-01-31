@@ -7,7 +7,8 @@ import requests
 
 from elv_client_py import ElvClient
 
-from src.common.errors import BadRequestError
+from src.common.errors import BadRequestError, ExternalServiceError
+from src.common.logging import logger
 
 @dataclass
 class ContentConfig:
@@ -31,14 +32,25 @@ class Content:
         auth: str,
         cfg: ContentConfig
     ):
-        client = ElvClient.from_configuration_url(
-            cfg.config_url, static_token=auth)
-
-        parts_client = ElvClient.from_configuration_url(
-            cfg.parts_url, static_token=auth)
+        try:
+            client = ElvClient.from_configuration_url(
+                cfg.config_url, static_token=auth)
+        except Exception as e:
+            raise ExternalServiceError("Failed to create content client") from e
         
-        live_client = ElvClient.from_configuration_url(
-            cfg.live_media_url, static_token=auth)
+        try:
+            parts_client = ElvClient.from_configuration_url(
+                cfg.parts_url, static_token=auth)
+        except Exception as e:
+            logger.opt(exception=e).error("Failed to create parts client")
+            parts_client = None
+        
+        try:
+            live_client = ElvClient.from_configuration_url(
+                cfg.live_media_url, static_token=auth)
+        except Exception as e:
+            logger.opt(exception=e).error("Failed to create live media client")
+            live_client = None
 
         # will raise HTTPError if auth is invalid or qhit is not found
         qinfo = client.content_object(**parse_qhit(qhit))
@@ -70,6 +82,8 @@ class Content:
     
     def download_part(self, **kwargs) -> None:
         """Download a part of the content object."""
+        if self._parts_client is None:
+            raise RuntimeError("Parts client is not initialized")
         if self.qwt:
             kwargs["write_token"] = self.qwt
         else:
@@ -84,6 +98,8 @@ class Content:
         segment_length: int = 4,
         stream: str = ""
     ) -> ElvClient.LiveMediaSegment:
+        if self._live_client is None:
+            raise RuntimeError("Live media client is not initialized")
         url = self._live_client.fabric_uris[0]
         url = '/'.join([url, 'q', object_id, 'rep', 'media', 'segment'])
         resp = requests.get(

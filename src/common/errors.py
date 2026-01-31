@@ -27,3 +27,12 @@ class TaggerRuntimeError(Exception):
             context_str = ", ".join(f"{k}={v}" for k, v in self.context.items())
             return f"{super().__str__()} ({context_str})"
         return super().__str__()
+    
+class ExternalServiceError(Exception):
+    """Exception raised when an external service fails.
+
+    NOTE: throwing this will result in a 502 response with the given error message.
+    """
+
+    def __init__(self, message):
+        self.message = message
