@@ -1,4 +1,5 @@
 import json
+import os
 
 from flask import Response, request, current_app
 from dacite import from_dict
@@ -66,11 +67,16 @@ def _execute_tagging(q: Content, tag_args: list[TagArgs]) -> Response:
     )
 
 def handle_status(qhit: str) -> Response:
-    q = _get_authorized_content(qhit)
+    status_secret = os.environ.get("STATUS_SECRET", None)
+    
+    if status_secret is not None and get_authorization(request) == status_secret:
+        pass
+    else:
+        _get_authorized_content(qhit)
 
     tagger: FabricTagger = current_app.config["state"]["tagger"]
 
-    res = tagger.status(q.qhit)
+    res = tagger.status(qhit)
 
     return Response(response=json.dumps(res), status=200, mimetype='application/json')
 
