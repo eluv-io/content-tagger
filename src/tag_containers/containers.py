@@ -97,6 +97,7 @@ class TagContainer:
             "mounts": volumes,
             "remove": True,
             "network_mode": "host",
+            "pids_limit": -1,
             "log_config": {
                 "Type": "k8s-file",
                 "Config": {
