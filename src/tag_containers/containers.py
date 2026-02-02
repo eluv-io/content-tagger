@@ -302,8 +302,8 @@ class TagContainer:
 
         # format as ModelTag and add frame tags if available
         for video_tag_data in vid_tags:
-            start_time = video_tag_data.get("start_time", 0)
-            end_time = video_tag_data.get("end_time", 0)
+            start_time = round(video_tag_data.get("start_time", 0))
+            end_time = round(video_tag_data.get("end_time", 0))
             text = video_tag_data.get("text", "")
             track = video_tag_data.get("track", "")
             # TODO: feels a little weird that we don't pull the source_media from here too rather we pass as param - MUST CLEAN
