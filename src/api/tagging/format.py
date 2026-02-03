@@ -16,7 +16,7 @@ class TagAPIArgs(BaseTagAPIArgs):
     start_time: int = 0
     end_time: int = 10**16
     # only used for processor models
-    chunk_size: int = 60
+    chunk_size: int = 600
 
 @dataclass
 class ImageTagAPIArgs(BaseTagAPIArgs):
