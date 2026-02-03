@@ -716,26 +716,28 @@ class LivePartWorker(FetchSession):
         return VideoMetadata(
             parts=parts, part_duration=part_duration, fps=fps, codec_type=codec_type
         )
-    
+
     def _parse_fps(self, frame_rate: str) -> float:
         """Parse FPS from string like '30/1' or '30000/1001'"""
         if '/' in frame_rate:
             num, denom = frame_rate.split('/')
             return float(num) / float(denom)
         return float(frame_rate)
-    
+
 class SkipWorker(FetchSession):
     """
     Simple fetcher than simply returns a set of intervals as sources and let's the model handle fetching.
     """
     def __init__(
             self,
+            q: Content,
             scope: TimeRangeScope,
             meta: VideoMetadata,
             ignore_sources: list[str],
             output_dir: str,
             exit: threading.Event | None = None
     ):
+        self.q = q
         self.scope = scope
         self.meta = meta
         self.output_dir = output_dir
@@ -755,18 +757,27 @@ class SkipWorker(FetchSession):
         start_time = (start_time // self.scope.chunk_size) * self.scope.chunk_size
         end_time = math.ceil(end_time / self.scope.chunk_size) * self.scope.chunk_size
 
-        intvs = [f'{start}_{start + self.scope.chunk_size}' for start in range(
+        intvs = []
+
+        for start in range(
             start_time,
             end_time,
-            self.scope.chunk_size
-        )]
+            self.scope.chunk_size):
+
+            start_val = "%07d" % start
+            end_val = "%07d" % (start + self.scope.chunk_size)
+
+            intvs.append(f'{start_val}_{end_val}')
+
         intvs = [intv for intv in intvs if intv not in self.ignore_sources]
 
         for intv in intvs:
             with open(os.path.join(self.output_dir, f'{intv}.json'), 'w') as f:
-                json.dump({"start_time": int(intv.split('_')[0]),
+                json.dump({"iq": self.q.qhit,
+                           "token": self.q._client.token,
+                           "start_time": int(intv.split('_')[0]),
                            "end_time": int(intv.split('_')[1])}, f)
-                 
+
         sources = [
             Source(
                 name=intv,
