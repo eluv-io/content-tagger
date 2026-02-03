@@ -72,6 +72,7 @@ class FetchFactory:
         elif isinstance(req.scope, TimeRangeScope):
             assert isinstance(meta, VideoMetadata)
             return SkipWorker(
+                q=q,
                 scope=req.scope,
                 meta=meta,
                 ignore_sources=ignore_sources,
