@@ -753,39 +753,37 @@ class SkipWorker(FetchSession):
         start_time = self.scope.start_time or 0
         end_time = min(self.scope.end_time or math.ceil(content_duration), math.ceil(content_duration))
 
-        # clamp to chunk_size
+        # clamp to chunk_size boundaries, but don't go beyond content duration
         start_time = (start_time // self.scope.chunk_size) * self.scope.chunk_size
         end_time = math.ceil(end_time / self.scope.chunk_size) * self.scope.chunk_size
 
-        intvs = []
+        sources = []
+        t = 0
+        while t < end_time:
+            this_start = t * 1000
+            this_end = (t + self.scope.chunk_size) * 1000
 
-        for start in range(
-            start_time,
-            end_time,
-            self.scope.chunk_size):
+            intv = f'{"%010d" % this_start}_{"%010d" % this_end}'
+            output_path = os.path.join(self.output_dir, f'{intv}.json')
 
-            start_val = "%07d" % start
-            end_val = "%07d" % (start + self.scope.chunk_size)
+            if intv not in self.ignore_sources:
+                sources.append(Source(
+                    name=intv,
+                    filepath=output_path,
+                    offset=0,
+                    wall_clock=None
+                ))
 
-            intvs.append(f'{start_val}_{end_val}')
-
-        intvs = [intv for intv in intvs if intv not in self.ignore_sources]
-
-        for intv in intvs:
-            with open(os.path.join(self.output_dir, f'{intv}.json'), 'w') as f:
-                json.dump({"iq": self.q.qhit,
-                           "token": self.q._client.token,
-                           "start_time": int(intv.split('_')[0]),
-                           "end_time": int(intv.split('_')[1])}, f)
-
-        sources = [
-            Source(
-                name=intv,
-                filepath=os.path.join(self.output_dir, f'{intv}.json'),
-                offset=0,
-                wall_clock=None
-            ) for intv in intvs
-        ]
+                with open(output_path, 'w') as f:
+                    content = {
+                        "iq": self.q.qhit,
+                        "token": self.q._client.token,
+                        "start_time": this_start,
+                        "end_time": this_end
+                    }
+                    json.dump(content, f)
+        
+            t += self.scope.chunk_size
         
         return DownloadResult(
             sources=sources,
