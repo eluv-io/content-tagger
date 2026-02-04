@@ -19,7 +19,7 @@ def main(files, config: RuntimeConfig):
             end_time = data.get('end_time', 0)
 
         with open(out, 'w') as f:
-            f.write(json.dumps([{"start_time": start_time * 1000, "end_time": end_time * 1000, "text": config.output_string}], indent=4))
+            f.write(json.dumps([{"start_time": start_time, "end_time": end_time, "text": config.output_string}], indent=4))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
