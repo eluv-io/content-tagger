@@ -62,6 +62,8 @@ from common_ml.utils.dictionary import nested_update
 """Convenience script for driving the tagger on bulk content."""
 
 server = os.environ.get("TAGGERV2_URL", "http://localhost:8086")
+tagstore = os.environ.get("TAGSTORE_URL", "https://ai.contentfabric.io/tagstore")
+
 written = {}
 
 llava_prompt = "This is an image from a rugby match broadcast. Do not describe what people are wearing. Focus on the action and play depicted in the image. Describe the image in 2 sentences."
@@ -159,19 +161,31 @@ def response_force_dict(resp):
 def write(qhit: str, config: str, do_commit: bool, force = False, leave_open = False):
     auth_token = get_auth(config, qhit)
     write_token = get_write_token(qhit, config)
-    write_url = f"{server}/{qhit}/commit?authorization={auth_token}"
-    resp = requests.post(write_url, params={"write_token": write_token})
+    write_url = f"{tagstore}/{qhit}/write"
+    resp = requests.post(write_url, params={"write_token": write_token}, headers={"Authorization": f"Bearer {auth_token}"})
     respdict = response_force_dict(resp)
     print(respdict)
-    if do_commit and "error" not in respdict:
+    if do_commit and resp.status_code == 200:
         commit(write_token, config)
 
     return write_token
 
 def aggregate(qhit: str, config: str, do_commit: bool):
+
+    print("")
+    print("****************************")
+    print("Aggregating is not necessary (tagstore does it on write)")
+    print("")
+    print("Pausing 5 seconds so you can ctrl-c if you want to.")
+    print("****************************")
+    print("")
+    
+    if os.environ.get("TAGGERV3_AGG_NODELAY", None) is not None:
+        time.sleep(5)
+
     auth_token = get_auth(config, qhit)
     write_token = get_write_token(qhit, config)
-    aggregate_url = f"{server}/{qhit}/aggregate?authorization={auth_token}"
+    aggregate_url = f"https://ai.contentfabric.io/tagging/{qhit}/aggregate?authorization={auth_token}"
     resp = requests.post(aggregate_url, params={"write_token": write_token, "replace": "true"})
     respdict = response_force_dict(resp)
     print(respdict)
