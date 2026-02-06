@@ -750,6 +750,9 @@ class SkipWorker(FetchSession):
     def download(self) -> DownloadResult:
         content_duration = self.meta.part_duration * len(self.meta.parts)
 
+        logger.debug(f"Live stream duration based on metadata: {content_duration} seconds")
+        logger.debug(f"Requested time range: {self.scope.start_time} - {self.scope.end_time} seconds")
+        
         start_time = self.scope.start_time or 0
         end_time = min(self.scope.end_time or math.ceil(content_duration), math.ceil(content_duration))
 
@@ -757,9 +760,13 @@ class SkipWorker(FetchSession):
         start_time = (start_time // self.scope.chunk_size) * self.scope.chunk_size
         end_time = math.ceil(end_time / self.scope.chunk_size) * self.scope.chunk_size
 
+        logger.debug(f"Padded time range: {start_time} - {end_time} seconds")
+
         sources = []
-        t = 0
-        while t < end_time:
+        t_iterator = start_time
+        while t_iterator < end_time:
+            t = t_iterator
+            t_iterator += self.scope.chunk_size
             this_start = t * 1000
             this_end = (t + self.scope.chunk_size) * 1000
 
@@ -783,7 +790,6 @@ class SkipWorker(FetchSession):
                     }
                     json.dump(content, f)
         
-            t += self.scope.chunk_size
         
         return DownloadResult(
             sources=sources,
