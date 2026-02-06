@@ -1,4 +1,5 @@
 import shutil
+from unittest.mock import MagicMock
 import pytest
 import os
 import subprocess
@@ -495,7 +496,10 @@ def test_skip_worker(media_dir: str) -> None:
     start_time = 35
     chunk_size = 10
 
+    fake_q = MagicMock(qid="test_qhit", _client=MagicMock(token="test_token"))
+
     worker = SkipWorker(
+        q=fake_q,
         scope=TimeRangeScope(
             start_time=start_time,
             end_time=None,
