@@ -512,7 +512,7 @@ def test_skip_worker(media_dir: str) -> None:
             fps=30,
             codec_type="video"
         ),
-        ignore_sources=["20_30", "40_50"],
+        ignore_sources=["0000020000_0000030000", "0000040000_0000050000"],
         output_dir=media_dir
     )
 
@@ -521,9 +521,9 @@ def test_skip_worker(media_dir: str) -> None:
     assert len(result.sources) == math.ceil(part_duration * num_parts / chunk_size) - 4 # 2 from ignored list, 3 from before start_time, minus intersection
     assert len(result.failed) == 0
     source_names = [source.name for source in result.sources]
-    assert "0_10" not in source_names
-    assert "10_20" not in source_names
-    assert "20_30" not in source_names
-    assert "40_50" not in source_names
-    assert "30_40" in source_names
-    assert "50_60" in source_names
+    assert "0000000000_0000010000" not in source_names
+    assert "0000010000_0000020000" not in source_names
+    assert "0000020000_0000030000" not in source_names
+    assert "0000040000_0000050000" not in source_names
+    assert "0000030000_0000040000" in source_names
+    assert "0000050000_0000060000" in source_names
