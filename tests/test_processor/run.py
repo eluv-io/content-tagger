@@ -7,7 +7,7 @@ import time
 
 @dataclass
 class RuntimeConfig:
-    output_string: str = "Processed"
+    output_string: str = "Processed at %t"
     sleep_hack: int = 2
 
 def main(files, config: RuntimeConfig):
@@ -26,7 +26,8 @@ def main(files, config: RuntimeConfig):
                 start_time = data.get('start_time', 0)
                 end_time = data.get('end_time', 0)
             with open(out, 'w') as f:
-                f.write(json.dumps([{"start_time": start_time, "end_time": end_time, "text": config.output_string}], indent=4))
+                output_string = config.output_string.replace("%t", time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time())))
+                f.write(json.dumps([{"start_time": start_time, "end_time": end_time, "text": output_string}], indent=4))
         else:
             print(f"File {file} already existed, skipping", file=sys.stderr)
                 
