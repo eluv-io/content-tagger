@@ -326,8 +326,8 @@ class TagContainer:
                         }
 
             tag = ModelTag(
-                start_time=video_tag_data.get("start_time", 0),
-                end_time=video_tag_data.get("end_time", 0),
+                start_time=round(video_tag_data.get("start_time", 0)),
+                end_time=round(video_tag_data.get("end_time", 0)),
                 text=video_tag_data.get("text", ""),
                 frame_tags=frame_info,
                 source_media=source_video,
