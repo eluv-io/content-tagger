@@ -302,6 +302,8 @@ class TagContainer:
             end_time = round(video_tag_data.get("end_time", 0))
             text = video_tag_data.get("text", "")
             track = video_tag_data.get("track", "")
+            additional_info = video_tag_data.get("additional_info", {})
+            
             # TODO: feels a little weird that we don't pull the source_media from here too rather we pass as param - MUST CLEAN
 
             # get the frame tags which overlap with this video tag
@@ -329,7 +331,8 @@ class TagContainer:
                 text=video_tag_data.get("text", ""),
                 frame_tags=frame_info,
                 source_media=source_video,
-                track=track
+                track=track,
+                additional_info=additional_info
             )
 
             out.append(tag)

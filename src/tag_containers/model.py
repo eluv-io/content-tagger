@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing_extensions import Literal
 
 from src.tags.tagstore.model import Tag
@@ -69,14 +69,17 @@ class ModelTag:
     frame_tags: dict
     source_media: str
     track: str
+    additional_info: dict = field(default_factory=dict)
 
     def __hash__(self) -> int:
-        return hash((self.start_time, self.end_time, self.text, self.source_media, self.track))
+        return hash((self.start_time, self.end_time, self.text, self.source_media, self.track, frozenset(self.additional_info.items()) if self.additional_info else None))
     
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, ModelTag):
             return False
-        return (self.start_time, self.end_time, self.text, self.source_media, self.track) == (other.start_time, other.end_time, other.text, other.source_media, other.track)
+        
+        return (self.start_time, self.end_time, self.text, self.source_media, self.track, self.additional_info) == (other.start_time, other.end_time, other.text, other.source_media, other.track, other.additional_info)
+            
 
 @dataclass
 class FrameTag:
