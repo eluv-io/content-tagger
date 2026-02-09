@@ -272,6 +272,9 @@ def main():
         with open(conffile, "r") as conf:
            tag_config = json.load(conf)
 
+    if args.replace:
+        tag_config['replace'] = True
+
     if args.contents:
         print("reading contents...")
         with open(args.contents, 'r') as f:
@@ -292,7 +295,7 @@ def main():
     end_time = None
     if args.end_time is not None: end_time = int(args.end_time)
     start_time = int(args.start_time)
-    
+
     quickstatus_watch = None
 
     tty = sys.stdin.isatty()
@@ -481,5 +484,6 @@ if __name__ == "__main__":
     parser.add_argument("--commit", "--finalize", action="store_true", help="if set, commit (finalize) on fabric after writing on tagger")
     parser.add_argument("--start-time", help="start time in seconds", default = 0)
     parser.add_argument("--end-time", help="end time in seconds", default = None)
+    parser.add_argument("--replace", help="force replaces", action="store_true", default = False)
     args = parser.parse_args()
     main()
