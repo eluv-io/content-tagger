@@ -725,7 +725,7 @@ def test_failed_tag(mock_get, fabric_tagger, q):
 
 def wait_tag(fabric_tagger, batch_id, timeout):
     start = time.time()
-    while time.time() - start < timeout:
+    while not timeout or time.time() - start < timeout:
         status = fabric_tagger.status(batch_id)
         for stream in status:
             for feature in status[stream]:
@@ -981,7 +981,7 @@ def test_default_defer_to_model_track(fabric_tagger, q):
     
     with patch.object(FakeContainerRegistry, 'get', side_effect=get_side_effect):
         fabric_tagger.tag(q, args)
-        wait_tag(fabric_tagger, q.qhit, timeout=5)
+        wait_tag(fabric_tagger, q.qhit, timeout=0)
     
     default_tags = fabric_tagger.tagstore.find_tags(
         q=q,

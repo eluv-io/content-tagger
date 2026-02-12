@@ -1,3 +1,4 @@
+from copy import deepcopy
 import math
 
 from src.tags.tagstore.model import Tag
@@ -68,8 +69,8 @@ class UploadSession:
                 start_time=model_tag.start_time,
                 end_time=model_tag.end_time,
                 text=model_tag.text,
-                additional_info=model_tag.additional_info,
-                frame_tags=model_tag.frame_tags,
+                additional_info=deepcopy(model_tag.additional_info),
+                frame_tags=deepcopy(model_tag.frame_tags),
                 source=original_src.name,
                 batch_id=self._get_batch(model_tag.track),
             )
