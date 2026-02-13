@@ -1,189 +1,22 @@
 import pytest
 from unittest.mock import Mock, patch
-import os
-import shutil
 import time
 import json
-from dotenv import load_dotenv
 from src.common.logging import logger
 from src.common.content import Content
 
-from server import create_app
-from app_config import AppConfig
 import podman
 from src.api.tagging.dto_mapping import _find_default_audio_stream
-from src.common.content import ContentConfig, ContentFactory
+from src.common.content import ContentFactory
+from src.fetch.model import DownloadRequest, FetchSession, VideoScope
 from src.tagging.fabric_tagging.tagger import FabricTagger
-from src.tags.conversion import TagConverterConfig
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
-from src.tags.tagstore.model import TagstoreConfig
-from src.tagging.scheduling.model import SysConfig
-from src.fetch.model import *
-from src.tag_containers.model import ModelConfig, RegistryConfig
-from src.tagging.fabric_tagging.model import FabricTaggerConfig
-from src.tagging.uploading.config import ModelUploadArgs, UploaderConfig, TrackArgs
+from tests.api.conftest import FakeLiveWorker
 
-load_dotenv()
-
-# Test configuration
-test_objects = {
-    "vod": "iq__3C58dDYxsn5KKSWGYrfYr44ykJRm", 
-    "assets": "iq__4BT8BBNEEDvysXqjZgj4BRA5jVo2", 
-    "live": "iq__467CAS4BvPQ39go6aLmX6v3ZaTwD"
-}
-
-def get_auth(qid: str) -> str:
-    auth = None
-    if qid == test_objects['vod']:
-        auth = os.getenv(f"TEST_AUTH")
-    elif qid == test_objects['assets']:
-        auth = os.getenv(f"ASSETS_AUTH")
-    elif qid == test_objects['live']:
-        auth = os.getenv(f"LIVE_AUTH")
-    assert auth is not None
-    return auth
-
-def get_content(auth: str, qhit: str):
-    """Create Content object with write token from environment"""
-    
-    cfg = ContentConfig(
-        config_url="https://host-154-14-185-98.contentfabric.io/config?self&qspace=main", 
-        parts_url="https://host-154-14-185-98.contentfabric.io/config?self&qspace=main",
-        live_media_url="https://host-76-74-34-204.contentfabric.io/config?self&qspace=main"
-    )
-    factory = ContentFactory(cfg=cfg)
-    
-    q = factory.create_content(qhit=qhit, auth=auth)
-
-    return q
-
-class FakeLiveWorker(FetchSession):
-    """Fake DownloadWorker that simulates live streaming by returning one source at a time"""
-    
-    def __init__(self, real_worker: FetchSession, last_res_has_media: bool=False):
-        self.real_worker = real_worker
-        self.call_count = 0
-        self._all_sources = None
-        self.last_res_has_media = last_res_has_media
-    
-    def metadata(self) -> MediaMetadata:
-        return self.real_worker.metadata()
-    
-    @property 
-    def path(self) -> str:
-        return self.real_worker.path
-    
-    def download(self) -> DownloadResult:
-        # Get all sources on first call
-        if self._all_sources is None:
-            real_result = self.real_worker.download()
-            self._all_sources = real_result.sources
-            self._failed = real_result.failed
-        
-        # Simulate live streaming delay
-        time.sleep(2)
-
-        self.call_count += 1
-
-        idx = self.call_count - 1
-        
-        # Return one source at a time
-        if idx < len(self._all_sources):
-            # We have a source to return
-            if idx == len(self._all_sources) - 1 and self.last_res_has_media:
-                # Last source AND we want to include it with done=True
-                return DownloadResult(
-                    sources=[self._all_sources[idx]],
-                    failed=self._failed,
-                    done=True
-                )
-            else:
-                # Not the last source, OR last source but we don't want done=True yet
-                return DownloadResult(
-                    sources=[self._all_sources[idx]],
-                    failed=[],  # Don't report failures until the end
-                    done=False
-                )
-        else:
-            # No more sources - final empty call (only reached if last_res_has_media=False)
-            return DownloadResult(
-                sources=[],
-                failed=self._failed,
-                done=True
-            )
-
-#@pytest.fixture(scope="session")
-@pytest.fixture()
-def test_dir():
-    test_dir = os.path.join(os.path.abspath(__file__), '../..', 'test-stuff')
-    test_dir = os.path.abspath(test_dir)
-    return test_dir
-
-#@pytest.fixture(scope="session")
-@pytest.fixture()
-def tagger_config(test_dir) -> FabricTaggerConfig:
-    media_path = os.path.join(test_dir, "media")
-    os.makedirs(media_path, exist_ok=True)
-    return FabricTaggerConfig(media_dir=media_path, uploader=UploaderConfig(model_params={"test_model": ModelUploadArgs(default=TrackArgs(name="test_model", label="TEST MODEL"))}))
-
-#@pytest.fixture(scope="session")
-@pytest.fixture()
-def test_config(test_dir, tagger_config):
-    """Create test configuration."""
-    return AppConfig(
-        tag_converter=TagConverterConfig(
-            interval=10,
-            coalesce_tracks=[],
-            single_tag_tracks=[],
-            name_mapping={},
-            max_sentence_words=100
-        ),
-        root_dir=test_dir,
-        content=ContentConfig(
-            config_url="https://main.net955305.contentfabric.io/config",
-            parts_url="http://192.168.96.203/config?self&qspace=main",
-            live_media_url="https://host-76-74-29-5.contentfabric.io/config?self&qspace=main"
-        ),
-        tagstore=TagstoreConfig(
-            base_dir=os.path.join(test_dir, "tags")
-        ),
-        system=SysConfig(gpus=["gpu", "disabled", "gpu"], resources={"cpu_juice": 16}),
-        fetcher=FetcherConfig(
-            author="tagger",
-            max_downloads=4
-        ),
-        container_registry=RegistryConfig(
-            base_dir=os.path.join(test_dir, "stuff"),
-            cache_dir=os.path.join(test_dir, "cache"),
-            model_configs={
-                "test_model": ModelConfig(
-                    type="frame",
-                    resources={"gpu": 1},
-                    image="localhost/test_model:latest"
-                )
-            }
-        ),
-        tagger=tagger_config
-    )
-
-
-@pytest.fixture()
-def app(test_dir, test_config):
-    shutil.rmtree(test_dir, ignore_errors=True)
-    app = create_app(test_config)
-    app.config["TESTING"] = True
-    yield app
-    tagger: FabricTagger = app.config["state"]["tagger"]
-    if not tagger.shutdown_requested:
-        tagger.cleanup()
-
-@pytest.fixture()
-def client(app):
-    return app.test_client()
-
-def is_job_success(client, qid, auth):
+def is_job_success(client, q: Content):
     """Check if all jobs for content_id completed successfully."""
-    response = client.get(f"/{qid}/status?authorization={auth}")
+    auth = get_auth(q)
+    response = client.get(f"/{q.qid}/status?authorization={auth}")
     if response.status_code != 200:
         return False
     result = response.get_json()
@@ -194,7 +27,10 @@ def is_job_success(client, qid, auth):
                 return False
     return True
 
-def wait_for_jobs_completion(client, content_ids, timeout=30):
+def get_auth(content: Content) -> str:
+    return content._client.token
+
+def wait_for_jobs_completion(client, contents: list[Content], timeout=30):
     """Wait for all jobs to complete."""
     start_time = time.time()
     if timeout is None:
@@ -202,14 +38,14 @@ def wait_for_jobs_completion(client, content_ids, timeout=30):
     while time.time() - start_time < timeout:
         all_finished = True
         
-        for content_id in content_ids:
-            auth = get_auth(content_id)
-            response = client.get(f"/{content_id}/status?authorization={auth}")
+        for content in contents:
+            auth = get_auth(content)
+            response = client.get(f"/{content.qid}/status?authorization={auth}")
             
             if response.status_code != 200:
                 all_finished = False
                 break
-                
+
             result = response.get_json()
             print(json.dumps(result, indent=2))
             
@@ -238,19 +74,18 @@ def check_skip():
             logger.warning("Test model image 'localhost/test_model:latest' not found.")
             pytest.skip("Required test images not found in local podman registry")
 
-def test_video_model(client):
+def test_video_model(client, q):
     """Test the complete tagging workflow."""
     # Get auth tokens
-    qid = test_objects['vod']
-    auth = get_auth(qid=qid)
+    auth = get_auth(q)
     
     # Test initial status - should return 404 for no jobs
-    response = client.get(f"/{qid}/status?authorization={auth}")
+    response = client.get(f"/{q.qid}/status?authorization={auth}")
     assert response.status_code == 404
     
     # Start video tagging with GPU feature
     response = client.post(
-        f"/{qid}/tag?authorization={auth}", 
+        f"/{q.qid}/tag?authorization={auth}", 
         json={
             "features": {
                 "test_model": {
@@ -262,11 +97,11 @@ def test_video_model(client):
         }
     )
     assert response.status_code == 200
-    completed = wait_for_jobs_completion(client, [qid], timeout=30)
+    completed = wait_for_jobs_completion(client, [q], timeout=30)
     assert completed
     tagstore: FilesystemTagStore = client.application.config["state"]["tagger"].tagstore
-    jobid = tagstore.find_batches(q=get_content(auth, qid))[0]
-    tags = tagstore.find_tags(batch_id=jobid, q=get_content(auth, qid))
+    jobid = tagstore.find_batches(q=q)[0]
+    tags = tagstore.find_tags(batch_id=jobid, q=q)
     tags = sorted(tags, key=lambda x: x.start_time)
     # TODO: this randomly gave 124 one time and I can't reproduce it
     assert len(tags) == 122
@@ -278,33 +113,32 @@ def test_video_model(client):
 
     assert completed, "Timeout waiting for jobs to complete"
 
-def test_bad_parts_url_gives_502(client):
+def test_bad_parts_url_gives_502(client, q):
     """Test that a bad parts url returns 502 error on download_part."""
-    qid = test_objects['vod']
-    auth = get_auth(qid=qid)
+    auth = get_auth(q)
 
     # patch the parts_url to an invalid one
     cfactory: ContentFactory = client.application.config["state"]["content_factory"]
     cfactory.cfg.parts_url = "http://invalid-url/config?self&qspace=main"
 
     response = client.post(
-        f"/{qid}/tag?authorization={auth}", 
+        f"/{q.qid}/tag?authorization={auth}",
         json={
             "features": {
                 "test_model": {}
-            }, 
+            },
         }
     )
     assert response.status_code == 502
 
 @pytest.mark.parametrize("last_res_has_media", [True, False])
 @patch('src.api.tagging.handlers.is_live')
-def test_live_video_model(is_live, app, last_res_has_media):
+def test_live_video_model(is_live, app, last_res_has_media, q):
     """Test the live tagging workflow with FakeLiveFetcher."""
     is_live.return_value = True
     # Get auth tokens
-    qid = test_objects['vod']
-    auth = get_auth(qid=qid)
+    auth = get_auth(q)
+    qid = q.qid
     
     # Replace the real fetcher with FakeLiveFetcher
     tagger: FabricTagger = app.config["state"]["tagger"]
@@ -336,12 +170,12 @@ def test_live_video_model(is_live, app, last_res_has_media):
     client = app.test_client()
     
     # Test initial status - should return 404 for no jobs
-    response = client.get(f"/{qid}/status?authorization={auth}")
+    response = client.get(f"/{q.qid}/status?authorization={auth}")
     assert response.status_code == 404
     
     # Start video tagging with GPU feature
     response = client.post(
-        f"/{qid}/tag?authorization={auth}", 
+        f"/{q.qid}/tag?authorization={auth}", 
         json={
             "features": {
                 "test_model": {
@@ -354,10 +188,10 @@ def test_live_video_model(is_live, app, last_res_has_media):
     assert response.status_code == 200
     
     # Wait for job completion
-    completed = wait_for_jobs_completion(client, [qid], timeout=60)
+    completed = wait_for_jobs_completion(client, [q], timeout=60)
     assert completed, "Timeout waiting for live job to complete"
 
-    assert is_job_success(client, qid, auth)
+    assert is_job_success(client, q)
     
     # Calculate expected call count based on last_res_has_media
     expected_calls = 5 if last_res_has_media else 6
@@ -367,8 +201,8 @@ def test_live_video_model(is_live, app, last_res_has_media):
     assert fake_worker_ref[0].call_count == expected_calls, f"Expected {expected_calls} fetch calls, got {fake_worker_ref[0].call_count}"
     
     # Get tags and verify results
-    jobid = tagstore.find_batches(q=get_content(auth, qid))[0]
-    tags = tagstore.find_tags(batch_id=jobid, q=get_content(auth, qid))
+    jobid = tagstore.find_batches(q=q)[0]
+    tags = tagstore.find_tags(batch_id=jobid, q=q)
     tags = sorted(tags, key=lambda x: x.start_time)
     
     # Should have same number of tags as regular video model test
@@ -383,10 +217,10 @@ def test_live_video_model(is_live, app, last_res_has_media):
         
     logger.info(f"Live test completed successfully with {fake_worker_ref[0].call_count} fetch calls (last_res_has_media={last_res_has_media})")
 
-def test_real_live_stream(app, live_q):
+def test_real_live_stream(app, q_live):
     """Test real live stream tagging with LiveWorker."""
-    qid = live_q.qid
-    auth = live_q._client.token
+    qid = q_live.qid
+    auth = q_live._client.token
     
     tagger: FabricTagger = app.config["state"]["tagger"]
     tagstore = tagger.tagstore
@@ -445,8 +279,8 @@ def test_real_live_stream(app, live_q):
     assert final_status in ['Stopped', 'Completed'], f"Expected Stopped or Completed, got {final_status}"
     
     # verify we have some tags
-    jobid = tagstore.find_batches(q=live_q, qhit=live_q.qid)[0]
-    tags = tagstore.find_tags(batch_id=jobid, q=live_q)
+    jobid = tagstore.find_batches(q=q_live, qhit=q_live.qid)[0]
+    tags = tagstore.find_tags(batch_id=jobid, q=q_live)
     tags = sorted(tags, key=lambda x: x.start_time)
     
     # Should have at least some tags from the segments
@@ -460,10 +294,10 @@ def test_real_live_stream(app, live_q):
 
     logger.info(f"Live stream test completed successfully with {len(tags)} tags")
 
-def test_asset_tag(client):
+def test_asset_tag(client, q_assets):
     """Test asset tagging."""
-    qid = test_objects['assets']
-    auth = get_auth(qid=qid)
+    qid = q_assets.qid
+    auth = get_auth(q_assets)
     
     # Start asset tagging with CPU feature
     response = client.post(
@@ -477,23 +311,23 @@ def test_asset_tag(client):
         }
     )
     assert response.status_code == 200
-    completed = wait_for_jobs_completion(client, [qid], timeout=25)
+    completed = wait_for_jobs_completion(client, [q_assets], timeout=25)
     assert completed
     status = client.get(f"/{qid}/status?authorization={auth}")
     print(status.get_json())
     tagstore: FilesystemTagStore = client.application.config["state"]["tagger"].tagstore
-    jobid = tagstore.find_batches(qhit=test_objects['assets'])[0]
+    jobid = tagstore.find_batches(qhit=q_assets.qid)[0]
     tags = tagstore.find_tags(batch_id=jobid)
     tags = sorted(tags, key=lambda x: x.start_time)
     assert len(tags) > 0
 
-def test_stop_workflow(client):
+def test_stop_workflow(client, q):
     """Test stopping jobs."""
-    video_auth = get_auth(qid=test_objects['vod'])
+    video_auth = get_auth(q)
     
     # Start a job
     response = client.post(
-        f"/{test_objects['vod']}/tag?authorization={video_auth}", 
+        f"/{q.qid}/tag?authorization={video_auth}", 
         json={
             "features": {
                 "test_model": {
@@ -506,15 +340,13 @@ def test_stop_workflow(client):
     assert response.status_code == 200
     
     # Stop the job quickly (before it completes)
-    response = client.post(f"/{test_objects['vod']}/stop/test_model?authorization={video_auth}")
+    response = client.post(f"/{q.qid}/stop/test_model?authorization={video_auth}")
     #assert response.status_code == 200
     
     # Check status - job should be stopped
-    response = client.get(f"/{test_objects['vod']}/status?authorization={video_auth}")
+    response = client.get(f"/{q.qid}/status?authorization={video_auth}")
     assert response.status_code == 200
     result = response.get_json()
-    print('asdffsdf')
-    print(json.dumps(result, indent=2))
     
     # The job should exist and be in a stopped state
     assert 'video' in result
@@ -522,13 +354,13 @@ def test_stop_workflow(client):
     status = result['video']['test_model']['status']
     assert status == 'Stopped', f"Expected job to be stopped, got {status}"
 
-def test_double_run(client):
+def test_double_run(client, q):
     """Run same job twice, expect second to be rejected."""
-    video_auth = get_auth(qid=test_objects['vod'])
+    video_auth = get_auth(q)
     
     # Start initial job
     response = client.post(
-        f"/{test_objects['vod']}/tag?authorization={video_auth}", 
+        f"/{q.qid}/tag?authorization={video_auth}", 
         json={
             "features": {
                 "test_model": {
@@ -541,7 +373,7 @@ def test_double_run(client):
     
     # Try to start another job with replace=False (should be rejected)
     response = client.post(
-        f"/{test_objects['vod']}/tag?authorization={video_auth}", 
+        f"/{q.qid}/tag?authorization={video_auth}", 
         json={
             "features": {
                 "test_model": {
@@ -556,15 +388,13 @@ def test_double_run(client):
 
     # stop the job
     start = time.time()
-    response = client.post(f"/{test_objects['vod']}/stop/test_model?authorization={video_auth}")
+    response = client.post(f"/{q.qid}/stop/test_model?authorization={video_auth}")
     duration = time.time() - start
     print(duration)
     assert duration < 2, f"Stop request took too long: {duration}s which is over 2s limit"
     assert response.status_code == 200
 
-def test_find_default_audio_stream(
-):
-    q = get_content(get_auth(test_objects['vod']), test_objects['vod'])
+def test_find_default_audio_stream(q):
     result = _find_default_audio_stream(q)
 
     assert result == "stereo"
@@ -609,15 +439,15 @@ def test_find_default_audio_stream_priority():
     with pytest.raises(Exception):
         _find_default_audio_stream(mock_content)
 
-def test_is_live(live_q):
+def test_is_live(q_live):
     """Test the _is_live function."""
     from src.api.tagging.dto_mapping import is_live
-    assert is_live(live_q) == True
+    assert is_live(q_live) == True
 
-def test_stop_live_job(app, live_q):
+def test_stop_live_job(app, q_live):
     """Test that live jobs can be stopped cleanly mid-stream."""
-    qid = live_q.qid
-    auth = live_q._client.token
+    qid = q_live.qid
+    auth = get_auth(q_live)
     
     tagger: FabricTagger = app.config["state"]["tagger"]
     tagstore = tagger.tagstore
@@ -651,8 +481,8 @@ def test_stop_live_job(app, live_q):
                 if progress != "0%" and progress != "100%":
                     # Check we actually have some tags
                     try:
-                        jobid = tagstore.find_batches(q=live_q, qhit=live_q.qid)[0]
-                        tags = tagstore.find_tags(batch_id=jobid, q=live_q)
+                        jobid = tagstore.find_batches(q=q_live, qhit=q_live.qid)[0]
+                        tags = tagstore.find_tags(batch_id=jobid, q=q_live)
                         if len(tags) > 0:
                             some_tags_found = True
                             logger.info(f"Found {len(tags)} tags, stopping job now")
@@ -680,18 +510,18 @@ def test_stop_live_job(app, live_q):
     assert final_status == 'Stopped', f"Expected Stopped, got {final_status}"
     
     # Verify we have partial tags (not all of them)
-    jobid = tagstore.find_batches(q=live_q, qhit=live_q.qid)[0]
-    final_tags = tagstore.find_tags(batch_id=jobid, q=live_q)
+    jobid = tagstore.find_batches(q=q_live, qhit=q_live.qid)[0]
+    final_tags = tagstore.find_tags(batch_id=jobid, q=q_live)
     
     assert len(final_tags) > 0, "Should have some tags"
     assert len(final_tags) < 20, f"Should have partial tags, got {len(final_tags)} (too many, job may have completed)"
     
     logger.info(f"Live stop test completed with {len(final_tags)} partial tags")
 
-def test_live_tag_with_broken_parts_url(app, live_q):
+def test_live_tag_with_broken_parts_url(app, q_live):
     """Test that a bad parts url doesn't interfere with live tagging"""
-    qid = live_q.qid
-    auth = live_q._client.token
+    qid = q_live.qid
+    auth = get_auth(q_live)
 
     # patch the parts_url to an invalid one
     cfactory: ContentFactory = app.config["state"]["content_factory"]
@@ -711,15 +541,15 @@ def test_live_tag_with_broken_parts_url(app, live_q):
     )
     assert response.status_code == 200
 
-    completed = wait_for_jobs_completion(client, [qid], timeout=30)
+    completed = wait_for_jobs_completion(client, [q_live], timeout=30)
     assert completed
-    assert is_job_success(client, qid, auth)
+    assert is_job_success(client, q_live)
 
-def test_invalid_model_name(client):
+def test_invalid_model_name(client, q):
     """Test that requesting a non-existent model returns 400 error."""
-    qid = test_objects['vod']
-    auth = get_auth(qid=qid)
-    
+    qid = q.qid
+    auth = get_auth(q)
+
     # Try to tag with a model that doesn't exist
     response = client.post(
         f"/{qid}/tag?authorization={auth}", 

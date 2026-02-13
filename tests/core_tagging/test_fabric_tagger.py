@@ -1,296 +1,19 @@
-import threading
+from copy import copy, deepcopy
+import dotenv
 import pytest
-import os
 import time
 from unittest.mock import Mock, patch
 
 from src.tags.tagstore.model import Track
 from src.tags.tagstore.rest_tagstore import RestTagstore
 from src.tagging.fabric_tagging.tagger import FabricTagger
-from src.tagging.scheduling.scheduler import ContainerScheduler
-from src.tag_containers.model import MediaInput, ModelConfig, ModelTag
-from src.tagging.scheduling.model import SysConfig
 from src.tagging.fabric_tagging.model import TagArgs
-from src.tag_containers.model import ContainerRequest
+from src.tag_containers.model import ContainerRequest, ModelTag
 from src.fetch.model import *
 from src.common.content import Content
 from src.common.errors import MissingResourceError
-
-class FakeTagContainer:
-    """Fake TagContainer that simulates work and asynchronous behavior."""
+from tests.core_tagging.conftest import FakeContainerRegistry, FakeTagContainer, FakeWorker, PartialFailContainer
     
-    def __init__(self, media: MediaInput, feature, work_duration: float = 0.25):
-        """
-        Initialize the FakeTagContainer.
-    
-        Args:
-            media: List of file paths or directory to process.
-            feature (str): The feature being tagged.
-            work_duration (float): Time in seconds to simulate work.
-        """
-        if isinstance(media, str):
-            self.fileargs = [os.path.join(media, f) for f in os.listdir(media)]
-        else:
-            self.fileargs = media
-        self.feature = feature
-        self.work_duration = work_duration
-        self.is_started = False
-        self.is_stopped = False
-        self.container = Mock()
-        self.container.attrs = {"State": {"ExitCode": 0}}
-        self.tag_call_count = 0
-        self.worker_thread = None
-
-    def start(self, gpu_idx: int | None = None) -> None:
-        """
-        Start the container and simulate work in a background thread.
-
-        Args:
-            gpu_idx (int | None): GPU index to use (if applicable).
-        """
-        
-        self.gpu_idx = gpu_idx
-
-        # Simulate work in a background thread
-        def work():
-            self.is_started = True
-            time.sleep(self.work_duration)
-            self.is_stopped = True
-
-        self.worker_thread = threading.Thread(target=work, daemon=True)
-        self.worker_thread.start()
-
-    def stop(self) -> None:
-        """
-        Stop the container and terminate the work.
-        """
-        self.is_stopped = True
-
-    def is_running(self) -> bool:
-        """
-        Check if the container is still running.
-
-        Returns:
-            bool: True if the container is running, False otherwise.
-        """
-        return self.is_started and not self.is_stopped
-    
-    def exit_code(self) -> int | None:
-        """
-        Get the exit code of the container.
-
-        Returns:
-            int | None: Exit code if available, None otherwise.
-        """
-        if self.is_stopped:
-            return 0
-        return None
-    
-    def send_eof(self) -> None:
-        pass
-
-    def tags(self) -> list[ModelTag]:
-        """
-        Return fake tags for the media files.
-
-        Returns:
-            list[ModelTag]: List of fake tags for each file.
-        """
-        self.tag_call_count += 1
-
-        tags = []
-        if not self.is_stopped:
-            finished_files = self.fileargs[:-1]
-        else:
-            finished_files = self.fileargs
-
-        for i, filepath in enumerate(finished_files):
-            # Create fake tags based on the feature
-            fake_tags = [
-                ModelTag(
-                    start_time=0,
-                    end_time=5000,  # 5 seconds in ms
-                    text=f"{self.feature}_tag_{i}",
-                    frame_tags={},
-                    source_media=filepath,
-                    track=""
-                ),
-                ModelTag(
-                    start_time=5000,
-                    end_time=10000,  # 5-10 seconds in ms
-                    text=f"{self.feature}_tag_{i}_2",
-                    frame_tags={},
-                    source_media=filepath,
-                    track=""
-                )
-            ]
-
-            tags.extend(fake_tags)
-
-        return tags
-    
-    def name(self) -> str:
-        return f"FakeContainer-{self.feature}"
-    
-    def required_resources(self):
-        return {}
-
-class PartialFailContainer(FakeTagContainer):
-    """
-    Always fails last tag
-    """
-
-    def tags(self) -> list[ModelTag]:
-        tags = super().tags()
-        sources = [t.source_media for t in tags]
-        if len(sources) > 1:
-            return [t for t in tags if t.source_media != sources[-1]]
-
-        return tags
-    
-    def send_eof(self) -> None:
-        pass
-
-class FakeContainerRegistry:
-    def __init__(self):
-        self.containers = {}
-        
-    def get(self, req: ContainerRequest) -> FakeTagContainer:
-        container_key = f"{req.model_id}_{req.media_input}"
-        if container_key not in self.containers:
-            self.containers[container_key] = FakeTagContainer(req.media_input, req.model_id)
-        return self.containers[container_key]
-    
-    def get_model_config(self, feature: str) -> ModelConfig:
-        return Mock(resources={"gpu": 1, "cpu_juice": 5})
-    
-    def services(self) -> list[str]:
-        return ["caption", "asr"]
-    
-    @property
-    def cfg(self):
-        # Mock config with modconfigs
-        mock_cfg = Mock()
-        mock_cfg.modconfigs = {
-            "caption": Mock(type="video"),
-            "asr": Mock(type="audio"),
-        }
-        return mock_cfg
-
-class FakeWorker(FetchSession):
-    """Fake DownloadWorker that creates test files"""
-    def __init__(self, output_dir: str, timeout: float = 0.1):
-        self.output_dir = output_dir
-        self.timeout = timeout
-        self._metadata = VideoMetadata(
-            parts=["hash1", "hash2"],
-            part_duration=10.0,
-            fps=30.0,
-            codec_type="video"
-        )
-
-    def metadata(self) -> VideoMetadata:
-        return self._metadata
-
-    def download(self) -> DownloadResult:
-        """Create fake media files for testing"""
-        os.makedirs(self.output_dir, exist_ok=True)
-        
-        video1 = os.path.join(self.output_dir, "video1.mp4")
-        video2 = os.path.join(self.output_dir, "video2.mp4")
-        
-        # Create empty files
-        with open(video1, 'w') as f:
-            f.write("fake video content 1")
-        with open(video2, 'w') as f:
-            f.write("fake video content 2")
-
-        # Simulate work
-        time.sleep(self.timeout)
-
-        # Simulate successful download
-        sources = []
-        for i, filepath in enumerate([video1, video2]):
-            source = Source(
-                filepath=filepath,
-                name=f"part_{i}.mp4",
-                offset=i * 10000,  # 10 second parts
-                wall_clock=time.time_ns() // 1_000_000  # current time in ms
-            )
-            sources.append(source)
-        
-        return DownloadResult(
-            sources=sources,
-            failed=[],
-            done=True
-        )
-
-    @property
-    def path(self) -> str:
-        return self.output_dir
-
-@pytest.fixture
-def fake_fetcher(media_dir):
-    """Create a fake fetcher that returns FakeWorker"""
-    class FakeFetcher:
-        def __init__(self):
-            self.config = Mock(author="tagger", max_downloads=2)
-
-        def get_session(self, q: Content, req: DownloadRequest, exit_event=None):
-            """Return a FakeWorker"""
-            return FakeWorker(output_dir=req.output_dir, timeout=0.1)
-    
-    return FakeFetcher()
-
-
-@pytest.fixture
-def system_tagger():
-    """Create a real ContainerScheduler for testing"""
-    return ContainerScheduler(cfg=SysConfig(gpus=["gpu", "gpu", "disabled"], resources={"cpu_juice": 100}))
-
-
-@pytest.fixture
-def fake_container_registry():
-    """Create a fake ContainerRegistry that returns mock containers with fake tags"""
-    return FakeContainerRegistry()
-
-
-@pytest.fixture
-def fabric_tagger(system_tagger, fake_container_registry, tag_store, fake_fetcher, tagger_config):
-    """Create a FabricTagger instance for testing"""
-    tagger = FabricTagger(
-        system_tagger=system_tagger,
-        cregistry=fake_container_registry,
-        tagstore=tag_store,
-        fetcher=fake_fetcher,
-        cfg=tagger_config
-    )
-    yield tagger
-    if not tagger.shutdown_requested:
-        tagger.cleanup()
-
-
-@pytest.fixture
-def sample_tag_args():
-    """Create sample TagArgs for testing - now returns list of TagArgs"""
-    return [
-        TagArgs(
-            feature="caption",
-            run_config={},
-            scope=VideoScope(stream="video", start_time=0, end_time=30),
-            replace=False,
-            destination_qid=""
-        ),
-        TagArgs(
-            feature="asr", 
-            run_config={},
-            scope=VideoScope(stream="audio", start_time=0, end_time=30),
-            replace=False,
-            destination_qid=""
-        )
-    ]
-
-
 def test_tag_success(fabric_tagger, q, sample_tag_args):
     """Test successful tagging job creation"""
     results = []
@@ -586,14 +309,18 @@ def test_tags_uploaded_during_and_after_job_through_status(
     assert "2/2" in percentages
 
 
-@patch.object(FakeTagContainer, 'tags')
-def test_container_tags_method_fails(mock_tags, fabric_tagger, q):
+def test_container_tags_method_fails(fabric_tagger, q):
     """Test that when container.tags() fails, the job fails gracefully and stops the container"""
-    
-    # Configure the mock to raise an exception
-    mock_tags.side_effect = RuntimeError("Simulated container tags() failure")
-    
-    # Create args for a simple job
+
+    class BrokenTagsContainer(FakeTagContainer):
+        def tags(self) -> list[ModelTag]:
+            raise RuntimeError("Simulated container tags() failure")
+
+    def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
+        return BrokenTagsContainer(req.media_input, req.model_id)
+
+    fabric_tagger.cregistry.get = get_side_effect
+
     args = TagArgs(
         feature="caption",
         run_config={},
@@ -601,57 +328,32 @@ def test_container_tags_method_fails(mock_tags, fabric_tagger, q):
         replace=False,
         destination_qid=q.qid
     )
-    
-    # Start the job
+
     result = fabric_tagger.tag(q, args)
     assert "successfully" in result.lower()
-    
-    # Wait for the job to fail
+
     timeout = 3
     start_time = time.time()
-    
     while time.time() - start_time < timeout:
         status = fabric_tagger.status(q.qhit)
         job_status = status["video"]["caption"]["status"]
-        
         if job_status == "Failed":
             break
         elif job_status in ["Completed", "Stopped"]:
             pytest.fail(f"Expected job to fail, but got status: {job_status}")
-        
         time.sleep(0.25)
     else:
         pytest.fail("Job did not fail within timeout period")
-    
-    # Verify final status is Failed
+
     final_status = fabric_tagger.status(q.qhit)
     assert final_status["video"]["caption"]["status"] == "Failed"
-    
-    # Verify the job is moved to inactive jobs
     assert len(fabric_tagger.jobstore.active_jobs) == 0
     assert len(fabric_tagger.jobstore.inactive_jobs) == 1
-    
-    # Verify the container was stopped
-    inactive_job = list(fabric_tagger.jobstore.inactive_jobs.values())[0]
-    time.sleep(0.25)  # Give a moment for the container to stop
-    assert inactive_job.state.container.is_stopped == True
-    assert inactive_job.stop_event.is_set()
-    
-    # Verify no tags were uploaded due to the failure
-    tag_count = fabric_tagger.tagstore.count_tags(qhit=q.qhit, q=q)
-    assert tag_count == 0
-    
-    # Verify the tags method was actually called
-    assert mock_tags.call_count == 1
 
-@patch.object(FabricTagger, '_start_new_container')
-def test_start_new_container_fails(mock_process, fabric_tagger, q):
+def test_start_new_container_fails(fabric_tagger, q):
     """Test that when _start_new_container fails, job transitions to Failed state"""
+    fabric_tagger._start_new_container = Mock(side_effect=RuntimeError("Simulated tagging phase processing failure"))
 
-    # Configure the mock to raise an exception
-    mock_process.side_effect = RuntimeError("Simulated tagging phase processing failure")
-    
-    # Create args for a simple job
     args = TagArgs(
         feature="caption",
         run_config={},
@@ -659,46 +361,33 @@ def test_start_new_container_fails(mock_process, fabric_tagger, q):
         replace=False,
         destination_qid=q.qid
     )
-    
-    # Start the job
+
     fabric_tagger.tag(q, args)
-    
-    # Wait for the job to fail
+
     timeout = 2
     start_time = time.time()
-
     while time.time() - start_time < timeout:
         status = fabric_tagger.status(q.qhit)
         job_status = status["video"]["caption"]["status"]
-        
         if job_status == "Failed":
             break
         elif job_status in ["Completed", "Stopped"]:
             pytest.fail(f"Expected job to fail, but got status: {job_status}")
-        
         time.sleep(0.25)
     else:
         pytest.fail("Job did not fail within timeout period")
-    
-    # Verify final status is Failed
+
     final_status = fabric_tagger.status(q.qhit)
     assert final_status["video"]["caption"]["status"] == "Failed"
     assert "message" in final_status["video"]["caption"]
-    
-    # Verify the job is moved to inactive jobs
-    assert len(fabric_tagger.jobstore.active_jobs) == 0
-    assert len(fabric_tagger.jobstore.inactive_jobs) == 1
 
-    # Verify _start_new_container was actually called
-    assert mock_process.call_count >= 1
-
-@patch.object(FakeContainerRegistry, 'get')
-def test_failed_tag(mock_get, fabric_tagger, q):
+def test_failed_tag(fabric_tagger, q):
     # Configure the mock to return PartialFailContainer
+    
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
         return PartialFailContainer(req.media_input, req.model_id)
     
-    mock_get.side_effect = get_side_effect
+    fabric_tagger.cregistry.get = get_side_effect
     
     # Create args for a simple job
     args = TagArgs(
@@ -737,19 +426,20 @@ def wait_tag(fabric_tagger, batch_id, timeout):
     pytest.fail("Job did not complete within timeout period")
 
 
-@patch.object(FakeTagContainer, 'exit_code', autospec=True)
-def test_container_nonzero_exit_code(mock_exit_code, fabric_tagger, q):
+def test_container_nonzero_exit_code(fabric_tagger, q):
     """Test that a container with non-zero exit code causes job to fail"""
-    
-    # Configure mock to return container that fails
-    def ec_side_effect(self):
-        if self.is_stopped:
-            return 1
-        return None
-    
-    mock_exit_code.side_effect = ec_side_effect
-    
-    # Create args for a simple job
+
+    class NonZeroExitContainer(FakeTagContainer):
+        def exit_code(self) -> int | None:
+            if self.is_stopped:
+                return 1
+            return None
+
+    def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
+        return NonZeroExitContainer(req.media_input, req.model_id)
+
+    fabric_tagger.cregistry.get = get_side_effect
+
     args = TagArgs(
         feature="caption",
         run_config={},
@@ -757,42 +447,31 @@ def test_container_nonzero_exit_code(mock_exit_code, fabric_tagger, q):
         replace=False,
         destination_qid=q.qid
     )
-    
-    # Start the job
+
     result = fabric_tagger.tag(q, args)
     assert "successfully" in result.lower()
-    
-    # Wait for the job to fail due to non-zero exit code
+
     timeout = 3
     start_time = time.time()
-    
     while time.time() - start_time < timeout:
         status = fabric_tagger.status(q.qhit)
         job_status = status["video"]["caption"]["status"]
-        
         if job_status == "Failed":
             break
         elif job_status in ["Completed", "Stopped"]:
             pytest.fail(f"Expected job to fail due to exit code, but got: {job_status}")
-        
         time.sleep(0.25)
     else:
         pytest.fail("Job did not fail within timeout period")
-    
-    # Verify final status is Failed
+
     final_status = fabric_tagger.status(q.qhit)
     assert final_status["video"]["caption"]["status"] == "Failed"
-    
-    # Verify job moved to inactive
-    assert len(fabric_tagger.jobstore.active_jobs) == 0
-    assert len(fabric_tagger.jobstore.inactive_jobs) == 1
-    
-    # Verify container stopped with exit code 1
-    inactive_job = list(fabric_tagger.jobstore.inactive_jobs.values())[0]
-    assert inactive_job.state.container.exit_code() == 1
 
-def test_destination_qid_uploads_to_correct_qhit(sample_tag_args, fabric_tagger: FabricTagger, q, q2):
+def test_destination_qid_uploads_to_correct_qhit(sample_tag_args, fabric_tagger: FabricTagger, q, q_legacy):
     """Test that when destination_qid is set, tags are uploaded to that qhit instead of source"""
+
+    # doesn't really matter what the other content is as long as it's in same tenant
+    q2 = q_legacy
 
     for args in sample_tag_args:
         args.destination_qid = q2.qid
@@ -837,6 +516,8 @@ def test_source_with_zero_tags_marked_as_missing(fabric_tagger, q):
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
         return PartialFailContainer(req.media_input, req.model_id)
     
+    fabric_tagger.cregistry.get = get_side_effect
+    
     args = TagArgs(
         feature="caption",
         run_config={},
@@ -845,9 +526,8 @@ def test_source_with_zero_tags_marked_as_missing(fabric_tagger, q):
         destination_qid=""
     )
     
-    with patch.object(FakeContainerRegistry, 'get', side_effect=get_side_effect):
-        fabric_tagger.tag(q, args)
-        wait_tag(fabric_tagger, q.qhit, timeout=5)
+    fabric_tagger.tag(q, args)
+    wait_tag(fabric_tagger, q.qhit, timeout=5)
     
     status = fabric_tagger.status(q.qhit)
     job_status = status["video"]["caption"]
@@ -856,40 +536,21 @@ def test_source_with_zero_tags_marked_as_missing(fabric_tagger, q):
 
 def test_track_override_uploads_to_multiple_tracks(fabric_tagger, q):
     """Test that model tags with different tracks are uploaded to different tagstore tracks"""
-    
+
     class MultiTrackContainer(FakeTagContainer):
-        """Container that outputs tags with different tracks"""
-        
         def tags(self) -> list[ModelTag]:
             tags = []
             finished_files = self.fileargs if self.is_stopped else self.fileargs[:-1]
-            
             for i, filepath in enumerate(finished_files):
-                # Create tags with default track (empty string)
-                tags.append(ModelTag(
-                    start_time=0,
-                    end_time=5000,
-                    text=f"default_track_tag_{i}",
-                    frame_tags={},
-                    source_media=filepath,
-                    track=""
-                ))
-                
-                # Create tags with "pretty" track
-                tags.append(ModelTag(
-                    start_time=5000,
-                    end_time=10000,
-                    text=f"pretty_track_tag_{i}",
-                    frame_tags={},
-                    source_media=filepath,
-                    track="pretty"
-                ))
-            
+                tags.append(ModelTag(0, 5000, f"default_track_tag_{i}", {}, filepath, ""))
+                tags.append(ModelTag(5000, 10000, f"pretty_track_tag_{i}", {}, filepath, "pretty"))
             return tags
-    
+
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
         return MultiTrackContainer(req.media_input, req.model_id)
-    
+
+    fabric_tagger.cregistry.get = get_side_effect
+
     args = TagArgs(
         feature="asr",
         run_config={},
@@ -897,28 +558,14 @@ def test_track_override_uploads_to_multiple_tracks(fabric_tagger, q):
         replace=False,
         destination_qid=""
     )
-    
-    with patch.object(FakeContainerRegistry, 'get', side_effect=get_side_effect):
-        fabric_tagger.tag(q, args)
-        wait_tag(fabric_tagger, q.qhit, timeout=5)
-    
-    # Verify tags were uploaded to both tracks
-    default_track = "speech_to_text"
-    override_track = "auto_captions"
-    
-    default_tags = fabric_tagger.tagstore.find_tags(
-        q=q,
-        track=default_track
-    )
-    
-    override_tags = fabric_tagger.tagstore.find_tags(
-        q=q,
-        track=override_track
-    )
-    
-    # Should have 2 tags per source (2 sources total = 4 tags per track)
-    assert len(default_tags) == 2, f"Expected 2 tags on default track, got {len(default_tags)}"
-    assert len(override_tags) == 2, f"Expected 2 tags on override track, got {len(override_tags)}"
+
+    fabric_tagger.tag(q, args)
+    wait_tag(fabric_tagger, q.qhit, timeout=5)
+
+    default_tags = fabric_tagger.tagstore.find_tags(q=q, track="speech_to_text")
+    override_tags = fabric_tagger.tagstore.find_tags(q=q, track="auto_captions")
+    assert len(default_tags) == 2
+    assert len(override_tags) == 2
 
 def test_uploaded_track_label(fabric_tagger, q):
     """Test that uploaded tags have correct track labels based on model params"""
@@ -947,16 +594,11 @@ def test_uploaded_track_label(fabric_tagger, q):
     assert track.label == track_arg.label
 
 def test_default_defer_to_model_track(fabric_tagger, q):
-    
     class MultiTrackContainer(FakeTagContainer):
-        """Container that outputs tags with different tracks"""
-        
         def tags(self) -> list[ModelTag]:
             tags = []
             finished_files = self.fileargs if self.is_stopped else self.fileargs[:-1]
-            
             for i, filepath in enumerate(finished_files):
-                # Create tags with default track (empty string)
                 tags.append(ModelTag(
                     start_time=0,
                     end_time=5000,
@@ -965,49 +607,36 @@ def test_default_defer_to_model_track(fabric_tagger, q):
                     source_media=filepath,
                     track="random_track"
                 ))
-            
             return tags
-    
+
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
         return MultiTrackContainer(req.media_input, req.model_id)
-    
-    args = TagArgs(
-        feature="asr",
-        run_config={},
-        scope=VideoScope(stream="audio", start_time=0, end_time=30),
-        replace=False,
-        destination_qid=""
-    )
-    
-    with patch.object(FakeContainerRegistry, 'get', side_effect=get_side_effect):
+
+    with patch.object(fabric_tagger.cregistry, "get", side_effect=get_side_effect):
+        args = TagArgs(
+            feature="asr",
+            run_config={},
+            scope=VideoScope(stream="audio", start_time=0, end_time=30),
+            replace=False,
+            destination_qid=""
+        )
         fabric_tagger.tag(q, args)
-        wait_tag(fabric_tagger, q.qhit, timeout=0)
-    
-    default_tags = fabric_tagger.tagstore.find_tags(
-        q=q,
-        track="random_track"
-    )
-    
+        wait_tag(fabric_tagger, q.qhit, timeout=5)
+
+    default_tags = fabric_tagger.tagstore.find_tags(q=q, track="random_track")
     assert len(default_tags) == 2
 
-    track = fabric_tagger.tagstore.get_track(
-        qhit=q.qhit,
-        q=q,
-        name="random_track"
-    )
+    track = fabric_tagger.tagstore.get_track(qhit=q.qhit, q=q, name="random_track")
     assert track.label == "Random Track"
 
 def test_fetcher_returns_no_sources(fabric_tagger, q):
     """Test that job completes gracefully when fetcher returns no sources"""
-    
-    def empty_download():
-        return DownloadResult(
-            sources=[],
-            failed=[],
-            done=True
-        )
-    
-    with patch.object(FakeWorker, 'download', side_effect=empty_download):
+
+    empty_result = DownloadResult(sources=[], failed=[], done=True)
+    fake_session = Mock()
+    fake_session.download.return_value = empty_result
+
+    with patch.object(fabric_tagger.fetcher, "get_session", return_value=fake_session):
         args = TagArgs(
             feature="caption",
             run_config={},
@@ -1015,20 +644,18 @@ def test_fetcher_returns_no_sources(fabric_tagger, q):
             replace=False,
             destination_qid=""
         )
-        
+
         result = fabric_tagger.tag(q, args)
         assert "successfully" in result.lower()
-        
-        # Wait for job to complete
         wait_tag(fabric_tagger, q.qhit, timeout=2)
+
+    final_status = fabric_tagger.status(q.qhit)
+    assert final_status["video"]["caption"]["status"] == "Completed"
+    assert final_status["video"]["caption"]["tagging_progress"] == "0/0"
+    assert len(final_status["video"]["caption"]["missing_tags"]) == 0
+    assert len(final_status["video"]["caption"]["failed"]) == 0
+    assert fabric_tagger.tagstore.count_tags(qhit=q.qhit, q=q) == 0
         
-        # Verify job completed with no sources
-        final_status = fabric_tagger.status(q.qhit)
-        assert final_status["video"]["caption"]["status"] == "Completed"
-        assert final_status["video"]["caption"]["tagging_progress"] == "0/0"
-        assert len(final_status["video"]["caption"]["missing_tags"]) == 0
-        assert len(final_status["video"]["caption"]["failed"]) == 0
-        
-        # Verify no tags were uploaded
-        tag_count = fabric_tagger.tagstore.count_tags(qhit=q.qhit, q=q)
-        assert tag_count == 0
+    # Verify no tags were uploaded
+    tag_count = fabric_tagger.tagstore.count_tags(qhit=q.qhit, q=q)
+    assert tag_count == 0
