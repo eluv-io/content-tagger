@@ -18,3 +18,5 @@ test-stuff
 TODO.md
 *.log
 docs/_build
+
+integration_private_keys.json
