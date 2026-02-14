@@ -2,10 +2,10 @@
 import pytest
 from unittest.mock import Mock, MagicMock
 
-from src.api.tagging.dto_mapping import map_asset_tag_dto, map_video_tag_dto
+from src.api.tagging.request_mapping import map_asset_tag_dto, map_video_tag_dto
 from src.fetch.model import AssetScope, LiveScope, TimeRangeScope, VideoScope
 from src.tag_containers.registry import ContainerRegistry
-from src.api.tagging.format import ImageTagAPIArgs, LiveTagAPIArgs, TagAPIArgs, ModelParams
+from src.api.tagging.request_format import ImageTagAPIArgs, LiveTagAPIArgs, TagAPIArgs, ModelParams
 from src.tagging.fabric_tagging.model import TagArgs
 
 @pytest.fixture

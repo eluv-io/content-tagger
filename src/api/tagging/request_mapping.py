@@ -6,7 +6,7 @@ from flask import request
 from requests import HTTPError
 from dacite import from_dict, Config
 
-from src.api.tagging.format import *
+from src.api.tagging.request_format import *
 from src.fetch.model import *
 from src.tag_containers.registry import ContainerRegistry
 from src.tagging.fabric_tagging.model import TagArgs

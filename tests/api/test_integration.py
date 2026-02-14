@@ -6,7 +6,7 @@ from src.common.logging import logger
 from src.common.content import Content
 
 import podman
-from src.api.tagging.dto_mapping import _find_default_audio_stream
+from src.api.tagging.request_mapping import _find_default_audio_stream
 from src.common.content import ContentFactory
 from src.fetch.model import DownloadRequest, FetchSession, VideoScope
 from src.tagging.fabric_tagging.tagger import FabricTagger
@@ -19,7 +19,8 @@ def is_job_success(client, q: Content):
     response = client.get(f"/{q.qid}/status?authorization={auth}")
     if response.status_code != 200:
         return False
-    reports = response.get_json()
+    data = response.get_json()
+    reports = data['jobs']
     return all(r['status'] == 'Completed' for r in reports)
 
 def get_auth(content: Content) -> str:
@@ -41,7 +42,8 @@ def wait_for_jobs_completion(client, contents: list[Content], timeout=30):
                 all_finished = False
                 break
 
-            reports = response.get_json()
+            data = response.get_json()
+            reports = data['jobs']
             print(json.dumps(reports, indent=2))
             
             for report in reports:
@@ -248,7 +250,8 @@ def test_real_live_stream(app, q_live):
     while time.time() - start_time < timeout:
         response = client.get(f"/{qid}/status?authorization={auth}")
         if response.status_code == 200:
-            reports = response.get_json()
+            data = response.get_json()
+            reports = data['jobs']
             print(json.dumps(reports, indent=2))
             
             # Find the test_model job in the list
@@ -268,7 +271,8 @@ def test_real_live_stream(app, q_live):
     # Verify final status is Stopped or Completed
     response = client.get(f"/{qid}/status?authorization={auth}")
     assert response.status_code == 200
-    reports = response.get_json()
+    data = response.get_json()
+    reports = data['jobs']
     
     test_model_report = next(r for r in reports if r['model'] == 'test_model' and r['stream'] == 'video')
     final_status = test_model_report['status']
@@ -341,7 +345,8 @@ def test_stop_workflow(client, q):
     # Check status - job should be stopped
     response = client.get(f"/{q.qid}/status?authorization={video_auth}")
     assert response.status_code == 200
-    reports = response.get_json()
+    data = response.get_json()
+    reports = data['jobs']
     
     # The job should exist and be in a stopped state
     test_model_reports = [r for r in reports if r['model'] == 'test_model' and r['stream'] == 'video']
@@ -436,7 +441,7 @@ def test_find_default_audio_stream_priority():
 
 def test_is_live(q_live):
     """Test the _is_live function."""
-    from src.api.tagging.dto_mapping import is_live
+    from src.api.tagging.request_mapping import is_live
     assert is_live(q_live) == True
 
 def test_stop_live_job(app, q_live):
@@ -467,7 +472,8 @@ def test_stop_live_job(app, q_live):
     while time.time() - start_time < 20:
         response = client.get(f"/{qid}/status?authorization={auth}")
         if response.status_code == 200:
-            reports = response.get_json()
+            data = response.get_json()
+            reports = data['jobs']
             test_model_reports = [r for r in reports if r['model'] == 'test_model' and r['stream'] == 'video']
             
             if test_model_reports:
@@ -500,7 +506,8 @@ def test_stop_live_job(app, q_live):
     # Verify it stopped
     time.sleep(2)
     response = client.get(f"/{qid}/status?authorization={auth}")
-    reports = response.get_json()
+    data = response.get_json()
+    reports = data['jobs']
     
     test_model_report = next(r for r in reports if r['model'] == 'test_model' and r['stream'] == 'video')
     final_status = test_model_report['status']

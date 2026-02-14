@@ -5,7 +5,7 @@ import pytest
 import dotenv
 from unittest.mock import Mock
 
-from src.api.tagging.dto_mapping import is_live
+from src.api.tagging.request_mapping import is_live
 from src.fetch.model import FetcherConfig
 from src.tags.tagstore.abstract import Tagstore
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore

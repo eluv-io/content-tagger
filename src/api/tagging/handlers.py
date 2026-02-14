@@ -5,15 +5,16 @@ import os
 from flask import Response, request, current_app
 from dacite import from_dict
 
-from src.api.tagging.dto_mapping import is_live, tag_args_from_req
+from src.api.tagging.request_mapping import is_live, tag_args_from_req
 from src.common.logging import logger
 
-from src.api.tagging.format import ImageTagAPIArgs
+from src.api.tagging.request_format import ImageTagAPIArgs
 from src.common.errors import *
 from src.api.auth import *
 from src.common.content import Content, ContentFactory
 from src.tagging.fabric_tagging.tagger import FabricTagger
-from src.api.tagging.dto_mapping import *
+from src.api.tagging.request_mapping import *
+from src.api.tagging.response_mapping import *
 
 def handle_tag(qhit: str) -> Response:
     q = _get_authorized_content(qhit)
@@ -80,7 +81,7 @@ def handle_status(qhit: str) -> Response:
 
     reports = tagger.status(qhit)
 
-    return Response(response=json.dumps([asdict(report) for report in reports]), status=200, mimetype='application/json')
+    return Response(response=json.dumps(asdict(map_all_jobs_status_to_response(reports))), status=200, mimetype='application/json')
 
 def handle_stop(
         qhit: str, 

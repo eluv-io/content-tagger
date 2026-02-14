@@ -75,10 +75,10 @@ assets_params = {"features": {"logo":{}, "ocr": {}, "llava": {"model":{"model":"
 video_params = {
     "replace": False,
     "features": {
-        "asr": {"stream": "stereo"},
+        "asr": {},
         #"ocr": {},
         "shot": {},
-        "llava": {"model": {"fps": 0.5, "prompt": "WHAT IS GOING ON"} },
+        #"llava": {"model": {"fps": 0.5, "prompt": "WHAT IS GOING ON"} },
         "caption": {"model": {"fps": 0.33}},
         #"celeb": {},
         #"logo": {}
@@ -102,10 +102,11 @@ def get_write_token(qhit: str, config: str) -> str:
 
 def get_status(qhit: str, auth: str):
     res = requests.get(f"{server}/{qhit}/status", params={"authorization": auth})
-    reports = response_force_dict(res)
-    # reports is now a list of TagJobStatusReport dicts
-    # Convert to old nested dict format for backward compatibility with rest of script
-    if isinstance(reports, list):
+    response_data = response_force_dict(res)
+    
+    # Handle new {"jobs": [...]} format
+    if isinstance(response_data, dict) and "jobs" in response_data:
+        reports = response_data["jobs"]
         status = {}
         for report in reports:
             stream = report['stream']
@@ -122,11 +123,11 @@ def get_status(qhit: str, auth: str):
             if report.get('message'):
                 status[stream][model]['message'] = report['message']
         return status
-    elif isinstance(reports, dict) and "error" in reports:
-        return reports
+    elif isinstance(response_data, dict) and "error" in response_data:
+        return response_data
     else:
         # Fallback for unexpected format
-        return reports
+        return response_data
 
 def tag(contents: list, auth: str, assets: bool, params: dict, start_time: float = None, end_time: float = None):
     
@@ -155,15 +156,18 @@ def is_running(qhit: str, auth: str):
     res = requests.get(f"{server}/{qhit}/status", params={"authorization": auth})
     resdict = response_force_dict(res)
     
-    # Handle list format
-    if isinstance(resdict, list):
-        if not resdict:  # Empty list means no jobs
+    # Handle new {"jobs": [...]} format
+    if isinstance(resdict, dict) and "jobs" in resdict:
+        reports = resdict["jobs"]
+        if not reports:  # Empty list means no jobs
             return False
-        return any(r['status'] not in ['Completed', 'Stopped', 'Failed'] for r in resdict)
+        return any(r['status'] not in ['Completed', 'Stopped', 'Failed'] for r in reports)
     
-    # Handle old dict format or error
-    if "error" in resdict:
+    # Handle error
+    if isinstance(resdict, dict) and "error" in resdict:
         return False
+    
+    # Handle old dict format (backward compatibility)
     for stream, features in resdict.items():
         for feature, status in features.items():
             if status != "Completed":
@@ -496,9 +500,10 @@ def quick_status(auth, qhit, filter = None):
             print(line, flush=True)
         return
     
-    # Handle new list format
-    if isinstance(status_data, list):
-        for report in status_data:
+    # Handle new {"jobs": [...]} format
+    if isinstance(status_data, dict) and "jobs" in status_data:
+        reports = status_data["jobs"]
+        for report in reports:
             model = report['model']
             stream = report['stream']
             progress = report.get('tagging_progress', '')
@@ -510,6 +515,8 @@ def quick_status(auth, qhit, filter = None):
     
     # Handle old dict format (backward compatibility)
     for imgorvid, models in status_data.items():
+        if imgorvid == "error":  # Skip error key
+            continue
         for model, stat in models.items():
             line = "[%9s] %-32s / %s: %s" % (stat.get("tagging_progress", ""), qhit, f"({imgorvid}) {model}", stat.get("status", "??"))
             if filter is None or re.search(filter, line):
