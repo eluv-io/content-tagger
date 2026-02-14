@@ -102,11 +102,31 @@ def get_write_token(qhit: str, config: str) -> str:
 
 def get_status(qhit: str, auth: str):
     res = requests.get(f"{server}/{qhit}/status", params={"authorization": auth})
-    status = response_force_dict(res)
-    if "message" in status:
-        status['error'] = status['message']
-        del status['message']
-    return status
+    reports = response_force_dict(res)
+    # reports is now a list of TagJobStatusReport dicts
+    # Convert to old nested dict format for backward compatibility with rest of script
+    if isinstance(reports, list):
+        status = {}
+        for report in reports:
+            stream = report['stream']
+            model = report['model']
+            if stream not in status:
+                status[stream] = {}
+            status[stream][model] = {
+                'status': report['status'],
+                'tagging_progress': report['tagging_progress'],
+                'time_running': report['time_running'],
+                'failed': report['failed'],
+                'missing_tags': report['missing_tags']
+            }
+            if report.get('message'):
+                status[stream][model]['message'] = report['message']
+        return status
+    elif isinstance(reports, dict) and "error" in reports:
+        return reports
+    else:
+        # Fallback for unexpected format
+        return reports
 
 def tag(contents: list, auth: str, assets: bool, params: dict, start_time: float = None, end_time: float = None):
     
@@ -134,8 +154,15 @@ def tag(contents: list, auth: str, assets: bool, params: dict, start_time: float
 def is_running(qhit: str, auth: str):
     res = requests.get(f"{server}/{qhit}/status", params={"authorization": auth})
     resdict = response_force_dict(res)
+    
+    # Handle list format
+    if isinstance(resdict, list):
+        if not resdict:  # Empty list means no jobs
+            return False
+        return any(r['status'] not in ['Completed', 'Stopped', 'Failed'] for r in resdict)
+    
+    # Handle old dict format or error
     if "error" in resdict:
-        # No jobs started
         return False
     for stream, features in resdict.items():
         for feature, status in features.items():
@@ -459,15 +486,32 @@ def main():
 def quick_status(auth, qhit, filter = None):
     if filter == "": 
         filter = None
-    status = get_status(qhit, auth)
-    if status.get("error", None):
-        line = "[%9s] %-32s / %s: %s" % ("", qhit, "err", status['error']) 
+    res = requests.get(f"{server}/{qhit}/status", params={"authorization": auth})
+    status_data = response_force_dict(res)
+    
+    # Handle error response
+    if isinstance(status_data, dict) and status_data.get("error", None):
+        line = "[%9s] %-32s / %s: %s" % ("", qhit, "err", status_data['error']) 
         if filter is None or re.search(filter, line):
-            print(line, flush = True)
+            print(line, flush=True)
         return
-    for imgorvid, models in status.items():
+    
+    # Handle new list format
+    if isinstance(status_data, list):
+        for report in status_data:
+            model = report['model']
+            stream = report['stream']
+            progress = report.get('tagging_progress', '')
+            status = report.get('status', '??')
+            line = "[%9s] %-32s / %s: %s" % (progress, qhit, f"({stream}) {model}", status)
+            if filter is None or re.search(filter, line):
+                print(line)
+        return
+    
+    # Handle old dict format (backward compatibility)
+    for imgorvid, models in status_data.items():
         for model, stat in models.items():
-            line =  "[%9s] %-32s / %s: %s" % (stat.get("tagging_progress", ""), qhit, f"({imgorvid}) {model}", stat.get("status", "??") ) 
+            line = "[%9s] %-32s / %s: %s" % (stat.get("tagging_progress", ""), qhit, f"({imgorvid}) {model}", stat.get("status", "??"))
             if filter is None or re.search(filter, line):
                 print(line)
 
