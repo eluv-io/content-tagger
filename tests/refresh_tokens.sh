@@ -2,8 +2,10 @@
 
 set -e
 
-CONFIG_FILE="integration_private_keys.json"
-ENV_FILE=".env"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+CONFIG_FILE="$SCRIPT_DIR/integration_private_keys.json"
+ENV_FILE="$SCRIPT_DIR/../.env"
 CONFIG_URL="https://main.net955305.contentfabric.io/config"
 
 # Check if config file exists
@@ -24,13 +26,13 @@ ELUVIO_SECRET=$(jq -r '.eluvio' "$CONFIG_FILE")
 REDBULL_SECRET=$(jq -r '.redbull' "$CONFIG_FILE")
 
 echo "Generating TEST_AUTH token..."
-TEST_AUTH=$(qfab_cli content token create iq__3C58dDYxsn5KKSWGYrfYr44ykJRm --config-url "$CONFIG_URL" --update --secret "$VOD_SECRET" | jq -r '.bearer')
+TEST_AUTH=$(qfab_cli content token create iq__3C58dDYxsn5KKSWGYrfYr44ykJRm --config-url "$CONFIG_URL" --update --secret "$MGM_SECRET" | jq -r '.bearer')
 
 echo "Generating ASSETS_AUTH token..."
-ASSETS_AUTH=$(qfab_cli content token create iq__4BT8BBNEEDvysXqjZgj4BRA5jVo2 --update --config-url "$CONFIG_URL" --secret "$ASSETS_SECRET" | jq -r '.bearer')
+ASSETS_AUTH=$(qfab_cli content token create iq__4BT8BBNEEDvysXqjZgj4BRA5jVo2 --update --config-url "$CONFIG_URL" --secret "$ELUVIO_SECRET" | jq -r '.bearer')
 
 echo "Generating LIVE_AUTH token..."
-LIVE_AUTH=$(qfab_cli content token create iq__467CAS4BvPQ39go6aLmX6v3ZaTwD --config-url "$CONFIG_URL" --update --secret "$LIVE_SECRET" | jq -r '.bearer')
+LIVE_AUTH=$(qfab_cli content token create iq__467CAS4BvPQ39go6aLmX6v3ZaTwD --config-url "$CONFIG_URL" --update --secret "$REDBULL_SECRET" | jq -r '.bearer')
 
 # Update or append to .env file
 update_env_var() {
