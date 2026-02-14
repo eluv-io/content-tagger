@@ -8,12 +8,17 @@ from src.common.logging import logger
 
 from src.common.content import Content
 from src.common.errors import MissingResourceError, BadRequestError
+from src.fetch.impl.assets import AssetWorker
+from src.fetch.impl.live import LiveWorker
+from src.fetch.impl.processors import SkipWorker
+from src.fetch.impl.vod import VodWorker
 from src.fetch.model import *
 from src.fetch.cache import cache_by_qhash
+from src.fetch.rate_limit import FetchRateLimiter
 from src.fetch.workers import *
 from src.tags.tagstore.abstract import Tagstore
 
-logger = logger.bind(name="Fetcher")
+logger = logger.bind(name="Fetch Factory")
 
 class FetchFactory:
     def __init__(

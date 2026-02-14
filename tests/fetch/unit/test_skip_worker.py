@@ -2,7 +2,7 @@ import math
 from unittest.mock import MagicMock
 
 from src.fetch.model import VideoMetadata
-from src.fetch.workers import SkipWorker
+from src.fetch.impl.processors import SkipWorker
 from src.fetch.model import TimeRangeScope
 
 def test_skip_worker(temp_dir: str) -> None:
