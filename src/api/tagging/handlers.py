@@ -58,7 +58,8 @@ def _execute_tagging(q: Content, tag_args: list[TagArgs]) -> Response:
     
     status_by_feature: dict[str, str] = {}
     for tag_arg in tag_args:
-        status_by_feature[tag_arg.feature] = tagger.tag(q, tag_arg)
+        status = tagger.tag(q, tag_arg)
+        status_by_feature[tag_arg.feature] = status.message
     
     return Response(
         response=json.dumps(status_by_feature), 

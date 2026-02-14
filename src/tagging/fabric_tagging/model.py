@@ -69,4 +69,9 @@ class JobID:
         return hash((self.qhit, self.feature, self.stream))
     
     def __str__(self):
-        return f"JobID(qhit={self.qhit}, feature={self.feature}, stream={self.stream})"
+        return f"(qid={self.qhit}, model={self.feature}, stream={self.stream})"
+    
+@dataclass(frozen=True)
+class TagStartResult:
+    started: bool
+    message: str

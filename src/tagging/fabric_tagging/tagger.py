@@ -47,13 +47,13 @@ class FabricTagger:
     """
 
     def __init__(
-            self, 
-            system_tagger: ContainerScheduler,
-            cregistry: ContainerRegistry,
-            tagstore: Tagstore,
-            fetcher: FetchFactory,
-            cfg: FabricTaggerConfig
-        ):
+        self, 
+        system_tagger: ContainerScheduler,
+        cregistry: ContainerRegistry,
+        tagstore: Tagstore,
+        fetcher: FetchFactory,
+        cfg: FabricTaggerConfig
+    ):
 
         self.system_tagger = system_tagger
         self.cregistry = cregistry
@@ -71,7 +71,7 @@ class FabricTagger:
 
         self._schedule_upload_tick()
 
-    def tag(self, q: Content, args: TagArgs) -> str:
+    def tag(self, q: Content, args: TagArgs) -> TagStartResult:
         request = TagRequest(q=q, args=args)
         return self._submit(request)
 
@@ -185,13 +185,14 @@ class FabricTagger:
 
         jobid = job.get_id()
         if jobid in self.jobstore.active_jobs:
-            message.response_mailbox.put(Response(data=f"{jobid} is already running", error=None))
+            # job params are part of the unique identifier
+            message.response_mailbox.put(Response(data=TagStartResult(started=False, message=f"A job with params {jobid} is already running"), error=None))
         else:
             self.jobstore.active_jobs[jobid] = job
 
             self._submit_async(EnterFetchingPhase(job_id=jobid))
 
-            message.response_mailbox.put(Response(data="Job started successfully", error=None))
+            message.response_mailbox.put(Response(data=TagStartResult(started=True, message="Job started successfully"), error=None))
 
     def _create_job(self, q: Content, feature: str, args: TagArgs) -> TagJob:
         """

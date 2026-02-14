@@ -1,4 +1,3 @@
-
 import pytest
 import time
 from dataclasses import replace as dc_replace
@@ -22,8 +21,8 @@ def test_tag_success(fabric_tagger, q, sample_tag_args):
         results.append(result)
     
     # Check that jobs were started successfully
-    assert all("successfully" in result.lower() for result in results)
-    
+    assert all(result.started for result in results)
+
     # Check that jobs are in active jobs
     active_jobs = fabric_tagger.jobstore.active_jobs
     assert len(active_jobs) == 2
@@ -46,12 +45,12 @@ def test_tag_duplicate_job(fabric_tagger, q, sample_tag_args):
     """Test that duplicate jobs are rejected"""
     # Start first job
     result1 = fabric_tagger.tag(q, sample_tag_args[0])
-    assert "successfully" in result1.lower()
+    assert result1.started is True
     
     # Try to start same job again
     result2 = fabric_tagger.tag(q, sample_tag_args[0])
-    # Should get error message for duplicate job
-    assert "already running" in result2
+    assert result2.started is False
+    assert "already running" in result2.message
 
 
 def test_status_no_jobs(fabric_tagger):
@@ -197,7 +196,7 @@ def test_many_concurrent_jobs(fabric_tagger, make_tag_args):
             content_idx += 1
 
     for result in results:
-        assert "successfully" in result.lower()
+        assert result.started is True
 
     assert len(fabric_tagger.jobstore.active_jobs) == 10
 
@@ -225,7 +224,7 @@ def test_tags_uploaded_during_and_after_job(
     # Start jobs
     for args in sample_tag_args:
         result = fabric_tagger.tag(q, args)
-        assert "successfully" in result.lower()
+        assert result.started is True
 
     track_mapping = fabric_tagger.cfg.uploader.model_params
 
@@ -304,7 +303,7 @@ def test_container_tags_method_fails(fabric_tagger, q, make_tag_args):
     args = make_tag_args(feature="caption", stream="video", destination_qid=q.qid)
 
     result = fabric_tagger.tag(q, args)
-    assert "successfully" in result.lower()
+    assert result.started is True
 
     timeout = 3
     start_time = time.time()
@@ -361,7 +360,7 @@ def test_failed_tag(fabric_tagger, q, make_tag_args):
     
     # Start the job
     result = fabric_tagger.tag(q, args)
-    assert "successfully" in result.lower()
+    assert result.started is True
 
     wait_tag(fabric_tagger, q.qhit, timeout=5)
 
@@ -404,7 +403,7 @@ def test_container_nonzero_exit_code(fabric_tagger, q, make_tag_args):
     args = make_tag_args(feature="caption", stream="video", destination_qid=q.qid)
 
     result = fabric_tagger.tag(q, args)
-    assert "successfully" in result.lower()
+    assert result.started is True
 
     timeout = 3
     start_time = time.time()
@@ -568,7 +567,7 @@ def test_fetcher_returns_no_sources(fabric_tagger, q, make_tag_args):
     with patch.object(fabric_tagger.fetcher, "get_session", return_value=fake_session):
         args = make_tag_args(feature="caption", stream="video")
         result = fabric_tagger.tag(q, args)
-        assert "successfully" in result.lower()
+        assert result.started is True
         wait_tag(fabric_tagger, q.qhit, timeout=2)
 
     final_status = fabric_tagger.status(q.qhit)
