@@ -1,11 +1,12 @@
+
 import pytest
-from unittest.mock import MagicMock, Mock
-from src.api.tagging.dto_mapping import map_video_tag_dto, map_asset_tag_dto
-from src.api.tagging.format import TagAPIArgs, LiveTagAPIArgs, ImageTagAPIArgs, ModelParams
-from src.tagging.fabric_tagging.model import TagArgs
-from src.fetch.model import TimeRangeScope, VideoScope, LiveScope, AssetScope
-from src.common.content import Content
+from unittest.mock import Mock, MagicMock
+
+from src.api.tagging.dto_mapping import map_asset_tag_dto, map_video_tag_dto
+from src.fetch.model import AssetScope, LiveScope, TimeRangeScope, VideoScope
 from src.tag_containers.registry import ContainerRegistry
+from src.api.tagging.format import ImageTagAPIArgs, LiveTagAPIArgs, TagAPIArgs, ModelParams
+from src.tagging.fabric_tagging.model import TagArgs
 
 @pytest.fixture
 def mock_registry():
@@ -36,8 +37,6 @@ def mock_content():
     }
     content.qhit = "iq__source"
     return content
-
-# Video Tag DTO Tests
 
 def test_vod_with_destination_qid(mock_registry, mock_content):
     """Test VOD mapping with destination_qid set."""

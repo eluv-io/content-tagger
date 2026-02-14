@@ -231,7 +231,6 @@ class ContainerScheduler:
         else:
             logger.info("stopping job", extra=log_fields)
         
-        # TODO: stop in separate thread to not block
         try:
             job.container.stop()
         except Exception as e:
