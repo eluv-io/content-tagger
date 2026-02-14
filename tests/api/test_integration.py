@@ -9,6 +9,7 @@ import podman
 from src.api.tagging.request_mapping import _find_default_audio_stream
 from src.common.content import ContentFactory
 from src.fetch.model import DownloadRequest, FetchSession, VideoScope
+from src.tagging.fabric_tagging.model import TagArgs, TagStartResult
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from tests.api.conftest import FakeLiveWorker
@@ -569,3 +570,38 @@ def test_invalid_model_name(client, q):
     )
     
     assert response.status_code == 400
+
+def test_start_two_jobs_one_fails_partial_failure_response(client, q):
+    """
+    Start two jobs in one request; force tagger.tag() to raise for feature == 'fail_model'.
+    Expect HTTP 200 with per-job start statuses (one success, one failure).
+    """
+    auth = get_auth(q)
+
+    tagger: FabricTagger = client.application.config["state"]["tagger"]
+    original_tag = tagger.tag
+
+    def tag_wrapper(q: Content, args: TagArgs) -> TagStartResult:
+        if args.feature == "test_model2":
+            raise RuntimeError("boom")
+        return original_tag(q, args)
+
+    tagger.tag = tag_wrapper
+    
+    response = client.post(
+        f"/{q.qid}/tag?authorization={auth}",
+        json={
+            "features": {
+                "test_model": {"model": {"tags": ["ok1", "ok2"]}},
+                "test_model2": {"model": {"tags": ["nope"]}},
+            },
+            "replace": True,
+        },
+    )
+    assert response.status_code == 200
+
+    data = response.get_json()
+
+    assert data["jobs"][0]["started"] is True
+    assert data["jobs"][1]["started"] is False
+    assert data["jobs"][1]["error"] == 'boom'

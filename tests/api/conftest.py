@@ -33,6 +33,11 @@ def container_registry_config(static_dir) -> RegistryConfig:
                     type="frame",
                     resources={"gpu": 1},
                     image="localhost/test_model:latest"
+                ),
+                "test_model2": ModelConfig(
+                    type="frame",
+                    resources={"gpu": 1},
+                    image="localhost/test_model:latest"
                 )
             }
         )
