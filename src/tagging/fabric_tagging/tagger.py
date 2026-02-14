@@ -69,6 +69,9 @@ class FabricTagger:
         self.actor_thread = threading.Thread(target=self._actor_loop, daemon=True)
         self.actor_thread.start()
 
+        # we break the actor pattern in order to optimize the uploading, so that it doesn't block the main thread, 
+        # but the _handle_enter_complete_phase and the upload tick can run concurrently, so we need this lock.
+        self._upload_lock = threading.Lock()
         self._schedule_upload_tick()
 
     def tag(self, q: Content, args: TagArgs) -> TagStartResult:
@@ -585,12 +588,15 @@ class FabricTagger:
 
     def _run_upload(self, job: TagJob) -> None:
         """Run upload for a job"""
-        try:
-            self.__upload_tags(job)
-        except Exception as e:
-            # TODO: reaping the job might be a bit aggressive
-            logger.opt(exception=e).error("error uploading tags for job", extra={"jobid": job.get_id()})
-            self._cleanup_job(job, "Failed", "Tag upload failed")
+
+        # we lock because _handle_enter_complete_phase and a thread spawned by _handle_upload_tick can run concurrently
+        with self._upload_lock:
+            try:
+                self.__upload_tags(job)
+            except Exception as e:
+                # TODO: reaping the job might be a bit aggressive
+                logger.opt(exception=e).error("error uploading tags for job", extra={"jobid": job.get_id()})
+                self._cleanup_job(job, "Failed", "Tag upload failed")
 
     def _cleanup_job(
         self, 
