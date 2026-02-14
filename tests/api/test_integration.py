@@ -370,6 +370,8 @@ def test_double_run(client, q):
         }
     )
     assert response.status_code == 200
+    data = response.get_json()
+    assert data["jobs"][0]["started"] is True
     
     # Try to start another job with replace=False (should be rejected)
     response = client.post(
@@ -384,7 +386,7 @@ def test_double_run(client, q):
     )
     data = response.get_json()
     assert response.status_code == 200
-    assert "already running" in data["test_model"]
+    assert data["jobs"][0]["started"] is False
 
     # stop the job
     start = time.time()

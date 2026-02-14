@@ -17,8 +17,6 @@ from src.fetch.cache import cache_by_qhash
 from src.fetch.rate_limit import FetchRateLimiter
 from src.tags.tagstore.abstract import Tagstore
 
-logger = logger.bind(name="Fetch Factory")
-
 class FetchFactory:
     def __init__(
         self,
@@ -36,11 +34,16 @@ class FetchFactory:
         req: DownloadRequest, 
         exit: threading.Event | None = None
     ) -> FetchSession:
+        log = logger.bind(qhit=q.qhit, scope=str(req.scope), preserve_track=req.preserve_track)
+
         with timeit(f"Getting media metadata: qhit={q.qhit}, scope={req.scope}"):
             meta = self._get_metadata(q, req.scope)
         with timeit(f"Getting already tagged sources so we can ignore them: qhit={q.qhit}, scope={req.scope}, track={req.preserve_track}"):
             # TODO: the real tagstore doesn't have a great way to query for unique values yet. 
             ignore_sources = self._get_ignored_sources(q, req.preserve_track)
+        log.info(
+            f"Found {len(ignore_sources)} already tagged sources"
+        )
         if isinstance(req.scope, VideoScope):
             assert isinstance(meta, VideoMetadata)
             return VodWorker(

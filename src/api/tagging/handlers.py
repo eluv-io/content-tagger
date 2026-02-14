@@ -6,6 +6,8 @@ from flask import Response, request, current_app
 from dacite import from_dict
 
 from src.api.tagging.request_mapping import is_live, tag_args_from_req
+from src.api.tagging.response_format import StartStatus, StartTaggingResponse
+from src.api.tagging.response_format import StartStatus
 from src.common.logging import logger
 
 from src.api.tagging.request_format import ImageTagAPIArgs
@@ -52,21 +54,45 @@ def handle_image_tag(qhit: str) -> Response:
     return _execute_tagging(q, tag_args)
 
 def _execute_tagging(q: Content, tag_args: list[TagArgs]) -> Response:
-    """Execute tagging for multiple features and return status response.
-    
-    Handles destination authorization if specified in any tag_arg.
-    """
+    """Execute tagging for multiple features and return start status response."""
     tagger: FabricTagger = current_app.config["state"]["tagger"]
     
-    status_by_feature: dict[str, str] = {}
+    jobs: list[StartStatus] = []
     for tag_arg in tag_args:
-        status = tagger.tag(q, tag_arg)
-        status_by_feature[tag_arg.feature] = status.message
-    
+        try:
+            result = tagger.tag(q, tag_arg)
+        except Exception as e:
+            logger.opt(exception=e).error("Failed to start tagging", feature=tag_arg.feature, qhit=q.qhit)
+            jobs.append(
+                StartStatus(
+                    job_id="",
+                    model=tag_arg.feature,
+                    stream="",
+                    started=False,
+                    message="Tag job failed to start",
+                    error=str(e),
+                )
+            )
+            continue
+
+        job_id = result.job_id
+        jobs.append(
+            StartStatus(
+                job_id=str(job_id),
+                model=job_id.feature,
+                stream=job_id.stream,
+                started=result.started,
+                message=result.message,
+                error=None,
+            )
+        )
+
+    payload = StartTaggingResponse(jobs=jobs)
+
     return Response(
-        response=json.dumps(status_by_feature), 
-        status=200, 
-        mimetype='application/json'
+        response=json.dumps(asdict(payload)),
+        status=200,
+        mimetype="application/json",
     )
 
 def handle_status(qhit: str) -> Response:

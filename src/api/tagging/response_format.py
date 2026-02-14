@@ -1,7 +1,21 @@
 from dataclasses import dataclass
 
 @dataclass(frozen=True)
+class StartStatus:
+    job_id: str
+    model: str
+    stream: str
+    started: bool
+    message: str
+    error: str | None
+
+@dataclass(frozen=True)
+class StartTaggingResponse:
+    jobs: list[StartStatus]
+
+@dataclass(frozen=True)
 class JobStatus:
+    job_id: str
     status: str
     time_running: float
     tagging_progress: str
@@ -10,6 +24,6 @@ class JobStatus:
     model: str
     stream: str
 
-@dataclass
+@dataclass(frozen=True)
 class StatusResponse:
     jobs: list[JobStatus]

@@ -8,8 +8,14 @@ def map_all_jobs_status_to_response(all_jobs_status: list[TagJobStatusReport]) -
         jobs=[map_job_status_to_response(job_status) for job_status in all_jobs_status]
     )
 
-def map_job_status_to_response(job_status: TagJobStatusReport) -> JobStatus:
-    valid_fields = {f.name for f in fields(JobStatus)}
-    job_dict = asdict(job_status)
-    filtered_dict = {k: v for k, v in job_dict.items() if k in valid_fields}
-    return JobStatus(**filtered_dict)
+def map_job_status_to_response(js: TagJobStatusReport) -> JobStatus:
+    return JobStatus(
+        job_id=str(js.job_id),
+        model=js.model,
+        stream=js.stream,
+        status=js.status,
+        time_running=js.time_running,
+        tagging_progress=js.tagging_progress,
+        missing_tags=js.missing_tags,
+        failed=js.failed,
+    )

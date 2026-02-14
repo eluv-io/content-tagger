@@ -55,10 +55,12 @@ class JobID:
 @dataclass(frozen=True)
 class TagStartResult:
     started: bool
+    job_id: JobID
     message: str
 
 @dataclass(frozen=True)
 class TagJobStatusReport:
+    job_id: JobID
     status: JobStateDescription
     time_running: float
     tagging_progress: str

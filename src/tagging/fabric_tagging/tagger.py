@@ -186,13 +186,13 @@ class FabricTagger:
         jobid = job.get_id()
         if jobid in self.jobstore.active_jobs:
             # job params are part of the unique identifier
-            message.response_mailbox.put(Response(data=TagStartResult(started=False, message=f"A job with params {jobid} is already running"), error=None))
+            message.response_mailbox.put(Response(data=TagStartResult(job_id=jobid, started=False, message=f"A job with params {jobid} is already running"), error=None))
         else:
             self.jobstore.active_jobs[jobid] = job
 
             self._submit_async(EnterFetchingPhase(job_id=jobid))
 
-            message.response_mailbox.put(Response(data=TagStartResult(started=True, message="Job started successfully"), error=None))
+            message.response_mailbox.put(Response(data=TagStartResult(job_id=jobid, started=True, message="Job started successfully"), error=None))
 
     def _create_job(self, q: Content, feature: str, args: TagArgs) -> TagJob:
         """
@@ -445,29 +445,28 @@ class FabricTagger:
         res = []
         for jid in jobids:
             job = active_jobs.get(jid) or inactive_jobs[jid]
-            feature = job.args.feature
-            stream = job.args.scope.stream if isinstance(job.args.scope, VideoScope | LiveScope) and job.args.scope.stream else "assets"
-            res.append(self._summarize_status(feature, stream, job.state))
+            res.append(self._summarize_status(jid, job.state))
 
         message.response_mailbox.put(Response(data=res, error=None))
 
-    def _summarize_status(self, model: str, stream: str, state: JobState) -> TagJobStatusReport:
-        """Summarize job status (called from actor thread)"""
+    def _summarize_status(self, jobid: JobID, state: JobState) -> TagJobStatusReport:
         status = deepcopy(state.status)
         end = time.time()
         if status.time_ended:
             end = status.time_ended
+
         total_sources = len(state.media.downloaded) if state.media else 0
         total_tagged = len(state.upload_session.uploaded_sources)
 
         return TagJobStatusReport(
+            job_id=jobid,
             status=status.status,
             time_running=end - status.time_started,
             tagging_progress=f"{total_tagged}/{total_sources}" if total_sources > 0 else "0/0",
             missing_tags=list(state.missing_tags),
             failed=status.failed,
-            model=model,
-            stream=stream,
+            model=jobid.feature,
+            stream=jobid.stream,
             message=state.message or None,
         )
 
