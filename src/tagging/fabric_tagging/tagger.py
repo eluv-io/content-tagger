@@ -75,7 +75,7 @@ class FabricTagger:
         request = TagRequest(q=q, args=args)
         return self._submit(request)
 
-    def status(self, qhit: str) -> dict[str, dict[str, dict]]:
+    def status(self, qhit: str) -> list[TagJobStatusReport]:
         request = StatusRequest(qhit=qhit)
         return self._submit(request)
 
@@ -442,15 +442,34 @@ class FabricTagger:
         if len(jobids) == 0:
             raise MissingResourceError(f"No jobs started for {request.qhit}")
 
-        res = defaultdict(dict)
+        res = []
         for jid in jobids:
             job = active_jobs.get(jid) or inactive_jobs[jid]
             feature = job.args.feature
-            # TODO: ugly logic
             stream = job.args.scope.stream if isinstance(job.args.scope, VideoScope | LiveScope) and job.args.scope.stream else "assets"
-            res[stream][feature] = self._summarize_status(job.state)
+            res.append(self._summarize_status(feature, stream, job.state))
 
-        message.response_mailbox.put(Response(data=dict(res), error=None))
+        message.response_mailbox.put(Response(data=res, error=None))
+
+    def _summarize_status(self, model: str, stream: str, state: JobState) -> TagJobStatusReport:
+        """Summarize job status (called from actor thread)"""
+        status = deepcopy(state.status)
+        end = time.time()
+        if status.time_ended:
+            end = status.time_ended
+        total_sources = len(state.media.downloaded) if state.media else 0
+        total_tagged = len(state.upload_session.uploaded_sources)
+
+        return TagJobStatusReport(
+            status=status.status,
+            time_running=end - status.time_started,
+            tagging_progress=f"{total_tagged}/{total_sources}" if total_sources > 0 else "0/0",
+            missing_tags=list(state.missing_tags),
+            failed=status.failed,
+            model=model,
+            stream=stream,
+            message=state.message or None,
+        )
 
     def _handle_stop_request(self, message: Message):
         assert isinstance(message.data, StopRequest)
@@ -564,28 +583,6 @@ class FabricTagger:
             del self.jobstore.active_jobs[jobid]
         else:
             logger.warning("Tried to stop an inactive job", extra={"jobid": jobid})
-
-    def _summarize_status(self, state: JobState) -> dict:
-        """Summarize job status (called from actor thread)
-        
-        Converts internal job state to a user-friendly dictionary.
-        """
-        status = deepcopy(state.status)
-        end = time.time()
-        if status.time_ended:
-            end = status.time_ended
-        total_sources = len(state.media.downloaded) if state.media else 0
-        total_tagged = len(state.upload_session.uploaded_sources)
-        res = {
-            "status": status.status,
-            "time_running": end - status.time_started,
-            "tagging_progress": f"{total_tagged}/{total_sources}" if total_sources > 0 else "0/0",
-            "missing_tags": list(state.missing_tags),
-            "failed": status.failed,
-        }
-        if state.message:
-            res["message"] = state.message
-        return res
 
     def _run_upload(self, job: TagJob) -> None:
         """Run upload for a job"""

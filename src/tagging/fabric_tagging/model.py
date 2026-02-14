@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from typing import Literal
-import time
 
 from src.common.content import Content
 from src.fetch.model import Scope
@@ -33,24 +32,6 @@ JobStateDescription = Literal[
 ]
 
 @dataclass
-class JobStatus:
-    status: JobStateDescription
-    time_started: float
-    time_ended: float | None
-    tagging_progress: str
-    failed: list[str]
-
-    @staticmethod
-    def starting() -> 'JobStatus':
-        return JobStatus(
-            status="Fetching content",
-            time_started=time.time(),
-            time_ended=None,
-            tagging_progress="0%",
-            failed=[]
-        )
-
-@dataclass
 class JobArgs(TagArgs):
     q: Content
     retry_upload: bool
@@ -75,3 +56,14 @@ class JobID:
 class TagStartResult:
     started: bool
     message: str
+
+@dataclass(frozen=True)
+class TagJobStatusReport:
+    status: JobStateDescription
+    time_running: float
+    tagging_progress: str
+    missing_tags: list[str]
+    failed: list[str]
+    model: str
+    stream: str
+    message: str | None = None

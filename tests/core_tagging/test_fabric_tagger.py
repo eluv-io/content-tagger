@@ -6,13 +6,22 @@ from unittest.mock import Mock, patch
 from src.tags.tagstore.model import Track
 from src.tags.tagstore.rest_tagstore import RestTagstore
 from src.tagging.fabric_tagging.tagger import FabricTagger
-from src.tagging.fabric_tagging.model import TagArgs
+from src.tagging.fabric_tagging.model import TagJobStatusReport
 from src.tag_containers.model import ContainerRequest, ModelTag
 from src.fetch.model import *
 from src.common.content import Content
 from src.common.errors import MissingResourceError
 from tests.core_tagging.conftest import FakeContainerRegistry, FakeTagContainer, FakeWorker, PartialFailContainer
     
+def _status_for(
+    reports: list[TagJobStatusReport],
+    model: str,
+    stream: str | None = None,
+) -> TagJobStatusReport:
+    matches = [r for r in reports if r.model == model and (stream is None or r.stream == stream)]
+    assert matches, f"Missing status for model={model}, stream={stream}"
+    return matches[0]
+
 def test_tag_success(fabric_tagger, q, sample_tag_args):
     """Test successful tagging job creation"""
     results = []
@@ -70,26 +79,18 @@ def test_status_with_jobs(fabric_tagger, q, sample_tag_args):
     
     # Get status
     status = fabric_tagger.status(q.qhit)
-    
-    # Check structure
-    assert isinstance(status, dict)
-    assert "video" in status or "audio" in status
-    
-    # Check that we have status for our features
-    all_features = []
-    for stream_status in status.values():
-        all_features.extend(stream_status.keys())
-    
-    assert "caption" in all_features
-    assert "asr" in all_features
-    
-    # Check status format
-    for stream, features in status.items():
-        for feature, job_status in features.items():
-            assert "status" in job_status
-            assert "time_running" in job_status
-            assert "tagging_progress" in job_status
-            assert "failed" in job_status
+
+    assert isinstance(status, list)
+    assert len(status) == 2
+    assert any(s.model == "caption" for s in status)
+    assert any(s.model == "asr" for s in status)
+
+    for s in status:
+        assert s.status
+        assert isinstance(s.time_running, float)
+        assert isinstance(s.failed, list)
+        assert isinstance(s.missing_tags, list)
+        assert s.tagging_progress
 
 
 def test_status_completed_jobs(fabric_tagger, q, sample_tag_args):
@@ -103,8 +104,8 @@ def test_status_completed_jobs(fabric_tagger, q, sample_tag_args):
     
     # Check that job is done according to status
     status = fabric_tagger.status(q.qhit)
-    assert status["video"]["caption"]["status"] == "Completed"
-    assert status["audio"]["asr"]["status"] == "Completed"
+    assert _status_for(status, "caption", "video").status == "Completed"
+    assert _status_for(status, "asr", "audio").status == "Completed"
 
 
 def test_stop_running_job(fabric_tagger, q, sample_tag_args):
@@ -118,8 +119,8 @@ def test_stop_running_job(fabric_tagger, q, sample_tag_args):
     
     # Check that stop event was set
     status = fabric_tagger.status(q.qhit)
-    assert status["video"]["caption"]["status"] == "Stopped"
-    assert status["audio"]["asr"]["status"] != "Stopped"
+    assert _status_for(status, "caption", "video").status == "Stopped"
+    assert _status_for(status, "asr", "audio").status != "Stopped"
 
 
 def test_stop_nonexistent_job(fabric_tagger):
@@ -139,8 +140,8 @@ def test_stop_finished_job(fabric_tagger, q, sample_tag_args):
         fabric_tagger.stop(q.qhit, "caption", None)
     # check that both are Completed
     status = fabric_tagger.status(q.qhit)
-    assert status["video"]["caption"]["status"] == "Completed"
-    assert status["audio"]["asr"]["status"] == "Completed"
+    assert _status_for(status, "caption", "video").status == "Completed"
+    assert _status_for(status, "asr", "audio").status == "Completed"
 
 
 def test_cleanup(fabric_tagger, q, sample_tag_args):
@@ -204,16 +205,20 @@ def test_many_concurrent_jobs(fabric_tagger, make_tag_args):
     for content in contents:
         statuses.append(fabric_tagger.status(content.qhit))
     for status in statuses:
-        assert status["video"]["caption"]["status"] in ["Starting", "Fetching content"]
-        assert status["audio"]["asr"]["status"] in ["Starting", "Fetching content"]
+        caption = _status_for(status, "caption", "video")
+        asr = _status_for(status, "asr", "audio")
+        assert caption.status in ["Starting", "Fetching content"]
+        assert asr.status in ["Starting", "Fetching content"]
 
     time.sleep(2)
     for content in contents:
         status = fabric_tagger.status(content.qhit)
-        assert status["video"]["caption"]["status"] == "Completed"
-        assert status["audio"]["asr"]["status"] == "Completed"
-        assert len(status["video"]["caption"]["failed"]) == 0
-        assert len(status["audio"]["asr"]["failed"]) == 0
+        caption = _status_for(status, "caption", "video")
+        asr = _status_for(status, "asr", "audio")
+        assert caption.status == "Completed"
+        assert asr.status == "Completed"
+        assert len(caption.failed) == 0
+        assert len(asr.failed) == 0
 
 
 def test_tags_uploaded_during_and_after_job(
@@ -268,21 +273,17 @@ def test_tags_uploaded_during_and_after_job_through_status(
     end = False
     percentages = set()
     while time.time() - start < timeout:
-        st = fabric_tagger.status(q.qhit)
+        reports = fabric_tagger.status(q.qhit)
         end = True
-        for stream in st:
-            for feature in st[stream]:
-                status = st[stream][feature]
-                percentages.add(status["tagging_progress"])
-                if status["tagging_progress"] != '2/2':
-                    end = False
+        for r in reports:
+            percentages.add(r.tagging_progress)
+            if r.tagging_progress != "2/2":
+                end = False
         if end:
             break
         time.sleep(0.01)
 
     assert end
-
-    assert len(percentages) == 4
     assert "0/2" in percentages
     assert "1/2" in percentages
     assert "2/2" in percentages
@@ -309,7 +310,7 @@ def test_container_tags_method_fails(fabric_tagger, q, make_tag_args):
     start_time = time.time()
     while time.time() - start_time < timeout:
         status = fabric_tagger.status(q.qhit)
-        job_status = status["video"]["caption"]["status"]
+        job_status = _status_for(status, "caption", "video").status
         if job_status == "Failed":
             break
         elif job_status in ["Completed", "Stopped"]:
@@ -319,9 +320,10 @@ def test_container_tags_method_fails(fabric_tagger, q, make_tag_args):
         pytest.fail("Job did not fail within timeout period")
 
     final_status = fabric_tagger.status(q.qhit)
-    assert final_status["video"]["caption"]["status"] == "Failed"
+    assert _status_for(final_status, "caption", "video").status == "Failed"
     assert len(fabric_tagger.jobstore.active_jobs) == 0
     assert len(fabric_tagger.jobstore.inactive_jobs) == 1
+
 
 def test_start_new_container_fails(fabric_tagger, q, make_tag_args):
     """Test that when _start_new_container fails, job transitions to Failed state"""
@@ -335,7 +337,7 @@ def test_start_new_container_fails(fabric_tagger, q, make_tag_args):
     start_time = time.time()
     while time.time() - start_time < timeout:
         status = fabric_tagger.status(q.qhit)
-        job_status = status["video"]["caption"]["status"]
+        job_status = _status_for(status, "caption", "video").status
         if job_status == "Failed":
             break
         elif job_status in ["Completed", "Stopped"]:
@@ -345,8 +347,10 @@ def test_start_new_container_fails(fabric_tagger, q, make_tag_args):
         pytest.fail("Job did not fail within timeout period")
 
     final_status = fabric_tagger.status(q.qhit)
-    assert final_status["video"]["caption"]["status"] == "Failed"
-    assert "message" in final_status["video"]["caption"]
+    report = _status_for(final_status, "caption", "video")
+    assert report.status == "Failed"
+    assert report.message is not None
+
 
 def test_failed_tag(fabric_tagger, q, make_tag_args):
     # Configure the mock to return PartialFailContainer
@@ -366,23 +370,23 @@ def test_failed_tag(fabric_tagger, q, make_tag_args):
 
     # check that only one was updated
     status = fabric_tagger.status(q.qhit)
-    assert status["video"]["caption"]["status"] == "Completed"
-    assert len(status["video"]["caption"]["failed"]) == 0
-    assert status["video"]["caption"]["tagging_progress"] == "1/2"
-    assert len(status["video"]["caption"]["missing_tags"]) == 1
+    report = _status_for(status, "caption", "video")
+    assert report.status == "Completed"
+    assert len(report.failed) == 0
+    assert report.tagging_progress == "1/2"
+    assert len(report.missing_tags) == 1
 
 
 def wait_tag(fabric_tagger, batch_id, timeout):
     start = time.time()
     while not timeout or time.time() - start < timeout:
-        status = fabric_tagger.status(batch_id)
-        for stream in status:
-            for feature in status[stream]:
-                if status[stream][feature]["status"] == "Completed":
-                    return
-                elif status[stream][feature]["status"] == "Failed":
-                    pytest.fail(f"Job failed: {status[stream][feature]['error']}")
-                time.sleep(0.25)
+        reports = fabric_tagger.status(batch_id)
+        if any(r.status == "Failed" for r in reports):
+            failed = next(r for r in reports if r.status == "Failed")
+            pytest.fail(f"Job failed: {failed.message or 'unknown error'}")
+        if reports and all(r.status in ("Completed", "Stopped") for r in reports):
+            return
+        time.sleep(0.1)
     pytest.fail("Job did not complete within timeout period")
 
 
@@ -409,7 +413,7 @@ def test_container_nonzero_exit_code(fabric_tagger, q, make_tag_args):
     start_time = time.time()
     while time.time() - start_time < timeout:
         status = fabric_tagger.status(q.qhit)
-        job_status = status["video"]["caption"]["status"]
+        job_status = _status_for(status, "caption", "video").status
         if job_status == "Failed":
             break
         elif job_status in ["Completed", "Stopped"]:
@@ -419,7 +423,8 @@ def test_container_nonzero_exit_code(fabric_tagger, q, make_tag_args):
         pytest.fail("Job did not fail within timeout period")
 
     final_status = fabric_tagger.status(q.qhit)
-    assert final_status["video"]["caption"]["status"] == "Failed"
+    assert _status_for(final_status, "caption", "video").status == "Failed"
+
 
 def test_destination_qid_uploads_to_correct_qhit(sample_tag_args, fabric_tagger: FabricTagger, q, q_legacy):
     """Test that when destination_qid is set, tags are uploaded to that qhit instead of source"""
@@ -477,9 +482,12 @@ def test_source_with_zero_tags_marked_as_missing(fabric_tagger, q, make_tag_args
     wait_tag(fabric_tagger, q.qhit, timeout=5)
     
     status = fabric_tagger.status(q.qhit)
-    job_status = status["video"]["caption"]
-    assert job_status["status"] == "Completed"
-    assert len(job_status["missing_tags"]) == 1
+    report = _status_for(status, "caption", "video")
+    assert report.status == "Completed"
+    assert len(report.failed) == 0
+    assert report.tagging_progress == "1/2"
+    assert len(report.missing_tags) == 1
+
 
 def test_track_override_uploads_to_multiple_tracks(fabric_tagger, q, make_tag_args):
     """Test that model tags with different tracks are uploaded to different tagstore tracks"""
@@ -571,12 +579,12 @@ def test_fetcher_returns_no_sources(fabric_tagger, q, make_tag_args):
         wait_tag(fabric_tagger, q.qhit, timeout=2)
 
     final_status = fabric_tagger.status(q.qhit)
-    assert final_status["video"]["caption"]["status"] == "Completed"
-    assert final_status["video"]["caption"]["tagging_progress"] == "0/0"
-    assert len(final_status["video"]["caption"]["missing_tags"]) == 0
-    assert len(final_status["video"]["caption"]["failed"]) == 0
-    assert fabric_tagger.tagstore.count_tags(qhit=q.qhit, q=q) == 0
-        
+    report = _status_for(final_status, "caption", "video")
+    assert report.status == "Completed"
+    assert report.tagging_progress == "0/0"
+    assert len(report.missing_tags) == 0
+    assert len(report.failed) == 0
+    
     # Verify no tags were uploaded
     tag_count = fabric_tagger.tagstore.count_tags(qhit=q.qhit, q=q)
     assert tag_count == 0

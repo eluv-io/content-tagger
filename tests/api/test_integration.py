@@ -19,13 +19,8 @@ def is_job_success(client, q: Content):
     response = client.get(f"/{q.qid}/status?authorization={auth}")
     if response.status_code != 200:
         return False
-    result = response.get_json()
-    for stream in result:
-        for feature in result[stream]:
-            status = result[stream][feature]['status']
-            if status != 'Completed':
-                return False
-    return True
+    reports = response.get_json()
+    return all(r['status'] == 'Completed' for r in reports)
 
 def get_auth(content: Content) -> str:
     return content._client.token
@@ -46,17 +41,16 @@ def wait_for_jobs_completion(client, contents: list[Content], timeout=30):
                 all_finished = False
                 break
 
-            result = response.get_json()
-            print(json.dumps(result, indent=2))
+            reports = response.get_json()
+            print(json.dumps(reports, indent=2))
             
-            for stream in result:
-                for feature in result[stream]:
-                    status = result[stream][feature]['status']
-                    if status not in ['Completed', 'Failed']:
-                        all_finished = False
-                        break
-                if not all_finished:
+            for report in reports:
+                if report['status'] not in ['Completed', 'Failed']:
+                    all_finished = False
                     break
+                    
+            if not all_finished:
+                break
         
         if all_finished:
             return True
@@ -249,33 +243,35 @@ def test_real_live_stream(app, q_live):
     # Check status periodically
     start_time = time.time()
     timeout = 25
+    segments_found = False
     
     while time.time() - start_time < timeout:
         response = client.get(f"/{qid}/status?authorization={auth}")
         if response.status_code == 200:
-            result = response.get_json()
-            print(json.dumps(result, indent=2))
+            reports = response.get_json()
+            print(json.dumps(reports, indent=2))
             
-            # Check if we have the test_model job
-            if 'video' in result and 'test_model' in result['video']:
-                status = result['video']['test_model']['status']
-                progress = result['video']['test_model']['tagging_progress']
+            # Find the test_model job in the list
+            test_model_reports = [r for r in reports if r['model'] == 'test_model' and r['stream'] == 'video']
+            if test_model_reports:
+                report = test_model_reports[0]
+                status = report['status']
+                progress = report['tagging_progress']
                 
-                # Once we see progress or completion, we know segments were processed
-                if progress == "100%" or status == "Completed":
+                # Once we see completion, we know segments were processed
+                if status == "Completed":
                     segments_found = True
                     break
         
         time.sleep(3)
     
-    #assert segments_found, "No segments were processed within timeout"
-    
     # Verify final status is Stopped or Completed
     response = client.get(f"/{qid}/status?authorization={auth}")
     assert response.status_code == 200
-    result = response.get_json()
+    reports = response.get_json()
     
-    final_status = result['video']['test_model']['status']
+    test_model_report = next(r for r in reports if r['model'] == 'test_model' and r['stream'] == 'video')
+    final_status = test_model_report['status']
     assert final_status in ['Stopped', 'Completed'], f"Expected Stopped or Completed, got {final_status}"
     
     # verify we have some tags
@@ -341,17 +337,16 @@ def test_stop_workflow(client, q):
     
     # Stop the job quickly (before it completes)
     response = client.post(f"/{q.qid}/stop/test_model?authorization={video_auth}")
-    #assert response.status_code == 200
     
     # Check status - job should be stopped
     response = client.get(f"/{q.qid}/status?authorization={video_auth}")
     assert response.status_code == 200
-    result = response.get_json()
+    reports = response.get_json()
     
     # The job should exist and be in a stopped state
-    assert 'video' in result
-    assert 'test_model' in result['video']
-    status = result['video']['test_model']['status']
+    test_model_reports = [r for r in reports if r['model'] == 'test_model' and r['stream'] == 'video']
+    assert test_model_reports, "test_model job not found in status"
+    status = test_model_reports[0]['status']
     assert status == 'Stopped', f"Expected job to be stopped, got {status}"
 
 def test_double_run(client, q):
@@ -472,13 +467,14 @@ def test_stop_live_job(app, q_live):
     while time.time() - start_time < 20:
         response = client.get(f"/{qid}/status?authorization={auth}")
         if response.status_code == 200:
-            result = response.get_json()
-            if 'video' in result and 'test_model' in result['video']:
-                progress = result['video']['test_model']['tagging_progress']
+            reports = response.get_json()
+            test_model_reports = [r for r in reports if r['model'] == 'test_model' and r['stream'] == 'video']
+            
+            if test_model_reports:
+                progress = test_model_reports[0]['tagging_progress']
                 
                 # Wait until we have some progress but not complete
-                # Parse progress like "50%" -> 50
-                if progress != "0%" and progress != "100%":
+                if progress not in ["0/0", "0%"] and not progress.endswith("/0"):
                     # Check we actually have some tags
                     try:
                         jobid = tagstore.find_batches(q=q_live, qhit=q_live.qid)[0]
@@ -504,9 +500,10 @@ def test_stop_live_job(app, q_live):
     # Verify it stopped
     time.sleep(2)
     response = client.get(f"/{qid}/status?authorization={auth}")
-    result = response.get_json()
+    reports = response.get_json()
     
-    final_status = result['video']['test_model']['status']
+    test_model_report = next(r for r in reports if r['model'] == 'test_model' and r['stream'] == 'video')
+    final_status = test_model_report['status']
     assert final_status == 'Stopped', f"Expected Stopped, got {final_status}"
     
     # Verify we have partial tags (not all of them)

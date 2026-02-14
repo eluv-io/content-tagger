@@ -8,6 +8,24 @@ from src.tagging.uploading.uploader import UploadSession
 from src.tagging.fabric_tagging.media_state import MediaState
 
 @dataclass
+class JobStatus:
+    status: JobStateDescription
+    time_started: float
+    time_ended: float | None
+    tagging_progress: str
+    failed: list[str]
+
+    @staticmethod
+    def starting() -> 'JobStatus':
+        return JobStatus(
+            status="Fetching content",
+            time_started=time.time(),
+            time_ended=None,
+            tagging_progress="0%",
+            failed=[]
+        )
+
+@dataclass
 class JobState:
     """Mutable state of the tagging job."""
     status: JobStatus

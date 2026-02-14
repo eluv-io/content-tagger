@@ -1,3 +1,4 @@
+from dataclasses import asdict
 import json
 import os
 
@@ -77,9 +78,9 @@ def handle_status(qhit: str) -> Response:
 
     tagger: FabricTagger = current_app.config["state"]["tagger"]
 
-    res = tagger.status(qhit)
+    reports = tagger.status(qhit)
 
-    return Response(response=json.dumps(res), status=200, mimetype='application/json')
+    return Response(response=json.dumps([asdict(report) for report in reports]), status=200, mimetype='application/json')
 
 def handle_stop(
         qhit: str, 
