@@ -17,6 +17,9 @@ from src.common.logging import logger
 
 logger = logger.bind(module="live fetching")
 
+def _get_live_source_name(chunk_size: int, stream_name: str, idx: int) -> str:
+    return f"{stream_name}:segment_{chunk_size}_{idx}"
+
 class LiveWorker(FetchSession):
     def __init__(
         self,
@@ -24,6 +27,7 @@ class LiveWorker(FetchSession):
         scope: LiveScope,
         rate_limiter: FetchRateLimiter,
         meta: LiveMetadata,
+        ignore_sources: list[str],
         output_dir: str,
         exit: threading.Event | None = None
     ):
@@ -34,6 +38,7 @@ class LiveWorker(FetchSession):
         self.output_dir = output_dir
         self.exit = exit
         self.next_idx = 0
+        self.ignore_sources = set(ignore_sources)
     
     def metadata(self) -> LiveMetadata:
         return deepcopy(self.meta)
@@ -65,12 +70,17 @@ class LiveWorker(FetchSession):
             )
         
         chunk_size = self.scope.chunk_size
+
         idx = self.next_idx
+        source_name = _get_live_source_name(chunk_size, self.scope.stream, idx)
+
+        while not source_name or source_name in self.ignore_sources:
+            idx += 1
+            source_name = _get_live_source_name(chunk_size, self.scope.stream, idx)
         
-        # TODO: filename weirdness on first segment
         filename = f"segment_{chunk_size}_{self.scope.stream}_{str(idx).zfill(4)}.mp4"
         save_path = os.path.join(self.output_dir, filename)
-        
+
         segment_info = self.q.live_media_segment(
             object_id=self.q.qhit,
             dest_path=save_path,
@@ -87,9 +97,9 @@ class LiveWorker(FetchSession):
         seg_idx = segment_info.seg_num
         seg_size = segment_info.actual_duration * 1000
         wall_clock = segment_info.seg_time_epoch_millis
-        
+
         source = Source(
-            name=f"{self.scope.stream}:segment_{chunk_size}_{idx}",
+            name=source_name,
             filepath=save_path,
             offset=seg_offset,
             wall_clock=wall_clock

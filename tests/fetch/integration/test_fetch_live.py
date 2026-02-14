@@ -2,6 +2,7 @@
 
 from src.common.content import Content
 from src.fetch.factory import FetchFactory
+from src.fetch.impl.live import LiveWorker
 from src.fetch.model import DownloadRequest, LiveScope
 
 
@@ -50,7 +51,7 @@ def test_live_worker_incremental_segments(
             
             # Extract segment index from name like "segment_4_0"
             name_parts = source.name.split('_')
-            assert len(name_parts) == 3, f"Expected name format 'segment_<size>_<idx>', got {source.name}"
+            assert len(name_parts) == 3
             
             chunk_size_from_name = int(name_parts[1])
             seg_idx = int(name_parts[2])
@@ -103,3 +104,31 @@ def test_live_worker_incremental_segments(
         f"Expected at most {expected_segments * 1.2:.0f} segments, got {len(all_sources)}"
     
     print(f"LiveWorker test completed: {len(all_sources)} segments downloaded in {call_count} calls")
+
+def test_live_worker_respects_ignore_sources(
+    fetcher: FetchFactory,
+    q_live: Content,
+    temp_dir: str
+):
+    """LiveWorker should skip source names provided in ignore_sources."""
+    chunk_size = 4
+    ignored = [
+        f"video:segment_{chunk_size}_0",
+        f"video:segment_{chunk_size}_1",
+    ]
+
+    req = DownloadRequest(
+        scope=LiveScope(stream="video", chunk_size=chunk_size, max_duration=20),
+        output_dir=temp_dir,
+        preserve_track="",
+    )
+
+    worker = fetcher.get_session(q_live, req)
+    assert isinstance(worker, LiveWorker)
+    worker.ignore_sources = set(ignored)
+
+    result = worker.download()
+    assert len(result.sources) == 1
+
+    first_source = result.sources[0]
+    assert first_source.name == f"video:segment_{chunk_size}_2"

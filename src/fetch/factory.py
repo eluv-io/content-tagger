@@ -1,9 +1,9 @@
 
 from requests.exceptions import HTTPError
 from fractions import Fraction
+import threading
 
 from src.common.logging.timing import timeit
-
 from src.common.logging import logger
 
 from src.common.content import Content
@@ -15,7 +15,6 @@ from src.fetch.impl.vod import VodWorker
 from src.fetch.model import *
 from src.fetch.cache import cache_by_qhash
 from src.fetch.rate_limit import FetchRateLimiter
-from src.fetch.workers import *
 from src.tags.tagstore.abstract import Tagstore
 
 logger = logger.bind(name="Fetch Factory")
@@ -49,7 +48,7 @@ class FetchFactory:
                 scope=req.scope,
                 rate_limiter=self.rl,
                 meta=meta,
-                ignore_parts=ignore_sources,
+                ignore_sources=ignore_sources,
                 output_dir=req.output_dir,
                 exit=exit
             )
@@ -72,6 +71,7 @@ class FetchFactory:
                 rate_limiter=self.rl,
                 meta=meta,
                 output_dir=req.output_dir,
+                ignore_sources=ignore_sources,
                 exit=exit
             )
         elif isinstance(req.scope, TimeRangeScope):

@@ -10,8 +10,7 @@ import threading
 from common_ml.video_processing import unfrag_video
 
 from src.common.content import Content
-from src.fetch.model import DownloadResult, FetchSession
-from src.fetch.workers import VideoScope, VideoMetadata, Source
+from src.fetch.model import *
 from src.fetch.rate_limit import FetchRateLimiter
 from src.common.errors import BadRequestError
 
@@ -25,7 +24,7 @@ class VodWorker(FetchSession):
         scope: VideoScope,
         rate_limiter: FetchRateLimiter,
         meta: VideoMetadata, 
-        ignore_parts: list[str],
+        ignore_sources: list[str],
         output_dir: str,
         exit: threading.Event | None = None
     ):
@@ -34,7 +33,7 @@ class VodWorker(FetchSession):
         self.rl = rate_limiter
         self.meta = meta
         self.output_dir = output_dir
-        self.ignore_parts = set(ignore_parts)
+        self.ignore_sources = set(ignore_sources)
         self.exit = exit
 
     def metadata(self) -> VideoMetadata:
@@ -78,14 +77,14 @@ class VodWorker(FetchSession):
 
         logger.info(f"Downloading stream {self.scope.stream} with {len(to_download)} total parts.")
 
-        if self.ignore_parts:
-            logger.info(f"Filtering {len(self.ignore_parts)} already tagged parts")
+        if self.ignore_sources:
+            logger.info(f"Filtering {len(self.ignore_sources)} already tagged sources")
 
         for idx, part_hash in enumerate(to_download):
             if self.exit and self.exit.is_set():
                 break
 
-            if part_hash in self.ignore_parts:
+            if part_hash in self.ignore_sources:
                 continue
 
             pstart = idx * self.meta.part_duration
