@@ -39,6 +39,7 @@ def _create_tag_args(
         scope=scope,
         replace=args.replace,
         destination_qid=args.destination_qid,
+        max_fetch_retries=args.max_fetch_retries,
     )
 
 def map_vod_tag_dto(args: TagAPIArgs, registry: ContainerRegistry, q: Content) -> list[TagArgs]:

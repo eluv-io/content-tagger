@@ -10,6 +10,7 @@ class BaseTagAPIArgs:
     features: dict[str, ModelParams]
     destination_qid: str = ""
     replace: bool = False
+    max_fetch_retries: int = 3
 
 @dataclass
 class TagAPIArgs(BaseTagAPIArgs):

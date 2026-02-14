@@ -22,6 +22,7 @@ class TagArgs:
     scope: Scope
     replace: bool
     destination_qid: str
+    max_fetch_retries: int
 
 JobStateDescription = Literal[
     "Fetching content",
@@ -52,7 +53,6 @@ class JobStatus:
 @dataclass
 class JobArgs(TagArgs):
     q: Content
-    retry_fetch: bool
     retry_upload: bool
 
 @dataclass

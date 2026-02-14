@@ -1,7 +1,7 @@
-from copy import copy, deepcopy
-import dotenv
+
 import pytest
 import time
+from dataclasses import replace as dc_replace
 from unittest.mock import Mock, patch
 
 from src.tags.tagstore.model import Track
@@ -35,16 +35,9 @@ def test_tag_success(fabric_tagger, q, sample_tag_args):
     assert "asr" in features
 
 
-def test_tag_invalid_feature(fabric_tagger, q):
+def test_tag_invalid_feature(fabric_tagger, q, make_tag_args):
     """Test tagging with invalid feature"""
-    invalid_args = TagArgs(
-        feature="invalid_feature",
-        run_config={},
-        scope=VideoScope(stream="video", start_time=0, end_time=30),
-        replace=False,
-        destination_qid=""
-    )
-    
+    invalid_args = make_tag_args(feature="invalid_feature", stream="video")
     with pytest.raises(MissingResourceError, match="Invalid feature: invalid_feature"):
         fabric_tagger.tag(q, invalid_args)
 
@@ -178,7 +171,7 @@ def test_cleanup(fabric_tagger, q, sample_tag_args):
         assert job.container.is_running() is False
 
 
-def test_many_concurrent_jobs(fabric_tagger):
+def test_many_concurrent_jobs(fabric_tagger, make_tag_args):
     if isinstance(fabric_tagger.tagstore, RestTagstore):
         pytest.skip("Skipping test for RestTagstore cause I don't want to have to configure many live test objects")
 
@@ -187,24 +180,11 @@ def test_many_concurrent_jobs(fabric_tagger):
     for i in range(5):
         contents.append(Mock(qid=f"iq__content{i}", qhit=f"iq__content{i}", auth=f"token{i}"))
 
-    # Create individual TagArgs for each feature and content
     all_args = []
-    for content in contents:
+    for _content in contents:
         all_args.extend([
-            TagArgs(
-                feature="caption",
-                run_config={},
-                scope=VideoScope(stream="video", start_time=0, end_time=30),
-                replace=False,
-                destination_qid=""
-            ),
-            TagArgs(
-                feature="asr", 
-                run_config={},
-                scope=VideoScope(stream="audio", start_time=0, end_time=30),
-                replace=False,
-                destination_qid=""
-            )
+            make_tag_args(feature="caption", stream="video"),
+            make_tag_args(feature="asr", stream="audio"),
         ])
 
     results = []
@@ -309,7 +289,7 @@ def test_tags_uploaded_during_and_after_job_through_status(
     assert "2/2" in percentages
 
 
-def test_container_tags_method_fails(fabric_tagger, q):
+def test_container_tags_method_fails(fabric_tagger, q, make_tag_args):
     """Test that when container.tags() fails, the job fails gracefully and stops the container"""
 
     class BrokenTagsContainer(FakeTagContainer):
@@ -321,13 +301,7 @@ def test_container_tags_method_fails(fabric_tagger, q):
 
     fabric_tagger.cregistry.get = get_side_effect
 
-    args = TagArgs(
-        feature="caption",
-        run_config={},
-        scope=VideoScope(stream="video", start_time=0, end_time=30),
-        replace=False,
-        destination_qid=q.qid
-    )
+    args = make_tag_args(feature="caption", stream="video", destination_qid=q.qid)
 
     result = fabric_tagger.tag(q, args)
     assert "successfully" in result.lower()
@@ -350,17 +324,11 @@ def test_container_tags_method_fails(fabric_tagger, q):
     assert len(fabric_tagger.jobstore.active_jobs) == 0
     assert len(fabric_tagger.jobstore.inactive_jobs) == 1
 
-def test_start_new_container_fails(fabric_tagger, q):
+def test_start_new_container_fails(fabric_tagger, q, make_tag_args):
     """Test that when _start_new_container fails, job transitions to Failed state"""
     fabric_tagger._start_new_container = Mock(side_effect=RuntimeError("Simulated tagging phase processing failure"))
 
-    args = TagArgs(
-        feature="caption",
-        run_config={},
-        scope=VideoScope(stream="video", start_time=0, end_time=30),
-        replace=False,
-        destination_qid=q.qid
-    )
+    args = make_tag_args(feature="caption", stream="video", destination_qid=q.qid)
 
     fabric_tagger.tag(q, args)
 
@@ -381,7 +349,7 @@ def test_start_new_container_fails(fabric_tagger, q):
     assert final_status["video"]["caption"]["status"] == "Failed"
     assert "message" in final_status["video"]["caption"]
 
-def test_failed_tag(fabric_tagger, q):
+def test_failed_tag(fabric_tagger, q, make_tag_args):
     # Configure the mock to return PartialFailContainer
     
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
@@ -389,14 +357,7 @@ def test_failed_tag(fabric_tagger, q):
     
     fabric_tagger.cregistry.get = get_side_effect
     
-    # Create args for a simple job
-    args = TagArgs(
-        feature="caption",
-        run_config={},
-        scope=VideoScope(stream="video", start_time=0, end_time=30),
-        replace=False,
-        destination_qid=q.qid
-    )
+    args = make_tag_args(feature="caption", stream="video", destination_qid=q.qid)
     
     # Start the job
     result = fabric_tagger.tag(q, args)
@@ -426,7 +387,7 @@ def wait_tag(fabric_tagger, batch_id, timeout):
     pytest.fail("Job did not complete within timeout period")
 
 
-def test_container_nonzero_exit_code(fabric_tagger, q):
+def test_container_nonzero_exit_code(fabric_tagger, q, make_tag_args):
     """Test that a container with non-zero exit code causes job to fail"""
 
     class NonZeroExitContainer(FakeTagContainer):
@@ -440,13 +401,7 @@ def test_container_nonzero_exit_code(fabric_tagger, q):
 
     fabric_tagger.cregistry.get = get_side_effect
 
-    args = TagArgs(
-        feature="caption",
-        run_config={},
-        scope=VideoScope(stream="video", start_time=0, end_time=30),
-        replace=False,
-        destination_qid=q.qid
-    )
+    args = make_tag_args(feature="caption", stream="video", destination_qid=q.qid)
 
     result = fabric_tagger.tag(q, args)
     assert "successfully" in result.lower()
@@ -474,8 +429,7 @@ def test_destination_qid_uploads_to_correct_qhit(sample_tag_args, fabric_tagger:
     q2 = q_legacy
 
     for args in sample_tag_args:
-        args.destination_qid = q2.qid
-        fabric_tagger.tag(q, args)
+        fabric_tagger.tag(q, dc_replace(args, destination_qid=q2.qid))
 
     # Wait for job to complete
     wait_tag(fabric_tagger, q.qhit, timeout=10)
@@ -510,7 +464,7 @@ def test_tags_have_timestamp_ms_field(fabric_tagger: FabricTagger, q: Content, s
         assert tag.additional_info["timestamp_ms"] > 0
 
 
-def test_source_with_zero_tags_marked_as_missing(fabric_tagger, q):
+def test_source_with_zero_tags_marked_as_missing(fabric_tagger, q, make_tag_args):
     """Test that a source producing zero tags is marked as failed in job status"""
     
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
@@ -518,13 +472,7 @@ def test_source_with_zero_tags_marked_as_missing(fabric_tagger, q):
     
     fabric_tagger.cregistry.get = get_side_effect
     
-    args = TagArgs(
-        feature="caption",
-        run_config={},
-        scope=VideoScope(stream="video", start_time=0, end_time=30),
-        replace=False,
-        destination_qid=""
-    )
+    args = make_tag_args(feature="caption", stream="video")
     
     fabric_tagger.tag(q, args)
     wait_tag(fabric_tagger, q.qhit, timeout=5)
@@ -534,7 +482,7 @@ def test_source_with_zero_tags_marked_as_missing(fabric_tagger, q):
     assert job_status["status"] == "Completed"
     assert len(job_status["missing_tags"]) == 1
 
-def test_track_override_uploads_to_multiple_tracks(fabric_tagger, q):
+def test_track_override_uploads_to_multiple_tracks(fabric_tagger, q, make_tag_args):
     """Test that model tags with different tracks are uploaded to different tagstore tracks"""
 
     class MultiTrackContainer(FakeTagContainer):
@@ -551,14 +499,7 @@ def test_track_override_uploads_to_multiple_tracks(fabric_tagger, q):
 
     fabric_tagger.cregistry.get = get_side_effect
 
-    args = TagArgs(
-        feature="asr",
-        run_config={},
-        scope=VideoScope(stream="audio", start_time=0, end_time=30),
-        replace=False,
-        destination_qid=""
-    )
-
+    args = make_tag_args(feature="asr", stream="audio")
     fabric_tagger.tag(q, args)
     wait_tag(fabric_tagger, q.qhit, timeout=5)
 
@@ -567,16 +508,10 @@ def test_track_override_uploads_to_multiple_tracks(fabric_tagger, q):
     assert len(default_tags) == 2
     assert len(override_tags) == 2
 
-def test_uploaded_track_label(fabric_tagger, q):
+def test_uploaded_track_label(fabric_tagger, q, make_tag_args):
     """Test that uploaded tags have correct track labels based on model params"""
     
-    args = TagArgs(
-        feature="caption",
-        run_config={},
-        scope=VideoScope(stream="video", start_time=0, end_time=30),
-        replace=False,
-        destination_qid=""
-    )
+    args = make_tag_args(feature="caption", stream="video")
     
     fabric_tagger.tag(q, args)
     wait_tag(fabric_tagger, q.qhit, timeout=5)
@@ -593,7 +528,7 @@ def test_uploaded_track_label(fabric_tagger, q):
     assert track.name == track_arg.name
     assert track.label == track_arg.label
 
-def test_default_defer_to_model_track(fabric_tagger, q):
+def test_default_defer_to_model_track(fabric_tagger, q, make_tag_args):
     class MultiTrackContainer(FakeTagContainer):
         def tags(self) -> list[ModelTag]:
             tags = []
@@ -613,13 +548,7 @@ def test_default_defer_to_model_track(fabric_tagger, q):
         return MultiTrackContainer(req.media_input, req.model_id)
 
     with patch.object(fabric_tagger.cregistry, "get", side_effect=get_side_effect):
-        args = TagArgs(
-            feature="asr",
-            run_config={},
-            scope=VideoScope(stream="audio", start_time=0, end_time=30),
-            replace=False,
-            destination_qid=""
-        )
+        args = make_tag_args(feature="asr", stream="audio")
         fabric_tagger.tag(q, args)
         wait_tag(fabric_tagger, q.qhit, timeout=5)
 
@@ -629,7 +558,7 @@ def test_default_defer_to_model_track(fabric_tagger, q):
     track = fabric_tagger.tagstore.get_track(qhit=q.qhit, q=q, name="random_track")
     assert track.label == "Random Track"
 
-def test_fetcher_returns_no_sources(fabric_tagger, q):
+def test_fetcher_returns_no_sources(fabric_tagger, q, make_tag_args):
     """Test that job completes gracefully when fetcher returns no sources"""
 
     empty_result = DownloadResult(sources=[], failed=[], done=True)
@@ -637,14 +566,7 @@ def test_fetcher_returns_no_sources(fabric_tagger, q):
     fake_session.download.return_value = empty_result
 
     with patch.object(fabric_tagger.fetcher, "get_session", return_value=fake_session):
-        args = TagArgs(
-            feature="caption",
-            run_config={},
-            scope=VideoScope(stream="video", start_time=0, end_time=30),
-            replace=False,
-            destination_qid=""
-        )
-
+        args = make_tag_args(feature="caption", stream="video")
         result = fabric_tagger.tag(q, args)
         assert "successfully" in result.lower()
         wait_tag(fabric_tagger, q.qhit, timeout=2)

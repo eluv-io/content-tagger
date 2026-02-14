@@ -229,7 +229,11 @@ class FabricTagger:
 
         job = TagJob(
             state=JobState.starting(media_state, upload_session),
-            args=JobArgs(**args.__dict__, q=q, retry_upload=is_live, retry_fetch=is_live),
+            args=JobArgs(
+                **args.__dict__,
+                q=q,
+                retry_upload=is_live,
+            ),
             stop_event=stop_event,   
         )
 
@@ -269,11 +273,20 @@ class FabricTagger:
 
             try:
                 dl_res = job.state.media.worker.download()
+                # reset on successful fetch
+                job.state.fetch_retry_count = 0
             except Exception as e:
-                if job.args.retry_fetch:
+                if job.state.fetch_retry_count < job.args.max_fetch_retries:
+                    job.state.fetch_retry_count += 1
                     retry_delay = 5
-                    logger.error(f"Error during fetching but retry is set to true, retrying in {retry_delay} seconds\n{str(e)}", extra={"jobid": jobid})
-                    threading.Timer(retry_delay, lambda: self._submit_async(EnterFetchingPhase(job_id=jobid))).start()
+                    logger.error(
+                        f"Error during fetching; retry {job.state.fetch_retry_count}/{job.args.max_fetch_retries} in {retry_delay} seconds\n{str(e)}",
+                        extra={"jobid": jobid}
+                    )
+                    threading.Timer(
+                        retry_delay,
+                        lambda: self._submit_async(EnterFetchingPhase(job_id=jobid))
+                    ).start()
                 else:
                     self._end_job(jobid, "Failed", e)
                 return

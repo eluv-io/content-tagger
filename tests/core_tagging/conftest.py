@@ -1,4 +1,3 @@
-
 import os
 import threading
 import time
@@ -297,21 +296,35 @@ def fabric_tagger(system_tagger, fake_container_registry, tag_store, fake_fetche
 
 
 @pytest.fixture
-def sample_tag_args():
-    """Create sample TagArgs for testing - now returns list of TagArgs"""
-    return [
-        TagArgs(
-            feature="caption",
-            run_config={},
-            scope=VideoScope(stream="video", start_time=0, end_time=30),
-            replace=False,
-            destination_qid=""
-        ),
-        TagArgs(
-            feature="asr", 
-            run_config={},
-            scope=VideoScope(stream="audio", start_time=0, end_time=30),
-            replace=False,
-            destination_qid=""
+def make_tag_args():
+    """Factory for consistent TagArgs construction in tests."""
+    def _make(
+        feature: str = "caption",
+        stream: str | None = None,
+        destination_qid: str = "",
+        replace: bool = False,
+        run_config: dict | None = None,
+        start_time: int = 0,
+        end_time: int = 30,
+        max_fetch_retries: int = 3
+    ) -> TagArgs:
+        if stream is None:
+            stream = "audio" if feature == "asr" else "video"
+        return TagArgs(
+            feature=feature,
+            run_config=run_config or {},
+            scope=VideoScope(stream=stream, start_time=start_time, end_time=end_time),
+            replace=replace,
+            destination_qid=destination_qid,
+            max_fetch_retries=max_fetch_retries
         )
+    return _make
+
+
+@pytest.fixture
+def sample_tag_args(make_tag_args):
+    """Create sample TagArgs for testing."""
+    return [
+        make_tag_args(feature="caption", stream="video"),
+        make_tag_args(feature="asr", stream="audio"),
     ]
