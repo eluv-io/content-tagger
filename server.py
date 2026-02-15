@@ -65,6 +65,10 @@ def configure_routes(app: Flask) -> None:
     def stop_model(qhit: str, feature: str) -> Response:
         return handle_stop_model(qhit, feature)
 
+    @app.route('/<qhit>/stop', methods=['POST'])
+    def stop_content(qhit: str) -> Response:
+        return handle_stop_content(qhit)
+
     @app.route('/<qhit>/commit', methods=['POST'])
     def commit(qhit: str) -> Response:
         return handle_commit(qhit)

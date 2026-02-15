@@ -341,6 +341,8 @@ def test_stop_workflow(client, q):
     
     # Stop the job quickly (before it completes)
     response = client.post(f"/{q.qid}/stop/test_model?authorization={video_auth}")
+    assert response.status_code == 200
+    assert len(response.get_json()["jobs"]) == 1
     
     # Check status - job should be stopped
     response = client.get(f"/{q.qid}/status?authorization={video_auth}")
@@ -392,7 +394,7 @@ def test_double_run(client, q):
     start = time.time()
     response = client.post(f"/{q.qid}/stop/test_model?authorization={video_auth}")
     duration = time.time() - start
-    print(duration)
+
     assert duration < 2, f"Stop request took too long: {duration}s which is over 2s limit"
     assert response.status_code == 200
 
@@ -569,6 +571,42 @@ def test_invalid_model_name(client, q):
     )
     
     assert response.status_code == 400
+
+def test_stop_all_jobs(client, q):
+    """Test stopping all jobs for a qhit."""
+    auth = get_auth(q)
+    
+    response = client.post(
+        f"/{q.qid}/tag?authorization={auth}",
+        json={
+            "features": {
+                "test_model": {"model": {"tags": ["ok1", "ok2"]}},
+                "test_model2": {"model": {"tags": ["nope"]}},
+            },
+            "replace": True,
+        },
+    )
+    assert response.status_code == 200
+
+    time.sleep(0.2)
+    
+    # Stop all jobs using the stop endpoint without feature specification
+    stop_response = client.post(f"/{q.qid}/stop?authorization={auth}")
+    assert stop_response.status_code == 200
+
+    assert len(stop_response.get_json()["jobs"]) == 2
+    
+    # Wait a moment for stop to take effect
+    time.sleep(1)
+    
+    # Check that all jobs are now stopped
+    response = client.get(f"/{q.qid}/status?authorization={auth}")
+    assert response.status_code == 200
+    data = response.get_json()
+    reports = data['jobs']
+    
+    for report in reports:
+        assert report['status'] == 'Stopped'
 
 def test_start_two_jobs_one_fails_partial_failure_response(client, q):
     """

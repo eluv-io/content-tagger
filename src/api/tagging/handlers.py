@@ -123,6 +123,18 @@ def handle_stop_model(
 
     return Response(response=json.dumps(asdict(api_res)), status=200, mimetype='application/json')
 
+def handle_stop_content(
+    qhit: str
+) -> Response:
+    q = _get_authorized_content(qhit)
+
+    tagger: FabricTagger = current_app.config["state"]["tagger"]
+
+    stop_res = tagger.stop(q.qhit, None, None)
+
+    api_res = map_stop_results_to_response(stop_res)
+
+    return Response(response=json.dumps(asdict(api_res)), status=200, mimetype='application/json')
 
 def _get_authorized_content(qhit: str) -> Content:
     auth = get_authorization(request)
