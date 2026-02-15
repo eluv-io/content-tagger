@@ -67,3 +67,8 @@ class TagJobStatusReport:
     model: str
     stream: str
     message: str | None = None
+
+@dataclass(frozen=True)
+class TagStopResult:
+    job_id: JobID
+    message: str
