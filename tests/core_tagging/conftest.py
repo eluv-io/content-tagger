@@ -5,14 +5,14 @@ from unittest.mock import Mock
 import pytest
 
 from src.common.content import Content
-from src.fetch.model import DownloadRequest, DownloadResult, FetchSession, Source, VideoMetadata, VideoScope
+from src.fetch.model import DownloadRequest, DownloadResult, FetchSession, MediaMetadata, Source, VideoMetadata, VideoScope
 from src.fetch.model import VideoScope
 from src.tag_containers.model import ContainerRequest, MediaInput, ModelConfig, ModelTag
 from src.tagging.fabric_tagging.model import FabricTaggerConfig, TagArgs
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.tagging.scheduling.model import SysConfig
-from src.tagging.uploading.config import ModelUploadArgs, TrackArgs, UploaderConfig
+from src.tags.track_resolver import TrackArgs, TrackResolver, TrackResolverConfig
 
 
 @pytest.fixture
@@ -23,22 +23,18 @@ def media_dir(temp_dir: str) -> str:
     return media_path
 
 @pytest.fixture
+def track_resolver():
+    """Create a simple track resolver for testing"""
+    return TrackResolver(cfg=TrackResolverConfig(mapping={
+        "caption": TrackArgs(name="object_detection", label="Object Detection"),
+        "asr": TrackArgs(name="speech_to_text", label="Speech to Text"),
+        "pretty": TrackArgs(name="auto_captions", label="Pretty Speech")
+    }))
+    
+@pytest.fixture
 def tagger_config(media_dir) -> FabricTaggerConfig:
     return FabricTaggerConfig(
-        media_dir=media_dir, 
-        uploader=UploaderConfig(
-            model_params={
-                "caption": ModelUploadArgs(
-                    default=TrackArgs(name="object_detection", label="Object Detection")
-                ),
-                "asr": ModelUploadArgs(
-                    default=TrackArgs(name="speech_to_text", label="Speech to Text"),
-                    overrides={
-                        "pretty": TrackArgs(name="auto_captions", label="Auto Captions")
-                    }
-                ),
-            }
-        ),
+        media_dir=media_dir,
     )
 
 class FakeTagContainer:
@@ -138,7 +134,7 @@ class FakeTagContainer:
                     text=f"{self.feature}_tag_{i}",
                     frame_tags={},
                     source_media=filepath,
-                    track=""
+                    model_track=""
                 ),
                 ModelTag(
                     start_time=5000,
@@ -146,7 +142,7 @@ class FakeTagContainer:
                     text=f"{self.feature}_tag_{i}_2",
                     frame_tags={},
                     source_media=filepath,
-                    track=""
+                    model_track=""
                 )
             ]
 
@@ -253,6 +249,17 @@ class FakeWorker(FetchSession):
     @property
     def path(self) -> str:
         return self.output_dir
+    
+class NoopWorker(FetchSession):
+    def metadata(self) -> MediaMetadata:
+        return MediaMetadata()
+    
+    def download(self) -> DownloadResult:
+        return DownloadResult(sources=[], failed=[], done=True)
+    
+    @property
+    def path(self) -> str:
+        return ""
 
 @pytest.fixture
 def fake_fetcher(media_dir):
@@ -263,7 +270,10 @@ def fake_fetcher(media_dir):
 
         def get_session(self, q: Content, req: DownloadRequest, exit_event=None):
             """Return a FakeWorker"""
-            return FakeWorker(output_dir=req.output_dir, timeout=0.1)
+            if req.preserve_track:
+                # assume we are testing replace functionality and just return noop
+                return NoopWorker()
+            return FakeWorker(output_dir=req.output_dir, timeout=0.1, )
     
     return FakeFetcher()
 
@@ -281,13 +291,14 @@ def fake_container_registry():
 
 
 @pytest.fixture
-def fabric_tagger(system_tagger, fake_container_registry, tag_store, fake_fetcher, tagger_config):
+def fabric_tagger(system_tagger, fake_container_registry, tag_store, fake_fetcher, track_resolver, tagger_config):
     """Create a FabricTagger instance for testing"""
     tagger = FabricTagger(
         system_tagger=system_tagger,
         cregistry=fake_container_registry,
         tagstore=tag_store,
         fetcher=fake_fetcher,
+        track_resolver=track_resolver,
         cfg=tagger_config
     )
     yield tagger
@@ -302,7 +313,8 @@ def make_tag_args():
         feature: str = "caption",
         stream: str | None = None,
         destination_qid: str = "",
-        replace: bool = False,
+        # default to true for testing, but in real prod it's false
+        replace: bool = True,
         run_config: dict | None = None,
         start_time: int = 0,
         end_time: int = 30,

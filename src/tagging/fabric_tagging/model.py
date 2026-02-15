@@ -5,12 +5,10 @@ from typing import Literal
 
 from src.common.content import Content
 from src.fetch.model import Scope
-from src.tagging.uploading.config import UploaderConfig
 
 @dataclass
 class FabricTaggerConfig:
     media_dir: str
-    uploader: UploaderConfig
 
 @dataclass
 class TagArgs:

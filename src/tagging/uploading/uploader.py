@@ -4,11 +4,11 @@ import math
 from src.tags.tagstore.model import Tag
 from src.tags.tagstore.abstract import Tagstore
 from src.tag_containers.model import ModelTag
-from src.tagging.uploading.config import UploaderConfig, TrackArgs
 from src.fetch.model import VideoMetadata
 from src.common.content import Content
 from src.common.logging import logger
 from src.tagging.fabric_tagging.media_state import MediaState
+from src.tags.track_resolver import TrackResolver
 
 class UploadSession:
     
@@ -16,7 +16,7 @@ class UploadSession:
         self,
         feature: str,
         media_state: MediaState,
-        config: UploaderConfig,
+        track_resolver: TrackResolver,
         tagstore: Tagstore,
         source_q: Content,
         destination_qid: str,
@@ -24,7 +24,7 @@ class UploadSession:
 
         self.feature = feature
         self.media = media_state  # Read-only reference to job's media state
-        self.config = config
+        self.track_resolver = track_resolver
         self.tagstore = tagstore
         self.source_q = source_q
 
@@ -72,7 +72,7 @@ class UploadSession:
                 additional_info=deepcopy(model_tag.additional_info),
                 frame_tags=deepcopy(model_tag.frame_tags),
                 source=original_src.name,
-                batch_id=self._get_batch(model_tag.track),
+                batch_id=self._get_batch(model_tag.model_track),
             )
             tags2upload.append(self._fix_tag_timing_info(tag, original_src.offset, original_src.wall_clock, fps))
 
@@ -138,19 +138,21 @@ class UploadSession:
         dest_q = q.get_child(destination_qid)
         return dest_q
     
-    def _get_batch(self, track: str) -> str:
-        if not track:
-            track = self._get_default_track(self.feature)
+    def _get_batch(self, model_track: str) -> str:
+        if model_track:
+            track_args = self.track_resolver.resolve(model_track)
+        else:
+            track_args = self.track_resolver.resolve(self.feature)
+
+        track = track_args.name
 
         if track in self.track_to_batch:
             return self.track_to_batch[track]
 
-        track_args = self._get_override_track(self.feature, track)
-
         try:
             self.tagstore.create_track(
                 qhit=self.dest_q.qid,
-                name=track_args.name,
+                name=track,
                 label=track_args.label,
                 q=self.dest_q,
             )
@@ -160,15 +162,14 @@ class UploadSession:
 
         db_track = self.tagstore.get_track(
             qhit=self.dest_q.qid,
-            name=track_args.name,
+            name=track,
             q=self.dest_q,
         )
 
-        assert db_track is not None and db_track.name == track_args.name
-
+        assert db_track is not None and db_track.name == track
         ts_batch = self.tagstore.create_batch(
             qhit=self.dest_q.qid,
-            track=db_track.name,
+            track=track,
             author="tagger",
             q=self.dest_q,
         )
@@ -194,15 +195,3 @@ class UploadSession:
             except Exception as e:
                 logger.opt(exception=e).error("error uploading tags", extra={"destination qid": q.qid})
                 raise
-
-    def _get_default_track(self, feature: str) -> str:
-        return self.config.model_params[feature].default.name
-    
-    def _get_override_track(self, feature: str, track: str) -> TrackArgs:
-        overrides = self.config.model_params[feature].overrides
-        if track in overrides:
-            return overrides[track]
-        return TrackArgs(
-            name=track,
-            label=track.replace("_", " ").title()
-        )

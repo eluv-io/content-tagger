@@ -231,9 +231,7 @@ def test_tags_uploaded_during_and_after_job(
         result = fabric_tagger.tag(q, args)
         assert result.started is True
 
-    track_mapping = fabric_tagger.cfg.uploader.model_params
-
-    tracks = [t.default.name for t in track_mapping.values()]
+    tracks = ["speech_to_text", "object_detection"]
 
     tag_counts = set()
 
@@ -515,7 +513,7 @@ def test_track_override_uploads_to_multiple_tracks(fabric_tagger, q, make_tag_ar
     assert len(default_tags) == 2
     assert len(override_tags) == 2
 
-def test_uploaded_track_label(fabric_tagger, q, make_tag_args):
+def test_uploaded_track_label(fabric_tagger: FabricTagger, q, make_tag_args):
     """Test that uploaded tags have correct track labels based on model params"""
     
     args = make_tag_args(feature="caption", stream="video")
@@ -523,7 +521,7 @@ def test_uploaded_track_label(fabric_tagger, q, make_tag_args):
     fabric_tagger.tag(q, args)
     wait_tag(fabric_tagger, q.qhit, timeout=5)
     
-    track_arg = fabric_tagger.cfg.uploader.model_params["caption"].default
+    track_arg = fabric_tagger.track_resolver.resolve(args.feature)
     
     track = fabric_tagger.tagstore.get_track(
         qhit=q.qhit,
@@ -547,7 +545,7 @@ def test_default_defer_to_model_track(fabric_tagger, q, make_tag_args):
                     text=f"default_track_tag_{i}",
                     frame_tags={},
                     source_media=filepath,
-                    track="random_track"
+                    model_track="random_track"
                 ))
             return tags
 
@@ -588,3 +586,43 @@ def test_fetcher_returns_no_sources(fabric_tagger, q, make_tag_args):
     # Verify no tags were uploaded
     tag_count = fabric_tagger.tagstore.count_tags(qhit=q.qhit, q=q)
     assert tag_count == 0
+
+def test_replace(
+    fabric_tagger: FabricTagger,
+    q: Content,
+    make_tag_args,
+):
+
+    args = make_tag_args(feature="caption", stream="video")
+
+    fabric_tagger.tag(q, args)
+    wait_tag(fabric_tagger, q.qhit, timeout=5)
+
+    first_batch = fabric_tagger.tagstore.find_batches(q=q, track="object_detection")[0]
+    tags = fabric_tagger.tagstore.find_tags(q=q, track="object_detection", batch_id=first_batch)
+
+    timestamps = tuple(sorted(t.additional_info["timestamp_ms"] for t in tags))
+
+    args = make_tag_args(feature="caption", stream="video", replace=True)
+    fabric_tagger.tag(q, args)
+    wait_tag(fabric_tagger, q.qhit, timeout=5)
+
+    new_batches = fabric_tagger.tagstore.find_batches(q=q, track="object_detection")
+    new_batches.remove(first_batch)
+    second_batch = new_batches[0]
+
+    new_tags = fabric_tagger.tagstore.find_tags(q=q, batch_id=second_batch)
+
+    new_timestamps = tuple(sorted(t.additional_info["timestamp_ms"] for t in new_tags))
+
+    assert new_timestamps > timestamps
+
+    # try with replace = False
+    args = make_tag_args(feature="caption", stream="video", replace=False)
+    fabric_tagger.tag(q, args)
+    wait_tag(fabric_tagger, q.qhit, timeout=5)
+
+    # doing this weird stuff for now cause prod tagstore does shadowing and local one doesn't
+    batches = fabric_tagger.tagstore.find_batches(q=q, track="object_detection")
+    
+    assert len(batches) == 2

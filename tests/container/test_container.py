@@ -755,5 +755,5 @@ def test_track_field(video_tag_container):
     tags = video_tag_container.tags()
 
     assert len(tags) == 2
-    assert tags[0].track == "track1"
-    assert tags[1].track == "track2"
+    assert tags[0].model_track == "track1"
+    assert tags[1].model_track == "track2"

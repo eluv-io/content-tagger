@@ -10,9 +10,7 @@ from src.fetch.model import FetcherConfig
 from src.tags.tagstore.abstract import Tagstore
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.tags.tagstore.rest_tagstore import RestTagstore
-from src.tagging.fabric_tagging.model import FabricTaggerConfig
 from src.common.content import Content, ContentConfig, ContentFactory
-from src.tagging.uploading.config import ModelUploadArgs, UploaderConfig, TrackArgs
 
 dotenv.load_dotenv()
 

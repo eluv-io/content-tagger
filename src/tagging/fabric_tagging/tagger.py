@@ -1,5 +1,4 @@
 import threading
-from collections import defaultdict
 import time
 import queue
 from copy import deepcopy
@@ -25,6 +24,8 @@ from src.tagging.fabric_tagging.model import *
 from src.tagging.uploading.uploader import UploadSession
 
 from src.common.logging import logger
+from src.tags.track_resolver import TrackResolver
+
 logger = logger.bind(name="Fabric Tagger")
 
 @dataclass
@@ -52,13 +53,15 @@ class FabricTagger:
         cregistry: ContainerRegistry,
         tagstore: Tagstore,
         fetcher: FetchFactory,
-        cfg: FabricTaggerConfig
+        track_resolver: TrackResolver,
+        cfg: FabricTaggerConfig,
     ):
 
         self.system_tagger = system_tagger
         self.cregistry = cregistry
         self.tagstore = tagstore
         self.fetcher = fetcher
+        self.track_resolver = track_resolver
         self.cfg = cfg
 
         self.jobstore = JobStore()
@@ -207,10 +210,13 @@ class FabricTagger:
         # for user to stop the job
         stop_event = threading.Event()
 
+        # TODO: if model outputs multiple tracks this might not give us what we want
+        preserve_track = self.track_resolver.resolve(feature)
+
         worker = self.fetcher.get_session(
             q, 
             DownloadRequest(
-                preserve_track=feature if not args.replace else "",
+                preserve_track=preserve_track.name if not args.replace else "",
                 output_dir=self._output_dir_from_q(q),
                 scope=args.scope,
             ),
@@ -226,9 +232,9 @@ class FabricTagger:
             tagstore=self.tagstore,
             feature=feature,
             source_q=q,
+            track_resolver=self.track_resolver,
             destination_qid=args.destination_qid or q.qid,
             media_state=media_state,
-            config=self.cfg.uploader
         )
 
         job = TagJob(

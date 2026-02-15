@@ -12,7 +12,7 @@ from src.tag_containers.model import ModelConfig, RegistryConfig
 from src.tagging.fabric_tagging.model import FabricTaggerConfig
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tagging.scheduling.model import SysConfig
-from src.tagging.uploading.config import ModelUploadArgs, TrackArgs, UploaderConfig
+from src.tags.track_resolver import TrackArgs, TrackResolverConfig
 from src.tags.conversion import TagConverterConfig
 from src.tags.tagstore.model import TagstoreConfig
 
@@ -20,7 +20,7 @@ from src.tags.tagstore.model import TagstoreConfig
 def tagger_config(static_dir) -> FabricTaggerConfig:
     media_path = os.path.join(static_dir, "media")
     os.makedirs(media_path, exist_ok=True)
-    return FabricTaggerConfig(media_dir=media_path, uploader=UploaderConfig(model_params={"test_model": ModelUploadArgs(default=TrackArgs(name="test_model", label="TEST MODEL"))}))    
+    return FabricTaggerConfig(media_dir=media_path)    
 
     
 @pytest.fixture()
@@ -61,7 +61,8 @@ def app_config(static_dir, tagger_config, content_config, fetcher_config, contai
         system=SysConfig(gpus=["gpu", "disabled", "gpu"], resources={"cpu_juice": 16}),
         fetcher=fetcher_config,
         container_registry=container_registry_config,
-        tagger=tagger_config
+        tagger=tagger_config,
+        track_resolver=TrackResolverConfig(mapping={"test_model": TrackArgs(name="test_model", label="TEST MODEL")})
     )
 
 

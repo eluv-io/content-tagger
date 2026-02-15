@@ -10,6 +10,7 @@ from src.tagging.scheduling.model import SysConfig
 from src.tags.conversion import TagConverterConfig
 from src.tags.tagstore.model import TagstoreConfig
 from src.tagging.fabric_tagging.model import FabricTaggerConfig
+from src.tags.track_resolver import TrackResolverConfig
 
 @dataclass
 class AppConfig:
@@ -21,6 +22,7 @@ class AppConfig:
     container_registry: RegistryConfig
     tag_converter: TagConverterConfig
     tagger: FabricTaggerConfig
+    track_resolver: TrackResolverConfig
 
     @staticmethod
     def from_yaml(filename: str) -> 'AppConfig':

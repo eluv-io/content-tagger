@@ -17,6 +17,7 @@ from src.fetch.factory import FetchFactory
 from src.common.content import ContentFactory
 from src.tag_containers.registry import ContainerRegistry
 from src.tags.conversion import TagConverter
+from src.tags.track_resolver import TrackResolver
 
 from src.api.tagging.handlers import handle_tag, handle_image_tag, handle_status, handle_stop
 from src.api.upload.handlers import handle_commit
@@ -79,6 +80,7 @@ def boot_state(app: Flask, cfg: AppConfig) -> None:
     tagstore = create_tagstore(cfg.tagstore)
     fetcher = FetchFactory(cfg.fetcher, tagstore)
     container_registry = ContainerRegistry(cfg.container_registry)
+    track_resolver = TrackResolver(cfg.track_resolver)
 
     app_state["tagger"] = FabricTagger(
         system_tagger=system_tagger,
@@ -86,6 +88,7 @@ def boot_state(app: Flask, cfg: AppConfig) -> None:
         cregistry=container_registry,
         tagstore=tagstore,
         cfg=cfg.tagger,
+        track_resolver=track_resolver,
     )
 
     app_state["content_factory"] = ContentFactory(cfg.content)

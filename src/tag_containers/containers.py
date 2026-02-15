@@ -242,7 +242,7 @@ class TagContainer:
                 frame_tags={"0": {"confidence": image_tag_data.get("confidence", 0.0),
                     "box": image_tag_data.get("box", [])}},
                 source_media=source_image,
-                track=""
+                model_track=""
             ))
         return tags
     
@@ -331,7 +331,7 @@ class TagContainer:
                 text=video_tag_data.get("text", ""),
                 frame_tags=frame_info,
                 source_media=source_video,
-                track=track,
+                model_track=track,
                 additional_info=additional_info
             )
 

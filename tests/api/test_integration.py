@@ -87,8 +87,7 @@ def test_video_model(client, q):
             "features": {
                 "test_model": {
                     "model": {"tags": ["hello1", "hello2"]}
-                }, 
-                #"shot": {}
+                },
             }, 
             "replace": True
         }
