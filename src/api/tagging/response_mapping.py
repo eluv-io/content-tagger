@@ -1,7 +1,7 @@
 from dataclasses import asdict, fields
 
 from src.tagging.fabric_tagging.model import *
-from src.api.tagging.response_format import StatusResponse, JobStatus
+from src.api.tagging.response_format import StatusResponse, JobStatus, StopStatus, StopTaggingResponse
 
 def map_all_jobs_status_to_response(all_jobs_status: list[TagJobStatusReport]) -> StatusResponse:
     return StatusResponse(
@@ -18,4 +18,11 @@ def map_job_status_to_response(js: TagJobStatusReport) -> JobStatus:
         tagging_progress=js.tagging_progress,
         missing_tags=js.missing_tags,
         failed=js.failed,
+    )
+
+def map_stop_results_to_response(stop_results: list[TagStopResult]) -> StopTaggingResponse:
+    num_results = len(stop_results)
+    return StopTaggingResponse(
+        jobs=[StopStatus(job_id=str(result.job_id), message=result.message) for result in stop_results],
+        message=f"Stopping {num_results} job(s). Check with /status for completion."
     )

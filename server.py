@@ -19,7 +19,7 @@ from src.tag_containers.registry import ContainerRegistry
 from src.tags.conversion import TagConverter
 from src.tags.track_resolver import TrackResolver
 
-from src.api.tagging.handlers import handle_tag, handle_image_tag, handle_status, handle_stop
+from src.api.tagging.handlers import handle_tag, handle_image_tag, handle_status, handle_stop_model, handle_stop_content
 from src.api.upload.handlers import handle_commit
 from src.common.errors import *
 from app_config import AppConfig
@@ -62,8 +62,8 @@ def configure_routes(app: Flask) -> None:
         return handle_status(qhit)
     
     @app.route('/<qhit>/stop/<feature>', methods=['POST'])
-    def stop(qhit: str, feature: str) -> Response:
-        return handle_stop(qhit, feature)
+    def stop_model(qhit: str, feature: str) -> Response:
+        return handle_stop_model(qhit, feature)
 
     @app.route('/<qhit>/commit', methods=['POST'])
     def commit(qhit: str) -> Response:

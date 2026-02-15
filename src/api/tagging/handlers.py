@@ -109,17 +109,20 @@ def handle_status(qhit: str) -> Response:
 
     return Response(response=json.dumps(asdict(map_all_jobs_status_to_response(reports))), status=200, mimetype='application/json')
 
-def handle_stop(
-        qhit: str, 
-        feature: str
-    ) -> Response:
+def handle_stop_model(
+    qhit: str, 
+    feature: str
+) -> Response:
     q = _get_authorized_content(qhit)
 
     tagger: FabricTagger = current_app.config["state"]["tagger"]
 
-    tagger.stop(q.qhit, feature, None)
+    stop_res = tagger.stop(q.qhit, feature, None)
 
-    return Response(response=json.dumps({'message': f"Stopping {feature} on {qhit}. Check with /status for completion."}), status=200, mimetype='application/json')
+    api_res = map_stop_results_to_response(stop_res)
+
+    return Response(response=json.dumps(asdict(api_res)), status=200, mimetype='application/json')
+
 
 def _get_authorized_content(qhit: str) -> Content:
     auth = get_authorization(request)

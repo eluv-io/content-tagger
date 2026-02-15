@@ -27,3 +27,13 @@ class JobStatus:
 @dataclass(frozen=True)
 class StatusResponse:
     jobs: list[JobStatus]
+
+@dataclass(frozen=True)
+class StopStatus:
+    job_id: str
+    message: str
+
+@dataclass(frozen=True)
+class StopTaggingResponse:
+    jobs: list[StopStatus]
+    message: str
