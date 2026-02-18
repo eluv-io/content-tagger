@@ -5,12 +5,11 @@ import os
 from flask import Response, request, current_app
 from dacite import from_dict
 
-from src.api.tagging.request_mapping import is_live, tag_args_from_req
+from src.api.tagging.request_mapping import map_video_tag_dto
 from src.api.tagging.response_format import StartStatus, StartTaggingResponse
 from src.api.tagging.response_format import StartStatus
 from src.common.logging import logger
 
-from src.api.tagging.request_format import ImageTagAPIArgs
 from src.common.errors import *
 from src.api.auth import *
 from src.common.content import Content, ContentFactory
@@ -20,38 +19,17 @@ from src.api.tagging.response_mapping import *
 
 def handle_tag(qhit: str) -> Response:
     q = _get_authorized_content(qhit)
-    is_livestream = is_live(q)
 
-    if is_livestream and q._live_client is None:
-        raise ExternalServiceError("Live media client is not configured.")
-    elif not is_livestream and q._parts_client is None:
-        raise ExternalServiceError("Parts client is not configured.")
-
-    args = tag_args_from_req(is_livestream)
+    args = from_dict(data_class=StartJobsRequest, data=request.get_json())
     logger.debug(args)
 
-    _validate_destination_auth(q, args.destination_qid)
+    _validate_destination_auth(q, args.defaults.destination_qid)
     
     tagger: FabricTagger = current_app.config["state"]["tagger"]
     tag_args = map_video_tag_dto(args, tagger.cregistry, q)
     
     return _execute_tagging(q, tag_args)
 
-def handle_image_tag(qhit: str) -> Response:
-    q = _get_authorized_content(qhit)
-    
-    try:
-        body = request.json
-        assert body is not None
-        args = from_dict(ImageTagAPIArgs, body)
-    except Exception as e:
-        raise BadRequestError(f"Invalid request body: {e}") from e
-
-    _validate_destination_auth(q, args.destination_qid)
-
-    tag_args = map_asset_tag_dto(args)
-    
-    return _execute_tagging(q, tag_args)
 
 def _execute_tagging(q: Content, tag_args: list[TagArgs]) -> Response:
     """Execute tagging for multiple features and return start status response."""
