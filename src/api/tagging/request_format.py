@@ -22,10 +22,10 @@ class ScopeAssets:
     type: Literal["assets"] = "assets"
     assets: list[str] | None = None
 
-
 @dataclass
 class ScopeLivestream:
     type: Literal["livestream"] = "livestream"
+    stream: str = ""
     segment_length: int = 4
     max_duration: Optional[int] = None
 

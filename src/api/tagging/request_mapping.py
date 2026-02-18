@@ -69,6 +69,7 @@ def _map_scope(scope_arg: dict[str, Any]) -> ScopeDTO:
     elif scope_type == "processor":
         return ScopeProcessor(**scope_arg)
     elif scope_type == "assets":
+        del scope_arg["stream"]
         return ScopeAssets(**scope_arg)
     elif scope_type == "livestream":
         return ScopeLivestream(**scope_arg)
@@ -114,6 +115,8 @@ def _get_default_scope_dict(is_live: bool, model_type: str, q: Content) -> dict[
 
     if model_type == "audio":
         res["stream"] = _find_default_audio_stream(q)
+    else:
+        res["stream"] = "video"
 
     return res
 
