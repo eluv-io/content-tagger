@@ -1,4 +1,4 @@
-openapi: 3.0.0
+openapi: 3.0.3
 info:
   title: Eluvio Tagger API
   x-logo:
@@ -9,228 +9,363 @@ info:
 paths:
   /{qid}/tag:
     post:
+      tags:
+        - Operate tagging
       summary:
-        Tag a content by qid
+        Tag content
       parameters:
-        - in: path
-          name: qid
+        - name: qid
+          in: path
           required: true
           schema:
             type: string
-          description: Content object id to tag
-        - in: query
-          name: authorization
-          required: false
+        - name: authorization
+          in: query
+          required: true
           schema:
             type: string
-          description: Fabric authorization token. It should be valid against the content object.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              allOf:
-                - $ref: '#/components/schemas/CommonTaggingParams'
-                - type: object
-                  properties:
-                    start_time:
-                      type: integer
-                      description: Start time of tag job (in seconds)
-                      default: 0
-                    end_time:
-                      type: integer
-                      description: End time of tag job. If not specified, it will tag the full duration. (in seconds)
-                      default: null
-                      example: 10
-                    destination_qid:
-                      type: string
-                      description: Content to which tags should be written. Defaults to the same content being tagged.
+              $ref: '#/components/schemas/StartJobsRequest'
       responses:
         '200':
-          description: Summary of the given tags
+          description: Success
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Tagging started on iq__3C58dDYxsn5KKSWGYrfYr44ykJRm
-  /{qid}/image_tag:
-    post:
-      summary:
-        Tag image assets of a content
-      parameters:
-        - in: path
-          name: qid
-          required: true
-          schema:
-            type: string
-          description: Content object id to tag
-        - in: query
-          name: authorization
-          required: false
-          schema:
-            type: string
-          description: Fabric authorization token
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              allOf:
-                - $ref: '#/components/schemas/CommonTaggingParams'
-                - type: object
-                  properties:
-                    assets:
-                      type: array
-                      items: 
-                        type: string
-                      example: ["/assets/abc.jpg", "/assets/bar.jpg"]
-                      description: Set of file paths which point to image files to tag. If this is not set, then we will tag all images under /meta/assets.
-      responses:
-        '200':
-          description: Summary of the given tags
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Tagging started on iq__3C58dDYxsn5KKSWGYrfYr44ykJRm
+                $ref: '#/components/schemas/StartTaggingResponse'
+        '400':
+          description: Bad Request
+        '502':
+          description: Bad Gateway
+
   /{qid}/status:
     get:
-      summary: |
-        Get the status of all tagging jobs for the given content object.
+      tags:
+        - Operate tagging
+      summary:
+        Check status
       parameters:
-        - in: path
-          name: qid
+        - name: qid
+          in: path
           required: true
           schema:
             type: string
-          description: Content object id to tag
-        - in: query
-          name: authorization
-          required: false
+        - name: authorization
+          in: query
+          required: true
           schema:
             type: string
-          description: Fabric authorization token
       responses:
         '200':
-          description: Summary of the given tags
+          description: Success
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    description: The status of the tagging job
-                    example: "Fetching parts"
-                  time_running:
-                    type: integer
-                    description: The time the job has been running
-                    example: 30.30
-                  tag_job_id:
-                    type: string
-                    description: The tag job id, once tagging has begun. Not currently useful for the user. 
-                    example: null
-                  error:
-                    type: string
-                    description: Error message if the job has failed
-                    example: null
+                $ref: '#/components/schemas/StatusResponse'
+        '404':
+          description: No jobs found
+
+  /{qid}/stop:
+    post:
+      tags:
+        - Operate tagging
+      summary:
+        Stop tagging jobs by content
+      parameters:
+        - name: qid
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: authorization
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StopTaggingResponse'
+
   /{qid}/stop/{model}:
     post:
-      summary: |
-        Stops a tagging job.
+      tags:
+        - Operate tagging
+      summary:
+        Stop tagging jobs by model
       parameters:
-        - in: path
-          name: qid
+        - name: qid
+          in: path
           required: true
           schema:
             type: string
-          description: Content object id that is beging tagged
-        - in: path
-          name: model
+        - name: model
+          in: path
           required: true
           schema:
             type: string
-          description: Model to stop tagging
-        - in: query
-          name: authorization
-          required: false
+        - name: authorization
+          in: query
+          required: true
           schema:
             type: string
-          description: Fabric authorization token
       responses:
         '200':
-          description: Summary of the given tags
+          description: Success
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Stopping asr on iq__3C58dDYxsn5KKSWGYrfYr44ykJRm. Check with /status for completion.
-  /list:
-    get:
-      summary: |
-        Get a list of all available models.
-      parameters:
-        - in: query
-          name: authorization
-          required: false
-          schema:
-            type: string
-          description: Fabric authorization token
-      responses:
-        '200':
-          description: Summary of the given tags
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: string
-                description: List of all the content objects that have been tagged
-                example: [
-                          "asr",
-                          "caption",
-                          "shot",
-                          "celeb"
-                        ]
+                $ref: '#/components/schemas/StopTaggingResponse'
+
 components:
   schemas:
-    CommonTaggingParams:
+    StartJobsRequest:
       type: object
       properties:
+        options:
+          $ref: '#/components/schemas/TaggerOptions'
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobSpec'
+      required:
+        - jobs
+
+    TaggerOptions:
+      type: object
+      properties:
+        destination_qid:
+          type: string
+          default: ""
+          description: content where tags should be written to
         replace:
           type: boolean
-          description: Whether tagging should retag already tagged parts of the content. Set to false to enable diff-based tagging, set to true if you need to retag.
           default: false
-        features:
+          description:
+            replace already existing tagstore tags. set to false to retag, set to true to enbable diff-based tagging.
+        max_fetch_retries:
+          type: integer
+          default: 3
+          description:
+            if a fetch operation fails, we can retry this many times before the job is marked as failed.
+        scope:
           type: object
-          description: Map of model identifier to runtime config. Check /list for available model identifiers.
-          additionalProperties:
-            type: object
-            properties:
-              stream:
-                type: string
-                description: Stream name to tag for the given model. Does not apply to image tagging. Typically this is "video" for video models and "audio" for audio models. Oftentimes the audio streams have different names so check the mezzanine metadata for the correct stream name.
-                example: "audio"
-              model:
-                type: object
-                description: Model configuration to override defaults. This has no fixed schema and may vary per model (see model docs). Leave blank to use the default model configuration.
-                example: {"fps": 2, "threshold": 0.5}
+          additionalProperties: true
           example:
-            celeb:
-              model:
-                fps: 2
-            asr:
-              model:
-                prettify: true
-                word_level: false
+            {"type": "video", "start_time": 100, "end_time": 200}
+          description: Scope of tagging. Format should match one of the Scope schemas.
+
+    JobSpec:
+      type: object
+      properties:
+        model:
+          type: string
+          example: asr
+        model_params:
+          type: object
+          additionalProperties: true
+        overrides:
+          $ref: '#/components/schemas/TaggerOptions'
       required:
-        - features
+        - model
+
+    ScopeVideo:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [video]
+        start_time:
+          type: integer
+          default: 0
+          description: start time to tag (in seconds)
+        end_time:
+          type: integer
+          default: 10000000000000000
+          example: 600
+          description: end time to tag (in seconds)
+        stream:
+          type: string
+          default: ""
+      required:
+        - type
+
+    ScopeProcessor:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [processor]
+        start_time:
+          type: integer
+          default: 0
+        end_time:
+          type: integer
+          default: 10000000000000000
+          example: 3000
+        chunk_size:
+          type: integer
+          default: 600
+        stream:
+          type: string
+          default: "video"
+      required:
+        - type
+
+    ScopeAssets:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [assets]
+        assets:
+          type: array
+          items:
+            type: string
+          description: list of asset paths to tag
+          example: ["assets/hello1.jpg", "assets/hello2.jpg"]
+      required:
+        - type
+
+    ScopeLivestream:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [livestream]
+        stream:
+          type: string
+          default: "video"
+        segment_length:
+          type: integer
+          default: 4
+          description: tagging interval size (in seconds)
+        max_duration:
+          type: integer
+          nullable: true
+          description: maximum amount of content from livestream to tag (in seconds)
+      required:
+        - type
+
+    StartTaggingResponse:
+      type: object
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/StartStatus'
+      required:
+        - jobs
+
+    StartStatus:
+      type: object
+      properties:
+        job_id:
+          type: string
+          example: "1234"
+        model:
+          type: string
+          example: "asr"
+        stream:
+          type: string
+          example: "audio_1"
+        started:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "successfully started"
+        error:
+          type: string
+          nullable: true
+          example: null
+      required:
+        - job_id
+        - model
+        - stream
+        - started
+        - message
+
+    StatusResponse:
+      type: object
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobStatus'
+      required:
+        - jobs
+
+    JobStatus:
+      type: object
+      properties:
+        job_id:
+          type: string
+          example: "1234"
+        status:
+          type: string
+          example: "Fetching Content"
+        time_running:
+          type: number
+          example: 1234
+        tagging_progress:
+          type: string
+          example: "120/305"
+        missing_tags:
+          type: array
+          description: list of sources which have no tags
+          example: ["assets/hello.jpg", "assets/hello2.jpg"]
+          items:
+            type: string
+        failed:
+          type: array
+          description: list of sources which failed to process
+          items:
+            type: string
+          example: ["assets/bad.jpg"]
+        model:
+          type: string
+          example: "asr"
+        stream:
+          type: string
+          example: "audio_1"
+      required:
+        - job_id
+        - status
+        - time_running
+        - tagging_progress
+        - missing_tags
+        - failed
+        - model
+        - stream
+
+    StopTaggingResponse:
+      type: object
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/StopStatus'
+        message:
+          type: string
+      required:
+        - jobs
+        - message
+
+    StopStatus:
+      type: object
+      properties:
+        job_id:
+          type: string
+        message:
+          type: string
+      required:
+        - job_id
+        - message

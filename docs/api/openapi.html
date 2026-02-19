@@ -2077,32 +2077,27 @@ var n=this.pipeline.run(e.tokenizer(t)),r=new e.Vector,i=[],o=this._fields.reduc
           </li>
         
           <li>
-            <a href="#eluvio-tagger-api-default" class="toc-h1 toc-link" data-title="Default">Default</a>
+            <a href="#eluvio-tagger-api-operate-tagging" class="toc-h1 toc-link" data-title="Operate tagging">Operate tagging</a>
             
               <ul class="toc-list-h2">
                 
                   <li>
-                    <a href="#tag-a-content-by-qid" class="toc-h2 toc-link" data-title="Tag a content by qid">Tag a content by qid</a>
+                    <a href="#tag-content" class="toc-h2 toc-link" data-title="Tag content">Tag content</a>
                     
                   </li>
                 
                   <li>
-                    <a href="#tag-image-assets-of-a-content" class="toc-h2 toc-link" data-title="Tag image assets of a content">Tag image assets of a content</a>
+                    <a href="#check-status" class="toc-h2 toc-link" data-title="Check status">Check status</a>
                     
                   </li>
                 
                   <li>
-                    <a href="#get-the-status-of-all-tagging-jobs-for-the-given-content-object-" class="toc-h2 toc-link" data-title="Get the status of all tagging jobs for the given content object.">Get the status of all tagging jobs for the given content object.</a>
+                    <a href="#stop-tagging-jobs-by-content" class="toc-h2 toc-link" data-title="Stop tagging jobs by content">Stop tagging jobs by content</a>
                     
                   </li>
                 
                   <li>
-                    <a href="#stops-a-tagging-job-" class="toc-h2 toc-link" data-title="Stops a tagging job.">Stops a tagging job.</a>
-                    
-                  </li>
-                
-                  <li>
-                    <a href="#get-a-list-of-all-available-models-" class="toc-h2 toc-link" data-title="Get a list of all available models.">Get a list of all available models.</a>
+                    <a href="#stop-tagging-jobs-by-model" class="toc-h2 toc-link" data-title="Stop tagging jobs by model">Stop tagging jobs by model</a>
                     
                   </li>
                 
@@ -2116,7 +2111,67 @@ var n=this.pipeline.run(e.tokenizer(t)),r=new e.Vector,i=[],o=this._fields.reduc
               <ul class="toc-list-h2">
                 
                   <li>
-                    <a href="#tocscommontaggingparams" class="toc-h2 toc-link" data-title="CommonTaggingParams">CommonTaggingParams</a>
+                    <a href="#tocsstartjobsrequest" class="toc-h2 toc-link" data-title="StartJobsRequest">StartJobsRequest</a>
+                    
+                  </li>
+                
+                  <li>
+                    <a href="#tocstaggeroptions" class="toc-h2 toc-link" data-title="TaggerOptions">TaggerOptions</a>
+                    
+                  </li>
+                
+                  <li>
+                    <a href="#tocsjobspec" class="toc-h2 toc-link" data-title="JobSpec">JobSpec</a>
+                    
+                  </li>
+                
+                  <li>
+                    <a href="#tocsscopevideo" class="toc-h2 toc-link" data-title="ScopeVideo">ScopeVideo</a>
+                    
+                  </li>
+                
+                  <li>
+                    <a href="#tocsscopeprocessor" class="toc-h2 toc-link" data-title="ScopeProcessor">ScopeProcessor</a>
+                    
+                  </li>
+                
+                  <li>
+                    <a href="#tocsscopeassets" class="toc-h2 toc-link" data-title="ScopeAssets">ScopeAssets</a>
+                    
+                  </li>
+                
+                  <li>
+                    <a href="#tocsscopelivestream" class="toc-h2 toc-link" data-title="ScopeLivestream">ScopeLivestream</a>
+                    
+                  </li>
+                
+                  <li>
+                    <a href="#tocsstarttaggingresponse" class="toc-h2 toc-link" data-title="StartTaggingResponse">StartTaggingResponse</a>
+                    
+                  </li>
+                
+                  <li>
+                    <a href="#tocsstartstatus" class="toc-h2 toc-link" data-title="StartStatus">StartStatus</a>
+                    
+                  </li>
+                
+                  <li>
+                    <a href="#tocsstatusresponse" class="toc-h2 toc-link" data-title="StatusResponse">StatusResponse</a>
+                    
+                  </li>
+                
+                  <li>
+                    <a href="#tocsjobstatus" class="toc-h2 toc-link" data-title="JobStatus">JobStatus</a>
+                    
+                  </li>
+                
+                  <li>
+                    <a href="#tocsstoptaggingresponse" class="toc-h2 toc-link" data-title="StopTaggingResponse">StopTaggingResponse</a>
+                    
+                  </li>
+                
+                  <li>
+                    <a href="#tocsstopstatus" class="toc-h2 toc-link" data-title="StopStatus">StopStatus</a>
                     
                   </li>
                 
@@ -2139,18 +2194,18 @@ var n=this.pipeline.run(e.tokenizer(t)),r=new e.Vector,i=[],o=this._fields.reduc
 <div class="description">
 API for running ML inference on Fabric content objects
 </div>
-<h1 id="eluvio-tagger-api-default">Default</h1>
-<h2 id="tag-a-content-by-qid">Tag a content by qid</h2>
+<h1 id="eluvio-tagger-api-operate-tagging">Operate tagging</h1>
+<h2 id="tag-content">Tag content</h2>
 <blockquote>
 <p>Code samples</p>
 </blockquote>
 <pre class="highlight tab tab-shell"><code><span class="hljs-comment"># You can also use wget</span>
-curl -X POST /{qid}/tag \
+curl -X POST /{qid}/tag?authorization=string \
   -H <span class="hljs-string">'Content-Type: application/json'</span> \
   -H <span class="hljs-string">'Accept: application/json'</span>
 
 </code></pre>
-<pre class="highlight tab tab-http"><code><span class="hljs-keyword">POST</span> <span class="hljs-string">/{qid}/tag</span> HTTP/1.1
+<pre class="highlight tab tab-http"><code><span class="hljs-keyword">POST</span> <span class="hljs-string">/{qid}/tag?authorization=string</span> HTTP/1.1
 
 <span class="http"><span class="hljs-attribute">Content-Type</span>: application/json
 <span class="hljs-attribute">Accept</span>: application/json
@@ -2165,7 +2220,7 @@ curl -X POST /{qid}/tag \
 $.ajax({
   <span class="hljs-attr">url</span>: <span class="hljs-string">'/{qid}/tag'</span>,
   <span class="hljs-attr">method</span>: <span class="hljs-string">'post'</span>,
-
+  <span class="hljs-attr">data</span>: <span class="hljs-string">'?authorization=string'</span>,
   <span class="hljs-attr">headers</span>: headers,
   <span class="hljs-attr">success</span>: <span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">data</span>) </span>{
     <span class="hljs-built_in">console</span>.log(<span class="hljs-built_in">JSON</span>.stringify(data));
@@ -2175,23 +2230,32 @@ $.ajax({
 </code></pre>
 <pre class="highlight tab tab-javascript--nodejs"><code><span class="hljs-keyword">const</span> fetch = <span class="hljs-built_in">require</span>(<span class="hljs-string">'node-fetch'</span>);
 <span class="hljs-keyword">const</span> inputBody = <span class="hljs-string">'{
-  "replace": false,
-  "features": {
-    "celeb": {
-      "model": {
-        "fps": 2
-      }
-    },
-    "asr": {
-      "model": {
-        "prettify": true,
-        "word_level": false
-      }
+  "options": {
+    "destination_qid": "",
+    "replace": false,
+    "max_fetch_retries": 3,
+    "scope": {
+      "type": "video",
+      "start_time": 100,
+      "end_time": 200
     }
   },
-  "start_time": 0,
-  "end_time": 10,
-  "destination_qid": "string"
+  "jobs": [
+    {
+      "model": "asr",
+      "model_params": {},
+      "overrides": {
+        "destination_qid": "",
+        "replace": false,
+        "max_fetch_retries": 3,
+        "scope": {
+          "type": "video",
+          "start_time": 100,
+          "end_time": 200
+        }
+      }
+    }
+  ]
 }'</span>;
 <span class="hljs-keyword">const</span> headers = {
   <span class="hljs-string">'Content-Type'</span>:<span class="hljs-string">'application/json'</span>,
@@ -2199,7 +2263,7 @@ $.ajax({
 
 };
 
-fetch(<span class="hljs-string">'/{qid}/tag'</span>,
+fetch(<span class="hljs-string">'/{qid}/tag?authorization=string'</span>,
 {
   <span class="hljs-attr">method</span>: <span class="hljs-string">'POST'</span>,
   <span class="hljs-attr">body</span>: inputBody,
@@ -2222,7 +2286,8 @@ headers = {
 
 result = RestClient.post <span class="hljs-string">'/{qid}/tag'</span>,
   <span class="hljs-symbol">params:</span> {
-  }, <span class="hljs-symbol">headers:</span> headers
+  <span class="hljs-string">'authorization'</span> =&gt; <span class="hljs-string">'string'</span>
+}, <span class="hljs-symbol">headers:</span> headers
 
 p JSON.parse(result)
 
@@ -2234,13 +2299,13 @@ headers = {
 }
 
 r = requests.post(<span class="hljs-string">'/{qid}/tag'</span>, params={
-
+  <span class="hljs-string">'authorization'</span>: <span class="hljs-string">'string'</span>
 }, headers = headers)
 
 <span class="hljs-keyword">print</span> r.json()
 
 </code></pre>
-<pre class="highlight tab tab-java"><code>URL obj = <span class="hljs-keyword">new</span> URL(<span class="hljs-string">"/{qid}/tag"</span>);
+<pre class="highlight tab tab-java"><code>URL obj = <span class="hljs-keyword">new</span> URL(<span class="hljs-string">"/{qid}/tag?authorization=string"</span>);
 HttpURLConnection con = (HttpURLConnection) obj.openConnection();
 con.setRequestMethod(<span class="hljs-string">"POST"</span>);
 <span class="hljs-keyword">int</span> responseCode = con.getResponseCode();
@@ -2311,26 +2376,35 @@ $request_body = <span class="hljs-keyword">array</span>();
 <p>Body parameter</p>
 </blockquote>
 <pre class="highlight tab tab-json"><code>{
-  <span class="hljs-attr">"replace"</span>: <span class="hljs-literal">false</span>,
-  <span class="hljs-attr">"features"</span>: {
-    <span class="hljs-attr">"celeb"</span>: {
-      <span class="hljs-attr">"model"</span>: {
-        <span class="hljs-attr">"fps"</span>: <span class="hljs-number">2</span>
-      }
-    },
-    <span class="hljs-attr">"asr"</span>: {
-      <span class="hljs-attr">"model"</span>: {
-        <span class="hljs-attr">"prettify"</span>: <span class="hljs-literal">true</span>,
-        <span class="hljs-attr">"word_level"</span>: <span class="hljs-literal">false</span>
-      }
+  <span class="hljs-attr">"options"</span>: {
+    <span class="hljs-attr">"destination_qid"</span>: <span class="hljs-string">""</span>,
+    <span class="hljs-attr">"replace"</span>: <span class="hljs-literal">false</span>,
+    <span class="hljs-attr">"max_fetch_retries"</span>: <span class="hljs-number">3</span>,
+    <span class="hljs-attr">"scope"</span>: {
+      <span class="hljs-attr">"type"</span>: <span class="hljs-string">"video"</span>,
+      <span class="hljs-attr">"start_time"</span>: <span class="hljs-number">100</span>,
+      <span class="hljs-attr">"end_time"</span>: <span class="hljs-number">200</span>
     }
   },
-  <span class="hljs-attr">"start_time"</span>: <span class="hljs-number">0</span>,
-  <span class="hljs-attr">"end_time"</span>: <span class="hljs-number">10</span>,
-  <span class="hljs-attr">"destination_qid"</span>: <span class="hljs-string">"string"</span>
+  <span class="hljs-attr">"jobs"</span>: [
+    {
+      <span class="hljs-attr">"model"</span>: <span class="hljs-string">"asr"</span>,
+      <span class="hljs-attr">"model_params"</span>: {},
+      <span class="hljs-attr">"overrides"</span>: {
+        <span class="hljs-attr">"destination_qid"</span>: <span class="hljs-string">""</span>,
+        <span class="hljs-attr">"replace"</span>: <span class="hljs-literal">false</span>,
+        <span class="hljs-attr">"max_fetch_retries"</span>: <span class="hljs-number">3</span>,
+        <span class="hljs-attr">"scope"</span>: {
+          <span class="hljs-attr">"type"</span>: <span class="hljs-string">"video"</span>,
+          <span class="hljs-attr">"start_time"</span>: <span class="hljs-number">100</span>,
+          <span class="hljs-attr">"end_time"</span>: <span class="hljs-number">200</span>
+        }
+      }
+    }
+  ]
 }
 </code></pre>
-<h3 id="tag-a-content-by-qid-parameters">Parameters</h3>
+<h3 id="tag-content-parameters">Parameters</h3>
 <table>
 <thead>
 <tr>
@@ -2347,19 +2421,19 @@ $request_body = <span class="hljs-keyword">array</span>();
 <td>path</td>
 <td>string</td>
 <td>true</td>
-<td>Content object id to tag</td>
+<td>none</td>
 </tr>
 <tr>
 <td>authorization</td>
 <td>query</td>
 <td>string</td>
-<td>false</td>
-<td>Fabric authorization token. It should be valid against the content object.</td>
+<td>true</td>
+<td>none</td>
 </tr>
 <tr>
 <td>body</td>
 <td>body</td>
-<td>any</td>
+<td><a href="#schemastartjobsrequest">StartJobsRequest</a></td>
 <td>true</td>
 <td>none</td>
 </tr>
@@ -2372,10 +2446,19 @@ $request_body = <span class="hljs-keyword">array</span>();
 <p>200 Response</p>
 </blockquote>
 <pre class="highlight tab tab-json"><code>{
-  <span class="hljs-attr">"message"</span>: <span class="hljs-string">"Tagging started on iq__3C58dDYxsn5KKSWGYrfYr44ykJRm"</span>
+  <span class="hljs-attr">"jobs"</span>: [
+    {
+      <span class="hljs-attr">"job_id"</span>: <span class="hljs-string">"1234"</span>,
+      <span class="hljs-attr">"model"</span>: <span class="hljs-string">"asr"</span>,
+      <span class="hljs-attr">"stream"</span>: <span class="hljs-string">"audio_1"</span>,
+      <span class="hljs-attr">"started"</span>: <span class="hljs-literal">true</span>,
+      <span class="hljs-attr">"message"</span>: <span class="hljs-string">"successfully started"</span>,
+      <span class="hljs-attr">"error"</span>: <span class="hljs-literal">null</span>
+    }
+  ]
 }
 </code></pre>
-<h3 id="tag-a-content-by-qid-responses">Responses</h3>
+<h3 id="tag-content-responses">Responses</h3>
 <table>
 <thead>
 <tr>
@@ -2389,327 +2472,36 @@ $request_body = <span class="hljs-keyword">array</span>();
 <tr>
 <td>200</td>
 <td><a href="https://tools.ietf.org/html/rfc7231#section-6.3.1">OK</a></td>
-<td>Summary of the given tags</td>
-<td>Inline</td>
+<td>Success</td>
+<td><a href="#schemastarttaggingresponse">StartTaggingResponse</a></td>
 </tr>
-</tbody>
-</table>
-<h3 id="tag-a-content-by-qid-responseschema">Response Schema</h3>
-<p>Status Code <strong>200</strong></p>
-<table>
-<thead>
 <tr>
-<th>Name</th>
-<th>Type</th>
-<th>Required</th>
-<th>Restrictions</th>
-<th>Description</th>
+<td>400</td>
+<td><a href="https://tools.ietf.org/html/rfc7231#section-6.5.1">Bad Request</a></td>
+<td>Bad Request</td>
+<td>None</td>
 </tr>
-</thead>
-<tbody>
 <tr>
-<td>» message</td>
-<td>string</td>
-<td>false</td>
-<td>none</td>
-<td>none</td>
+<td>502</td>
+<td><a href="https://tools.ietf.org/html/rfc7231#section-6.6.3">Bad Gateway</a></td>
+<td>Bad Gateway</td>
+<td>None</td>
 </tr>
 </tbody>
 </table>
 <aside class="success">
 This operation does not require authentication
 </aside>
-<h2 id="tag-image-assets-of-a-content">Tag image assets of a content</h2>
+<h2 id="check-status">Check status</h2>
 <blockquote>
 <p>Code samples</p>
 </blockquote>
 <pre class="highlight tab tab-shell"><code><span class="hljs-comment"># You can also use wget</span>
-curl -X POST /{qid}/image_tag \
-  -H <span class="hljs-string">'Content-Type: application/json'</span> \
+curl -X GET /{qid}/status?authorization=string \
   -H <span class="hljs-string">'Accept: application/json'</span>
 
 </code></pre>
-<pre class="highlight tab tab-http"><code><span class="hljs-keyword">POST</span> <span class="hljs-string">/{qid}/image_tag</span> HTTP/1.1
-
-<span class="http"><span class="hljs-attribute">Content-Type</span>: application/json
-<span class="hljs-attribute">Accept</span>: application/json
-
-<span class="undefined"></span></span></code></pre>
-<pre class="highlight tab tab-javascript"><code><span class="hljs-keyword">var</span> headers = {
-  <span class="hljs-string">'Content-Type'</span>:<span class="hljs-string">'application/json'</span>,
-  <span class="hljs-string">'Accept'</span>:<span class="hljs-string">'application/json'</span>
-
-};
-
-$.ajax({
-  <span class="hljs-attr">url</span>: <span class="hljs-string">'/{qid}/image_tag'</span>,
-  <span class="hljs-attr">method</span>: <span class="hljs-string">'post'</span>,
-
-  <span class="hljs-attr">headers</span>: headers,
-  <span class="hljs-attr">success</span>: <span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">data</span>) </span>{
-    <span class="hljs-built_in">console</span>.log(<span class="hljs-built_in">JSON</span>.stringify(data));
-  }
-})
-
-</code></pre>
-<pre class="highlight tab tab-javascript--nodejs"><code><span class="hljs-keyword">const</span> fetch = <span class="hljs-built_in">require</span>(<span class="hljs-string">'node-fetch'</span>);
-<span class="hljs-keyword">const</span> inputBody = <span class="hljs-string">'{
-  "replace": false,
-  "features": {
-    "celeb": {
-      "model": {
-        "fps": 2
-      }
-    },
-    "asr": {
-      "model": {
-        "prettify": true,
-        "word_level": false
-      }
-    }
-  },
-  "assets": [
-    "/assets/abc.jpg",
-    "/assets/bar.jpg"
-  ]
-}'</span>;
-<span class="hljs-keyword">const</span> headers = {
-  <span class="hljs-string">'Content-Type'</span>:<span class="hljs-string">'application/json'</span>,
-  <span class="hljs-string">'Accept'</span>:<span class="hljs-string">'application/json'</span>
-
-};
-
-fetch(<span class="hljs-string">'/{qid}/image_tag'</span>,
-{
-  <span class="hljs-attr">method</span>: <span class="hljs-string">'POST'</span>,
-  <span class="hljs-attr">body</span>: inputBody,
-  <span class="hljs-attr">headers</span>: headers
-})
-.then(<span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">res</span>) </span>{
-    <span class="hljs-keyword">return</span> res.json();
-}).then(<span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">body</span>) </span>{
-    <span class="hljs-built_in">console</span>.log(body);
-});
-
-</code></pre>
-<pre class="highlight tab tab-ruby"><code><span class="hljs-keyword">require</span> <span class="hljs-string">'rest-client'</span>
-<span class="hljs-keyword">require</span> <span class="hljs-string">'json'</span>
-
-headers = {
-  <span class="hljs-string">'Content-Type'</span> =&gt; <span class="hljs-string">'application/json'</span>,
-  <span class="hljs-string">'Accept'</span> =&gt; <span class="hljs-string">'application/json'</span>
-}
-
-result = RestClient.post <span class="hljs-string">'/{qid}/image_tag'</span>,
-  <span class="hljs-symbol">params:</span> {
-  }, <span class="hljs-symbol">headers:</span> headers
-
-p JSON.parse(result)
-
-</code></pre>
-<pre class="highlight tab tab-python"><code><span class="hljs-keyword">import</span> requests
-headers = {
-  <span class="hljs-string">'Content-Type'</span>: <span class="hljs-string">'application/json'</span>,
-  <span class="hljs-string">'Accept'</span>: <span class="hljs-string">'application/json'</span>
-}
-
-r = requests.post(<span class="hljs-string">'/{qid}/image_tag'</span>, params={
-
-}, headers = headers)
-
-<span class="hljs-keyword">print</span> r.json()
-
-</code></pre>
-<pre class="highlight tab tab-java"><code>URL obj = <span class="hljs-keyword">new</span> URL(<span class="hljs-string">"/{qid}/image_tag"</span>);
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod(<span class="hljs-string">"POST"</span>);
-<span class="hljs-keyword">int</span> responseCode = con.getResponseCode();
-BufferedReader in = <span class="hljs-keyword">new</span> BufferedReader(
-    <span class="hljs-keyword">new</span> InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = <span class="hljs-keyword">new</span> StringBuffer();
-<span class="hljs-keyword">while</span> ((inputLine = in.readLine()) != <span class="hljs-keyword">null</span>) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
-
-</code></pre>
-<pre class="highlight tab tab-go"><code><span class="hljs-keyword">package</span> main
-
-<span class="hljs-keyword">import</span> (
-       <span class="hljs-string">"bytes"</span>
-       <span class="hljs-string">"net/http"</span>
-)
-
-<span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">main</span><span class="hljs-params">()</span></span> {
-
-    headers := <span class="hljs-keyword">map</span>[<span class="hljs-keyword">string</span>][]<span class="hljs-keyword">string</span>{
-        <span class="hljs-string">"Content-Type"</span>: []<span class="hljs-keyword">string</span>{<span class="hljs-string">"application/json"</span>},
-        <span class="hljs-string">"Accept"</span>: []<span class="hljs-keyword">string</span>{<span class="hljs-string">"application/json"</span>},
-        
-    }
-
-    data := bytes.NewBuffer([]<span class="hljs-keyword">byte</span>{jsonReq})
-    req, err := http.NewRequest(<span class="hljs-string">"POST"</span>, <span class="hljs-string">"/{qid}/image_tag"</span>, data)
-    req.Header = headers
-
-    client := &amp;http.Client{}
-    resp, err := client.Do(req)
-    <span class="hljs-comment">// ...</span>
-}
-
-</code></pre>
-<pre class="highlight tab tab-php"><code> <span class="hljs-string">'application/json'</span>,
-    <span class="hljs-string">'Accept'</span> =&gt; <span class="hljs-string">'application/json'</span>,
-    
-    );
-
-$client = <span class="hljs-keyword">new</span> \GuzzleHttp\Client();
-
-<span class="hljs-comment">// Define array of request body.</span>
-$request_body = <span class="hljs-keyword">array</span>();
-
-<span class="hljs-keyword">try</span> {
-    $response = $client-&gt;request(<span class="hljs-string">'POST'</span>,<span class="hljs-string">'/{qid}/image_tag'</span>, <span class="hljs-keyword">array</span>(
-        <span class="hljs-string">'headers'</span> =&gt; $headers,
-        <span class="hljs-string">'json'</span> =&gt; $request_body,
-       )
-    );
-    print_r($response-&gt;getBody()-&gt;getContents());
- }
- <span class="hljs-keyword">catch</span> (\GuzzleHttp\<span class="hljs-keyword">Exception</span>\BadResponseException $e) {
-    <span class="hljs-comment">// handle exception or api errors.</span>
-    print_r($e-&gt;getMessage());
- }
-
- <span class="hljs-comment">// ...</span>
-
-</code></pre>
-<p><code>POST /{qid}/image_tag</code></p>
-<blockquote>
-<p>Body parameter</p>
-</blockquote>
-<pre class="highlight tab tab-json"><code>{
-  <span class="hljs-attr">"replace"</span>: <span class="hljs-literal">false</span>,
-  <span class="hljs-attr">"features"</span>: {
-    <span class="hljs-attr">"celeb"</span>: {
-      <span class="hljs-attr">"model"</span>: {
-        <span class="hljs-attr">"fps"</span>: <span class="hljs-number">2</span>
-      }
-    },
-    <span class="hljs-attr">"asr"</span>: {
-      <span class="hljs-attr">"model"</span>: {
-        <span class="hljs-attr">"prettify"</span>: <span class="hljs-literal">true</span>,
-        <span class="hljs-attr">"word_level"</span>: <span class="hljs-literal">false</span>
-      }
-    }
-  },
-  <span class="hljs-attr">"assets"</span>: [
-    <span class="hljs-string">"/assets/abc.jpg"</span>,
-    <span class="hljs-string">"/assets/bar.jpg"</span>
-  ]
-}
-</code></pre>
-<h3 id="tag-image-assets-of-a-content-parameters">Parameters</h3>
-<table>
-<thead>
-<tr>
-<th>Name</th>
-<th>In</th>
-<th>Type</th>
-<th>Required</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>qid</td>
-<td>path</td>
-<td>string</td>
-<td>true</td>
-<td>Content object id to tag</td>
-</tr>
-<tr>
-<td>authorization</td>
-<td>query</td>
-<td>string</td>
-<td>false</td>
-<td>Fabric authorization token</td>
-</tr>
-<tr>
-<td>body</td>
-<td>body</td>
-<td>any</td>
-<td>true</td>
-<td>none</td>
-</tr>
-</tbody>
-</table>
-<blockquote>
-<p>Example responses</p>
-</blockquote>
-<blockquote>
-<p>200 Response</p>
-</blockquote>
-<pre class="highlight tab tab-json"><code>{
-  <span class="hljs-attr">"message"</span>: <span class="hljs-string">"Tagging started on iq__3C58dDYxsn5KKSWGYrfYr44ykJRm"</span>
-}
-</code></pre>
-<h3 id="tag-image-assets-of-a-content-responses">Responses</h3>
-<table>
-<thead>
-<tr>
-<th>Status</th>
-<th>Meaning</th>
-<th>Description</th>
-<th>Schema</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>200</td>
-<td><a href="https://tools.ietf.org/html/rfc7231#section-6.3.1">OK</a></td>
-<td>Summary of the given tags</td>
-<td>Inline</td>
-</tr>
-</tbody>
-</table>
-<h3 id="tag-image-assets-of-a-content-responseschema">Response Schema</h3>
-<p>Status Code <strong>200</strong></p>
-<table>
-<thead>
-<tr>
-<th>Name</th>
-<th>Type</th>
-<th>Required</th>
-<th>Restrictions</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>» message</td>
-<td>string</td>
-<td>false</td>
-<td>none</td>
-<td>none</td>
-</tr>
-</tbody>
-</table>
-<aside class="success">
-This operation does not require authentication
-</aside>
-<h2 id="get-the-status-of-all-tagging-jobs-for-the-given-content-object-">Get the status of all tagging jobs for the given content object.</h2>
-<blockquote>
-<p>Code samples</p>
-</blockquote>
-<pre class="highlight tab tab-shell"><code><span class="hljs-comment"># You can also use wget</span>
-curl -X GET /{qid}/status \
-  -H <span class="hljs-string">'Accept: application/json'</span>
-
-</code></pre>
-<pre class="highlight tab tab-http"><code><span class="hljs-keyword">GET</span> <span class="hljs-string">/{qid}/status</span> HTTP/1.1
+<pre class="highlight tab tab-http"><code><span class="hljs-keyword">GET</span> <span class="hljs-string">/{qid}/status?authorization=string</span> HTTP/1.1
 
 <span class="http"><span class="hljs-attribute">Accept</span>: application/json
 
@@ -2722,7 +2514,7 @@ curl -X GET /{qid}/status \
 $.ajax({
   <span class="hljs-attr">url</span>: <span class="hljs-string">'/{qid}/status'</span>,
   <span class="hljs-attr">method</span>: <span class="hljs-string">'get'</span>,
-
+  <span class="hljs-attr">data</span>: <span class="hljs-string">'?authorization=string'</span>,
   <span class="hljs-attr">headers</span>: headers,
   <span class="hljs-attr">success</span>: <span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">data</span>) </span>{
     <span class="hljs-built_in">console</span>.log(<span class="hljs-built_in">JSON</span>.stringify(data));
@@ -2737,7 +2529,7 @@ $.ajax({
 
 };
 
-fetch(<span class="hljs-string">'/{qid}/status'</span>,
+fetch(<span class="hljs-string">'/{qid}/status?authorization=string'</span>,
 {
   <span class="hljs-attr">method</span>: <span class="hljs-string">'GET'</span>,
 
@@ -2759,7 +2551,8 @@ headers = {
 
 result = RestClient.get <span class="hljs-string">'/{qid}/status'</span>,
   <span class="hljs-symbol">params:</span> {
-  }, <span class="hljs-symbol">headers:</span> headers
+  <span class="hljs-string">'authorization'</span> =&gt; <span class="hljs-string">'string'</span>
+}, <span class="hljs-symbol">headers:</span> headers
 
 p JSON.parse(result)
 
@@ -2770,13 +2563,13 @@ headers = {
 }
 
 r = requests.get(<span class="hljs-string">'/{qid}/status'</span>, params={
-
+  <span class="hljs-string">'authorization'</span>: <span class="hljs-string">'string'</span>
 }, headers = headers)
 
 <span class="hljs-keyword">print</span> r.json()
 
 </code></pre>
-<pre class="highlight tab tab-java"><code>URL obj = <span class="hljs-keyword">new</span> URL(<span class="hljs-string">"/{qid}/status"</span>);
+<pre class="highlight tab tab-java"><code>URL obj = <span class="hljs-keyword">new</span> URL(<span class="hljs-string">"/{qid}/status?authorization=string"</span>);
 HttpURLConnection con = (HttpURLConnection) obj.openConnection();
 con.setRequestMethod(<span class="hljs-string">"GET"</span>);
 <span class="hljs-keyword">int</span> responseCode = con.getResponseCode();
@@ -2841,8 +2634,7 @@ $request_body = <span class="hljs-keyword">array</span>();
 
 </code></pre>
 <p><code>GET /{qid}/status</code></p>
-<h3 id="get-the-status-of-all-tagging-jobs-for-the-given-content-object.
--parameters">Parameters</h3>
+<h3 id="check-status-parameters">Parameters</h3>
 <table>
 <thead>
 <tr>
@@ -2859,14 +2651,14 @@ $request_body = <span class="hljs-keyword">array</span>();
 <td>path</td>
 <td>string</td>
 <td>true</td>
-<td>Content object id to tag</td>
+<td>none</td>
 </tr>
 <tr>
 <td>authorization</td>
 <td>query</td>
 <td>string</td>
-<td>false</td>
-<td>Fabric authorization token</td>
+<td>true</td>
+<td>none</td>
 </tr>
 </tbody>
 </table>
@@ -2877,14 +2669,26 @@ $request_body = <span class="hljs-keyword">array</span>();
 <p>200 Response</p>
 </blockquote>
 <pre class="highlight tab tab-json"><code>{
-  <span class="hljs-attr">"status"</span>: <span class="hljs-string">"Fetching parts"</span>,
-  <span class="hljs-attr">"time_running"</span>: <span class="hljs-number">30.3</span>,
-  <span class="hljs-attr">"tag_job_id"</span>: <span class="hljs-literal">null</span>,
-  <span class="hljs-attr">"error"</span>: <span class="hljs-literal">null</span>
+  <span class="hljs-attr">"jobs"</span>: [
+    {
+      <span class="hljs-attr">"job_id"</span>: <span class="hljs-string">"1234"</span>,
+      <span class="hljs-attr">"status"</span>: <span class="hljs-string">"Fetching Content"</span>,
+      <span class="hljs-attr">"time_running"</span>: <span class="hljs-number">1234</span>,
+      <span class="hljs-attr">"tagging_progress"</span>: <span class="hljs-string">"120/305"</span>,
+      <span class="hljs-attr">"missing_tags"</span>: [
+        <span class="hljs-string">"assets/hello.jpg"</span>,
+        <span class="hljs-string">"assets/hello2.jpg"</span>
+      ],
+      <span class="hljs-attr">"failed"</span>: [
+        <span class="hljs-string">"assets/bad.jpg"</span>
+      ],
+      <span class="hljs-attr">"model"</span>: <span class="hljs-string">"asr"</span>,
+      <span class="hljs-attr">"stream"</span>: <span class="hljs-string">"audio_1"</span>
+    }
+  ]
 }
 </code></pre>
-<h3 id="get-the-status-of-all-tagging-jobs-for-the-given-content-object.
--responses">Responses</h3>
+<h3 id="check-status-responses">Responses</h3>
 <table>
 <thead>
 <tr>
@@ -2898,68 +2702,30 @@ $request_body = <span class="hljs-keyword">array</span>();
 <tr>
 <td>200</td>
 <td><a href="https://tools.ietf.org/html/rfc7231#section-6.3.1">OK</a></td>
-<td>Summary of the given tags</td>
-<td>Inline</td>
-</tr>
-</tbody>
-</table>
-<h3 id="get-the-status-of-all-tagging-jobs-for-the-given-content-object.
--responseschema">Response Schema</h3>
-<p>Status Code <strong>200</strong></p>
-<table>
-<thead>
-<tr>
-<th>Name</th>
-<th>Type</th>
-<th>Required</th>
-<th>Restrictions</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>» status</td>
-<td>string</td>
-<td>false</td>
-<td>none</td>
-<td>The status of the tagging job</td>
+<td>Success</td>
+<td><a href="#schemastatusresponse">StatusResponse</a></td>
 </tr>
 <tr>
-<td>» time_running</td>
-<td>integer</td>
-<td>false</td>
-<td>none</td>
-<td>The time the job has been running</td>
-</tr>
-<tr>
-<td>» tag_job_id</td>
-<td>string</td>
-<td>false</td>
-<td>none</td>
-<td>The tag job id, once tagging has begun. Not currently useful for the user.</td>
-</tr>
-<tr>
-<td>» error</td>
-<td>string</td>
-<td>false</td>
-<td>none</td>
-<td>Error message if the job has failed</td>
+<td>404</td>
+<td><a href="https://tools.ietf.org/html/rfc7231#section-6.5.4">Not Found</a></td>
+<td>No jobs found</td>
+<td>None</td>
 </tr>
 </tbody>
 </table>
 <aside class="success">
 This operation does not require authentication
 </aside>
-<h2 id="stops-a-tagging-job-">Stops a tagging job.</h2>
+<h2 id="stop-tagging-jobs-by-content">Stop tagging jobs by content</h2>
 <blockquote>
 <p>Code samples</p>
 </blockquote>
 <pre class="highlight tab tab-shell"><code><span class="hljs-comment"># You can also use wget</span>
-curl -X POST /{qid}/stop/{model} \
+curl -X POST /{qid}/stop?authorization=string \
   -H <span class="hljs-string">'Accept: application/json'</span>
 
 </code></pre>
-<pre class="highlight tab tab-http"><code><span class="hljs-keyword">POST</span> <span class="hljs-string">/{qid}/stop/{model}</span> HTTP/1.1
+<pre class="highlight tab tab-http"><code><span class="hljs-keyword">POST</span> <span class="hljs-string">/{qid}/stop?authorization=string</span> HTTP/1.1
 
 <span class="http"><span class="hljs-attribute">Accept</span>: application/json
 
@@ -2970,9 +2736,9 @@ curl -X POST /{qid}/stop/{model} \
 };
 
 $.ajax({
-  <span class="hljs-attr">url</span>: <span class="hljs-string">'/{qid}/stop/{model}'</span>,
+  <span class="hljs-attr">url</span>: <span class="hljs-string">'/{qid}/stop'</span>,
   <span class="hljs-attr">method</span>: <span class="hljs-string">'post'</span>,
-
+  <span class="hljs-attr">data</span>: <span class="hljs-string">'?authorization=string'</span>,
   <span class="hljs-attr">headers</span>: headers,
   <span class="hljs-attr">success</span>: <span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">data</span>) </span>{
     <span class="hljs-built_in">console</span>.log(<span class="hljs-built_in">JSON</span>.stringify(data));
@@ -2987,7 +2753,215 @@ $.ajax({
 
 };
 
-fetch(<span class="hljs-string">'/{qid}/stop/{model}'</span>,
+fetch(<span class="hljs-string">'/{qid}/stop?authorization=string'</span>,
+{
+  <span class="hljs-attr">method</span>: <span class="hljs-string">'POST'</span>,
+
+  <span class="hljs-attr">headers</span>: headers
+})
+.then(<span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">res</span>) </span>{
+    <span class="hljs-keyword">return</span> res.json();
+}).then(<span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">body</span>) </span>{
+    <span class="hljs-built_in">console</span>.log(body);
+});
+
+</code></pre>
+<pre class="highlight tab tab-ruby"><code><span class="hljs-keyword">require</span> <span class="hljs-string">'rest-client'</span>
+<span class="hljs-keyword">require</span> <span class="hljs-string">'json'</span>
+
+headers = {
+  <span class="hljs-string">'Accept'</span> =&gt; <span class="hljs-string">'application/json'</span>
+}
+
+result = RestClient.post <span class="hljs-string">'/{qid}/stop'</span>,
+  <span class="hljs-symbol">params:</span> {
+  <span class="hljs-string">'authorization'</span> =&gt; <span class="hljs-string">'string'</span>
+}, <span class="hljs-symbol">headers:</span> headers
+
+p JSON.parse(result)
+
+</code></pre>
+<pre class="highlight tab tab-python"><code><span class="hljs-keyword">import</span> requests
+headers = {
+  <span class="hljs-string">'Accept'</span>: <span class="hljs-string">'application/json'</span>
+}
+
+r = requests.post(<span class="hljs-string">'/{qid}/stop'</span>, params={
+  <span class="hljs-string">'authorization'</span>: <span class="hljs-string">'string'</span>
+}, headers = headers)
+
+<span class="hljs-keyword">print</span> r.json()
+
+</code></pre>
+<pre class="highlight tab tab-java"><code>URL obj = <span class="hljs-keyword">new</span> URL(<span class="hljs-string">"/{qid}/stop?authorization=string"</span>);
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod(<span class="hljs-string">"POST"</span>);
+<span class="hljs-keyword">int</span> responseCode = con.getResponseCode();
+BufferedReader in = <span class="hljs-keyword">new</span> BufferedReader(
+    <span class="hljs-keyword">new</span> InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = <span class="hljs-keyword">new</span> StringBuffer();
+<span class="hljs-keyword">while</span> ((inputLine = in.readLine()) != <span class="hljs-keyword">null</span>) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+</code></pre>
+<pre class="highlight tab tab-go"><code><span class="hljs-keyword">package</span> main
+
+<span class="hljs-keyword">import</span> (
+       <span class="hljs-string">"bytes"</span>
+       <span class="hljs-string">"net/http"</span>
+)
+
+<span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">main</span><span class="hljs-params">()</span></span> {
+
+    headers := <span class="hljs-keyword">map</span>[<span class="hljs-keyword">string</span>][]<span class="hljs-keyword">string</span>{
+        <span class="hljs-string">"Accept"</span>: []<span class="hljs-keyword">string</span>{<span class="hljs-string">"application/json"</span>},
+        
+    }
+
+    data := bytes.NewBuffer([]<span class="hljs-keyword">byte</span>{jsonReq})
+    req, err := http.NewRequest(<span class="hljs-string">"POST"</span>, <span class="hljs-string">"/{qid}/stop"</span>, data)
+    req.Header = headers
+
+    client := &amp;http.Client{}
+    resp, err := client.Do(req)
+    <span class="hljs-comment">// ...</span>
+}
+
+</code></pre>
+<pre class="highlight tab tab-php"><code> <span class="hljs-string">'application/json'</span>,
+    
+    );
+
+$client = <span class="hljs-keyword">new</span> \GuzzleHttp\Client();
+
+<span class="hljs-comment">// Define array of request body.</span>
+$request_body = <span class="hljs-keyword">array</span>();
+
+<span class="hljs-keyword">try</span> {
+    $response = $client-&gt;request(<span class="hljs-string">'POST'</span>,<span class="hljs-string">'/{qid}/stop'</span>, <span class="hljs-keyword">array</span>(
+        <span class="hljs-string">'headers'</span> =&gt; $headers,
+        <span class="hljs-string">'json'</span> =&gt; $request_body,
+       )
+    );
+    print_r($response-&gt;getBody()-&gt;getContents());
+ }
+ <span class="hljs-keyword">catch</span> (\GuzzleHttp\<span class="hljs-keyword">Exception</span>\BadResponseException $e) {
+    <span class="hljs-comment">// handle exception or api errors.</span>
+    print_r($e-&gt;getMessage());
+ }
+
+ <span class="hljs-comment">// ...</span>
+
+</code></pre>
+<p><code>POST /{qid}/stop</code></p>
+<h3 id="stop-tagging-jobs-by-content-parameters">Parameters</h3>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>qid</td>
+<td>path</td>
+<td>string</td>
+<td>true</td>
+<td>none</td>
+</tr>
+<tr>
+<td>authorization</td>
+<td>query</td>
+<td>string</td>
+<td>true</td>
+<td>none</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>Example responses</p>
+</blockquote>
+<blockquote>
+<p>200 Response</p>
+</blockquote>
+<pre class="highlight tab tab-json"><code>{
+  <span class="hljs-attr">"jobs"</span>: [
+    {
+      <span class="hljs-attr">"job_id"</span>: <span class="hljs-string">"string"</span>,
+      <span class="hljs-attr">"message"</span>: <span class="hljs-string">"string"</span>
+    }
+  ],
+  <span class="hljs-attr">"message"</span>: <span class="hljs-string">"string"</span>
+}
+</code></pre>
+<h3 id="stop-tagging-jobs-by-content-responses">Responses</h3>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Meaning</th>
+<th>Description</th>
+<th>Schema</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>200</td>
+<td><a href="https://tools.ietf.org/html/rfc7231#section-6.3.1">OK</a></td>
+<td>Success</td>
+<td><a href="#schemastoptaggingresponse">StopTaggingResponse</a></td>
+</tr>
+</tbody>
+</table>
+<aside class="success">
+This operation does not require authentication
+</aside>
+<h2 id="stop-tagging-jobs-by-model">Stop tagging jobs by model</h2>
+<blockquote>
+<p>Code samples</p>
+</blockquote>
+<pre class="highlight tab tab-shell"><code><span class="hljs-comment"># You can also use wget</span>
+curl -X POST /{qid}/stop/{model}?authorization=string \
+  -H <span class="hljs-string">'Accept: application/json'</span>
+
+</code></pre>
+<pre class="highlight tab tab-http"><code><span class="hljs-keyword">POST</span> <span class="hljs-string">/{qid}/stop/{model}?authorization=string</span> HTTP/1.1
+
+<span class="http"><span class="hljs-attribute">Accept</span>: application/json
+
+<span class="undefined"></span></span></code></pre>
+<pre class="highlight tab tab-javascript"><code><span class="hljs-keyword">var</span> headers = {
+  <span class="hljs-string">'Accept'</span>:<span class="hljs-string">'application/json'</span>
+
+};
+
+$.ajax({
+  <span class="hljs-attr">url</span>: <span class="hljs-string">'/{qid}/stop/{model}'</span>,
+  <span class="hljs-attr">method</span>: <span class="hljs-string">'post'</span>,
+  <span class="hljs-attr">data</span>: <span class="hljs-string">'?authorization=string'</span>,
+  <span class="hljs-attr">headers</span>: headers,
+  <span class="hljs-attr">success</span>: <span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">data</span>) </span>{
+    <span class="hljs-built_in">console</span>.log(<span class="hljs-built_in">JSON</span>.stringify(data));
+  }
+})
+
+</code></pre>
+<pre class="highlight tab tab-javascript--nodejs"><code><span class="hljs-keyword">const</span> fetch = <span class="hljs-built_in">require</span>(<span class="hljs-string">'node-fetch'</span>);
+
+<span class="hljs-keyword">const</span> headers = {
+  <span class="hljs-string">'Accept'</span>:<span class="hljs-string">'application/json'</span>
+
+};
+
+fetch(<span class="hljs-string">'/{qid}/stop/{model}?authorization=string'</span>,
 {
   <span class="hljs-attr">method</span>: <span class="hljs-string">'POST'</span>,
 
@@ -3009,7 +2983,8 @@ headers = {
 
 result = RestClient.post <span class="hljs-string">'/{qid}/stop/{model}'</span>,
   <span class="hljs-symbol">params:</span> {
-  }, <span class="hljs-symbol">headers:</span> headers
+  <span class="hljs-string">'authorization'</span> =&gt; <span class="hljs-string">'string'</span>
+}, <span class="hljs-symbol">headers:</span> headers
 
 p JSON.parse(result)
 
@@ -3020,13 +2995,13 @@ headers = {
 }
 
 r = requests.post(<span class="hljs-string">'/{qid}/stop/{model}'</span>, params={
-
+  <span class="hljs-string">'authorization'</span>: <span class="hljs-string">'string'</span>
 }, headers = headers)
 
 <span class="hljs-keyword">print</span> r.json()
 
 </code></pre>
-<pre class="highlight tab tab-java"><code>URL obj = <span class="hljs-keyword">new</span> URL(<span class="hljs-string">"/{qid}/stop/{model}"</span>);
+<pre class="highlight tab tab-java"><code>URL obj = <span class="hljs-keyword">new</span> URL(<span class="hljs-string">"/{qid}/stop/{model}?authorization=string"</span>);
 HttpURLConnection con = (HttpURLConnection) obj.openConnection();
 con.setRequestMethod(<span class="hljs-string">"POST"</span>);
 <span class="hljs-keyword">int</span> responseCode = con.getResponseCode();
@@ -3091,8 +3066,7 @@ $request_body = <span class="hljs-keyword">array</span>();
 
 </code></pre>
 <p><code>POST /{qid}/stop/{model}</code></p>
-<h3 id="stops-a-tagging-job.
--parameters">Parameters</h3>
+<h3 id="stop-tagging-jobs-by-model-parameters">Parameters</h3>
 <table>
 <thead>
 <tr>
@@ -3109,21 +3083,21 @@ $request_body = <span class="hljs-keyword">array</span>();
 <td>path</td>
 <td>string</td>
 <td>true</td>
-<td>Content object id that is beging tagged</td>
+<td>none</td>
 </tr>
 <tr>
 <td>model</td>
 <td>path</td>
 <td>string</td>
 <td>true</td>
-<td>Model to stop tagging</td>
+<td>none</td>
 </tr>
 <tr>
 <td>authorization</td>
 <td>query</td>
 <td>string</td>
-<td>false</td>
-<td>Fabric authorization token</td>
+<td>true</td>
+<td>none</td>
 </tr>
 </tbody>
 </table>
@@ -3134,233 +3108,16 @@ $request_body = <span class="hljs-keyword">array</span>();
 <p>200 Response</p>
 </blockquote>
 <pre class="highlight tab tab-json"><code>{
-  <span class="hljs-attr">"message"</span>: <span class="hljs-string">"Stopping asr on iq__3C58dDYxsn5KKSWGYrfYr44ykJRm. Check with /status for completion."</span>
-}
-</code></pre>
-<h3 id="stops-a-tagging-job.
--responses">Responses</h3>
-<table>
-<thead>
-<tr>
-<th>Status</th>
-<th>Meaning</th>
-<th>Description</th>
-<th>Schema</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>200</td>
-<td><a href="https://tools.ietf.org/html/rfc7231#section-6.3.1">OK</a></td>
-<td>Summary of the given tags</td>
-<td>Inline</td>
-</tr>
-</tbody>
-</table>
-<h3 id="stops-a-tagging-job.
--responseschema">Response Schema</h3>
-<p>Status Code <strong>200</strong></p>
-<table>
-<thead>
-<tr>
-<th>Name</th>
-<th>Type</th>
-<th>Required</th>
-<th>Restrictions</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>» message</td>
-<td>string</td>
-<td>false</td>
-<td>none</td>
-<td>none</td>
-</tr>
-</tbody>
-</table>
-<aside class="success">
-This operation does not require authentication
-</aside>
-<h2 id="get-a-list-of-all-available-models-">Get a list of all available models.</h2>
-<blockquote>
-<p>Code samples</p>
-</blockquote>
-<pre class="highlight tab tab-shell"><code><span class="hljs-comment"># You can also use wget</span>
-curl -X GET /list \
-  -H <span class="hljs-string">'Accept: application/json'</span>
-
-</code></pre>
-<pre class="highlight tab tab-http"><code><span class="hljs-keyword">GET</span> <span class="hljs-string">/list</span> HTTP/1.1
-
-<span class="http"><span class="hljs-attribute">Accept</span>: application/json
-
-<span class="undefined"></span></span></code></pre>
-<pre class="highlight tab tab-javascript"><code><span class="hljs-keyword">var</span> headers = {
-  <span class="hljs-string">'Accept'</span>:<span class="hljs-string">'application/json'</span>
-
-};
-
-$.ajax({
-  <span class="hljs-attr">url</span>: <span class="hljs-string">'/list'</span>,
-  <span class="hljs-attr">method</span>: <span class="hljs-string">'get'</span>,
-
-  <span class="hljs-attr">headers</span>: headers,
-  <span class="hljs-attr">success</span>: <span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">data</span>) </span>{
-    <span class="hljs-built_in">console</span>.log(<span class="hljs-built_in">JSON</span>.stringify(data));
-  }
-})
-
-</code></pre>
-<pre class="highlight tab tab-javascript--nodejs"><code><span class="hljs-keyword">const</span> fetch = <span class="hljs-built_in">require</span>(<span class="hljs-string">'node-fetch'</span>);
-
-<span class="hljs-keyword">const</span> headers = {
-  <span class="hljs-string">'Accept'</span>:<span class="hljs-string">'application/json'</span>
-
-};
-
-fetch(<span class="hljs-string">'/list'</span>,
-{
-  <span class="hljs-attr">method</span>: <span class="hljs-string">'GET'</span>,
-
-  <span class="hljs-attr">headers</span>: headers
-})
-.then(<span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">res</span>) </span>{
-    <span class="hljs-keyword">return</span> res.json();
-}).then(<span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">body</span>) </span>{
-    <span class="hljs-built_in">console</span>.log(body);
-});
-
-</code></pre>
-<pre class="highlight tab tab-ruby"><code><span class="hljs-keyword">require</span> <span class="hljs-string">'rest-client'</span>
-<span class="hljs-keyword">require</span> <span class="hljs-string">'json'</span>
-
-headers = {
-  <span class="hljs-string">'Accept'</span> =&gt; <span class="hljs-string">'application/json'</span>
-}
-
-result = RestClient.get <span class="hljs-string">'/list'</span>,
-  <span class="hljs-symbol">params:</span> {
-  }, <span class="hljs-symbol">headers:</span> headers
-
-p JSON.parse(result)
-
-</code></pre>
-<pre class="highlight tab tab-python"><code><span class="hljs-keyword">import</span> requests
-headers = {
-  <span class="hljs-string">'Accept'</span>: <span class="hljs-string">'application/json'</span>
-}
-
-r = requests.get(<span class="hljs-string">'/list'</span>, params={
-
-}, headers = headers)
-
-<span class="hljs-keyword">print</span> r.json()
-
-</code></pre>
-<pre class="highlight tab tab-java"><code>URL obj = <span class="hljs-keyword">new</span> URL(<span class="hljs-string">"/list"</span>);
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod(<span class="hljs-string">"GET"</span>);
-<span class="hljs-keyword">int</span> responseCode = con.getResponseCode();
-BufferedReader in = <span class="hljs-keyword">new</span> BufferedReader(
-    <span class="hljs-keyword">new</span> InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = <span class="hljs-keyword">new</span> StringBuffer();
-<span class="hljs-keyword">while</span> ((inputLine = in.readLine()) != <span class="hljs-keyword">null</span>) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
-
-</code></pre>
-<pre class="highlight tab tab-go"><code><span class="hljs-keyword">package</span> main
-
-<span class="hljs-keyword">import</span> (
-       <span class="hljs-string">"bytes"</span>
-       <span class="hljs-string">"net/http"</span>
-)
-
-<span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">main</span><span class="hljs-params">()</span></span> {
-
-    headers := <span class="hljs-keyword">map</span>[<span class="hljs-keyword">string</span>][]<span class="hljs-keyword">string</span>{
-        <span class="hljs-string">"Accept"</span>: []<span class="hljs-keyword">string</span>{<span class="hljs-string">"application/json"</span>},
-        
+  <span class="hljs-attr">"jobs"</span>: [
+    {
+      <span class="hljs-attr">"job_id"</span>: <span class="hljs-string">"string"</span>,
+      <span class="hljs-attr">"message"</span>: <span class="hljs-string">"string"</span>
     }
-
-    data := bytes.NewBuffer([]<span class="hljs-keyword">byte</span>{jsonReq})
-    req, err := http.NewRequest(<span class="hljs-string">"GET"</span>, <span class="hljs-string">"/list"</span>, data)
-    req.Header = headers
-
-    client := &amp;http.Client{}
-    resp, err := client.Do(req)
-    <span class="hljs-comment">// ...</span>
+  ],
+  <span class="hljs-attr">"message"</span>: <span class="hljs-string">"string"</span>
 }
-
 </code></pre>
-<pre class="highlight tab tab-php"><code> <span class="hljs-string">'application/json'</span>,
-    
-    );
-
-$client = <span class="hljs-keyword">new</span> \GuzzleHttp\Client();
-
-<span class="hljs-comment">// Define array of request body.</span>
-$request_body = <span class="hljs-keyword">array</span>();
-
-<span class="hljs-keyword">try</span> {
-    $response = $client-&gt;request(<span class="hljs-string">'GET'</span>,<span class="hljs-string">'/list'</span>, <span class="hljs-keyword">array</span>(
-        <span class="hljs-string">'headers'</span> =&gt; $headers,
-        <span class="hljs-string">'json'</span> =&gt; $request_body,
-       )
-    );
-    print_r($response-&gt;getBody()-&gt;getContents());
- }
- <span class="hljs-keyword">catch</span> (\GuzzleHttp\<span class="hljs-keyword">Exception</span>\BadResponseException $e) {
-    <span class="hljs-comment">// handle exception or api errors.</span>
-    print_r($e-&gt;getMessage());
- }
-
- <span class="hljs-comment">// ...</span>
-
-</code></pre>
-<p><code>GET /list</code></p>
-<h3 id="get-a-list-of-all-available-models.
--parameters">Parameters</h3>
-<table>
-<thead>
-<tr>
-<th>Name</th>
-<th>In</th>
-<th>Type</th>
-<th>Required</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>authorization</td>
-<td>query</td>
-<td>string</td>
-<td>false</td>
-<td>Fabric authorization token</td>
-</tr>
-</tbody>
-</table>
-<blockquote>
-<p>Example responses</p>
-</blockquote>
-<blockquote>
-<p>200 Response</p>
-</blockquote>
-<pre class="highlight tab tab-json"><code>[
-  <span class="hljs-string">"asr"</span>,
-  <span class="hljs-string">"caption"</span>,
-  <span class="hljs-string">"shot"</span>,
-  <span class="hljs-string">"celeb"</span>
-]
-</code></pre>
-<h3 id="get-a-list-of-all-available-models.
--responses">Responses</h3>
+<h3 id="stop-tagging-jobs-by-model-responses">Responses</h3>
 <table>
 <thead>
 <tr>
@@ -3374,46 +3131,134 @@ $request_body = <span class="hljs-keyword">array</span>();
 <tr>
 <td>200</td>
 <td><a href="https://tools.ietf.org/html/rfc7231#section-6.3.1">OK</a></td>
-<td>Summary of the given tags</td>
-<td>Inline</td>
+<td>Success</td>
+<td><a href="#schemastoptaggingresponse">StopTaggingResponse</a></td>
 </tr>
 </tbody>
-</table>
-<h3 id="get-a-list-of-all-available-models.
--responseschema">Response Schema</h3>
-<p>Status Code <strong>200</strong></p>
-<p><em>List of all the content objects that have been tagged</em></p>
-<table>
-<thead>
-<tr>
-<th>Name</th>
-<th>Type</th>
-<th>Required</th>
-<th>Restrictions</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody></tbody>
 </table>
 <aside class="success">
 This operation does not require authentication
 </aside>
 <h1 id="schemas">Schemas</h1>
-<h2 id="tocscommontaggingparams">CommonTaggingParams</h2>
-<p><a id="schemacommontaggingparams"></a></p>
+<h2 id="tocsstartjobsrequest">StartJobsRequest</h2>
+<p><a id="schemastartjobsrequest"></a></p>
 <pre class="highlight tab tab-json"><code>{
+  <span class="hljs-attr">"options"</span>: {
+    <span class="hljs-attr">"destination_qid"</span>: <span class="hljs-string">""</span>,
+    <span class="hljs-attr">"replace"</span>: <span class="hljs-literal">false</span>,
+    <span class="hljs-attr">"max_fetch_retries"</span>: <span class="hljs-number">3</span>,
+    <span class="hljs-attr">"scope"</span>: {
+      <span class="hljs-attr">"type"</span>: <span class="hljs-string">"video"</span>,
+      <span class="hljs-attr">"start_time"</span>: <span class="hljs-number">100</span>,
+      <span class="hljs-attr">"end_time"</span>: <span class="hljs-number">200</span>
+    }
+  },
+  <span class="hljs-attr">"jobs"</span>: [
+    {
+      <span class="hljs-attr">"model"</span>: <span class="hljs-string">"asr"</span>,
+      <span class="hljs-attr">"model_params"</span>: {},
+      <span class="hljs-attr">"overrides"</span>: {
+        <span class="hljs-attr">"destination_qid"</span>: <span class="hljs-string">""</span>,
+        <span class="hljs-attr">"replace"</span>: <span class="hljs-literal">false</span>,
+        <span class="hljs-attr">"max_fetch_retries"</span>: <span class="hljs-number">3</span>,
+        <span class="hljs-attr">"scope"</span>: {
+          <span class="hljs-attr">"type"</span>: <span class="hljs-string">"video"</span>,
+          <span class="hljs-attr">"start_time"</span>: <span class="hljs-number">100</span>,
+          <span class="hljs-attr">"end_time"</span>: <span class="hljs-number">200</span>
+        }
+      }
+    }
+  ]
+}
+</code></pre>
+<h3 id="properties">Properties</h3>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>options</td>
+<td><a href="#schemataggeroptions">TaggerOptions</a></td>
+<td>false</td>
+<td>none</td>
+</tr>
+<tr>
+<td>jobs</td>
+<td>[<a href="#schemajobspec">JobSpec</a>]</td>
+<td>true</td>
+<td>none</td>
+</tr>
+</tbody>
+</table>
+<h2 id="tocstaggeroptions">TaggerOptions</h2>
+<p><a id="schemataggeroptions"></a></p>
+<pre class="highlight tab tab-json"><code>{
+  <span class="hljs-attr">"destination_qid"</span>: <span class="hljs-string">""</span>,
   <span class="hljs-attr">"replace"</span>: <span class="hljs-literal">false</span>,
-  <span class="hljs-attr">"features"</span>: {
-    <span class="hljs-attr">"celeb"</span>: {
-      <span class="hljs-attr">"model"</span>: {
-        <span class="hljs-attr">"fps"</span>: <span class="hljs-number">2</span>
-      }
-    },
-    <span class="hljs-attr">"asr"</span>: {
-      <span class="hljs-attr">"model"</span>: {
-        <span class="hljs-attr">"prettify"</span>: <span class="hljs-literal">true</span>,
-        <span class="hljs-attr">"word_level"</span>: <span class="hljs-literal">false</span>
-      }
+  <span class="hljs-attr">"max_fetch_retries"</span>: <span class="hljs-number">3</span>,
+  <span class="hljs-attr">"scope"</span>: {
+    <span class="hljs-attr">"type"</span>: <span class="hljs-string">"video"</span>,
+    <span class="hljs-attr">"start_time"</span>: <span class="hljs-number">100</span>,
+    <span class="hljs-attr">"end_time"</span>: <span class="hljs-number">200</span>
+  }
+}
+</code></pre>
+<h3 id="properties">Properties</h3>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>destination_qid</td>
+<td>string</td>
+<td>false</td>
+<td>content where tags should be written to</td>
+</tr>
+<tr>
+<td>replace</td>
+<td>boolean</td>
+<td>false</td>
+<td>replace already existing tagstore tags. set to false to retag, set to true to enbable diff-based tagging.</td>
+</tr>
+<tr>
+<td>max_fetch_retries</td>
+<td>integer</td>
+<td>false</td>
+<td>if a fetch operation fails, we can retry this many times before the job is marked as failed.</td>
+</tr>
+<tr>
+<td>scope</td>
+<td>object</td>
+<td>false</td>
+<td>Scope of tagging. Format should match one of the Scope schemas.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="tocsjobspec">JobSpec</h2>
+<p><a id="schemajobspec"></a></p>
+<pre class="highlight tab tab-json"><code>{
+  <span class="hljs-attr">"model"</span>: <span class="hljs-string">"asr"</span>,
+  <span class="hljs-attr">"model_params"</span>: {},
+  <span class="hljs-attr">"overrides"</span>: {
+    <span class="hljs-attr">"destination_qid"</span>: <span class="hljs-string">""</span>,
+    <span class="hljs-attr">"replace"</span>: <span class="hljs-literal">false</span>,
+    <span class="hljs-attr">"max_fetch_retries"</span>: <span class="hljs-number">3</span>,
+    <span class="hljs-attr">"scope"</span>: {
+      <span class="hljs-attr">"type"</span>: <span class="hljs-string">"video"</span>,
+      <span class="hljs-attr">"start_time"</span>: <span class="hljs-number">100</span>,
+      <span class="hljs-attr">"end_time"</span>: <span class="hljs-number">200</span>
     }
   }
 }
@@ -3430,34 +3275,545 @@ This operation does not require authentication
 </thead>
 <tbody>
 <tr>
-<td>replace</td>
-<td>boolean</td>
-<td>false</td>
-<td>Whether tagging should retag already tagged parts of the content. Set to false to enable diff-based tagging, set to true if you need to retag.</td>
-</tr>
-<tr>
-<td>features</td>
-<td>object</td>
+<td>model</td>
+<td>string</td>
 <td>true</td>
-<td>Map of model identifier to runtime config. Check /list for available model identifiers.</td>
+<td>none</td>
 </tr>
 <tr>
-<td>» <strong>additionalProperties</strong></td>
+<td>model_params</td>
 <td>object</td>
 <td>false</td>
 <td>none</td>
 </tr>
 <tr>
-<td>»» stream</td>
-<td>string</td>
+<td>overrides</td>
+<td><a href="#schemataggeroptions">TaggerOptions</a></td>
 <td>false</td>
-<td>Stream name to tag for the given model. Does not apply to image tagging. Typically this is &quot;video&quot; for video models and &quot;audio&quot; for audio models. Oftentimes the audio streams have different names so check the mezzanine metadata for the correct stream name.</td>
+<td>none</td>
+</tr>
+</tbody>
+</table>
+<h2 id="tocsscopevideo">ScopeVideo</h2>
+<p><a id="schemascopevideo"></a></p>
+<pre class="highlight tab tab-json"><code>{
+  <span class="hljs-attr">"type"</span>: <span class="hljs-string">"video"</span>,
+  <span class="hljs-attr">"start_time"</span>: <span class="hljs-number">0</span>,
+  <span class="hljs-attr">"end_time"</span>: <span class="hljs-number">600</span>,
+  <span class="hljs-attr">"stream"</span>: <span class="hljs-string">""</span>
+}
+</code></pre>
+<h3 id="properties">Properties</h3>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>type</td>
+<td>string</td>
+<td>true</td>
+<td>none</td>
 </tr>
 <tr>
-<td>»» model</td>
-<td>object</td>
+<td>start_time</td>
+<td>integer</td>
 <td>false</td>
-<td>Model configuration to override defaults. This has no fixed schema and may vary per model (see model docs). Leave blank to use the default model configuration.</td>
+<td>start time to tag (in seconds)</td>
+</tr>
+<tr>
+<td>end_time</td>
+<td>integer</td>
+<td>false</td>
+<td>end time to tag (in seconds)</td>
+</tr>
+<tr>
+<td>stream</td>
+<td>string</td>
+<td>false</td>
+<td>none</td>
+</tr>
+</tbody>
+</table>
+<h4 id="enumerated-values">Enumerated Values</h4>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>type</td>
+<td>video</td>
+</tr>
+</tbody>
+</table>
+<h2 id="tocsscopeprocessor">ScopeProcessor</h2>
+<p><a id="schemascopeprocessor"></a></p>
+<pre class="highlight tab tab-json"><code>{
+  <span class="hljs-attr">"type"</span>: <span class="hljs-string">"processor"</span>,
+  <span class="hljs-attr">"start_time"</span>: <span class="hljs-number">0</span>,
+  <span class="hljs-attr">"end_time"</span>: <span class="hljs-number">3000</span>,
+  <span class="hljs-attr">"chunk_size"</span>: <span class="hljs-number">600</span>,
+  <span class="hljs-attr">"stream"</span>: <span class="hljs-string">"video"</span>
+}
+</code></pre>
+<h3 id="properties">Properties</h3>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>type</td>
+<td>string</td>
+<td>true</td>
+<td>none</td>
+</tr>
+<tr>
+<td>start_time</td>
+<td>integer</td>
+<td>false</td>
+<td>none</td>
+</tr>
+<tr>
+<td>end_time</td>
+<td>integer</td>
+<td>false</td>
+<td>none</td>
+</tr>
+<tr>
+<td>chunk_size</td>
+<td>integer</td>
+<td>false</td>
+<td>none</td>
+</tr>
+<tr>
+<td>stream</td>
+<td>string</td>
+<td>false</td>
+<td>none</td>
+</tr>
+</tbody>
+</table>
+<h4 id="enumerated-values">Enumerated Values</h4>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>type</td>
+<td>processor</td>
+</tr>
+</tbody>
+</table>
+<h2 id="tocsscopeassets">ScopeAssets</h2>
+<p><a id="schemascopeassets"></a></p>
+<pre class="highlight tab tab-json"><code>{
+  <span class="hljs-attr">"type"</span>: <span class="hljs-string">"assets"</span>,
+  <span class="hljs-attr">"assets"</span>: [
+    <span class="hljs-string">"assets/hello1.jpg"</span>,
+    <span class="hljs-string">"assets/hello2.jpg"</span>
+  ]
+}
+</code></pre>
+<h3 id="properties">Properties</h3>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>type</td>
+<td>string</td>
+<td>true</td>
+<td>none</td>
+</tr>
+<tr>
+<td>assets</td>
+<td>[string]</td>
+<td>false</td>
+<td>list of asset paths to tag</td>
+</tr>
+</tbody>
+</table>
+<h4 id="enumerated-values">Enumerated Values</h4>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>type</td>
+<td>assets</td>
+</tr>
+</tbody>
+</table>
+<h2 id="tocsscopelivestream">ScopeLivestream</h2>
+<p><a id="schemascopelivestream"></a></p>
+<pre class="highlight tab tab-json"><code>{
+  <span class="hljs-attr">"type"</span>: <span class="hljs-string">"livestream"</span>,
+  <span class="hljs-attr">"stream"</span>: <span class="hljs-string">"video"</span>,
+  <span class="hljs-attr">"segment_length"</span>: <span class="hljs-number">4</span>,
+  <span class="hljs-attr">"max_duration"</span>: <span class="hljs-number">0</span>
+}
+</code></pre>
+<h3 id="properties">Properties</h3>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>type</td>
+<td>string</td>
+<td>true</td>
+<td>none</td>
+</tr>
+<tr>
+<td>stream</td>
+<td>string</td>
+<td>false</td>
+<td>none</td>
+</tr>
+<tr>
+<td>segment_length</td>
+<td>integer</td>
+<td>false</td>
+<td>tagging interval size (in seconds)</td>
+</tr>
+<tr>
+<td>max_duration</td>
+<td>integer|null</td>
+<td>false</td>
+<td>maximum amount of content from livestream to tag (in seconds)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="enumerated-values">Enumerated Values</h4>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>type</td>
+<td>livestream</td>
+</tr>
+</tbody>
+</table>
+<h2 id="tocsstarttaggingresponse">StartTaggingResponse</h2>
+<p><a id="schemastarttaggingresponse"></a></p>
+<pre class="highlight tab tab-json"><code>{
+  <span class="hljs-attr">"jobs"</span>: [
+    {
+      <span class="hljs-attr">"job_id"</span>: <span class="hljs-string">"1234"</span>,
+      <span class="hljs-attr">"model"</span>: <span class="hljs-string">"asr"</span>,
+      <span class="hljs-attr">"stream"</span>: <span class="hljs-string">"audio_1"</span>,
+      <span class="hljs-attr">"started"</span>: <span class="hljs-literal">true</span>,
+      <span class="hljs-attr">"message"</span>: <span class="hljs-string">"successfully started"</span>,
+      <span class="hljs-attr">"error"</span>: <span class="hljs-literal">null</span>
+    }
+  ]
+}
+</code></pre>
+<h3 id="properties">Properties</h3>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>jobs</td>
+<td>[<a href="#schemastartstatus">StartStatus</a>]</td>
+<td>true</td>
+<td>none</td>
+</tr>
+</tbody>
+</table>
+<h2 id="tocsstartstatus">StartStatus</h2>
+<p><a id="schemastartstatus"></a></p>
+<pre class="highlight tab tab-json"><code>{
+  <span class="hljs-attr">"job_id"</span>: <span class="hljs-string">"1234"</span>,
+  <span class="hljs-attr">"model"</span>: <span class="hljs-string">"asr"</span>,
+  <span class="hljs-attr">"stream"</span>: <span class="hljs-string">"audio_1"</span>,
+  <span class="hljs-attr">"started"</span>: <span class="hljs-literal">true</span>,
+  <span class="hljs-attr">"message"</span>: <span class="hljs-string">"successfully started"</span>,
+  <span class="hljs-attr">"error"</span>: <span class="hljs-literal">null</span>
+}
+</code></pre>
+<h3 id="properties">Properties</h3>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>job_id</td>
+<td>string</td>
+<td>true</td>
+<td>none</td>
+</tr>
+<tr>
+<td>model</td>
+<td>string</td>
+<td>true</td>
+<td>none</td>
+</tr>
+<tr>
+<td>stream</td>
+<td>string</td>
+<td>true</td>
+<td>none</td>
+</tr>
+<tr>
+<td>started</td>
+<td>boolean</td>
+<td>true</td>
+<td>none</td>
+</tr>
+<tr>
+<td>message</td>
+<td>string</td>
+<td>true</td>
+<td>none</td>
+</tr>
+<tr>
+<td>error</td>
+<td>string|null</td>
+<td>false</td>
+<td>none</td>
+</tr>
+</tbody>
+</table>
+<h2 id="tocsstatusresponse">StatusResponse</h2>
+<p><a id="schemastatusresponse"></a></p>
+<pre class="highlight tab tab-json"><code>{
+  <span class="hljs-attr">"jobs"</span>: [
+    {
+      <span class="hljs-attr">"job_id"</span>: <span class="hljs-string">"1234"</span>,
+      <span class="hljs-attr">"status"</span>: <span class="hljs-string">"Fetching Content"</span>,
+      <span class="hljs-attr">"time_running"</span>: <span class="hljs-number">1234</span>,
+      <span class="hljs-attr">"tagging_progress"</span>: <span class="hljs-string">"120/305"</span>,
+      <span class="hljs-attr">"missing_tags"</span>: [
+        <span class="hljs-string">"assets/hello.jpg"</span>,
+        <span class="hljs-string">"assets/hello2.jpg"</span>
+      ],
+      <span class="hljs-attr">"failed"</span>: [
+        <span class="hljs-string">"assets/bad.jpg"</span>
+      ],
+      <span class="hljs-attr">"model"</span>: <span class="hljs-string">"asr"</span>,
+      <span class="hljs-attr">"stream"</span>: <span class="hljs-string">"audio_1"</span>
+    }
+  ]
+}
+</code></pre>
+<h3 id="properties">Properties</h3>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>jobs</td>
+<td>[<a href="#schemajobstatus">JobStatus</a>]</td>
+<td>true</td>
+<td>none</td>
+</tr>
+</tbody>
+</table>
+<h2 id="tocsjobstatus">JobStatus</h2>
+<p><a id="schemajobstatus"></a></p>
+<pre class="highlight tab tab-json"><code>{
+  <span class="hljs-attr">"job_id"</span>: <span class="hljs-string">"1234"</span>,
+  <span class="hljs-attr">"status"</span>: <span class="hljs-string">"Fetching Content"</span>,
+  <span class="hljs-attr">"time_running"</span>: <span class="hljs-number">1234</span>,
+  <span class="hljs-attr">"tagging_progress"</span>: <span class="hljs-string">"120/305"</span>,
+  <span class="hljs-attr">"missing_tags"</span>: [
+    <span class="hljs-string">"assets/hello.jpg"</span>,
+    <span class="hljs-string">"assets/hello2.jpg"</span>
+  ],
+  <span class="hljs-attr">"failed"</span>: [
+    <span class="hljs-string">"assets/bad.jpg"</span>
+  ],
+  <span class="hljs-attr">"model"</span>: <span class="hljs-string">"asr"</span>,
+  <span class="hljs-attr">"stream"</span>: <span class="hljs-string">"audio_1"</span>
+}
+</code></pre>
+<h3 id="properties">Properties</h3>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>job_id</td>
+<td>string</td>
+<td>true</td>
+<td>none</td>
+</tr>
+<tr>
+<td>status</td>
+<td>string</td>
+<td>true</td>
+<td>none</td>
+</tr>
+<tr>
+<td>time_running</td>
+<td>number</td>
+<td>true</td>
+<td>none</td>
+</tr>
+<tr>
+<td>tagging_progress</td>
+<td>string</td>
+<td>true</td>
+<td>none</td>
+</tr>
+<tr>
+<td>missing_tags</td>
+<td>[string]</td>
+<td>true</td>
+<td>list of sources which have no tags</td>
+</tr>
+<tr>
+<td>failed</td>
+<td>[string]</td>
+<td>true</td>
+<td>list of sources which failed to process</td>
+</tr>
+<tr>
+<td>model</td>
+<td>string</td>
+<td>true</td>
+<td>none</td>
+</tr>
+<tr>
+<td>stream</td>
+<td>string</td>
+<td>true</td>
+<td>none</td>
+</tr>
+</tbody>
+</table>
+<h2 id="tocsstoptaggingresponse">StopTaggingResponse</h2>
+<p><a id="schemastoptaggingresponse"></a></p>
+<pre class="highlight tab tab-json"><code>{
+  <span class="hljs-attr">"jobs"</span>: [
+    {
+      <span class="hljs-attr">"job_id"</span>: <span class="hljs-string">"string"</span>,
+      <span class="hljs-attr">"message"</span>: <span class="hljs-string">"string"</span>
+    }
+  ],
+  <span class="hljs-attr">"message"</span>: <span class="hljs-string">"string"</span>
+}
+</code></pre>
+<h3 id="properties">Properties</h3>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>jobs</td>
+<td>[<a href="#schemastopstatus">StopStatus</a>]</td>
+<td>true</td>
+<td>none</td>
+</tr>
+<tr>
+<td>message</td>
+<td>string</td>
+<td>true</td>
+<td>none</td>
+</tr>
+</tbody>
+</table>
+<h2 id="tocsstopstatus">StopStatus</h2>
+<p><a id="schemastopstatus"></a></p>
+<pre class="highlight tab tab-json"><code>{
+  <span class="hljs-attr">"job_id"</span>: <span class="hljs-string">"string"</span>,
+  <span class="hljs-attr">"message"</span>: <span class="hljs-string">"string"</span>
+}
+</code></pre>
+<h3 id="properties">Properties</h3>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>job_id</td>
+<td>string</td>
+<td>true</td>
+<td>none</td>
+</tr>
+<tr>
+<td>message</td>
+<td>string</td>
+<td>true</td>
+<td>none</td>
 </tr>
 </tbody>
 </table>
