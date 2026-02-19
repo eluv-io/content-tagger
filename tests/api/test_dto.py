@@ -299,3 +299,19 @@ def test_just_model_name(mock_registry, mock_content):
     assert tag_args.destination_qid == ""
     assert tag_args.replace == False
     assert isinstance(tag_args.scope, VideoScope)
+
+def test_audio_stream_mapping_live(q_live, mock_registry):
+    args = StartJobsRequest(
+        jobs=[
+            JobSpec(
+                model="object_detection",
+                overrides=TaggerArgs(scope={"stream": "audio"})
+            )
+        ],
+        options=TaggerArgs()
+    )
+    result = map_video_tag_dto(args, mock_registry, q_live)
+    assert len(result) == 1
+    tag_args = result[0]
+    assert isinstance(tag_args.scope, LiveScope)
+    assert tag_args.scope.stream == "audio"
