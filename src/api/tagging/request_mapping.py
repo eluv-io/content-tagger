@@ -23,7 +23,7 @@ def map_video_tag_dto(
     """
     Map video tagging API arguments to internal TagArgs structures.
     """
-    defaults = args.defaults
+    defaults = args.options
     res = []
     for job in args.jobs:
         tag_arg = _set_defaults(q, defaults, job, registry)

@@ -46,5 +46,5 @@ class JobSpec:
 
 @dataclass
 class StartJobsRequest:
-    defaults: TaggerArgs = field(default_factory=TaggerArgs)
+    options: TaggerArgs = field(default_factory=TaggerArgs)
     jobs: list[JobSpec] = field(default_factory=list)

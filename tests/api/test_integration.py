@@ -84,7 +84,7 @@ def test_video_model(client, q):
     response = client.post(
         f"/{q.qid}/tag?authorization={auth}", 
         json={
-            "defaults": {
+            "options": {
                 "destination_qid": "",
                 "replace": True,
                 "max_fetch_retries": 3,
@@ -162,7 +162,7 @@ def test_live_video_model(is_live_content, app, last_res_has_media, q):
     response = client.post(
         f"/{q.qid}/tag?authorization={auth}", 
         json={
-            "defaults": {
+            "options": {
                 "replace": True,
             },
             "jobs": [
@@ -221,7 +221,7 @@ def test_real_live_stream(app, q_live):
     response = client.post(
         f"/{qid}/tag?authorization={auth}", 
         json={
-            "defaults": {
+            "options": {
                 "replace": True,
                 "scope": {
                     "max_duration": 20,
@@ -300,7 +300,7 @@ def test_asset_tag(client, q_assets):
     response = client.post(
         f"/{qid}/tag?authorization={auth}", 
         json={
-            "defaults": {
+            "options": {
                 "scope": {"type": "assets"}
             },
             "jobs": [
@@ -330,7 +330,7 @@ def test_stop_workflow(client, q):
     response = client.post(
         f"/{q.qid}/tag?authorization={video_auth}", 
         json={
-            "defaults": {
+            "options": {
                 "replace": True,
             },
             "jobs": [
@@ -468,7 +468,7 @@ def test_stop_live_job(app, q_live):
     response = client.post(
         f"/{qid}/tag?authorization={auth}", 
         json={
-            "defaults": {
+            "options": {
                 "replace": True,
                 "max_fetch_retries": 3,
                 "scope": {
@@ -571,7 +571,7 @@ def test_stop_all_jobs(client, q):
     response = client.post(
         f"/{q.qid}/tag?authorization={auth}",
         json={
-            "defaults": {
+            "options": {
                 "replace": True,
             },
             "jobs": [

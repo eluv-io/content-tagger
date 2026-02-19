@@ -27,7 +27,7 @@ def handle_tag(qhit: str) -> Response:
     
     logger.debug(args)
 
-    _validate_destination_auth(q, args.defaults.destination_qid)
+    _validate_destination_auth(q, args.options.destination_qid)
     
     tagger: FabricTagger = current_app.config["state"]["tagger"]
     tag_args = map_video_tag_dto(args, tagger.cregistry, q)
