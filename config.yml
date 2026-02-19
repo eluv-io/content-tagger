@@ -80,13 +80,13 @@ container_registry:
       }
     ocr:
       image: "localhost/ocr:latest"
-      type: "video"
+      type: "frame"
       resources: {
         "gpu": 1
       }
     logo:
       image: "localhost/logo:latest"
-      type: "video"
+      type: "frame"
       resources: {
         "gpu": 1
       }
