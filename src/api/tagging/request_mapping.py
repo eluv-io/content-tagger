@@ -34,13 +34,13 @@ def map_video_tag_dto(
 
 def _set_defaults(
     q: Content,
-    defaults: TaggerArgs,
+    defaults: TaggerOptions,
     job: JobSpec,
     registry: ContainerRegistry
 ) -> TagArgs:
     feature = job.model
     run_config = job.model_params
-    overrides = job.overrides or TaggerArgs()
+    overrides = job.overrides or TaggerOptions()
 
     destination_qid = overrides.destination_qid or defaults.destination_qid
     replace = overrides.replace or defaults.replace
@@ -50,7 +50,9 @@ def _set_defaults(
 
     default_scope = _get_default_scope_dict(is_live, registry.get_model_config(feature).type, q)
 
+    # override with options provided in request
     scope_dict = nested_update(default_scope, defaults.scope)
+    # override with per-model options provided in request
     scope_dict = nested_update(scope_dict, overrides.scope)
 
     try:

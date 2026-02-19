@@ -5,7 +5,7 @@ from src.api.tagging.request_mapping import map_video_tag_dto
 from src.fetch.model import AssetScope, LiveScope, TimeRangeScope, VideoScope
 from src.tag_containers.registry import ContainerRegistry
 from src.api.tagging.request_format import (
-    StartJobsRequest, JobSpec, TaggerArgs, 
+    StartJobsRequest, JobSpec, TaggerOptions, 
 )
 from src.tagging.fabric_tagging.model import TagArgs
 
@@ -42,7 +42,7 @@ def mock_content():
 def test_auto_detect_livestream(mock_registry, mock_content):
     """Test that livestream scope is auto-detected when segment_length is provided."""
     args = StartJobsRequest(
-        options=TaggerArgs(),
+        options=TaggerOptions(),
         jobs=[
             JobSpec(
                 model="object_detection",
@@ -61,7 +61,7 @@ def test_auto_detect_livestream(mock_registry, mock_content):
 def test_resolve_audio_stream(mock_registry, mock_content):
     """Test that audio stream is correctly resolved for audio models."""
     args = StartJobsRequest(
-        options=TaggerArgs(),
+        options=TaggerOptions(),
         jobs=[
             JobSpec(
                 model="audio_classification",
@@ -80,7 +80,7 @@ def test_resolve_audio_stream(mock_registry, mock_content):
 def test_detect_processor_scope(mock_registry, mock_content):
     """Test that processor scope is used for processor type models."""
     args = StartJobsRequest(
-        options=TaggerArgs(),
+        options=TaggerOptions(),
         jobs=[
             JobSpec(
                 model="joe's processor",
@@ -98,7 +98,7 @@ def test_detect_processor_scope(mock_registry, mock_content):
 def test_vod_with_destination_qid(mock_registry, mock_content):
     """Test VOD mapping with destination_qid set."""
     args = StartJobsRequest(
-        options=TaggerArgs(
+        options=TaggerOptions(
             destination_qid="iq__destination",
             replace=True,
             scope={"type": "video", "start_time": 0, "end_time": 30}
@@ -112,7 +112,7 @@ def test_vod_with_destination_qid(mock_registry, mock_content):
             JobSpec(
                 model="speech_recognition", 
                 model_params={},
-                overrides=TaggerArgs(scope={"stream": "audio"})
+                overrides=TaggerOptions(scope={"stream": "audio"})
             )
         ]
     )
@@ -135,7 +135,7 @@ def test_vod_with_destination_qid(mock_registry, mock_content):
 def test_live_with_destination_qid(mock_registry, mock_content):
     """Test live mapping with destination_qid set."""
     args = StartJobsRequest(
-        options=TaggerArgs(
+        options=TaggerOptions(
             destination_qid="iq__destination",
             scope={"type": "livestream", "segment_length": 5, "max_duration": 60}
         ),
@@ -162,7 +162,7 @@ def test_live_with_destination_qid(mock_registry, mock_content):
 def test_vod_without_destination_qid(mock_registry, mock_content):
     """Test VOD mapping without destination_qid (should default to empty string)."""
     args = StartJobsRequest(
-        options=TaggerArgs(
+        options=TaggerOptions(
             destination_qid="",
             replace=False
         ),
@@ -183,7 +183,7 @@ def test_vod_without_destination_qid(mock_registry, mock_content):
 def test_live_without_destination_qid(mock_registry, mock_content):
     """Test live mapping without destination_qid (should default to empty string)."""
     args = StartJobsRequest(
-        options=TaggerArgs(
+        options=TaggerOptions(
             destination_qid="",
             scope={"type": "livestream"}
         ),
@@ -204,7 +204,7 @@ def test_live_without_destination_qid(mock_registry, mock_content):
 def test_asset_with_destination_qid(mock_registry, mock_content):
     """Test asset mapping with destination_qid set."""
     args = StartJobsRequest(
-        options=TaggerArgs(
+        options=TaggerOptions(
             destination_qid="iq__destination",
             replace=True,
             scope={"type": "assets", "assets": ["asset1.jpg", "asset2.png"]}
@@ -236,7 +236,7 @@ def test_asset_with_destination_qid(mock_registry, mock_content):
 def test_asset_without_destination_qid(mock_registry, mock_content):
     """Test asset mapping without destination_qid (should default to empty string)."""
     args = StartJobsRequest(
-        options=TaggerArgs(
+        options=TaggerOptions(
             destination_qid="",
             scope={"type": "assets", "assets": ["asset1.jpg"]}
         ),
@@ -257,7 +257,7 @@ def test_asset_without_destination_qid(mock_registry, mock_content):
 def test_overrides_merge_with_defaults(mock_registry, mock_content):
     """Test that job overrides properly merge with defaults."""
     args = StartJobsRequest(
-        options=TaggerArgs(
+        options=TaggerOptions(
             destination_qid="iq__default",
             replace=False,
             scope={"type": "video", "start_time": 0, "end_time": 100}
@@ -266,7 +266,7 @@ def test_overrides_merge_with_defaults(mock_registry, mock_content):
             JobSpec(
                 model="object_detection",
                 model_params={},
-                overrides=TaggerArgs(
+                overrides=TaggerOptions(
                     destination_qid="iq__override",
                     scope={"start_time": 10, "end_time": 50}
                 )
@@ -287,7 +287,7 @@ def test_overrides_merge_with_defaults(mock_registry, mock_content):
 def test_map_dto_with_joes_processor(mock_registry, mock_content):
     """Test mapping with a processor type model."""
     args = StartJobsRequest(
-        options=TaggerArgs(),
+        options=TaggerOptions(),
         jobs=[
             JobSpec(
                 model="joe's processor",
@@ -324,7 +324,7 @@ def test_asset_multiple_features_with_destination_qid(mock_registry, mock_conten
                 overrides=None
             )
         ],
-        options=TaggerArgs(
+        options=TaggerOptions(
             destination_qid="iq__shared_destination",
             scope={"type":"assets", "assets": ["asset.jpg"]},
         )
@@ -344,7 +344,7 @@ def test_just_model_name(mock_registry, mock_content):
                 model="object_detection",
             )
         ],
-        options=TaggerArgs()
+        options=TaggerOptions()
     )
     
     result = map_video_tag_dto(args, mock_registry, mock_content)
@@ -361,10 +361,10 @@ def test_audio_stream_mapping_live(q_live, mock_registry):
         jobs=[
             JobSpec(
                 model="object_detection",
-                overrides=TaggerArgs(scope={"stream": "audio"})
+                overrides=TaggerOptions(scope={"stream": "audio"})
             )
         ],
-        options=TaggerArgs()
+        options=TaggerOptions()
     )
     result = map_video_tag_dto(args, mock_registry, q_live)
     assert len(result) == 1
