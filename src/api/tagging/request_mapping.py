@@ -150,7 +150,7 @@ def _find_default_audio_stream(q: Content) -> str:
             return stream_name
     
     return list(audio_streams.keys())[0]
-    
+
 def is_live_content(q: Content) -> bool:
     try:
         edge_write_token = q.content_object_metadata(

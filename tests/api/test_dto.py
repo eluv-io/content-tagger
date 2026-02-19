@@ -279,3 +279,23 @@ def test_asset_multiple_features_with_destination_qid(mock_registry, mock_conten
     assert len(result) == 3
     for tag_args in result:
         assert tag_args.destination_qid == "iq__shared_destination"
+
+def test_just_model_name(mock_registry, mock_content):
+    """Test that just providing a model name works with all defaults."""
+    args = StartJobsRequest(
+        jobs=[
+            JobSpec(
+                model="object_detection",
+            )
+        ],
+        defaults=TaggerArgs()
+    )
+    
+    result = map_video_tag_dto(args, mock_registry, mock_content)
+    
+    assert len(result) == 1
+    tag_args = result[0]
+    assert tag_args.feature == "object_detection"
+    assert tag_args.destination_qid == ""
+    assert tag_args.replace == False
+    assert isinstance(tag_args.scope, VideoScope)

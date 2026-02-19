@@ -20,7 +20,11 @@ from src.api.tagging.response_mapping import *
 def handle_tag(qhit: str) -> Response:
     q = _get_authorized_content(qhit)
 
-    args = from_dict(data_class=StartJobsRequest, data=request.get_json())
+    try:
+        args = from_dict(data_class=StartJobsRequest, data=request.get_json(), config=Config(strict=True))
+    except Exception as e:
+        raise BadRequestError(f"Invalid request body format: {e}") from e
+    
     logger.debug(args)
 
     _validate_destination_auth(q, args.defaults.destination_qid)

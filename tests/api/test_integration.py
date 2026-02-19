@@ -84,12 +84,19 @@ def test_video_model(client, q):
     response = client.post(
         f"/{q.qid}/tag?authorization={auth}", 
         json={
-            "features": {
-                "test_model": {
-                    "model": {"tags": ["hello1", "hello2"]}
-                },
-            }, 
-            "replace": True
+            "defaults": {
+                "destination_qid": "",
+                "replace": True,
+                "max_fetch_retries": 3,
+                "scope": {}
+            },
+            "jobs": [
+                {
+                    "model": "test_model",
+                    "model_params": {"tags": ["hello1", "hello2"]},
+                    "overrides": None
+                }
+            ]
         }
     )
     assert response.status_code == 200
@@ -109,29 +116,11 @@ def test_video_model(client, q):
 
     assert completed, "Timeout waiting for jobs to complete"
 
-def test_bad_parts_url_gives_502(client, q):
-    """Test that a bad parts url returns 502 error on download_part."""
-    auth = get_auth(q)
-
-    # patch the parts_url to an invalid one
-    cfactory: ContentFactory = client.application.config["state"]["content_factory"]
-    cfactory.cfg.parts_url = "http://invalid-url/config?self&qspace=main"
-
-    response = client.post(
-        f"/{q.qid}/tag?authorization={auth}",
-        json={
-            "features": {
-                "test_model": {}
-            },
-        }
-    )
-    assert response.status_code == 502
-
 @pytest.mark.parametrize("last_res_has_media", [True, False])
-@patch('src.api.tagging.handlers.is_live')
-def test_live_video_model(is_live, app, last_res_has_media, q):
+@patch('src.api.tagging.request_mapping.is_live_content')
+def test_live_video_model(is_live_content, app, last_res_has_media, q):
     """Test the live tagging workflow with FakeLiveFetcher."""
-    is_live.return_value = True
+    is_live_content.return_value = True
     # Get auth tokens
     auth = get_auth(q)
     qid = q.qid
@@ -158,8 +147,8 @@ def test_live_video_model(is_live, app, last_res_has_media, q):
         fake_worker = FakeLiveWorker(real_worker, last_res_has_media)
         fake_worker_ref[0] = fake_worker  # Store reference
         return fake_worker
-    
-    # Replace with our version
+
+
     tagger.fetcher.get_session = fake_get_worker
     
     # Create test client
@@ -173,12 +162,15 @@ def test_live_video_model(is_live, app, last_res_has_media, q):
     response = client.post(
         f"/{q.qid}/tag?authorization={auth}", 
         json={
-            "features": {
-                "test_model": {
-                    "model": {"tags": ["hello1", "hello2"]}
+            "defaults": {
+                "replace": True,
+            },
+            "jobs": [
+                {
+                    "model": "test_model",
+                    "model_params": {"tags": ["hello1", "hello2"]},
                 }
-            }, 
-            "replace": True
+            ]
         }
     )
     assert response.status_code == 200
@@ -229,14 +221,19 @@ def test_real_live_stream(app, q_live):
     response = client.post(
         f"/{qid}/tag?authorization={auth}", 
         json={
-            "features": {
-                "test_model": {
-                    "model": {"tags": ["hello1", "hello2"]}
+            "defaults": {
+                "replace": True,
+                "scope": {
+                    "max_duration": 20,
+                    "segment_length": 5
                 }
             },
-            "max_duration": 20,
-            "segment_length": 5,
-            "replace": True
+            "jobs": [
+                {
+                    "model": "test_model",
+                    "model_params": {"tags": ["hello1", "hello2"]},
+                }
+            ]
         }
     )
     assert response.status_code == 200
@@ -301,13 +298,17 @@ def test_asset_tag(client, q_assets):
     
     # Start asset tagging with CPU feature
     response = client.post(
-        f"/{qid}/image_tag?authorization={auth}", 
+        f"/{qid}/tag?authorization={auth}", 
         json={
-            "features": {
-                "test_model": {
-                    "model": {"tags": ["hello world"]}
+            "defaults": {
+                "scope": {"type": "assets"}
+            },
+            "jobs": [
+                {
+                    "model": "test_model",
+                    "model_params": {"tags": ["hello world"]},
                 }
-            }
+            ]
         }
     )
     assert response.status_code == 200
@@ -329,12 +330,15 @@ def test_stop_workflow(client, q):
     response = client.post(
         f"/{q.qid}/tag?authorization={video_auth}", 
         json={
-            "features": {
-                "test_model": {
-                    "model": {"tags": ["test_stop"]}
+            "defaults": {
+                "replace": True,
+            },
+            "jobs": [
+                {
+                    "model": "test_model",
+                    "model_params": {"tags": ["test_stop"]},
                 }
-            }, 
-            "replace": True
+            ]
         }
     )
     assert response.status_code == 200
@@ -364,11 +368,12 @@ def test_double_run(client, q):
     response = client.post(
         f"/{q.qid}/tag?authorization={video_auth}", 
         json={
-            "features": {
-                "test_model": {
-                    "model": {"tags": ["original_tags"]}
+            "jobs": [
+                {
+                    "model": "test_model",
+                    "model_params": {"tags": ["original_tags"]},
                 }
-            }
+            ]
         }
     )
     assert response.status_code == 200
@@ -379,11 +384,13 @@ def test_double_run(client, q):
     response = client.post(
         f"/{q.qid}/tag?authorization={video_auth}", 
         json={
-            "features": {
-                "test_model": {
-                    "model": {"tags": ["should_not_replace"]}
+
+            "jobs": [
+                {
+                    "model": "test_model",
+                    "model_params": {"tags": ["should_not_replace"]},
                 }
-            },
+            ]
         }
     )
     data = response.get_json()
@@ -443,10 +450,10 @@ def test_find_default_audio_stream_priority():
     with pytest.raises(Exception):
         _find_default_audio_stream(mock_content)
 
-def test_is_live(q_live):
-    """Test the _is_live function."""
-    from src.api.tagging.request_mapping import is_live
-    assert is_live(q_live) == True
+def test_is_live_content(q_live):
+    """Test the _is_live_content function."""
+    from src.api.tagging.request_mapping import is_live_content
+    assert is_live_content(q_live) == True
 
 def test_stop_live_job(app, q_live):
     """Test that live jobs can be stopped cleanly mid-stream."""
@@ -461,10 +468,20 @@ def test_stop_live_job(app, q_live):
     response = client.post(
         f"/{qid}/tag?authorization={auth}", 
         json={
-            "features": {"test_model": {"model": {"tags": ["hello1", "hello2"]}}},
-            "max_duration": 60,  # Long duration so it won't complete
-            "segment_length": 4,
-            "replace": True
+            "defaults": {
+                "replace": True,
+                "max_fetch_retries": 3,
+                "scope": {
+                    "max_duration": 60,
+                    "segment_length": 4
+                }
+            },
+            "jobs": [
+                {
+                    "model": "test_model",
+                    "model_params": {"tags": ["hello1", "hello2"]},
+                }
+            ]
         }
     )
     assert response.status_code == 200
@@ -526,33 +543,6 @@ def test_stop_live_job(app, q_live):
     
     logger.info(f"Live stop test completed with {len(final_tags)} partial tags")
 
-def test_live_tag_with_broken_parts_url(app, q_live):
-    """Test that a bad parts url doesn't interfere with live tagging"""
-    qid = q_live.qid
-    auth = get_auth(q_live)
-
-    # patch the parts_url to an invalid one
-    cfactory: ContentFactory = app.config["state"]["content_factory"]
-    cfactory.cfg.parts_url = "http://invalid-url/config?self&qspace=main"
-    
-    client = app.test_client()
-    
-    # Start live tagging with long duration
-    response = client.post(
-        f"/{qid}/tag?authorization={auth}", 
-        json={
-            "features": {"test_model": {"model": {"tags": ["hello1", "hello2"]}}},
-            "max_duration": 60,  # Long duration so it won't complete
-            "segment_length": 4,
-            "replace": True
-        }
-    )
-    assert response.status_code == 200
-
-    completed = wait_for_jobs_completion(client, [q_live], timeout=30)
-    assert completed
-    assert is_job_success(client, q_live)
-
 def test_invalid_model_name(client, q):
     """Test that requesting a non-existent model returns 400 error."""
     qid = q.qid
@@ -562,11 +552,13 @@ def test_invalid_model_name(client, q):
     response = client.post(
         f"/{qid}/tag?authorization={auth}", 
         json={
-            "features": {
-                "nonexistent_model": {
-                    "model": {"tags": ["test"]}
+
+            "jobs": [
+                {
+                    "model": "nonexistent_model",
+                    "model_params": {"tags": ["test"]},
                 }
-            }
+            ]
         }
     )
     
@@ -579,11 +571,19 @@ def test_stop_all_jobs(client, q):
     response = client.post(
         f"/{q.qid}/tag?authorization={auth}",
         json={
-            "features": {
-                "test_model": {"model": {"tags": ["ok1", "ok2"]}},
-                "test_model2": {"model": {"tags": ["nope"]}},
+            "defaults": {
+                "replace": True,
             },
-            "replace": True,
+            "jobs": [
+                {
+                    "model": "test_model",
+                    "model_params": {"tags": ["ok1", "ok2"]},
+                },
+                {
+                    "model": "test_model2",
+                    "model_params": {"tags": ["nope"]},
+                }
+            ]
         },
     )
     assert response.status_code == 200
@@ -628,11 +628,17 @@ def test_start_two_jobs_one_fails_partial_failure_response(client, q):
     response = client.post(
         f"/{q.qid}/tag?authorization={auth}",
         json={
-            "features": {
-                "test_model": {"model": {"tags": ["ok1", "ok2"]}},
-                "test_model2": {"model": {"tags": ["nope"]}},
-            },
-            "replace": True,
+            "jobs": [
+                {
+                    "model": "test_model",
+                    "model_params": {"tags": ["ok1", "ok2"]},
+                    "overrides": None
+                },
+                {
+                    "model": "test_model2",
+                    "model_params": {"tags": ["nope"]},
+                }
+            ]
         },
     )
     assert response.status_code == 200

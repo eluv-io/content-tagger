@@ -41,8 +41,8 @@ class TaggerArgs:
 @dataclass
 class JobSpec:
     model: str
-    model_params: dict[str, Any]
-    overrides: TaggerArgs | None
+    model_params: dict[str, Any] = field(default_factory=dict)
+    overrides: TaggerArgs | None = None
 
 @dataclass
 class StartJobsRequest:
