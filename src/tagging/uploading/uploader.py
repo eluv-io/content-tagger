@@ -46,11 +46,9 @@ class UploadSession:
 
         logger.info(
             "uploading new tags", 
-            extra={
-                "num_tags": len(new_outputs),
-                "feature": self.feature,
-                "source_qid": self.source_q.qid,
-            }
+            num_new_tags=len(new_outputs),
+            feature=self.feature,
+            source_qid=self.source_q.qid,
         )
 
         stream_meta = self.media.worker.metadata()
@@ -80,7 +78,7 @@ class UploadSession:
             self._post_tags(tags2upload, q=self.dest_q)
         except Exception as e:
             if retry:
-                logger.opt(exception=e).error("error uploading tags, but retry is set to true, will retry on next upload tick", extra={"destination qid": self.dest_q.qid, "feature": self.feature})
+                logger.opt(exception=e).error("error uploading tags, but retry is set to true, will retry on next upload tick", destination_qid=self.dest_q.qid, feature=self.feature)
             else:
                 raise
 
@@ -187,11 +185,11 @@ class UploadSession:
         for tag in tags:
             batch_to_tags.setdefault(tag.batch_id, []).append(tag)
 
-        logger.info("uploading tags", extra={"num_tags": len(tags), "qhit": q.qhit, "num_batches": len(batch_to_tags)})
+        logger.info("uploading tags", num_tags=len(tags), qhit=q.qhit, num_batches=len(batch_to_tags))
 
         for batch, tags in batch_to_tags.items():
             try:
                 self.tagstore.upload_tags(tags, batch, q=q)
             except Exception as e:
-                logger.opt(exception=e).error("error uploading tags", extra={"destination qid": q.qid})
+                logger.opt(exception=e).error("error uploading tags", destination_qid=q.qid)
                 raise
