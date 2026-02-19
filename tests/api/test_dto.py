@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock, MagicMock, patch
 
 from src.api.tagging.request_mapping import map_video_tag_dto
 from src.fetch.model import AssetScope, LiveScope, TimeRangeScope, VideoScope
@@ -38,6 +38,62 @@ def mock_content():
     }
     content.qhit = "iq__source"
     return content
+
+def test_auto_detect_livestream(mock_registry, mock_content):
+    """Test that livestream scope is auto-detected when segment_length is provided."""
+    args = StartJobsRequest(
+        options=TaggerArgs(),
+        jobs=[
+            JobSpec(
+                model="object_detection",
+            )
+        ]
+    )
+
+    with patch('src.api.tagging.request_mapping.is_live_content', return_value=True):
+        result = map_video_tag_dto(args, mock_registry, mock_content)
+    
+    assert len(result) == 1
+    tag_args = result[0]
+    assert isinstance(tag_args.scope, LiveScope)
+    assert tag_args.scope.chunk_size > 0
+
+def test_resolve_audio_stream(mock_registry, mock_content):
+    """Test that audio stream is correctly resolved for audio models."""
+    args = StartJobsRequest(
+        options=TaggerArgs(),
+        jobs=[
+            JobSpec(
+                model="audio_classification",
+            )
+        ]
+    )
+
+    with patch('src.api.tagging.request_mapping._find_default_audio_stream', return_value="audio"):
+        result = map_video_tag_dto(args, mock_registry, mock_content)
+    
+    assert len(result) == 1
+    tag_args = result[0]
+    assert isinstance(tag_args.scope, VideoScope)
+    assert tag_args.scope.stream == "audio"
+
+def test_detect_processor_scope(mock_registry, mock_content):
+    """Test that processor scope is used for processor type models."""
+    args = StartJobsRequest(
+        options=TaggerArgs(),
+        jobs=[
+            JobSpec(
+                model="joe's processor",
+            )
+        ]
+    )
+
+    result = map_video_tag_dto(args, mock_registry, mock_content)
+    
+    assert len(result) == 1
+    tag_args = result[0]
+    assert isinstance(tag_args.scope, TimeRangeScope)
+    assert tag_args.scope.chunk_size > 0
 
 def test_vod_with_destination_qid(mock_registry, mock_content):
     """Test VOD mapping with destination_qid set."""
@@ -98,7 +154,7 @@ def test_live_with_destination_qid(mock_registry, mock_content):
     tag_args = result[0]
     assert isinstance(tag_args, TagArgs)
     assert tag_args.destination_qid == "iq__destination"
-    assert tag_args.replace == False  # Default value
+    assert tag_args.replace == False
     assert isinstance(tag_args.scope, LiveScope)
     assert tag_args.scope.chunk_size == 5
     assert tag_args.scope.max_duration == 60
