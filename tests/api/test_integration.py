@@ -94,7 +94,6 @@ def test_video_model(client, q):
                 {
                     "model": "test_model",
                     "model_params": {"tags": ["hello1", "hello2"]},
-                    "overrides": None
                 }
             ]
         }
@@ -631,8 +630,7 @@ def test_start_two_jobs_one_fails_partial_failure_response(client, q):
             "jobs": [
                 {
                     "model": "test_model",
-                    "model_params": {"tags": ["ok1", "ok2"]},
-                    "overrides": None
+                    "model_params": {"tags": ["ok1", "ok2"]}
                 },
                 {
                     "model": "test_model2",
