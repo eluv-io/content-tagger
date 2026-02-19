@@ -51,7 +51,10 @@ def _set_defaults(
     scope_dict = nested_update(default_scope, defaults.scope)
     scope_dict = nested_update(scope_dict, overrides.scope)
 
-    scope = _map_scope(scope_dict)
+    try:
+        scope = _map_scope(scope_dict)
+    except Exception as e:
+        raise BadRequestError(f"Invalid scope configuration: {e}") from e
 
     return TagArgs(
         feature=feature,
@@ -96,7 +99,7 @@ def _scope_dto_to_model(scope: ScopeDTO) -> Scope:
         return LiveScope(
             chunk_size=scope.segment_length,
             max_duration=scope.max_duration,
-            stream="",
+            stream=scope.stream,
         )
     else:
         raise BadRequestError(f"Invalid scope type: {type(scope)}")
@@ -113,7 +116,7 @@ def _get_default_scope_dict(is_live: bool, model_type: str, q: Content) -> dict[
     else:
         res["type"] = "video"
 
-    if model_type == "audio":
+    if model_type == "audio" and not is_live:
         res["stream"] = _find_default_audio_stream(q)
     else:
         res["stream"] = "video"
