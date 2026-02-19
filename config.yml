@@ -91,10 +91,10 @@ container_registry:
         "gpu": 1
       }
     music:
-      image: "ml-004.eluvio:5100/music:latest"
+      image: "localhost/music:latest"
       type: "audio"
       resources: {
-        "cpu_juice": 10
+        "cpu_juice": 8
       }
     breakdance:
       image: "localhost/breakdance"
