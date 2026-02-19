@@ -24,6 +24,8 @@ def map_video_tag_dto(
     Map video tagging API arguments to internal TagArgs structures.
     """
     defaults = args.options
+    if len(args.jobs) == 0:
+        raise BadRequestError("Please specify at least one job to run.")
     res = []
     for job in args.jobs:
         tag_arg = _set_defaults(q, defaults, job, registry)

@@ -112,46 +112,35 @@ container_registry:
 track_resolver:
   mapping:
     llava:
-      default:
-        name: llava_caption
-        label: LLAVA Caption
+      name: llava_caption
+      label: LLAVA Caption
     asr:
-      default:
-        name: speech_to_text
-        label: Speech to Text
+      name: speech_to_text
+      label: Speech to Text
     french_asr:
-      default:
-        name: french_asr
-        label: French ASR
+      name: french_asr
+      label: French ASR
     caption:
-      default:
-        name: object_detection
-        label: Object Detection
+      name: object_detection
+      label: Object Detection
     shot:
-      default:
-        name: shot_detection
-        label: Shot Detection
+      name: shot_detection
+      label: Shot Detection
     celeb:
-      default:
-        name: celebrity_detection
-        label: Celebrity Detection
+      name: celebrity_detection
+      label: Celebrity Detection
     ocr:
-      default:
-        name: optical_character_recognition
-        label: Optical Character Recognition
+      name: optical_character_recognition
+      label: Optical Character Recognition
     logo:
-      default:
-        name: logo_detection
-        label: Logo Detection
+      name: logo_detection
+      label: Logo Detection
     music:
-      default:
-        name: music_detection
-        label: Music Detection
+      name: music_detection
+      label: Music Detection
     breakdance:
-      default:
-        name: breakdance
-        label: Breakdance
+      name: breakdance
+      label: Breakdance
     test_model:
-      default:
-        name: test_model
-        label: Test Model
+      name: test_model
+      label: Test Model
