@@ -108,6 +108,66 @@ container_registry:
       resources: {
         "gpu": 1
       }
+    qwen:
+      image: "localhost/qwen:latest"
+      type: "video"
+      resources: {
+        "gpu": 1
+      }
+    llava_brief:
+      image: "localhost/llava:latest"
+      type: "frame"
+      resources: {
+        "ollama": 1
+      }
+    player:
+      image: "localhost/player:latest"
+      type: "frame"
+      resources: {
+        "ollama": 1
+      }
+    helmet:
+      image: "localhost/llava:latest"
+      type: "frame"
+      resources: {
+        "ollama": 1
+      }
+    hungarian: 
+      image: "localhost/hungarian:latest"
+      type: "audio"
+      resources: {
+        "gpu": 1
+      }
+    run:
+      image: "localhost/qwenjoe:latest"
+      type: "video"
+      resources: {
+        "gpu": 1
+      }
+    hit:
+      image: "localhost/qwenjoe:latest"
+      type: "video"
+      resources: {
+        "gpu": 1
+      }
+    hit2s:
+      image: "localhost/qwenjoe:latest"
+      type: "video"
+      resources: {
+        "gpu": 1
+      }
+    celebrate:
+      image: "localhost/qwenjoe:latest"
+      type: "video"
+      resources: {
+        "gpu": 1
+      }
+    delivery:
+      image: "localhost/qwenjoe:latest"
+      type: "video"
+      resources: {
+        "gpu": 1
+      }
 
 track_resolver:
   mapping:
@@ -144,3 +204,21 @@ track_resolver:
     test_model:
       name: test_model
       label: Test Model
+    qwen:
+      name: qwen
+      label: Video Summary
+    run:
+      name: run
+      label: Running?
+    hit:
+      name: hit
+      label: Hit?
+    hit2s:
+      name: hit2s
+      label: (sm)Hit?
+    celebrate:
+      name: celebrate
+      label: Celebration?
+    delivery:
+      name: delivery
+      label: Delivery?
