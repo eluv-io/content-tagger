@@ -40,6 +40,109 @@ const video_params = {
 
 // --- Helper Functions ---
 
+class ReadlineInput {
+  #currentTimeout = 0
+  #rl = null
+  #currentResolver = null
+  #currentAbortController = new AbortController()
+  #currentTimeoutId = null
+  #history = []
+  
+  constructor() {
+    this._ondata    = this.#ondata.bind(this)
+    this._onclose   = this.#onclose.bind(this)
+    this._onhistory = this.#onhistory.bind(this)
+    this._ontimeout = this.#ontimeout.bind(this)
+    this._callback  = this.#callback.bind(this)
+  }
+
+  #ondata(d) {
+    this.#setTimeout()     // reset timeout any time we get any stdin data
+  }
+
+  #onclose() {
+    this.#callback(null)   // close of readline means return null to awaiting promise
+    process.stdout.write("\n")
+  }
+  
+  #onhistory(histup) {
+    this.#history = histup // history updated, keep track of it
+  }
+
+  #ontimeout() {
+    // timeout fired, abort the input then return 0 to awaiting promise
+    this.#currentAbortController.abort()
+    this.#currentAbortController = new AbortController()
+    this.#currentTimeoutId = null
+    this.#callback(0)
+  }
+
+  #setTimeout() {
+    if (this.#currentTimeout > 0) {
+      if (this.#currentTimeoutId != null) clearTimeout(this.#currentTimeoutId)
+      this.#currentTimeoutId = setTimeout(this._ontimeout, this.#currentTimeout)
+    }
+  }
+  
+  // (internal) callback passed to readline question, and used by other events to return the value thru the promise
+  #callback(data) {
+    process.stdin.removeListener('data', this._ondata)
+    if (this.#currentTimeoutId != null) clearTimeout(this.#currentTimeoutId)
+    this.#currentTimeoutId = null
+        
+    if (this.#currentResolver) {  
+      this.#rl.removeListener('close', this._onclose)
+      this.#rl.removeListener('history', this._onhistory)
+      this.#rl.close()
+      this.#rl = null        
+      
+      this.#currentResolver(data)
+      this.#currentResolver = null
+    }
+    else {
+      console.error("STALE RESOLVE?? " + data)
+    }    
+  }
+  
+  async question(query, timeout = 0) {
+    if (this.#currentResolver) return Promise.reject("Previous question did not settle yet.")
+    if (timeout != null && timeout > 0 && !process.stdin.isTTY) return Promise.reject("timeout used on non-tty input")
+    
+    if (!this.#rl) {
+      this.#rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdin.isTTY ? process.stdout : null,
+        terminal: process.stdin.isTTY,
+        history: this.#history        
+      });
+      
+      if (process.stdin.isTTY) this.#rl.on('history', this._onhistory)
+    }
+    
+    if (!process.stdin.isTTY) {
+      for await (const val of this.#rl) return val
+      return null
+    }
+    
+    const promise = new Promise((resolve) => {
+      this.#currentResolver = resolve
+      this.#currentAbortController = new AbortController()
+      this.#currentTimeout = timeout
+    })
+    
+    this.#rl.on('close', this._onclose) 
+
+    if (timeout > 0) {
+      process.stdin.on('data', this._ondata)
+      this.#setTimeout()
+    }
+    
+    this.#rl.question(query, { signal: this.#currentAbortController.signal }, this._callback)
+
+    return promise
+  }
+}
+
 // fetch handle errors
 async function fetch_dict_with_status(...args) {
   let resp
@@ -84,7 +187,6 @@ async function fetch_dict_with_status(...args) {
       "content": text
     }
   }
-
 }
 
 function get_auth(config, qhit) {
@@ -364,41 +466,6 @@ async function quick_status(auth, qhit, filter = null) {
     }
 }
 
-// Custom Input Handling with Timeout
-async function getInput(rl, prompt, timeoutMs = null) {
-    return new Promise((resolve, reject) => {
-        let timer = null;
-        let aborted = false;
-
-        const controller = new AbortController(); 
-        
-        if (timeoutMs) {
-            timer = setTimeout(() => {
-                aborted = true;
-                resolve(null); 
-            }, timeoutMs);
-        }
-
-        rl.question(prompt, { signal: controller.signal }, (answer) => {
-            if (aborted) return;
-            if (timer) clearTimeout(timer);
-            resolve(answer);
-        });
-        
-        rl.on('error', (err) => {
-             if (err.name === 'AbortError') {
-                 // handled by timeout
-             } else {
-                 reject(err);
-             }
-        });
-    }).catch(e => {
-        if (e.name === 'AbortError') return null; // Timeout
-        throw e;
-    });
-}
-
-
 // --- Main Execution ---
 
 async function main() {
@@ -503,23 +570,16 @@ async function main() {
     let quickstatus_watch = null;
     let models = get_available_models(tag_config);
 
-    const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-        terminal: true
-    });
-
-    const isTTY = process.stdin.isTTY;
-    if (isTTY) {
-        help();
-    }
+    const rl = new ReadlineInput()
+  
+    if (process.stdin.isTTY) help()
 
     async function processCommand(user_line) {
-        if (!user_line) return false;
+        if (user_line === null) return false;
         
         if (quickstatus_watch && user_line === quickstatus_watch) {
              console.log("[auto quickstatus]");
-        } else if (user_line !== "" && !isTTY) {
+        } else if (user_line !== "" && !process.stdin.isTTY) {
              console.log("command: " + user_line);
         }
 
@@ -665,37 +725,27 @@ async function main() {
         return true; // Continue loop
     }
 
-    if (isTTY) {
-        while (true) {
-            let user_line = "";
-            let timeout = null;
-            if (quickstatus_watch !== null) {
-                timeout = 60 * 1000;
-            }
-            
-            const answer = await getInput(rl, `${server} > `, timeout);
-            
-            if (answer === null) {
-                if (quickstatus_watch) {
-                    user_line = quickstatus_watch;
-                } else {
-                    continue; 
-                }
-            } else {
-                user_line = answer;
-            }
-
-            const shouldContinue = await processCommand(user_line);
-            if (!shouldContinue) break;
-        }
-    } else {
-        // Non-TTY mode
-        for await (const line of rl) {
-            const shouldContinue = await processCommand(line);
-            if (!shouldContinue) break;
-        }
-    }
+    while (true) {
+      let user_line = "";
+      let timeout = null;
+      if (quickstatus_watch != null) timeout = 60 * 1000;
     
+      let answer = await rl.question(`${server} > `, timeout);
+      
+      if (answer === 0) {
+        if (quickstatus_watch) {                
+          user_line = quickstatus_watch;
+        } else {
+          continue; 
+        }
+      } else {              
+        user_line = answer;
+      }
+      
+      const shouldContinue = await processCommand(user_line);
+      if (!shouldContinue) break;
+    }
+  
     console.log("Exiting");
     process.exit(0);
 }
