@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "JavaScript driver for content tagging",
   "main": "driver.js",
-  "type": "module",
+
   "dependencies": {
     "yargs": "^17.7.2"
   },

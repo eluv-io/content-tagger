@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
-import readline from 'readline';
-import { execSync } from 'child_process';
-import fs from 'fs';
-import path from 'path';
-import yargs from 'yargs';
-import { hideBin } from 'yargs/helpers';
+const readline = require('readline');
+const { execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const yargs = require('yargs');
+const { hideBin } = require('yargs/helpers');
 
 // Configuration
 const server = process.env.TAGGERV2_URL || "http://localhost:8086";
