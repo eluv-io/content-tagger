@@ -145,6 +145,14 @@ class ReadlineInput {
   }
 }
 
+function formatTime(t) {
+  t = parseInt(t);
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t / 60) % 60);
+  const s = t % 60;
+  return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
+
 // fetch handle errors
 async function fetch_dict_with_status(...args) {
   let resp
@@ -667,14 +675,6 @@ async function main() {
                 end_time = end_time + val;
                 start_time = start_time + val;
             }
-
-            const formatTime = (t) => {
-                t = parseInt(t);
-                const h = Math.floor(t / 3600);
-                const m = Math.floor((t / 60) % 60);
-                const s = t % 60;
-                return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-            };
 
             console.log(`[${start_time}-${end_time}] [${formatTime(start_time)} - ${formatTime(end_time)}]`);
 
