@@ -120,8 +120,8 @@ class ReadlineInput {
     }
     
     if (!process.stdin.isTTY) {
-      for await (const val of this.#rl) return val
-      return null
+      const line = (await (await this.#rl[Symbol.asyncIterator]()).next()).value
+      return (line === undefined) ? null : line
     }
     
     const promise = new Promise((resolve) => {
