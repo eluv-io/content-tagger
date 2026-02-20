@@ -40,25 +40,51 @@ const video_params = {
 
 // --- Helper Functions ---
 
-// Safely parse JSON response or return error object
-async function response_force_dict(resp) {
-    try {
-        const text = await resp.text();
-        try {
-            return JSON.parse(text);
-        } catch (e) {
-            return {
-                "error": "could not parse json",
-                "status": resp.status,
-                "content": text
-            };
-        }
-    } catch (e) {
-        return {
-            "error": "could not read response body",
-            "status": resp.status
-        };
+// fetch handle errors
+async function fetch_dict_with_status(...args) {
+  let resp
+  try {
+    resp = await fetch(...args)
+  }
+  catch (e) {
+    return {
+      "error": "could not do fetch: " + e,
+      "cause": e.cause,
+      "status": -1,
+      "content": "no content"
     }
+  }
+
+  let text
+  try {
+    text = await resp.text()
+  } catch (e) {
+    return {
+      "error": "could not read response body: " + e,
+      "status": resp.status
+    }
+  }
+    
+  try {
+    const res = JSON.parse(text)
+    if (Array.isArray(res) || typeof res != "object") {
+      return {
+        "status": resp.status,
+        "content": res
+      }
+    }
+    else {
+      res.status = resp.status
+      return res
+    }
+  } catch (e) {
+    return {
+      "error": "could not parse json: " + e,
+      "status": resp.status,
+      "content": text
+    }
+  }
+
 }
 
 function get_auth(config, qhit) {
@@ -92,8 +118,7 @@ async function get_status(qhit, auth) {
     const url = new URL(`${server}/${qhit}/status`);
     url.searchParams.append("authorization", auth);
     
-    const res = await fetch(url);
-    const response_data = await response_force_dict(res);
+    const response_data = await fetch_dict_with_status(url);
 
     if (response_data && response_data.jobs) {
         const reports = response_data.jobs;
@@ -151,12 +176,12 @@ async function tag(contents, auth, assets, params, startTime = null, endTime = n
         const urlObj = new URL(url);
         urlObj.searchParams.append("authorization", auth);
 
-        const res = await fetch(urlObj, {
+        const res = await fetch_dict_with_status(urlObj, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(currentParams)
         });
-        console.log(await response_force_dict(res));
+        console.log(res)
 
         const sleepTime = parseFloat(process.env.TAGGERV2_START_SLEEP || 0);
         if (sleepTime > 0) {
@@ -181,11 +206,10 @@ async function write(qhit, config, do_commit, force = false, leave_open = false)
     const write_url = new URL(`${tagstore}/${qhit}/write`);
     write_url.searchParams.append("write_token", write_token);
     
-    const resp = await fetch(write_url, {
+    const respdict = await fetch_dict_with_status(write_url, {
         method: 'POST',
         headers: { "Authorization": `Bearer ${auth_token}` }
     });
-    const respdict = await response_force_dict(resp);
     console.log(respdict);
     
     if (do_commit && resp.status === 200) {
@@ -214,8 +238,7 @@ async function aggregate(qhit, config, do_commit) {
     aggregate_url.searchParams.append("write_token", write_token);
     aggregate_url.searchParams.append("replace", "true");
 
-    const resp = await fetch(aggregate_url, { method: 'POST' });
-    const respdict = await response_force_dict(resp);
+    const respdict = await fetch_dict_with_status(aggregate_url, { method: 'POST' });
     console.log(respdict);
 
     if (do_commit && !respdict.error) {
@@ -255,7 +278,7 @@ async function stop(qhit, auth, models) {
         try {
             const urlObj = new URL(url);
             urlObj.search = params.toString();
-            const res = await fetch(urlObj, { method: 'POST' });
+            const res = await fetch_dict_with_status(urlObj, { method: 'POST' });
             if (res.status === 200) {
                 console.log(`Successfully stopped tagging for ${qhit} on model ${model}.`);
             } else {
@@ -269,11 +292,8 @@ async function stop(qhit, auth, models) {
 
 async function list_models() {
     console.log("getting model list:");
-    const modresp = await fetch(`${server}/list`);
-    if (!modresp.ok) {
-        throw new Error(`HTTP error! status: ${modresp.status}`);
-    }
-    return await modresp.json();
+    const modresp = await fetch_dict_with_status(`${server}/list`);
+    return modresp.content;
 }
 
 function help() {
@@ -303,8 +323,7 @@ async function quick_status(auth, qhit, filter = null) {
     const url = new URL(`${server}/${qhit}/status`);
     url.searchParams.append("authorization", auth);
 
-    const res = await fetch(url);
-    const status_data = await response_force_dict(res);
+    const status_data = await fetch_dict_with_status(url);
 
     if (status_data && status_data.error) {
         const line = `[${"".padStart(9)}] ${qhit.padEnd(32)} / err: ${status_data.error}`;
