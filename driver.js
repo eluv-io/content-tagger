@@ -47,6 +47,7 @@ class ReadlineInput {
   #currentAbortController = new AbortController()
   #currentTimeoutId = null
   #history = []
+  #nonTTYiterator = null
   
   constructor() {
     this._ondata    = this.#ondata.bind(this)
@@ -120,7 +121,8 @@ class ReadlineInput {
     }
     
     if (!process.stdin.isTTY) {
-      const line = (await (await this.#rl[Symbol.asyncIterator]()).next()).value
+      if (!this.#nonTTYiterator) this.#nonTTYiterator = await this.#rl[Symbol.asyncIterator]()
+      const line = (await this.#nonTTYiterator.next()).value
       return (line === undefined) ? null : line
     }
     
