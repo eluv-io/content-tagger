@@ -48,7 +48,7 @@ class ReadlineInput {
   #currentTimeoutId = null
   #history = []
   #nonTTYiterator = null
-  
+
   constructor() {
     this._ondata    = this.#ondata.bind(this)
     this._onclose   = this.#onclose.bind(this)
@@ -65,7 +65,7 @@ class ReadlineInput {
     this.#callback(null)   // close of readline means return null to awaiting promise
     process.stdout.write("\n")
   }
-  
+
   #onhistory(histup) {
     this.#history = histup // history updated, keep track of it
   }
@@ -84,61 +84,61 @@ class ReadlineInput {
       this.#currentTimeoutId = setTimeout(this._ontimeout, this.#currentTimeout)
     }
   }
-  
+
   // (internal) callback passed to readline question, and used by other events to return the value thru the promise
   #callback(data) {
     process.stdin.removeListener('data', this._ondata)
     if (this.#currentTimeoutId != null) clearTimeout(this.#currentTimeoutId)
     this.#currentTimeoutId = null
-        
-    if (this.#currentResolver) {  
+
+    if (this.#currentResolver) {
       this.#rl.removeListener('close', this._onclose)
       this.#rl.removeListener('history', this._onhistory)
       this.#rl.close()
-      this.#rl = null        
-      
+      this.#rl = null
+
       this.#currentResolver(data)
       this.#currentResolver = null
     }
     else {
       console.error("STALE RESOLVE?? " + data)
-    }    
+    }
   }
-  
+
   async question(query, timeout = 0) {
     if (this.#currentResolver) return Promise.reject("Previous question did not settle yet.")
     if (timeout != null && timeout > 0 && !process.stdin.isTTY) return Promise.reject("timeout used on non-tty input")
-    
+
     if (!this.#rl) {
       this.#rl = readline.createInterface({
         input: process.stdin,
         output: process.stdin.isTTY ? process.stdout : null,
         terminal: process.stdin.isTTY,
-        history: this.#history        
+        history: this.#history
       });
-      
+
       if (process.stdin.isTTY) this.#rl.on('history', this._onhistory)
     }
-    
+
     if (!process.stdin.isTTY) {
       if (!this.#nonTTYiterator) this.#nonTTYiterator = await this.#rl[Symbol.asyncIterator]()
       const line = (await this.#nonTTYiterator.next()).value
       return (line === undefined) ? null : line
     }
-    
+
     const promise = new Promise((resolve) => {
       this.#currentResolver = resolve
       this.#currentAbortController = new AbortController()
       this.#currentTimeout = timeout
     })
-    
-    this.#rl.on('close', this._onclose) 
+
+    this.#rl.on('close', this._onclose)
 
     if (timeout > 0) {
       process.stdin.on('data', this._ondata)
       this.#setTimeout()
     }
-    
+
     this.#rl.question(query, { signal: this.#currentAbortController.signal }, this._callback)
 
     return promise
@@ -169,7 +169,7 @@ async function fetch_dict_with_status(...args) {
       "status": resp.status
     }
   }
-    
+
   try {
     const res = JSON.parse(text)
     if (Array.isArray(res) || typeof res != "object") {
@@ -221,7 +221,7 @@ function get_write_token(qhit, config) {
 async function get_status(qhit, auth) {
     const url = new URL(`${server}/${qhit}/status`);
     url.searchParams.append("authorization", auth);
-    
+
     const response_data = await fetch_dict_with_status(url);
 
     if (response_data && response_data.jobs) {
@@ -253,7 +253,7 @@ async function get_status(qhit, auth) {
 }
 
 async function tag(contents, auth, assets, params, startTime = null, endTime = null) {
-    
+
     for (let i = 0; i < contents.length; i++) {
         const qhit = contents[i];
         let url;
@@ -270,13 +270,13 @@ async function tag(contents, auth, assets, params, startTime = null, endTime = n
         if (startTime !== null || endTime !== null) {
             if (!currentParams.options) currentParams.options = {};
             if (!currentParams.options.scope) currentParams.options.scope = {};
-            
+
             if (startTime !== null) currentParams.options.scope.start_time = parseInt(startTime);
             if (endTime !== null) currentParams.options.scope.end_time = parseInt(endTime);
         }
 
         console.log(JSON.stringify(currentParams, null, 2));
-        
+
         const urlObj = new URL(url);
         urlObj.searchParams.append("authorization", auth);
 
@@ -309,13 +309,13 @@ async function write(qhit, config, do_commit, force = false, leave_open = false)
     const write_token = get_write_token(qhit, config);
     const write_url = new URL(`${tagstore}/${qhit}/write`);
     write_url.searchParams.append("write_token", write_token);
-    
+
     const respdict = await fetch_dict_with_status(write_url, {
         method: 'POST',
         headers: { "Authorization": `Bearer ${auth_token}` }
     });
     console.log(respdict);
-    
+
     if (do_commit && resp.status === 200) {
         commit(write_token, config);
     }
@@ -368,7 +368,7 @@ async function write_all(contents, config, do_commit, force = false) {
             }
 
             await write(qhit, config, current_do_commit, force, leave_open);
-            written[qhit] = true; 
+            written[qhit] = true;
         } catch (e) {
             console.log(`${e} while finalizing ${qhit}`);
         }
@@ -573,12 +573,12 @@ async function main() {
     let models = get_available_models(tag_config);
 
     const rl = new ReadlineInput()
-  
+
     if (process.stdin.isTTY) help()
 
     async function processCommand(user_line) {
         if (user_line === null) return false;
-        
+
         if (quickstatus_watch && user_line === quickstatus_watch) {
              console.log("[auto quickstatus]");
         } else if (user_line !== "" && !process.stdin.isTTY) {
@@ -612,7 +612,7 @@ async function main() {
         } else if (["cw", "clearwritten"].includes(user_input)) {
             let iqsub = null;
             if (user_split.length > 1) iqsub = user_split[1];
-            
+
             const new_written = {};
             if (iqsub) {
                 for (const [iq, state] of Object.entries(written)) {
@@ -628,7 +628,7 @@ async function main() {
         } else if (["stop"].includes(user_input)) {
             if (user_split.length < 2) {
                 console.log("must specify iq and optionally model");
-                return true; 
+                return true;
             }
             const iq = user_split[1];
             let stop_models;
@@ -642,7 +642,7 @@ async function main() {
             const this_tag_config = JSON.parse(JSON.stringify(tag_config));
             let iqsub = null;
             if (user_split.length > 1) iqsub = user_split[1];
-            
+
             if (user_split.length > 2) {
                 const model = user_split[2];
                 if (this_tag_config.jobs) {
@@ -658,9 +658,9 @@ async function main() {
             await tag(contentsub, auth, argv.assets, this_tag_config, start_time, end_time);
 
         } else if (user_input.startsWith("+") || user_input.startsWith("-")) {
-            let val = parseFloat(user_input); 
+            let val = parseFloat(user_input);
             val = val * 60;
-            
+
             if (end_time === null) {
                 end_time = start_time + val;
             } else {
@@ -675,7 +675,7 @@ async function main() {
                 const s = t % 60;
                 return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
             };
-            
+
             console.log(`[${start_time}-${end_time}] [${formatTime(start_time)} - ${formatTime(end_time)}]`);
 
         } else if (user_input === "qs") {
@@ -731,23 +731,23 @@ async function main() {
       let user_line = "";
       let timeout = null;
       if (quickstatus_watch != null) timeout = 60 * 1000;
-    
+
       let answer = await rl.question(`${server} > `, timeout);
-      
+
       if (answer === 0) {
-        if (quickstatus_watch) {                
+        if (quickstatus_watch) {
           user_line = quickstatus_watch;
         } else {
-          continue; 
+          continue;
         }
-      } else {              
+      } else {
         user_line = answer;
       }
-      
+
       const shouldContinue = await processCommand(user_line);
       if (!shouldContinue) break;
     }
-  
+
     console.log("Exiting");
     process.exit(0);
 }
