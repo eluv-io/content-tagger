@@ -92,8 +92,10 @@ class ReadlineInput {
     this.#currentTimeoutId = null
 
     if (this.#currentResolver) {
-      this.#rl.removeListener('close', this._onclose)
+      this.#rl.removeListener('close',   this._onclose)
       this.#rl.removeListener('history', this._onhistory)
+      this.#rl.removeListener('SIGCONT', this.#rl.resume)
+
       this.#rl.close()
       this.#rl = null
 
@@ -117,7 +119,10 @@ class ReadlineInput {
         history: this.#history
       });
 
-      if (process.stdin.isTTY) this.#rl.on('history', this._onhistory)
+      if (process.stdin.isTTY) {
+        this.#rl.on('history', this._onhistory)
+        this.#rl.on('SIGCONT', this.#rl.resume)
+      }
     }
 
     if (!process.stdin.isTTY) {
@@ -740,7 +745,7 @@ async function main() {
         if (reset_quickstatus && quickstatus_watch) {
             quickstatus_watch = null;
             console.log("[auto quickstatus turned off]");
-        }  
+        }
     }
 
     console.log("Exiting");
