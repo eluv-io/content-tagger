@@ -124,7 +124,6 @@ async function get_status(qhit, auth) {
 }
 
 async function tag(contents, auth, assets, params, startTime = null, endTime = null) {
-    const llama_models = ["elv-llamavision:1"];
     
     for (let i = 0; i < contents.length; i++) {
         const qhit = contents[i];
@@ -137,15 +136,6 @@ async function tag(contents, auth, assets, params, startTime = null, endTime = n
 
         // Deep copy params to avoid modifying the original for subsequent iterations
         const currentParams = JSON.parse(JSON.stringify(params));
-
-        // Update llava model params
-        if (currentParams.jobs) {
-            for (const job of currentParams.jobs) {
-                if (job.model === "llava") {
-                    job.model_params.model = llama_models[i % llama_models.length];
-                }
-            }
-        }
 
         // Update scope
         if (startTime !== null || endTime !== null) {
