@@ -584,8 +584,25 @@ async function main() {
 
     if (process.stdin.isTTY) help()
 
-    async function processCommand(user_line) {
-        if (user_line === null) return false;
+    while (true) {
+        let user_line = "";
+        let timeout = null;
+        if (quickstatus_watch != null) timeout = 60 * 1000;
+
+        let answer = await rl.question(`${server} > `, timeout);
+
+        if (answer === 0) {
+          // 0 means timeout
+          if (quickstatus_watch) {
+            user_line = quickstatus_watch;
+          } else {
+            continue;
+          }
+        } else {
+          user_line = answer;
+        }
+
+        if (user_line === null) break
 
         if (quickstatus_watch && user_line === quickstatus_watch) {
              console.log("[auto quickstatus]");
@@ -636,7 +653,7 @@ async function main() {
         } else if (["stop"].includes(user_input)) {
             if (user_split.length < 2) {
                 console.log("must specify iq and optionally model");
-                return true;
+                continue
             }
             const iq = user_split[1];
             let stop_models;
@@ -657,7 +674,7 @@ async function main() {
                     this_tag_config.jobs = this_tag_config.jobs.filter(job => job.model === model);
                     if (this_tag_config.jobs.length === 0) {
                         console.log(`Model '${model}' not found in config. Available models: ${models}`);
-                        return true;
+                        continue;
                     }
                 }
             }
@@ -710,7 +727,7 @@ async function main() {
                 await aggregate(qhit, argv.config, argv.commit);
             }
         } else if (["quit", "exit"].includes(user_input)) {
-            return false; // Stop loop
+          break
         } else if (["h", "help"].includes(user_input)) {
             help();
         } else if (user_input === "") {
@@ -723,29 +740,7 @@ async function main() {
         if (reset_quickstatus && quickstatus_watch) {
             quickstatus_watch = null;
             console.log("[auto quickstatus turned off]");
-        }
-        return true; // Continue loop
-    }
-
-    while (true) {
-      let user_line = "";
-      let timeout = null;
-      if (quickstatus_watch != null) timeout = 60 * 1000;
-
-      let answer = await rl.question(`${server} > `, timeout);
-
-      if (answer === 0) {
-        if (quickstatus_watch) {
-          user_line = quickstatus_watch;
-        } else {
-          continue;
-        }
-      } else {
-        user_line = answer;
-      }
-
-      const shouldContinue = await processCommand(user_line);
-      if (!shouldContinue) break;
+        }  
     }
 
     console.log("Exiting");
