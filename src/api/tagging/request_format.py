@@ -1,29 +1,51 @@
+
 from dataclasses import dataclass, field
+from typing import Any, Literal, Optional, TypeAlias
 
 @dataclass
-class ModelParams:
-    stream: str | None = None
-    model: dict = field(default_factory=dict)
-
-@dataclass
-class BaseTagAPIArgs:
-    features: dict[str, ModelParams]
-    destination_qid: str = ""
-    replace: bool = False
-    max_fetch_retries: int = 3
-
-@dataclass
-class TagAPIArgs(BaseTagAPIArgs):
+class ScopeVideo:
+    type: Literal["video"] = "video"
     start_time: int = 0
     end_time: int = 10**16
-    # only used for processor models
-    chunk_size: int = 600
+    stream: str = ""
 
 @dataclass
-class ImageTagAPIArgs(BaseTagAPIArgs):
+class ScopeProcessor:
+    type: Literal["processor"] = "processor"
+    start_time: int = 0
+    end_time: int = 10**16
+    chunk_size: int = 600
+    stream: str = ""
+
+@dataclass
+class ScopeAssets:
+    type: Literal["assets"] = "assets"
     assets: list[str] | None = None
 
 @dataclass
-class LiveTagAPIArgs(BaseTagAPIArgs):
+class ScopeLivestream:
+    type: Literal["livestream"] = "livestream"
+    stream: str = ""
     segment_length: int = 4
-    max_duration: int | None = None
+    max_duration: Optional[int] = None
+
+ScopeDTO: TypeAlias = ScopeVideo | ScopeProcessor | ScopeAssets | ScopeLivestream
+
+@dataclass
+class TaggerOptions:
+    destination_qid: str = ""
+    replace: bool = False
+    max_fetch_retries: int = 3
+    # unstructured dict to allow for flexible scope definitions - will be parsed into a ScopeDTO
+    scope: dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class JobSpec:
+    model: str
+    model_params: dict[str, Any] = field(default_factory=dict)
+    overrides: TaggerOptions | None = None
+
+@dataclass
+class StartJobsRequest:
+    options: TaggerOptions = field(default_factory=TaggerOptions)
+    jobs: list[JobSpec] = field(default_factory=list)   

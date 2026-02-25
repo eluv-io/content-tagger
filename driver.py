@@ -68,21 +68,29 @@ written = {}
 
 llava_prompt = "This is an image from a rugby match broadcast. Do not describe what people are wearing. Focus on the action and play depicted in the image. Describe the image in 2 sentences."
 # will round robin between these models
-llava_models = ["elv-llamavision:1"]
 
-assets_params = {"features": {"logo":{}, "ocr": {}, "llava": {"model":{"model":"elv-llamavision:1"}}, "caption": {}, "asr": {}, "shot": {}}, "replace": True}
+# Updated to new format
+assets_params = {
+    "options": {
+        "destination_qid": "",
+        "replace": True,
+        "max_fetch_retries": 3,
+        "scope": {"type": "assets"}
+    },
+    "jobs": [
+        {"model": "logo", "model_params": {}},
+        {"model": "ocr", "model_params": {}},
+        {"model": "llava", "model_params": {"model": "elv-llamavision:1"}},
+        {"model": "caption", "model_params": {}},
+        {"model": "asr", "model_params": {}},
+        {"model": "shot", "model_params": {}}
+    ]
+}
 
 video_params = {
-    "replace": False,
-    "features": {
-        "asr": {},
-        #"ocr": {},
-        "shot": {},
-        #"llava": {"model": {"fps": 0.5, "prompt": "WHAT IS GOING ON"} },
-        "caption": {"model": {"fps": 0.33}},
-        #"celeb": {},
-        #"logo": {}
-    }
+    "jobs": [
+        {"model": "caption", "model_params": {"fps": 0.33}}
+    ]
 }
     
 def get_auth(config: str, qhit: str) -> str:
@@ -137,14 +145,17 @@ def tag(contents: list, auth: str, assets: bool, params: dict, start_time: float
             url = f"{server}/{qhit}/image_tag"
         else:
             url = f"{server}/{qhit}/tag"
-        if "llava" in params["features"]:
-            params["features"]["llava"]["model"]["model"] = llama_models[i % len(llama_models)]
-        
-        if start_time is not None:
-            params["start_time"] = start_time
-
-        if end_time is not None:
-            params["end_time"] = end_time
+                
+        # Update scope with time range if specified
+        if start_time is not None or end_time is not None:
+            scope_updates = {}
+            if start_time is not None:
+                scope_updates["start_time"] = int(start_time)
+            if end_time is not None:
+                scope_updates["end_time"] = int(end_time)
+            
+            if scope_updates:
+                params.setdefault("options", {}).setdefault("scope", {}).update(scope_updates)
 
         print(json.dumps(params, indent=2))
         res = requests.post(url, params={"authorization": auth}, json=params)
@@ -244,27 +255,27 @@ def write_all(contents: list, config: str, do_commit: bool, force = False):
         except Exception as e:
             print(f"{e} while finalizing {qhit}")
 
-def stop(qhit: str, auth: str, features: list[str]):
+def stop(qhit: str, auth: str, models: list[str]):
     """
-    Stops the tagging process for a specific track of a given content (iq).
+    Stops the tagging process for specific models of a given content (iq).
 
     Args:
-        iq (str): The content identifier.
+        qhit (str): The content identifier.
         auth (str): Authorization token.
-        features (list): The tracks to stop tagging for.
+        models (list): The models to stop tagging for.
     """
 
     params = {"authorization": auth}
-    for feature in features:
-        url = f"{server}/{qhit}/stop/{feature}"
+    for model in models:
+        url = f"{server}/{qhit}/stop/{model}"
         try:
             res = requests.post(url, params=params)
             if res.status_code == 200:
-                print(f"Successfully stopped tagging for {qhit} on track {feature}.")
+                print(f"Successfully stopped tagging for {qhit} on model {model}.")
             else:
-                print(f"Failed to stop tagging for {qhit} on track {feature}: {res.status_code} {res.text}")
+                print(f"Failed to stop tagging for {qhit} on model {model}: {res.status_code} {res.text}")
         except Exception as e:
-            print(f"Error while stopping tagging for {qhit} on track {feature}: {e}")
+            print(f"Error while stopping tagging for {qhit} on model {model}: {e}")
 
 def list_models():
     print("getting model list:")
@@ -286,11 +297,17 @@ list                            list models tagger knows about
 cw,clearwritten                 clear the "written" state to allow re-writing
 h,help                          this help""")
     
+def get_available_models(tag_config):
+    """Extract available model names from the tag config."""
+    if "jobs" in tag_config:
+        return [job["model"] for job in tag_config["jobs"]]
+    return []
+
 def main():
     global written
     
     if args.tag_config != "":
-            tag_config = args.tag_config
+        tag_config = args.tag_config
     else:
         if args.assets:
             tag_config = assets_params
@@ -304,7 +321,7 @@ def main():
            tag_config = json.load(conf)
 
     if args.replace:
-        tag_config['replace'] = True
+        tag_config['defaults']['replace'] = True
 
     if args.contents:
         print("reading contents...")
@@ -313,13 +330,10 @@ def main():
             if len(contents) == 0:
                 raise ValueError("No contents found in file.")
     else:
-        contents = [] #args.iq]
+        contents = [] 
 
     contents = contents + args.iq
         
-    #models = list_models()
-    #print("models:" , models)
-    
     print("getting auth...")
     auth = get_auth(args.config, contents[0])
 
@@ -328,6 +342,7 @@ def main():
     start_time = int(args.start_time)
 
     quickstatus_watch = None
+    models = get_available_models(tag_config)
 
     tty = sys.stdin.isatty()
     if tty:
@@ -359,8 +374,8 @@ def main():
                 reset_quickstatus = False
                 statuses = {}
                 for qhit in contents:
-                    if len(user_input) > 1:
-                        if not re.search(user_input[1], qhit): continue                        
+                    if len(user_split) > 1:
+                        if not re.search(user_split[1], qhit): continue                        
                     status = get_status(qhit, auth)
                     statuses[qhit] = status
                     print(qhit, json.dumps(status, indent=2))
@@ -370,8 +385,9 @@ def main():
             elif user_input in [ "finalize", "f" ]:
                 print("it's called 'write' now (to avoid confusion over what it does)")
             elif user_input in [ "list", "l" ]:
-                models = list_models()
-                print("models:", models)
+                available_models = list_models()
+                print("available models:", available_models)
+                print("models in current config:", models)
             elif user_input in [ "cw", "clearwritten"]:
                 iqsub = None
                 if len(user_split) > 1:
@@ -389,23 +405,27 @@ def main():
                 written = new_written
             elif user_input in [ "stop" ]:
                 if len(user_split) < 2:
-                    print("must specify iq and optionally tag track")
+                    print("must specify iq and optionally model")
                     continue
                 iq = user_split[1]
                 if len(user_split) > 2:
-                    tracks = [user_split[2]]
+                    stop_models = [user_split[2]]
                 else:
-                    tracks = models
-                stop(iq, auth, tracks)
+                    stop_models = models
+                stop(iq, auth, stop_models)
             elif user_input in [ "tag" , "t"]:
-                this_tag_config = tag_config
+                this_tag_config = deepcopy(tag_config)
                 iqsub = None
                 if len(user_split) > 1:
                     iqsub = user_split[1]
                 if len(user_split) > 2:
-                    track = user_split[2]
-                    this_tag_config = deepcopy(tag_config)
-                    this_tag_config['features'] = { track: tag_config['features'][track] }
+                    model = user_split[2]
+                    # Filter to only run the specified model
+                    this_tag_config['jobs'] = [job for job in tag_config['jobs'] if job['model'] == model]
+                    if not this_tag_config['jobs']:
+                        print(f"Model '{model}' not found in config. Available models: {models}")
+                        continue
+                        
                 contentsub = [ x for x in contents if iqsub == None or re.search(iqsub, x) ]    
                 tag(contentsub, auth, args.assets, this_tag_config,
                     start_time = start_time, end_time = end_time)

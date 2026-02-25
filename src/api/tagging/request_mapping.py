@@ -6,6 +6,8 @@ from flask import request
 from requests import HTTPError
 from dacite import from_dict, Config
 
+from common_ml.utils.dictionary import nested_update
+
 from src.api.tagging.request_format import *
 from src.fetch.model import *
 from src.tag_containers.registry import ContainerRegistry
@@ -14,86 +16,115 @@ from src.common.content import Content
 from src.common.errors import BadRequestError, MissingResourceError
 
 def map_video_tag_dto(
-    args: TagAPIArgs | LiveTagAPIArgs, 
+    args: StartJobsRequest, 
     registry: ContainerRegistry,
     q: Content
 ) -> list[TagArgs]:
     """
     Map video tagging API arguments to internal TagArgs structures.
     """
-    if isinstance(args, LiveTagAPIArgs):
-        return map_live_tag_dto(args, registry)
-    else:
-        return map_vod_tag_dto(args, registry, q)
-    
-def _create_tag_args(
-    feature: str,
-    config: ModelParams,
-    scope: Scope,
-    args: BaseTagAPIArgs
+    defaults = args.options
+    if len(args.jobs) == 0:
+        raise BadRequestError("Please specify at least one job to run.")
+    res = []
+    for job in args.jobs:
+        tag_arg = _set_defaults(q, defaults, job, registry)
+        res.append(tag_arg)
+    return res
+
+def _set_defaults(
+    q: Content,
+    defaults: TaggerOptions,
+    job: JobSpec,
+    registry: ContainerRegistry
 ) -> TagArgs:
-    """Create TagArgs - single place to extract common fields from args."""
+    feature = job.model
+    run_config = job.model_params
+    overrides = job.overrides or TaggerOptions()
+
+    destination_qid = overrides.destination_qid or defaults.destination_qid
+    replace = overrides.replace or defaults.replace
+    max_fetch_retries = overrides.max_fetch_retries
+
+    is_live = is_live_content(q)
+
+    default_scope = _get_default_scope_dict(is_live, registry.get_model_config(feature).type, q)
+
+    # override with options provided in request
+    scope_dict = nested_update(default_scope, defaults.scope)
+    # override with per-model options provided in request
+    scope_dict = nested_update(scope_dict, overrides.scope)
+
+    try:
+        scope = _map_scope(scope_dict)
+    except Exception as e:
+        raise BadRequestError(f"Invalid scope configuration: {e}") from e
+
     return TagArgs(
         feature=feature,
-        run_config=config.model,
-        scope=scope,
-        replace=args.replace,
-        destination_qid=args.destination_qid,
-        max_fetch_retries=args.max_fetch_retries,
+        run_config=run_config,
+        scope=_scope_dto_to_model(scope),
+        replace=replace,
+        destination_qid=destination_qid,
+        max_fetch_retries=max_fetch_retries,
     )
 
-def map_vod_tag_dto(args: TagAPIArgs, registry: ContainerRegistry, q: Content) -> list[TagArgs]:
-    res = []
-    for feature, config in args.features.items():
-        model_config = registry.get_model_config(feature)
-        model_type = model_config.type
-        
-        if config.stream is None:
-            if model_type in ("video", "frame", "processor"):
-                stream = "video"
-            else:
-                stream = _find_default_audio_stream(q)
-            config.stream = stream
+def _map_scope(scope_arg: dict[str, Any]) -> ScopeDTO:
+    scope_type = scope_arg.get("type")    
+    if scope_type == "video":
+        return ScopeVideo(**scope_arg)
+    elif scope_type == "processor":
+        return ScopeProcessor(**scope_arg)
+    elif scope_type == "assets":
+        del scope_arg["stream"]
+        return ScopeAssets(**scope_arg)
+    elif scope_type == "livestream":
+        return ScopeLivestream(**scope_arg)
+    else:
+        raise BadRequestError(f"Invalid scope type: {scope_type}")
+    
+def _scope_dto_to_model(scope: ScopeDTO) -> Scope:
+    if isinstance(scope, ScopeVideo):
+        return VideoScope(
+            stream=scope.stream,
+            start_time=scope.start_time,
+            end_time=scope.end_time,
+        )
+    elif isinstance(scope, ScopeProcessor):
+        return TimeRangeScope(
+            stream=scope.stream,
+            start_time=scope.start_time,
+            end_time=scope.end_time,
+            chunk_size=scope.chunk_size,
+        )
+    elif isinstance(scope, ScopeAssets):
+        return AssetScope(assets=scope.assets)
+    elif isinstance(scope, ScopeLivestream):
+        return LiveScope(
+            chunk_size=scope.segment_length,
+            max_duration=scope.max_duration,
+            stream=scope.stream,
+        )
+    else:
+        raise BadRequestError(f"Invalid scope type: {type(scope)}")
 
-        if model_type == "processor":
-            scope = TimeRangeScope(start_time=args.start_time, end_time=args.end_time, chunk_size=args.chunk_size, stream=config.stream)
-        else:
-            scope = VideoScope(config.stream, start_time=args.start_time, end_time=args.end_time)
+def _get_default_scope_dict(is_live: bool, model_type: str, q: Content) -> dict[str, Any]:
+    res = {}
+    if is_live and model_type == "processor":
+        raise BadRequestError("Processor models are not currently supported for live content.")
 
-        res.append(_create_tag_args(
-            feature=feature,
-            config=config,
-            scope=scope,
-            args=args,
-        ))
-    return res
+    if is_live:
+        res["type"] = "livestream"
+    elif model_type == "processor":
+        res["type"] = "processor"
+    else:
+        res["type"] = "video"
 
-def map_live_tag_dto(args: LiveTagAPIArgs, registry: ContainerRegistry) -> list[TagArgs]:
-    res = []
-    for feature, config in args.features.items():
-        if config.stream is None:
-            model_config = registry.get_model_config(feature)
-            if model_config.type == "audio":
-                raise BadRequestError("Live tagging does not currently support audio models without specifying the stream name.")
-            config.stream = "video"
-            
-        res.append(_create_tag_args(
-            feature=feature,
-            config=config,
-            scope=LiveScope(config.stream, chunk_size=args.segment_length, max_duration=args.max_duration),
-            args=args,
-        ))
-    return res
+    if model_type == "audio" and not is_live:
+        res["stream"] = _find_default_audio_stream(q)
+    else:
+        res["stream"] = "video"
 
-def map_asset_tag_dto(args: ImageTagAPIArgs) -> list[TagArgs]:
-    res = []
-    for feature, config in args.features.items():
-        res.append(_create_tag_args(
-            feature=feature,
-            config=config,
-            scope=AssetScope(assets=args.assets),
-            args=args
-        ))
     return res
 
 def _find_default_audio_stream(q: Content) -> str:
@@ -127,20 +158,7 @@ def _find_default_audio_stream(q: Content) -> str:
     
     return list(audio_streams.keys())[0]
 
-def tag_args_from_req(is_live: bool) -> TagAPIArgs | LiveTagAPIArgs:
-    try:
-        body = request.json
-        assert body is not None
-        if is_live:
-            args = from_dict(LiveTagAPIArgs, body, config=Config(strict=True))
-        else:
-            args = from_dict(TagAPIArgs, body, config=Config(strict=True))
-    except Exception as e:
-        raise BadRequestError(f"Invalid request body: {e}") from e
-    
-    return args
-    
-def is_live(q: Content) -> bool:
+def is_live_content(q: Content) -> bool:
     try:
         edge_write_token = q.content_object_metadata(
             metadata_subtree="live_recording/status/edge_write_token",

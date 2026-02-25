@@ -80,21 +80,21 @@ container_registry:
       }
     ocr:
       image: "localhost/ocr:latest"
-      type: "video"
+      type: "frame"
       resources: {
         "gpu": 1
       }
     logo:
       image: "localhost/logo:latest"
-      type: "video"
+      type: "frame"
       resources: {
         "gpu": 1
       }
     music:
-      image: "ml-004.eluvio:5100/music:latest"
+      image: "localhost/music:latest"
       type: "audio"
       resources: {
-        "cpu_juice": 10
+        "cpu_juice": 8
       }
     breakdance:
       image: "localhost/breakdance"
@@ -108,50 +108,117 @@ container_registry:
       resources: {
         "gpu": 1
       }
+    qwen:
+      image: "localhost/qwen:latest"
+      type: "video"
+      resources: {
+        "gpu": 1
+      }
+    llava_brief:
+      image: "localhost/llava:latest"
+      type: "frame"
+      resources: {
+        "ollama": 1
+      }
+    player:
+      image: "localhost/player:latest"
+      type: "frame"
+      resources: {
+        "ollama": 1
+      }
+    helmet:
+      image: "localhost/llava:latest"
+      type: "frame"
+      resources: {
+        "ollama": 1
+      }
+    hungarian: 
+      image: "localhost/hungarian:latest"
+      type: "audio"
+      resources: {
+        "gpu": 1
+      }
+    run:
+      image: "localhost/qwenjoe:latest"
+      type: "video"
+      resources: {
+        "gpu": 1
+      }
+    hit:
+      image: "localhost/qwenjoe:latest"
+      type: "video"
+      resources: {
+        "gpu": 1
+      }
+    hit2s:
+      image: "localhost/qwenjoe:latest"
+      type: "video"
+      resources: {
+        "gpu": 1
+      }
+    celebrate:
+      image: "localhost/qwenjoe:latest"
+      type: "video"
+      resources: {
+        "gpu": 1
+      }
+    delivery:
+      image: "localhost/qwenjoe:latest"
+      type: "video"
+      resources: {
+        "gpu": 1
+      }
 
 track_resolver:
   mapping:
     llava:
-      default:
-        name: llava_caption
-        label: LLAVA Caption
+      name: llava_caption
+      label: LLAVA Caption
     asr:
-      default:
-        name: speech_to_text
-        label: Speech to Text
+      name: speech_to_text
+      label: Speech to Text
     french_asr:
-      default:
-        name: french_asr
-        label: French ASR
+      name: french_asr
+      label: French ASR
     caption:
-      default:
-        name: object_detection
-        label: Object Detection
+      name: object_detection
+      label: Object Detection
     shot:
-      default:
-        name: shot_detection
-        label: Shot Detection
+      name: shot_detection
+      label: Shot Detection
     celeb:
-      default:
-        name: celebrity_detection
-        label: Celebrity Detection
+      name: celebrity_detection
+      label: Celebrity Detection
     ocr:
-      default:
-        name: optical_character_recognition
-        label: Optical Character Recognition
+      name: optical_character_recognition
+      label: Optical Character Recognition
     logo:
-      default:
-        name: logo_detection
-        label: Logo Detection
+      name: logo_detection
+      label: Logo Detection
     music:
-      default:
-        name: music_detection
-        label: Music Detection
+      name: music_detection
+      label: Music Detection
     breakdance:
-      default:
-        name: breakdance
-        label: Breakdance
+      name: breakdance
+      label: Breakdance
     test_model:
-      default:
-        name: test_model
-        label: Test Model
+      name: test_model
+      label: Test Model
+    qwen:
+      name: qwen
+      label: Video Summary
+    run:
+      name: run
+      label: Running?
+    hit:
+      name: hit
+      label: Hit?
+    hit2s:
+      name: hit2s
+      label: (sm)Hit?
+    celebrate:
+      name: celebrate
+      label: Celebration?
+    delivery:
+      name: delivery
+      label: Delivery?
