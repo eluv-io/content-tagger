@@ -32,7 +32,7 @@ system:
 
 fetcher:
   author: tagger
-  max_downloads: 16
+  max_downloads: 4
 
 tagger:
   media_dir: data/parts
