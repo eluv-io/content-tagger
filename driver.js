@@ -329,7 +329,7 @@ async function write(qid, config, do_commit, force = false, leave_open = false) 
     });
     console.log(respdict);
 
-    if (do_commit && resp.status === 200) {
+    if (do_commit && respdict.status === 200) {
         commit(write_token, config);
     }
     return write_token;
