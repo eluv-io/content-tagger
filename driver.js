@@ -442,7 +442,9 @@ async function quick_status(auth, qid, filter = null) {
 
     const status_data = await fetch_dict_with_status(url);
 
-    if (status_data && status_data.error) {
+    if (status_data.status != 200 && !status_data.error) status_data.error = `http ${status_data.status}`
+  
+    if (status_data && (status_data.error || status_data.status != 200)) {
         const line = `[${"".padStart(9)}] ${qid.padEnd(32)} / err: ${status_data.error}`;
         if (filter === null || (new RegExp(filter)).test(line)) {
             console.log(line);
