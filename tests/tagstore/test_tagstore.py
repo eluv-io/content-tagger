@@ -438,3 +438,33 @@ def test_get_track_nonexistent(tag_store, q):
     )
     
     assert track is None
+
+
+def test_update_batch(tag_store, job_args, q):
+    """Test that update_batch merges additional_info into the batch"""
+    batch = tag_store.create_batch(**job_args, q=q)
+
+    tag_store.update_batch(qhit=q.qid, batch_id=batch.id, additional_info={"status": "done"}, q=q)
+
+    updated = tag_store.get_batch(batch.id, q=q)
+    assert updated is not None
+    assert updated.additional_info.get("status") == "done"
+
+
+def test_update_batch_merges(tag_store, job_args, q):
+    """Test that subsequent update_batch calls merge rather than replace"""
+    batch = tag_store.create_batch(**job_args, q=q)
+
+    tag_store.update_batch(qhit=q.qid, batch_id=batch.id, additional_info={"a": 1}, q=q)
+    tag_store.update_batch(qhit=q.qid, batch_id=batch.id, additional_info={"b": 2}, q=q)
+
+    updated = tag_store.get_batch(batch.id, q=q)
+    assert updated.additional_info.get("a") == 1
+    assert updated.additional_info.get("b") == 2
+
+
+def test_update_batch_nonexistent_raises(filesystem_tagstore, q):
+    """Test that update_batch raises on a missing batch"""
+    import pytest
+    with pytest.raises(Exception):
+        filesystem_tagstore.update_batch(qhit=q.qid, batch_id="nonexistent", additional_info={}, q=q)
