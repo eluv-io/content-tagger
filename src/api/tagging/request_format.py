@@ -33,9 +33,9 @@ ScopeDTO: TypeAlias = ScopeVideo | ScopeProcessor | ScopeAssets | ScopeLivestrea
 
 @dataclass
 class TaggerOptions:
-    destination_qid: str = ""
-    replace: bool = False
-    max_fetch_retries: int = 3
+    destination_qid: str | None = None
+    replace: bool | None = None
+    max_fetch_retries: int | None = None
     # unstructured dict to allow for flexible scope definitions - will be parsed into a ScopeDTO
     scope: dict[str, Any] = field(default_factory=dict)
 
@@ -43,7 +43,7 @@ class TaggerOptions:
 class JobSpec:
     model: str
     model_params: dict[str, Any] = field(default_factory=dict)
-    overrides: TaggerOptions | None = None
+    overrides: TaggerOptions = field(default_factory=TaggerOptions)
 
 @dataclass
 class StartJobsRequest:

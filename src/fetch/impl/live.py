@@ -74,7 +74,7 @@ class LiveWorker(FetchSession):
         idx = self.next_idx
         source_name = _get_live_source_name(chunk_size, self.scope.stream, idx)
 
-        while not source_name or source_name in self.ignore_sources:
+        while source_name in self.ignore_sources:
             idx += 1
             source_name = _get_live_source_name(chunk_size, self.scope.stream, idx)
         
@@ -107,16 +107,16 @@ class LiveWorker(FetchSession):
 
         logger.info(
             f"Downloaded live segment {seg_idx} for {self.q.qhit}",
-            extra={"segment": seg_idx, "offset_sec": seg_offset / 1000, "seg_size_sec": seg_size / 1000, "wall_clock": wall_clock / 1000}
+            segment_idx=seg_idx, offset_sec=seg_offset / 1000, seg_size_sec=seg_size / 1000, wall_clock=wall_clock / 1000
         )
 
         self.next_idx = seg_idx + 1
 
         if self.scope.max_duration is not None \
-            and seg_offset + seg_size >= self.scope.max_duration * 1000:
+            and seg_offset >= self.scope.max_duration * 1000:
             logger.info(f"Reached max duration of {self.scope.max_duration} seconds for live stream {self.q.qhit}")
             return DownloadResult(
-                sources=[source],
+                sources=[],
                 failed=[],
                 done=True
             )
@@ -124,7 +124,7 @@ class LiveWorker(FetchSession):
         return DownloadResult(
             sources=[source],
             failed=[],
-            done=False  # Live streams never end
+            done=False
         )
 
 class LivePartWorker(FetchSession):

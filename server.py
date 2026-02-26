@@ -2,7 +2,6 @@ import argparse
 from flask import Flask, Response, jsonify, send_from_directory
 from flask_cors import CORS
 import json
-from src.common.logging import logger
 from requests.exceptions import HTTPError
 import atexit
 import setproctitle
@@ -18,6 +17,7 @@ from src.common.content import ContentFactory
 from src.tag_containers.registry import ContainerRegistry
 from src.tags.conversion import TagConverter
 from src.tags.track_resolver import TrackResolver
+from src.common.logging import logger
 
 from src.api.tagging.handlers import handle_tag, handle_status, handle_stop_model, handle_stop_content
 from src.api.upload.handlers import handle_commit
@@ -31,24 +31,24 @@ def configure_routes(app: Flask) -> None:
 
     @app.errorhandler(BadRequestError)
     def handle_bad_request(e):
-        logger.exception(f"Bad request: {e}")
+        logger.opt(exception=e).error("Got bad request error")
         return jsonify({'error': e.message}), 400
 
     @app.errorhandler(HTTPError)
     def handle_http_error(e):
-        logger.exception(f"HTTP error: {e}")
+        logger.opt(exception=e).error("Got HTTP error")
         status_code = e.response.status_code
         error_resp = json.loads(e.response.text)
         return jsonify({'code': status_code, 'error': error_resp}), status_code
 
     @app.errorhandler(MissingResourceError)
     def handle_missing_resource(e):
-        logger.exception(f"Missing resource: {e}")
+        logger.opt(exception=e).error("Missing resource error")
         return jsonify({'code': 404, 'message': e.message}), 404
     
     @app.errorhandler(ExternalServiceError)
     def handle_external_service_error(e):
-        logger.exception(f"External service error: {e}")
+        logger.opt(exception=e).error("External service error")
         return jsonify({'error': "An upstream service that tagging depends on is not available"}), 502
 
     @app.route('/<qhit>/tag', methods=['POST'])

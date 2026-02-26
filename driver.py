@@ -78,18 +78,15 @@ assets_params = {
         "scope": {"type": "assets"}
     },
     "jobs": [
-        {"model": "logo", "model_params": {}},
-        {"model": "ocr", "model_params": {}},
-        {"model": "llava", "model_params": {"model": "elv-llamavision:1"}},
-        {"model": "caption", "model_params": {}},
-        {"model": "asr", "model_params": {}},
-        {"model": "shot", "model_params": {}}
+        {"model": "ocr"},
+        {"model": "caption"},
+        {"model": "celeb"}
     ]
 }
 
 video_params = {
     "jobs": [
-        {"model": "asr"}
+        {"model": "logo"}
     ]
 }
     
@@ -141,13 +138,15 @@ def tag(contents: list, auth: str, assets: bool, params: dict, start_time: float
     
     llama_models = ["elv-llamavision:1"]
     for i, qhit in enumerate(contents):
-        if assets:
-            url = f"{server}/{qhit}/image_tag"
-        else:
-            url = f"{server}/{qhit}/tag"
-                
+        url = f"{server}/{qhit}/tag"
+        
+        # Update llava model params if present
+        for job in params["jobs"]:
+            if job["model"] == "llava":
+                job["model_params"]["model"] = llama_models[i % len(llama_models)]
+        
         # Update scope with time range if specified
-        if start_time is not None or end_time is not None:
+        if not assets and (start_time is not None or end_time is not None):
             scope_updates = {}
             if start_time is not None:
                 scope_updates["start_time"] = int(start_time)
@@ -321,7 +320,9 @@ def main():
            tag_config = json.load(conf)
 
     if args.replace:
-        tag_config['defaults']['replace'] = True
+        if "options" not in tag_config:
+            tag_config["options"] = {}
+        tag_config['options']['replace'] = True
 
     if args.contents:
         print("reading contents...")

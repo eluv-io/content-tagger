@@ -4,7 +4,6 @@ These functions map between the API DTOs and service layer structs.
 
 from flask import request
 from requests import HTTPError
-from dacite import from_dict, Config
 
 from common_ml.utils.dictionary import nested_update
 
@@ -40,15 +39,24 @@ def _set_defaults(
 ) -> TagArgs:
     feature = job.model
     run_config = job.model_params
-    overrides = job.overrides or TaggerOptions()
+    overrides = job.overrides
 
-    destination_qid = overrides.destination_qid or defaults.destination_qid
-    replace = overrides.replace or defaults.replace
-    max_fetch_retries = overrides.max_fetch_retries
+    destination_qid = overrides.destination_qid if overrides.destination_qid \
+        is not None else defaults.destination_qid
+    replace = overrides.replace if overrides.replace \
+        is not None else defaults.replace
+    max_fetch_retries = overrides.max_fetch_retries if overrides.max_fetch_retries \
+        is not None else defaults.max_fetch_retries
 
-    is_live = is_live_content(q)
+    # set defaults for options that are not provided in request
+    if destination_qid is None:
+        destination_qid = ""
+    if replace is None:
+        replace = False
+    if max_fetch_retries is None:
+        max_fetch_retries = 3
 
-    default_scope = _get_default_scope_dict(is_live, registry.get_model_config(feature).type, q)
+    default_scope = _get_default_scope_dict(registry.get_model_config(feature).type, q)
 
     # override with options provided in request
     scope_dict = nested_update(default_scope, defaults.scope)
@@ -108,8 +116,9 @@ def _scope_dto_to_model(scope: ScopeDTO) -> Scope:
     else:
         raise BadRequestError(f"Invalid scope type: {type(scope)}")
 
-def _get_default_scope_dict(is_live: bool, model_type: str, q: Content) -> dict[str, Any]:
+def _get_default_scope_dict(model_type: str, q: Content) -> dict[str, Any]:
     res = {}
+    is_live = is_live_content(q)
     if is_live and model_type == "processor":
         raise BadRequestError("Processor models are not currently supported for live content.")
 
