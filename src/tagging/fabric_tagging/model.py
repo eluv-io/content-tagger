@@ -83,6 +83,7 @@ class UploadStatus:
 @dataclass(frozen=True)
 class JobRunStatus:
     status: str
+    time_ran: str
     
 @dataclass(frozen=True)
 class TagContentStatusReport:

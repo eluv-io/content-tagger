@@ -40,6 +40,7 @@ class Response:
     data: Any
     error: Exception | None
 
+
 class FabricTagger:
     """
     Handles the flow of downloading data from fabric, tagging, and uploading
@@ -487,12 +488,17 @@ class FabricTagger:
             max_fetch_retries=job.args.max_fetch_retries,
         )
 
+        assert job.state.status.time_ended is not None
+
         report = TagContentStatusReport(
             source_qid=job.args.q.qid,
             params=tag_args,
             container=container_info,
             upload_status=upload_status,
-            job_status=JobRunStatus(status=job.state.status.status),
+            job_status=JobRunStatus(
+                status=job.state.status.status, 
+                time_ran=time.strftime("%Hh %Mm %Ss", time.gmtime(job.state.status.time_ended - job.state.status.time_started))
+            ),
         )
         
         job.state.upload_session.upload_report(report)
