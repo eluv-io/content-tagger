@@ -17,7 +17,7 @@ from tests.api.conftest import FakeLiveWorker
 def is_job_success(client, q: Content):
     """Check if all jobs for content_id completed successfully."""
     auth = get_auth(q)
-    response = client.get(f"/{q.qid}/status?authorization={auth}")
+    response = client.get(f"/{q.qid}/job-status?authorization={auth}")
     if response.status_code != 200:
         return False
     data = response.get_json()
@@ -37,7 +37,7 @@ def wait_for_jobs_completion(client, contents: list[Content], timeout=30):
         
         for content in contents:
             auth = get_auth(content)
-            response = client.get(f"/{content.qid}/status?authorization={auth}")
+            response = client.get(f"/{content.qid}/job-status?authorization={auth}")
             
             if response.status_code != 200:
                 all_finished = False
@@ -77,7 +77,7 @@ def test_video_model(client, q):
     auth = get_auth(q)
     
     # Test initial status - should return 404 for no jobs
-    response = client.get(f"/{q.qid}/status?authorization={auth}")
+    response = client.get(f"/{q.qid}/job-status?authorization={auth}")
     assert response.status_code == 404
     
     # Start video tagging with GPU feature
@@ -155,7 +155,7 @@ def test_live_video_model(is_live_content, app, last_res_has_media, q):
     client = app.test_client()
     
     # Test initial status - should return 404 for no jobs
-    response = client.get(f"/{q.qid}/status?authorization={auth}")
+    response = client.get(f"/{q.qid}/job-status?authorization={auth}")
     assert response.status_code == 404
     
     # Start video tagging with GPU feature
@@ -245,7 +245,7 @@ def test_real_live_stream(app, q_live):
     segments_found = False
     
     while time.time() - start_time < timeout:
-        response = client.get(f"/{qid}/status?authorization={auth}")
+        response = client.get(f"/{qid}/job-status?authorization={auth}")
         if response.status_code == 200:
             data = response.get_json()
             reports = data['jobs']
@@ -266,7 +266,7 @@ def test_real_live_stream(app, q_live):
         time.sleep(3)
     
     # Verify final status is Stopped or Completed
-    response = client.get(f"/{qid}/status?authorization={auth}")
+    response = client.get(f"/{qid}/job-status?authorization={auth}")
     assert response.status_code == 200
     data = response.get_json()
     reports = data['jobs']
@@ -314,7 +314,7 @@ def test_asset_tag(client, q_assets):
     assert response.status_code == 200
     completed = wait_for_jobs_completion(client, [q_assets], timeout=25)
     assert completed
-    status = client.get(f"/{qid}/status?authorization={auth}")
+    status = client.get(f"/{qid}/job-status?authorization={auth}")
     print(status.get_json())
     tagstore: FilesystemTagStore = client.application.config["state"]["tagger"].tagstore
     jobid = tagstore.find_batches(qhit=q_assets.qid)[0]
@@ -349,7 +349,7 @@ def test_stop_workflow(client, q):
     assert len(response.get_json()["jobs"]) == 1
     
     # Check status - job should be stopped
-    response = client.get(f"/{q.qid}/status?authorization={video_auth}")
+    response = client.get(f"/{q.qid}/job-status?authorization={video_auth}")
     assert response.status_code == 200
     data = response.get_json()
     reports = data['jobs']
@@ -491,7 +491,7 @@ def test_stop_live_job(app, q_live):
     some_tags_found = False
     
     while time.time() - start_time < 20:
-        response = client.get(f"/{qid}/status?authorization={auth}")
+        response = client.get(f"/{qid}/job-status?authorization={auth}")
         if response.status_code == 200:
             data = response.get_json()
             reports = data['jobs']
@@ -526,7 +526,7 @@ def test_stop_live_job(app, q_live):
     
     # Verify it stopped
     time.sleep(2)
-    response = client.get(f"/{qid}/status?authorization={auth}")
+    response = client.get(f"/{qid}/job-status?authorization={auth}")
     data = response.get_json()
     reports = data['jobs']
     
@@ -600,7 +600,7 @@ def test_stop_all_jobs(client, q):
     time.sleep(1)
     
     # Check that all jobs are now stopped
-    response = client.get(f"/{q.qid}/status?authorization={auth}")
+    response = client.get(f"/{q.qid}/job-status?authorization={auth}")
     assert response.status_code == 200
     data = response.get_json()
     reports = data['jobs']

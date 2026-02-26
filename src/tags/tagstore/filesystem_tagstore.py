@@ -288,7 +288,7 @@ class FilesystemTagStore(Tagstore):
             raise ValueError(f"Batch {batch_id} not found.")
         with open(metadata_path, 'r') as f:
             batch_data = json.load(f)
-        batch_data['additional_info'] = {**batch_data.get('additional_info', {}), **additional_info}
+        batch_data['additional_info'] = additional_info
         with open(metadata_path, 'w') as f:
             json.dump(batch_data, f, indent=2)
 
