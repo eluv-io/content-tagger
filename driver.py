@@ -89,7 +89,7 @@ assets_params = {
 
 video_params = {
     "jobs": [
-        {"model": "caption", "model_params": {"fps": 0.33}}
+        {"model": "asr"}
     ]
 }
     
@@ -109,7 +109,7 @@ def get_write_token(qhit: str, config: str) -> str:
     return write_token
 
 def get_status(qhit: str, auth: str):
-    res = requests.get(f"{server}/{qhit}/status", params={"authorization": auth})
+    res = requests.get(f"{server}/{qhit}/job-status", params={"authorization": auth})
     response_data = response_force_dict(res)
     
     # Handle new {"jobs": [...]} format
@@ -164,7 +164,7 @@ def tag(contents: list, auth: str, assets: bool, params: dict, start_time: float
         time.sleep(float(os.environ.get("TAGGERV2_START_SLEEP", 0)))
 
 def is_running(qhit: str, auth: str):
-    res = requests.get(f"{server}/{qhit}/status", params={"authorization": auth})
+    res = requests.get(f"{server}/{qhit}/job-status", params={"authorization": auth})
     resdict = response_force_dict(res)
     
     # Handle new {"jobs": [...]} format
@@ -510,7 +510,7 @@ def main():
 def quick_status(auth, qhit, filter = None):
     if filter == "": 
         filter = None
-    res = requests.get(f"{server}/{qhit}/status", params={"authorization": auth})
+    res = requests.get(f"{server}/{qhit}/job-status", params={"authorization": auth})
     status_data = response_force_dict(res)
     
     # Handle error response
