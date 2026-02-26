@@ -72,7 +72,7 @@ class UploadSession:
                 additional_info=deepcopy(model_tag.additional_info),
                 frame_tags=deepcopy(model_tag.frame_tags),
                 source=original_src.name,
-                batch_id=self._get_batch(model_tag.model_track),
+                batch_id=self._get_or_create_batch(model_tag.model_track),
             )
             tags2upload.append(self._fix_tag_timing_info(tag, original_src.offset, original_src.wall_clock, fps))
 
@@ -90,6 +90,9 @@ class UploadSession:
     def upload_report(self, report: TagContentStatusReport) -> None:
         """Upload a tagging report to the tagstore as a tag on the content object."""
         batch = self._get_batch(report.params.feature)
+        if batch is None:
+            logger.error("no batch found for report, skipping upload", feature=report.params.feature, destination_qid=self.dest_q.qid)
+            return
 
         self.tagstore.update_batch(qhit=self.dest_q.qid, batch_id=batch, additional_info={"tagger": asdict(report)}, q=self.dest_q)
     
@@ -144,7 +147,12 @@ class UploadSession:
         dest_q = q.get_child(destination_qid)
         return dest_q
     
-    def _get_batch(self, model_track: str) -> str:
+    def _get_batch(self, model_track: str) -> str | None:
+        """Get or create a batch for the given model track."""
+        track_args = self.track_resolver.resolve(model_track)
+        return self.track_to_batch.get(track_args.name)
+    
+    def _get_or_create_batch(self, model_track: str) -> str:
         if model_track:
             track_args = self.track_resolver.resolve(model_track)
         else:

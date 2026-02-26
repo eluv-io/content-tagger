@@ -237,7 +237,7 @@ class FakeWorker(FetchSession):
         for i, filepath in enumerate([video1, video2]):
             source = Source(
                 filepath=filepath,
-                name=f"part_{i}.mp4",
+                name=f"hash{i+1}",
                 offset=i * 10000,  # 10 second parts
                 wall_clock=time.time_ns() // 1_000_000  # current time in ms
             )
