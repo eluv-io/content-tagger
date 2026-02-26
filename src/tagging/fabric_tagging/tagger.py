@@ -448,6 +448,54 @@ class FabricTagger:
 
         message.response_mailbox.put(Response(data=None, error=None))
 
+    def _update_batches_with_report(self, job: TagJob, status: str) -> None:
+        """Persist a status report into every batch the job created."""
+        log = logger.bind(job_id=job.get_id())
+
+        metadata = job.state.media.worker.metadata()
+
+        # Tag status: only populated for VOD content (VideoMetadata)
+        upload_status = None
+        if isinstance(metadata, VideoMetadata):
+            all_sources = [s.name for s in job.state.media.downloaded]
+            if status == "Completed":
+                # if the job completed, we consider all the sources as tagged even if some did not generate tags
+                tagged_sources = all_sources
+            else:
+                # otherwise, we only consider the sources that generated tags as tagged, best guess
+                tagged_sources = list(job.state.upload_session.uploaded_sources)
+            upload_status = UploadStatus(all_sources=all_sources, tagged_sources=tagged_sources)
+
+        # Container info
+        container_info = None
+        if job.state.container is not None:
+            try:
+                container_info = job.state.container.info()
+            except Exception as e:
+                log.opt(exception=e).warning("failed to get container info")
+                container_info = ContainerInfo(image_name="", annotations={})
+        else:
+            container_info = ContainerInfo(image_name="", annotations={})
+
+        tag_args = TagArgs(
+            feature=job.args.feature,
+            run_config=job.args.run_config,
+            scope=job.args.scope,
+            destination_qid=job.args.destination_qid,
+            replace=job.args.replace,
+            max_fetch_retries=job.args.max_fetch_retries,
+        )
+
+        report = TagContentStatusReport(
+            source_qid=job.args.q.qid,
+            params=tag_args,
+            container=container_info,
+            upload_status=upload_status,
+            job_status=JobRunStatus(status=job.state.status.status),
+        )
+        
+        job.state.upload_session.upload_report(report)
+
     def _handle_status_request(self, message: Message):
         assert isinstance(message.data, StatusRequest)
         request: StatusRequest = message.data
@@ -602,6 +650,8 @@ class FabricTagger:
             if job.stop_event:
                 # for signalling background threads to stop
                 job.stop_event.set()
+
+            self._update_batches_with_report(job, status=status)
 
             self.jobstore.inactive_jobs[jobid] = job
             del self.jobstore.active_jobs[jobid]

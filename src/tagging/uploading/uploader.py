@@ -1,5 +1,6 @@
 from copy import deepcopy
 import math
+from dataclasses import asdict
 
 from src.tags.tagstore.model import Tag
 from src.tags.tagstore.abstract import Tagstore
@@ -8,6 +9,7 @@ from src.fetch.model import VideoMetadata
 from src.common.content import Content
 from src.common.logging import logger
 from src.tagging.fabric_tagging.media_state import MediaState
+from src.tagging.fabric_tagging.model import TagContentStatusReport, TagJobStatusReport
 from src.tags.track_resolver import TrackResolver
 
 class UploadSession:
@@ -84,6 +86,12 @@ class UploadSession:
 
         self.uploaded_sources.update(media_to_source[out.source_media].name for out in new_outputs)
         self.uploaded_tags.update(new_outputs)
+
+    def upload_report(self, report: TagContentStatusReport) -> None:
+        """Upload a tagging report to the tagstore as a tag on the content object."""
+        batch = self._get_batch(report.params.feature)
+
+        self.tagstore.update_batch(qhit=self.dest_q.qid, batch_id=batch, additional_info={"tagger": asdict(report)}, q=self.dest_q)
     
     def _resolve_destination(self, source_q: Content, destination_qid: str) -> Content:
         """Resolve destination content object"""

@@ -5,6 +5,7 @@ from typing import Literal
 
 from src.common.content import Content
 from src.fetch.model import Scope
+from src.tag_containers.model import ContainerInfo
 
 @dataclass
 class FabricTaggerConfig:
@@ -72,3 +73,20 @@ class TagJobStatusReport:
 class TagStopResult:
     job_id: JobID
     message: str
+
+@dataclass(frozen=True)
+class UploadStatus:
+    all_sources: list[str]
+    tagged_sources: list[str]
+
+@dataclass(frozen=True)
+class JobRunStatus:
+    status: str
+    
+@dataclass(frozen=True)
+class TagContentStatusReport:
+    source_qid: str
+    params: TagArgs
+    container: ContainerInfo
+    job_status: JobRunStatus
+    upload_status: UploadStatus | None
