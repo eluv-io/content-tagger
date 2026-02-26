@@ -9,12 +9,12 @@ from src.tagging.fabric_tagging.tagger import FabricTagger
 
 
 def handle_content_status(qhit: str) -> Response:
-    _get_authorized_content(qhit)
+    q = _get_authorized_content(qhit)
 
     tagger: FabricTagger = current_app.config["state"]["tagger"]
 
     payload = get_content_summary(
-        qid=qhit,
+        q=q,
         tagstore=tagger.tagstore,
         track_resolver=tagger.track_resolver,
     )

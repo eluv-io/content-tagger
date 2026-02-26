@@ -1,18 +1,20 @@
 
 from collections import defaultdict
+from datetime import datetime, timezone
 
 from src.api.content_status.response_format import ContentStatusResponse, ModelStatusSummary
 from src.tags.tagstore.abstract import Tagstore
 from src.tags.tagstore.model import Batch
 from src.tags.track_resolver import TrackResolver
+from src.common.content import Content
 
-def get_content_summary(qid: str, tagstore: Tagstore, track_resolver: TrackResolver) -> ContentStatusResponse:
-    batch_ids = tagstore.find_batches(qhit=qid, author="tagger")
+def get_content_summary(q: Content, tagstore: Tagstore, track_resolver: TrackResolver) -> ContentStatusResponse:
+    batch_ids = tagstore.find_batches(q=q, qhit=q.qhit, author="tagger")
 
     # Collect all batches and group by track
     batches_by_track: dict[str, list[Batch]] = defaultdict(list)
     for batch_id in batch_ids:
-        batch = tagstore.get_batch(batch_id)
+        batch = tagstore.get_batch(batch_id, q=q)
         if batch is None:
             continue
         batches_by_track[batch.track].append(batch)
@@ -38,11 +40,13 @@ def get_content_summary(qid: str, tagstore: Tagstore, track_resolver: TrackResol
         else:
             percent_completion = 0.0
 
+        last_run_str = datetime.fromtimestamp(latest_batch.timestamp, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
         model_summaries.append(
             ModelStatusSummary(
                 model=model_name,
                 track=track_name,
-                last_run=latest_batch.timestamp,
+                last_run=last_run_str,
                 percent_completion=percent_completion,
             )
         )

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 class ModelStatusSummary:
     model: str
     track: str
-    last_run: float
+    last_run: str
     percent_completion: float
 
 
