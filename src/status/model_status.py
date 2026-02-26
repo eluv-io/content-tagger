@@ -11,7 +11,7 @@ from src.tags.tagstore.abstract import Tagstore
 from src.tags.tagstore.model import Batch
 from src.tags.track_resolver import TrackResolver
 from src.common.content import Content
-from src.common.errors import MissingResourceError
+from src.common.errors import BadRequestError, MissingResourceError
 
 
 def get_model_status(
@@ -40,32 +40,50 @@ def get_model_status(
     all_tagged_sources: set[str] = set()
 
     for batch in batches:
-        tagger_info = batch.additional_info.get("tagger", {})
-
-        # Upload status
-        raw_upload = tagger_info.get("upload_status")
-        upload_summary: JobUploadStatusSummary | None = None
-        if raw_upload:
-            num_all = len(raw_upload.get("all_sources", []))
-            if num_all > max_all_sources:
-                max_all_sources = num_all
-            num_downloaded = len(raw_upload.get("downloaded_sources", []))
-            num_tagged = len(raw_upload.get("tagged_sources", []))
-            all_tagged_sources.update(raw_upload.get("tagged_sources", []))
-            upload_summary = JobUploadStatusSummary(
-                num_job_parts=num_downloaded,
-                num_tagged_parts=num_tagged,
-            )
-
-        # Params
-        raw_params = tagger_info.get("params", {})
-        params = TagArgs(**raw_params)
-
-        # Job status
-        raw_job_status = tagger_info.get("job_status", {})
-        job_status = JobRunStatus(status=raw_job_status.get("status", "unknown"))
-
+        raw_tagger = batch.additional_info.get("tagger")
         time_ran = datetime.fromtimestamp(batch.timestamp, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+        if raw_tagger is None:
+            # No tagger info recorded for this batch — emit a minimal job entry.
+            jobs.append(
+                JobDetail(
+                    time_ran=time_ran,
+                    source_qid="",
+                    params=None,
+                    job_status=None,
+                    upload_status=None,
+                )
+            )
+            continue
+
+        try:
+            tagger_info: dict = raw_tagger
+
+            # Upload status
+            raw_upload = tagger_info.get("upload_status")
+            upload_summary: JobUploadStatusSummary | None = None
+            if raw_upload:
+                num_all = len(raw_upload.get("all_sources", []))
+                if num_all > max_all_sources:
+                    max_all_sources = num_all
+                num_downloaded = len(raw_upload.get("downloaded_sources", []))
+                num_tagged = len(raw_upload.get("tagged_sources", []))
+                all_tagged_sources.update(raw_upload.get("tagged_sources", []))
+                upload_summary = JobUploadStatusSummary(
+                    num_job_parts=num_downloaded,
+                    num_tagged_parts=num_tagged,
+                )
+
+            # Params
+            raw_params = tagger_info.get("params", {})
+            params = TagArgs(**raw_params)
+
+            # Job status
+            raw_job_status = tagger_info.get("job_status", {})
+            job_status = JobRunStatus(status=raw_job_status.get("status", "unknown"))
+
+        except Exception as e:
+            raise BadRequestError(f"Malformed tagger info in batch '{batch.id}': {e}") from e
 
         jobs.append(
             JobDetail(
