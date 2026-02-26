@@ -21,6 +21,7 @@ from src.tags.track_resolver import TrackResolver
 
 from src.api.tagging.handlers import handle_tag, handle_status, handle_stop_model, handle_stop_content
 from src.api.upload.handlers import handle_commit
+from src.api.content_status.handlers import handle_content_status
 from src.common.errors import *
 from app_config import AppConfig
 
@@ -68,6 +69,10 @@ def configure_routes(app: Flask) -> None:
     @app.route('/<qhit>/commit', methods=['POST'])
     def commit(qhit: str) -> Response:
         return handle_commit(qhit)
+
+    @app.route('/<qhit>/content_status', methods=['GET'])
+    def content_status(qhit: str) -> Response:
+        return handle_content_status(qhit)
 
     @app.route('/docs', strict_slashes=False)
     def docs_route():

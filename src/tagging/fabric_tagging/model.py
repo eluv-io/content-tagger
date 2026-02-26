@@ -77,6 +77,7 @@ class TagStopResult:
 @dataclass(frozen=True)
 class UploadStatus:
     all_sources: list[str]
+    downloaded_sources: list[str]
     tagged_sources: list[str]
 
 @dataclass(frozen=True)

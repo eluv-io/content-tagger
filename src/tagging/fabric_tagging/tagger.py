@@ -457,14 +457,15 @@ class FabricTagger:
         # Tag status: only populated for VOD content (VideoMetadata)
         upload_status = None
         if isinstance(metadata, VideoMetadata):
-            all_sources = [s.name for s in job.state.media.downloaded]
+            all_sources = metadata.parts[:]
+            downloaded_sources = [s.name for s in job.state.media.downloaded]
             if status == "Completed":
                 # if the job completed, we consider all the sources as tagged even if some did not generate tags
-                tagged_sources = all_sources
+                tagged_sources = downloaded_sources
             else:
                 # otherwise, we only consider the sources that generated tags as tagged, best guess
                 tagged_sources = list(job.state.upload_session.uploaded_sources)
-            upload_status = UploadStatus(all_sources=all_sources, tagged_sources=tagged_sources)
+            upload_status = UploadStatus(all_sources=all_sources, downloaded_sources=downloaded_sources, tagged_sources=tagged_sources)
 
         # Container info
         container_info = None
