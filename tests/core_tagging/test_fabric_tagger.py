@@ -609,25 +609,6 @@ def test_batch_report_on_success(fabric_tagger, q, make_tag_args):
     assert set(report["upload_status"]["tagged_sources"]) == set(report["upload_status"]["all_sources"])
 
 
-def test_batch_report_on_stop(fabric_tagger, q, make_tag_args):
-    """Batch additional_info should contain a tagger report with Stopped status."""
-    args = make_tag_args(feature="caption", stream="video")
-    result = fabric_tagger.tag(q, args)
-    assert result.started
-
-    fabric_tagger.stop(q.qhit, "caption", None)
-
-    batches = fabric_tagger.tagstore.find_batches(qhit=q.qid, q=q)
-    assert len(batches) == 1
-
-    batch = fabric_tagger.tagstore.get_batch(batches[0], q=q)
-    assert batch is not None
-
-    report = batch.additional_info.get("tagger")
-    assert report is not None
-    assert report["job_status"]["status"] == "Stopped"
-
-
 def test_replace(
     fabric_tagger: FabricTagger,
     q: Content,

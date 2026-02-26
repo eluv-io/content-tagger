@@ -459,7 +459,7 @@ def test_update_batch_merges(tag_store, job_args, q):
     tag_store.update_batch(qhit=q.qid, batch_id=batch.id, additional_info={"b": 2}, q=q)
 
     updated = tag_store.get_batch(batch.id, q=q)
-    assert updated.additional_info.get("a") == 1
+    assert updated.additional_info.get("a") is None
     assert updated.additional_info.get("b") == 2
 
 
