@@ -5,7 +5,7 @@ from src.status.model_status import get_model_status
 from src.tags.tagstore.abstract import Tagstore
 from src.tags.tagstore.model import Batch
 from src.tags.track_resolver import TrackResolver, TrackResolverConfig, TrackArgs
-from src.common.errors import MissingResourceError
+from src.common.errors import BadRequestError, MissingResourceError
 
 
 def make_batch(
@@ -28,7 +28,7 @@ def make_batch(
             "tagger": {
                 "source_qid": source_qid,
                 "params": {"feature": "llava", "run_config": {}, "scope": "full", "replace": False, "destination_qid": "iq__dest", "max_fetch_retries": 3},
-                "job_status": {"status": job_status},
+                "job_status": {"status": job_status, "time_ran": "1h 0m 0s"},
                 "upload_status": {
                     "all_sources": all_sources,
                     "downloaded_sources": downloaded_sources,
@@ -151,9 +151,5 @@ def test_no_upload_status_in_batch(track_resolver, mock_tagstore):
     )
     tagstore = mock_tagstore([batch])
 
-    result = get_model_status(Mock(qhit="iq__test"), "llava", tagstore, track_resolver)
-
-    assert result.summary.tagging_progress == 0.0
-    assert result.summary.num_content_parts == 0
-    job = result.jobs[0]
-    assert job.upload_status is None
+    with pytest.raises(BadRequestError):
+        get_model_status(Mock(qhit="iq__test"), "llava", tagstore, track_resolver)

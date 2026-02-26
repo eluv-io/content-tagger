@@ -44,12 +44,12 @@ paths:
         '502':
           description: Bad Gateway
 
-  /{qid}/status:
+  /{qid}/job-status:
     get:
       tags:
         - Operate tagging
       summary:
-        Check status
+        Check status of running jobs
       parameters:
         - name: qid
           in: path
@@ -72,6 +72,69 @@ paths:
                 $ref: '#/components/schemas/StatusResponse'
         '404':
           description: No jobs found
+
+  /{qid}/tag-status:
+    get:
+      tags:
+        - Operate tagging
+      summary: Get tagging history across models
+      description: |
+        Returns an overview of each model that has been run against the given content,
+        including the track it writes to, the last time it was run, and its percent completion.
+      parameters:
+        - in: path
+          name: qid
+          required: true
+          schema:
+            type: string
+          description: Content object id to check status for
+        - in: query
+          name: authorization
+          required: false
+          schema:
+            type: string
+          description: Fabric authorization token
+      responses:
+        '200':
+          description: Tagging status summary for every model that has been run on the content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContentStatusResponse'
+  /{qid}/tag-status/{model}:
+    get:
+      tags:
+        - Operate tagging
+      summary: Get detailed job history for a model
+      description: |
+        Returns a detailed breakdown of a single model's tagging history on the given content,
+        including a high-level summary and a list of every job that has been run.
+      parameters:
+        - in: path
+          name: qid
+          required: true
+          schema:
+            type: string
+          description: Content object id to check status for
+        - in: path
+          name: model
+          required: true
+          schema:
+            type: string
+          description: Model identifier (e.g. "celeb", "asr")
+        - in: query
+          name: authorization
+          required: false
+          schema:
+            type: string
+          description: Fabric authorization token
+      responses:
+        '200':
+          description: Detailed model tagging status including job history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelStatusResponse'
 
   /{qid}/stop:
     post:
@@ -411,6 +474,185 @@ components:
       required:
         - job_id
         - message
+
+    ContentStatusResponse:
+      type: object
+      description: Summary of tagging status across all models for a content object.
+      properties:
+        models:
+          type: array
+          description: List of per-model status summaries
+          items:
+            $ref: '#/components/schemas/ContentModelStatusSummary'
+      example:
+        models:
+          - model: celeb
+            track: celebrity_detection
+            last_run: "2026-02-25T18:30:00Z"
+            percent_completion: 0.85
+          - model: asr
+            track: speech_to_text
+            last_run: "2026-02-24T12:00:00Z"
+            percent_completion: 1.0
+    ContentModelStatusSummary:
+      type: object
+      description: High-level tagging status for one model on the content.
+      properties:
+        model:
+          type: string
+          description: Model identifier
+          example: celeb
+        track:
+          type: string
+          description: Track the model writes its tags to
+          example: celebrity_detection
+        last_run:
+          type: string
+          description: ISO 8601 timestamp of the most recent job run
+          example: "2026-02-25T18:30:00Z"
+        percent_completion:
+          type: number
+          format: float
+          description: Fraction of content parts that have been tagged (0.0 – 1.0)
+          example: 0.85
+    ModelStatusResponse:
+      type: object
+      description: Detailed status for a single model on a content object.
+      properties:
+        summary:
+          $ref: '#/components/schemas/ModelStatusSummary'
+        jobs:
+          type: array
+          description: Chronological list of every job that has been run for this model
+          items:
+            $ref: '#/components/schemas/JobDetail'
+      example:
+        summary:
+          model: celeb
+          track: celebrity_detection
+          last_run: "2026-02-25T18:30:00Z"
+          tagging_progress: 0.85
+          num_content_parts: 120
+        jobs:
+          - time_ran: "1h 0m 0s"
+            source_qid: iq__3C58dDYxsn5KKSWGYrfYr44ykJRm
+            params:
+              feature: celeb
+              run_config:
+                fps: 2
+              scope:
+                start_time: 0
+                end_time: 300
+              replace: false
+              destination_qid: iq__3C58dDYxsn5KKSWGYrfYr44ykJRm
+              max_fetch_retries: 3
+            job_status:
+              status: Completed
+              time_ran: "1h 0m 0s"
+            upload_status:
+              num_job_parts: 60
+              num_tagged_parts: 60
+    ModelStatusSummary:
+      type: object
+      description: Aggregate summary for a model's tagging progress on a content object.
+      properties:
+        model:
+          type: string
+          description: Model identifier
+          example: celeb
+        track:
+          type: string
+          description: Track the model writes its tags to
+          example: celebrity_detection
+        last_run:
+          type: string
+          description: ISO 8601 timestamp of the most recent job run
+          example: "2026-02-25T18:30:00Z"
+        tagging_progress:
+          type: number
+          format: float
+          description: Fraction of content parts that have been tagged (0.0 – 1.0)
+          example: 0.85
+        num_content_parts:
+          type: integer
+          description: Total number of parts in the content
+          example: 120
+    JobDetail:
+      type: object
+      description: Details of a single tagging job run.
+      properties:
+        time_ran:
+          type: string
+          description: Duration that the job ran before stopping
+          example: "1h 0m 0s"
+        source_qid:
+          type: string
+          description: Content object id that was tagged
+          example: iq__3C58dDYxsn5KKSWGYrfYr44ykJRm
+        params:
+          $ref: '#/components/schemas/TagArgs'
+        job_status:
+          $ref: '#/components/schemas/JobRunStatus'
+        upload_status:
+          nullable: true
+          description: Upload progress for this job. Null if the job did not reach the upload phase.
+          allOf:
+            - $ref: '#/components/schemas/JobUploadStatusSummary'
+    TagArgs:
+      type: object
+      description: Parameters that were used to run the tagging job.
+      properties:
+        feature:
+          type: string
+          description: Model identifier
+          example: celeb
+        run_config:
+          type: object
+          description: Arbitrary runtime parameters passed to the model container
+          example:
+            fps: 2
+        scope:
+          type: object
+          description: Scope of the tagging job with respect to the content (e.g. time range or asset list)
+          example:
+            start_time: 0
+            end_time: 300
+        replace:
+          type: boolean
+          description: Whether already-tagged parts were retagged
+          example: false
+        destination_qid:
+          type: string
+          description: Content object id that tags were written to
+          example: iq__3C58dDYxsn5KKSWGYrfYr44ykJRm
+        max_fetch_retries:
+          type: integer
+          description: Maximum number of fetch retries that were allowed
+          example: 3
+    JobRunStatus:
+      type: object
+      description: Status of a completed job run.
+      properties:
+        status:
+          type: string
+          description: Final status of the job
+          example: Completed
+        time_ran:
+          type: string
+          description: Duration the job ran before stopping
+          example: "1h 0m 0s"
+    JobUploadStatusSummary:
+      type: object
+      description: Summary of how many parts were uploaded for a job.
+      properties:
+        num_job_parts:
+          type: integer
+          description: Total number of parts in the job
+          example: 60
+        num_tagged_parts:
+          type: integer
+          description: Number of parts that were successfully tagged and uploaded
+          example: 60
 
   securitySchemes:
     TokenAuth: # <-- arbitrary name for the security scheme
