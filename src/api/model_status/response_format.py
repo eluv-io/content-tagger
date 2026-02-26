@@ -13,8 +13,8 @@ class JobUploadStatusSummary:
 class JobDetail:
     time_ran: str
     source_qid: str
-    params: TagArgs | None
-    job_status: JobRunStatus | None
+    params: TagArgs
+    job_status: JobRunStatus
     upload_status: JobUploadStatusSummary | None
 
 

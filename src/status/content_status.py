@@ -15,7 +15,7 @@ def get_content_summary(q: Content, tagstore: Tagstore, track_resolver: TrackRes
     batches_by_track: dict[str, list[Batch]] = defaultdict(list)
     for batch_id in batch_ids:
         batch = tagstore.get_batch(batch_id, q=q)
-        if batch is None:
+        if batch is None or "tagger" not in batch.additional_info:
             continue
         batches_by_track[batch.track].append(batch)
 
@@ -29,11 +29,11 @@ def get_content_summary(q: Content, tagstore: Tagstore, track_resolver: TrackRes
         all_sources: set[str] = set()
         tagged_sources: set[str] = set()
         for batch in batches:
-            tagger_info = batch.additional_info.get("tagger", {})
+            tagger_info = batch.additional_info["tagger"]
             upload_status = tagger_info.get("upload_status")
             if upload_status:
-                all_sources.update(upload_status.get("all_sources", []))
-                tagged_sources.update(upload_status.get("tagged_sources", []))
+                all_sources.update(upload_status["all_sources"])
+                tagged_sources.update(upload_status["tagged_sources"])
 
         if all_sources:
             percent_completion = len(tagged_sources) / len(all_sources)

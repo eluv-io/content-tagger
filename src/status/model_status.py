@@ -28,11 +28,11 @@ def get_model_status(
     batches: list[Batch] = []
     for batch_id in batch_ids:
         batch = tagstore.get_batch(batch_id, q=q)
-        if batch is not None and batch.track == track_name:
+        if batch is not None and batch.track == track_name and "tagger" in batch.additional_info:
             batches.append(batch)
 
     if not batches:
-        raise MissingResourceError(f"No runs found for model '{model}' on content '{q.qhit}'")
+        raise MissingResourceError(f"No jobs found for model '{model}' on content '{q.qid}'")
 
     # --- Build per-job details ---
     jobs: list[JobDetail] = []
@@ -40,60 +40,40 @@ def get_model_status(
     all_tagged_sources: set[str] = set()
 
     for batch in batches:
-        raw_tagger = batch.additional_info.get("tagger")
         time_ran = datetime.fromtimestamp(batch.timestamp, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
-        if raw_tagger is None:
-            # No tagger info recorded for this batch — emit a minimal job entry.
-            jobs.append(
-                JobDetail(
-                    time_ran=time_ran,
-                    source_qid="",
-                    params=None,
-                    job_status=None,
-                    upload_status=None,
-                )
-            )
-            continue
-
         try:
-            tagger_info: dict = raw_tagger
+            tagger_info: dict = batch.additional_info["tagger"]
 
-            # Upload status
+            # Upload status (optional — absent for non-video content)
             raw_upload = tagger_info.get("upload_status")
             upload_summary: JobUploadStatusSummary | None = None
             if raw_upload:
-                num_all = len(raw_upload.get("all_sources", []))
+                num_all = len(raw_upload["all_sources"])
                 if num_all > max_all_sources:
                     max_all_sources = num_all
-                num_downloaded = len(raw_upload.get("downloaded_sources", []))
-                num_tagged = len(raw_upload.get("tagged_sources", []))
-                all_tagged_sources.update(raw_upload.get("tagged_sources", []))
+                num_downloaded = len(raw_upload["downloaded_sources"])
+                num_tagged = len(raw_upload["tagged_sources"])
+                all_tagged_sources.update(raw_upload["tagged_sources"])
                 upload_summary = JobUploadStatusSummary(
                     num_job_parts=num_downloaded,
                     num_tagged_parts=num_tagged,
                 )
 
-            # Params
-            raw_params = tagger_info.get("params", {})
-            params = TagArgs(**raw_params)
+            params = TagArgs(**tagger_info["params"])
+            job_status = JobRunStatus(**tagger_info["job_status"])
 
-            # Job status
-            raw_job_status = tagger_info.get("job_status", {})
-            job_status = JobRunStatus(status=raw_job_status.get("status", "unknown"))
-
+            jobs.append(
+                JobDetail(
+                    time_ran=time_ran,
+                    source_qid=tagger_info["source_qid"],
+                    params=params,
+                    job_status=job_status,
+                    upload_status=upload_summary,
+                )
+            )
         except Exception as e:
             raise BadRequestError(f"Malformed tagger info in batch '{batch.id}': {e}") from e
-
-        jobs.append(
-            JobDetail(
-                time_ran=time_ran,
-                source_qid=tagger_info.get("source_qid", ""),
-                params=params,
-                job_status=job_status,
-                upload_status=upload_summary,
-            )
-        )
 
     # --- Build top-level summary ---
     latest_batch = max(batches, key=lambda b: b.timestamp)
