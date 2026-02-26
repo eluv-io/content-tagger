@@ -1,4 +1,5 @@
 from dataclasses import asdict
+from dacite import from_dict, Config
 import json
 import os
 
@@ -27,14 +28,14 @@ def handle_tag(qhit: str) -> Response:
     
     logger.debug(args)
 
-    _validate_destination_auth(q, args.options.destination_qid)
+    if args.options.destination_qid:
+        _validate_destination_auth(q, args.options.destination_qid)
     
     tagger: FabricTagger = current_app.config["state"]["tagger"]
 
     tag_args = map_video_tag_dto(args, tagger.cregistry, q)
 
     return _execute_tagging(q, tag_args)
-
 
 def _execute_tagging(q: Content, tag_args: list[TagArgs]) -> Response:
     """Execute tagging for multiple features and return start status response."""

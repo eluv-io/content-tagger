@@ -6,6 +6,11 @@ from src.common.model import SystemResources
 
 MediaInput = list[str] | str
 
+@dataclass(frozen=True)
+class ContainerInfo:
+    image_name: str
+    annotations: dict
+
 @dataclass
 class ModelConfig:
     """

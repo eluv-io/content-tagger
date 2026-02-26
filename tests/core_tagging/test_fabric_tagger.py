@@ -587,6 +587,28 @@ def test_fetcher_returns_no_sources(fabric_tagger, q, make_tag_args):
     tag_count = fabric_tagger.tagstore.count_tags(qhit=q.qhit, q=q)
     assert tag_count == 0
 
+def test_batch_report_on_success(fabric_tagger, q, make_tag_args):
+    """Batch additional_info should contain a tagger report with Completed status."""
+    args = make_tag_args(feature="caption", stream="video")
+    result = fabric_tagger.tag(q, args)
+    assert result.started
+
+    wait_tag(fabric_tagger, q.qhit, timeout=5)
+
+    batches = fabric_tagger.tagstore.find_batches(qhit=q.qid, q=q)
+    assert len(batches) == 1
+
+    batch = fabric_tagger.tagstore.get_batch(batches[0], q=q)
+    assert batch is not None
+
+    report = batch.additional_info.get("tagger")
+    assert report is not None
+    assert report["job_status"]["status"] == "Completed"
+    assert report["upload_status"] is not None
+    # all downloaded parts should be reported as tagged on a clean completion
+    assert set(report["upload_status"]["tagged_sources"]) == set(report["upload_status"]["all_sources"])
+
+
 def test_replace(
     fabric_tagger: FabricTagger,
     q: Content,

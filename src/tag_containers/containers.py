@@ -14,6 +14,7 @@ from common_ml.video_processing import get_fps
 from src.tag_containers.model import FrameTag
 from src.common.errors import BadRequestError
 from src.tag_containers.model import *
+from src.tag_containers.model import ContainerInfo
 
 logger = logger.bind(name="TagContainer")
 
@@ -162,6 +163,12 @@ class TagContainer:
     def required_resources(self) -> SystemResources:
         """Returns the system resources required by this container to run."""
         return copy(self.cfg.model_config.resources)
+
+    def info(self) -> ContainerInfo:
+        """Returns image annotations and the running container ID (if started)."""
+        image = self.pclient.images.get(self.cfg.model_config.image)
+        annotations = image.attrs.get("Annotations", {})
+        return ContainerInfo(image_name=self.cfg.model_config.image, annotations=annotations)
 
     def send_eof(self) -> None:
         logger.info(f"Standard container received EOF (noop), no more media will be sent.", extra={"handle": self.name()})

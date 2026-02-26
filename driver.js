@@ -34,7 +34,7 @@ const assets_params = {
 
 const video_params = {
     "jobs": [
-        {"model": "caption", "model_params": {"fps": 0.33}}
+        {"model": "caption", "model_params": {"fps":0.33}}
     ]
 };
 
@@ -232,7 +232,7 @@ function get_write_token(qhit, config) {
 }
 
 async function get_status(qhit, auth) {
-    const url = new URL(`${server}/${qhit}/status`);
+    const url = new URL(`${server}/${qhit}/job-status`);
     url.searchParams.append("authorization", auth);
 
     const response_data = await fetch_dict_with_status(url);
@@ -437,7 +437,7 @@ function get_available_models(tag_config) {
 
 async function quick_status(auth, qhit, filter = null) {
     if (filter === "") filter = null;
-    const url = new URL(`${server}/${qhit}/status`);
+    const url = new URL(`${server}/${qhit}/job-status`);
     url.searchParams.append("authorization", auth);
 
     const status_data = await fetch_dict_with_status(url);

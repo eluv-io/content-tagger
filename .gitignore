@@ -20,3 +20,5 @@ TODO.md
 docs/_build
 
 integration_private_keys.json
+
+node_modules

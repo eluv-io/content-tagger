@@ -78,18 +78,15 @@ assets_params = {
         "scope": {"type": "assets"}
     },
     "jobs": [
-        {"model": "logo", "model_params": {}},
-        {"model": "ocr", "model_params": {}},
-        {"model": "llava", "model_params": {"model": "elv-llamavision:1"}},
-        {"model": "caption", "model_params": {}},
-        {"model": "asr", "model_params": {}},
-        {"model": "shot", "model_params": {}}
+        {"model": "ocr"},
+        {"model": "caption"},
+        {"model": "celeb"}
     ]
 }
 
 video_params = {
     "jobs": [
-        {"model": "caption", "model_params": {"fps": 0.33}}
+        {"model": "logo"}
     ]
 }
     
@@ -109,7 +106,7 @@ def get_write_token(qhit: str, config: str) -> str:
     return write_token
 
 def get_status(qhit: str, auth: str):
-    res = requests.get(f"{server}/{qhit}/status", params={"authorization": auth})
+    res = requests.get(f"{server}/{qhit}/job-status", params={"authorization": auth})
     response_data = response_force_dict(res)
     
     # Handle new {"jobs": [...]} format
@@ -141,13 +138,15 @@ def tag(contents: list, auth: str, assets: bool, params: dict, start_time: float
     
     llama_models = ["elv-llamavision:1"]
     for i, qhit in enumerate(contents):
-        if assets:
-            url = f"{server}/{qhit}/image_tag"
-        else:
-            url = f"{server}/{qhit}/tag"
-                
+        url = f"{server}/{qhit}/tag"
+        
+        # Update llava model params if present
+        for job in params["jobs"]:
+            if job["model"] == "llava":
+                job["model_params"]["model"] = llama_models[i % len(llama_models)]
+        
         # Update scope with time range if specified
-        if start_time is not None or end_time is not None:
+        if not assets and (start_time is not None or end_time is not None):
             scope_updates = {}
             if start_time is not None:
                 scope_updates["start_time"] = int(start_time)
@@ -164,7 +163,7 @@ def tag(contents: list, auth: str, assets: bool, params: dict, start_time: float
         time.sleep(float(os.environ.get("TAGGERV2_START_SLEEP", 0)))
 
 def is_running(qhit: str, auth: str):
-    res = requests.get(f"{server}/{qhit}/status", params={"authorization": auth})
+    res = requests.get(f"{server}/{qhit}/job-status", params={"authorization": auth})
     resdict = response_force_dict(res)
     
     # Handle new {"jobs": [...]} format
@@ -321,7 +320,9 @@ def main():
            tag_config = json.load(conf)
 
     if args.replace:
-        tag_config['defaults']['replace'] = True
+        if "options" not in tag_config:
+            tag_config["options"] = {}
+        tag_config['options']['replace'] = True
 
     if args.contents:
         print("reading contents...")
@@ -510,7 +511,7 @@ def main():
 def quick_status(auth, qhit, filter = None):
     if filter == "": 
         filter = None
-    res = requests.get(f"{server}/{qhit}/status", params={"authorization": auth})
+    res = requests.get(f"{server}/{qhit}/job-status", params={"authorization": auth})
     status_data = response_force_dict(res)
     
     # Handle error response

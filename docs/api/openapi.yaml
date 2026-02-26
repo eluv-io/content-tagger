@@ -1,4 +1,4 @@
-openapi: 3.0.0
+openapi: 3.0.3
 info:
   title: Eluvio Tagger API
   x-logo:
@@ -9,107 +9,85 @@ info:
 paths:
   /{qid}/tag:
     post:
+      tags:
+        - Operate tagging
       summary:
-        Tag a content by qid
+        Tag content
       parameters:
-        - in: path
-          name: qid
+        - name: qid
+          in: path
           required: true
           schema:
             type: string
-          description: Content object id to tag
-        - in: query
-          name: authorization
-          required: false
+          description: Source content to tag.
+        - name: authorization
+          in: query
+          required: true
           schema:
             type: string
-          description: Fabric authorization token. It should be valid against the content object.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              allOf:
-                - $ref: '#/components/schemas/CommonTaggingParams'
-                - type: object
-                  properties:
-                    start_time:
-                      type: integer
-                      description: Start time of tag job (in seconds)
-                      default: 0
-                    end_time:
-                      type: integer
-                      description: End time of tag job. If not specified, it will tag the full duration. (in seconds)
-                      default: null
-                      example: 10
-                    destination_qid:
-                      type: string
-                      description: Content to which tags should be written. Defaults to the same content being tagged.
+              $ref: '#/components/schemas/StartJobsRequest'
+        description: Tagging options
       responses:
         '200':
-          description: Summary of the given tags
+          description: Success
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Tagging started on iq__3C58dDYxsn5KKSWGYrfYr44ykJRm
-  /{qid}/image_tag:
-    post:
-      summary:
-        Tag image assets of a content
-      parameters:
-        - in: path
-          name: qid
-          required: true
-          schema:
-            type: string
-          description: Content object id to tag
-        - in: query
-          name: authorization
-          required: false
-          schema:
-            type: string
-          description: Fabric authorization token
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              allOf:
-                - $ref: '#/components/schemas/CommonTaggingParams'
-                - type: object
-                  properties:
-                    assets:
-                      type: array
-                      items: 
-                        type: string
-                      example: ["/assets/abc.jpg", "/assets/bar.jpg"]
-                      description: Set of file paths which point to image files to tag. If this is not set, then we will tag all images under /meta/assets.
-      responses:
-        '200':
-          description: Summary of the given tags
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Tagging started on iq__3C58dDYxsn5KKSWGYrfYr44ykJRm
-  /{qid}/status:
+                $ref: '#/components/schemas/StartTaggingResponse'
+        '400':
+          description: Bad Request
+        '502':
+          description: Bad Gateway
+
+  /{qid}/job-status:
     get:
-      summary: |
-        Get the status of all tagging jobs for the given content object.
+      tags:
+        - Operate tagging
+      summary:
+        Check status of running jobs
+      parameters:
+        - name: qid
+          in: path
+          required: true
+          schema:
+            type: string
+          description:
+            Content to check tagging status of. 
+        - name: authorization
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '404':
+          description: No jobs found
+
+  /{qid}/tag-status:
+    get:
+      tags:
+        - Operate tagging
+      summary: Get tagging history across models
+      description: |
+        Returns an overview of each model that has been run against the given content,
+        including the track it writes to, the last time it was run, and its percent completion.
       parameters:
         - in: path
           name: qid
           required: true
           schema:
             type: string
-          description: Content object id to tag
+          description: Content object id to check status for
         - in: query
           name: authorization
           required: false
@@ -118,45 +96,32 @@ paths:
           description: Fabric authorization token
       responses:
         '200':
-          description: Summary of the given tags
+          description: Tagging status summary for every model that has been run on the content
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    description: The status of the tagging job
-                    example: "Fetching parts"
-                  time_running:
-                    type: integer
-                    description: The time the job has been running
-                    example: 30.30
-                  tag_job_id:
-                    type: string
-                    description: The tag job id, once tagging has begun. Not currently useful for the user. 
-                    example: null
-                  error:
-                    type: string
-                    description: Error message if the job has failed
-                    example: null
-  /{qid}/stop/{model}:
-    post:
-      summary: |
-        Stops a tagging job.
+                $ref: '#/components/schemas/ContentStatusResponse'
+  /{qid}/tag-status/{model}:
+    get:
+      tags:
+        - Operate tagging
+      summary: Get detailed job history for a model
+      description: |
+        Returns a detailed breakdown of a single model's tagging history on the given content,
+        including a high-level summary and a list of every job that has been run.
       parameters:
         - in: path
           name: qid
           required: true
           schema:
             type: string
-          description: Content object id that is beging tagged
+          description: Content object id to check status for
         - in: path
           name: model
           required: true
           schema:
             type: string
-          description: Model to stop tagging
+          description: Model identifier (e.g. "celeb", "asr")
         - in: query
           name: authorization
           required: false
@@ -165,72 +130,575 @@ paths:
           description: Fabric authorization token
       responses:
         '200':
-          description: Summary of the given tags
+          description: Detailed model tagging status including job history
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Stopping asr on iq__3C58dDYxsn5KKSWGYrfYr44ykJRm. Check with /status for completion.
-  /list:
-    get:
-      summary: |
-        Get a list of all available models.
+                $ref: '#/components/schemas/ModelStatusResponse'
+
+  /{qid}/stop:
+    post:
+      tags:
+        - Operate tagging
+      summary:
+        Stop tagging jobs by content
       parameters:
-        - in: query
-          name: authorization
-          required: false
+        - name: qid
+          in: path
+          required: true
           schema:
             type: string
-          description: Fabric authorization token
+          description: Stop all jobs against this content.
+        - name: authorization
+          in: query
+          required: true
+          schema:
+            type: string
       responses:
         '200':
-          description: Summary of the given tags
+          description: Success
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  type: string
-                description: List of all the content objects that have been tagged
-                example: [
-                          "asr",
-                          "caption",
-                          "shot",
-                          "celeb"
-                        ]
+                $ref: '#/components/schemas/StopTaggingResponse'
+
+  /{qid}/stop/{model}:
+    post:
+      tags:
+        - Operate tagging
+      summary:
+        Stop tagging jobs by model
+      parameters:
+        - name: qid
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Content object id
+        - name: model
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Model name
+        - name: authorization
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StopTaggingResponse'
+
 components:
   schemas:
-    CommonTaggingParams:
+    StartJobsRequest:
       type: object
       properties:
+        options:
+          $ref: '#/components/schemas/TaggerOptions'
+          description: Knobs that apply to all tagger jobs in the request.
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobSpec'
+          description: List of individual job parameters.
+      required:
+        - jobs
+
+    TaggerOptions:
+      type: object
+      properties:
+        destination_qid:
+          type: string
+          default: ""
+          description: Content where tags should be written to. Empty string indicates that they should be written to the same content that we are tagging.
         replace:
           type: boolean
-          description: Whether tagging should retag already tagged parts of the content. Set to false to enable diff-based tagging, set to true if you need to retag.
           default: false
-        features:
+          description:
+            Replace already existing tagstore tags. Set to false to retag, set to true to enbable diff-based tagging.
+        max_fetch_retries:
+          type: integer
+          default: 3
+          description:
+            If a fetch operation fails, we can retry this many times before the job is marked as failed.
+        scope:
           type: object
-          description: Map of model identifier to runtime config. Check /list for available model identifiers.
-          additionalProperties:
-            type: object
-            properties:
-              stream:
-                type: string
-                description: Stream name to tag for the given model. Does not apply to image tagging. Typically this is "video" for video models and "audio" for audio models. Oftentimes the audio streams have different names so check the mezzanine metadata for the correct stream name.
-                example: "audio"
-              model:
-                type: object
-                description: Model configuration to override defaults. This has no fixed schema and may vary per model (see model docs). Leave blank to use the default model configuration.
-                example: {"fps": 2, "threshold": 0.5}
+          additionalProperties: true
           example:
-            celeb:
-              model:
-                fps: 2
-            asr:
-              model:
-                prettify: true
-                word_level: false
+            {"type": "video", "start_time": 100, "end_time": 200}
+          description: Scope of tagging. The format should match one of the Scope schemas. The type of scope provided as well as the parameters affets what media will get tagged.
+
+    JobSpec:
+      type: object
+      properties:
+        model:
+          type: string
+          example: asr
+          description: Name of model to run
+        model_params:
+          type: object
+          additionalProperties: true
+          description: Model level parameters
+          example: {"fps": 1.5}
+        overrides:
+          $ref: '#/components/schemas/TaggerOptions'
       required:
-        - features
+        - model
+
+    ScopeVideo:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [video]
+          default: video
+          description: Scope identifier to remove ambiguity
+        start_time:
+          type: integer
+          default: 0
+          description: Start tagging at this point in the media stream (in seconds)
+        end_time:
+          type: integer
+          default: 10000000000000000
+          example: 600
+          description: End tagging at this point in the media stream (in seconds)
+        stream:
+          type: string
+          example: "audio_1"
+          description: Audio or video stream to tag. If this value is not set, it's value will be automatically set depending on the model and the content.
+      required:
+        - type
+
+    ScopeProcessor:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [processor]
+          description: Scope identifier to remove ambiguity
+        start_time:
+          type: integer
+          default: 0
+          description: Start tagging at this point in the media stream (in seconds)
+        end_time:
+          type: integer
+          default: 10000000000000000
+          example: 600
+          description: End tagging at this point in the media stream (in seconds)
+        chunk_size:
+          type: integer
+          default: 600
+          description: Processor will be fed intervals of this size to tag
+        stream:
+          type: string
+          default: "video"
+          description: Media stream
+      required:
+        - type
+
+    ScopeAssets:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [assets]
+          description: Scope identifier to remove ambiguity
+        assets:
+          type: array
+          items:
+            type: string
+          description: List of asset paths to tag
+          example: ["assets/hello1.jpg", "assets/hello2.jpg"]
+      required:
+        - type
+
+    ScopeLivestream:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [livestream]
+          description: Scope identifier to remove ambiguity
+        stream:
+          type: string
+          default: "video"
+          description: Media stream
+        segment_length:
+          type: integer
+          default: 4
+          description: Tagging interval size (in seconds)
+        max_duration:
+          type: integer
+          nullable: true
+          description: Maximum amount of content from livestream to tag (in seconds)
+      required:
+        - type
+
+    StartTaggingResponse:
+      type: object
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/StartStatus'
+          description: Start status for each job in the request
+      required:
+        - jobs
+
+    StartStatus:
+      type: object
+      properties:
+        job_id:
+          type: string
+          example: "1234"
+          description: Job id
+        model:
+          type: string
+          example: "asr"
+          description: Model name
+        stream:
+          type: string
+          example: "audio_1"
+          description: Stream name
+        started:
+          type: boolean
+          example: true
+          description: Did the job start yes or no
+        message:
+          type: string
+          example: "successfully started"
+          description: Additional information or words of positive affirmation
+        error:
+          type: string
+          nullable: true
+          example: null
+          description: Error message if the job failed
+      required:
+        - job_id
+        - model
+        - stream
+        - started
+        - message
+
+    StatusResponse:
+      type: object
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobStatus'
+          description: Individual job statuses
+      required:
+        - jobs
+
+    JobStatus:
+      type: object
+      properties:
+        job_id:
+          type: string
+          example: "1234"
+          description: Job id
+        status:
+          type: string
+          example: "Fetching Content"
+          description: Concise description of what the job is currently doing
+        time_running:
+          type: number
+          example: 1234
+          description: How long the job has been running (in seconds)
+        tagging_progress:
+          type: string
+          example: "120/305"
+          description: Measurement of job progress. Currently this is expressed as a ratio of parts tagged to parts fetched. In the case of livestream tag jobs, both the numerator and the denominator will go up. 
+        missing_tags:
+          type: array
+          description: List of sources which have no tags. Could be due to a partial failure or the model just didn't output anything.
+          example: ["assets/hello.jpg", "assets/hello2.jpg"]
+          items:
+            type: string
+        failed:
+          type: array
+          description: List of sources which failed to process
+          items:
+            type: string
+          example: ["assets/bad.jpg"]
+        model:
+          type: string
+          example: "asr"
+          description: Name of model
+        stream:
+          type: string
+          example: "audio_1"
+          description: Stream name
+      required:
+        - job_id
+        - status
+        - time_running
+        - tagging_progress
+        - missing_tags
+        - failed
+        - model
+        - stream
+
+    StopTaggingResponse:
+      type: object
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/StopStatus'
+          description: Stop statuses of individual jobs
+        message:
+          type: string
+          description: Top level message
+      required:
+        - jobs
+        - message
+
+    StopStatus:
+      type: object
+      properties:
+        job_id:
+          type: string
+          example: "1234"
+          description: Job ID
+        message:
+          type: string
+          description: Message
+      required:
+        - job_id
+        - message
+
+    ContentStatusResponse:
+      type: object
+      description: Summary of tagging status across all models for a content object.
+      properties:
+        models:
+          type: array
+          description: List of per-model status summaries
+          items:
+            $ref: '#/components/schemas/ContentModelStatusSummary'
+      example:
+        models:
+          - model: celeb
+            track: celebrity_detection
+            last_run: "2026-02-25T18:30:00Z"
+            percent_completion: 0.85
+          - model: asr
+            track: speech_to_text
+            last_run: "2026-02-24T12:00:00Z"
+            percent_completion: 1.0
+    ContentModelStatusSummary:
+      type: object
+      description: High-level tagging status for one model on the content.
+      properties:
+        model:
+          type: string
+          description: Model identifier
+          example: celeb
+        track:
+          type: string
+          description: Track the model writes its tags to
+          example: celebrity_detection
+        last_run:
+          type: string
+          description: ISO 8601 timestamp of the most recent job run
+          example: "2026-02-25T18:30:00Z"
+        percent_completion:
+          type: number
+          format: float
+          description: Fraction of content parts that have been tagged (0.0 – 1.0)
+          example: 0.85
+    ModelStatusResponse:
+      type: object
+      description: Detailed status for a single model on a content object.
+      properties:
+        summary:
+          $ref: '#/components/schemas/ModelStatusSummary'
+        jobs:
+          type: array
+          description: Chronological list of every job that has been run for this model
+          items:
+            $ref: '#/components/schemas/JobDetail'
+      example:
+        summary:
+          model: celeb
+          track: celebrity_detection
+          last_run: "2026-02-25T18:30:00Z"
+          tagging_progress: 0.85
+          num_content_parts: 120
+        jobs:
+          - time_ran: "1h 0m 0s"
+            source_qid: iq__3C58dDYxsn5KKSWGYrfYr44ykJRm
+            params:
+              feature: celeb
+              run_config:
+                fps: 2
+              scope:
+                start_time: 0
+                end_time: 300
+              replace: false
+              destination_qid: iq__3C58dDYxsn5KKSWGYrfYr44ykJRm
+              max_fetch_retries: 3
+            job_status:
+              status: Completed
+              time_ran: "1h 0m 0s"
+            upload_status:
+              num_job_parts: 60
+              num_tagged_parts: 60
+    ModelStatusSummary:
+      type: object
+      description: Aggregate summary for a model's tagging progress on a content object.
+      properties:
+        model:
+          type: string
+          description: Model identifier
+          example: celeb
+        track:
+          type: string
+          description: Track the model writes its tags to
+          example: celebrity_detection
+        last_run:
+          type: string
+          description: ISO 8601 timestamp of the most recent job run
+          example: "2026-02-25T18:30:00Z"
+        tagging_progress:
+          type: number
+          format: float
+          description: Fraction of content parts that have been tagged (0.0 – 1.0)
+          example: 0.85
+        num_content_parts:
+          type: integer
+          description: Total number of parts in the content
+          example: 120
+    JobDetail:
+      type: object
+      description: Details of a single tagging job run.
+      properties:
+        time_ran:
+          type: string
+          description: Duration that the job ran before stopping
+          example: "1h 0m 0s"
+        source_qid:
+          type: string
+          description: Content object id that was tagged
+          example: iq__3C58dDYxsn5KKSWGYrfYr44ykJRm
+        params:
+          $ref: '#/components/schemas/TagArgs'
+        job_status:
+          $ref: '#/components/schemas/JobRunStatus'
+        upload_status:
+          nullable: true
+          description: Upload progress for this job. Null if the job did not reach the upload phase.
+          allOf:
+            - $ref: '#/components/schemas/JobUploadStatusSummary'
+    TagArgs:
+      type: object
+      description: Parameters that were used to run the tagging job.
+      properties:
+        feature:
+          type: string
+          description: Model identifier
+          example: celeb
+        run_config:
+          type: object
+          description: Arbitrary runtime parameters passed to the model container
+          example:
+            fps: 2
+        scope:
+          type: object
+          description: Scope of the tagging job with respect to the content (e.g. time range or asset list)
+          example:
+            start_time: 0
+            end_time: 300
+        replace:
+          type: boolean
+          description: Whether already-tagged parts were retagged
+          example: false
+        destination_qid:
+          type: string
+          description: Content object id that tags were written to
+          example: iq__3C58dDYxsn5KKSWGYrfYr44ykJRm
+        max_fetch_retries:
+          type: integer
+          description: Maximum number of fetch retries that were allowed
+          example: 3
+    JobRunStatus:
+      type: object
+      description: Status of a completed job run.
+      properties:
+        status:
+          type: string
+          description: Final status of the job
+          example: Completed
+        time_ran:
+          type: string
+          description: Duration the job ran before stopping
+          example: "1h 0m 0s"
+    JobUploadStatusSummary:
+      type: object
+      description: Summary of how many parts were uploaded for a job.
+      properties:
+        num_job_parts:
+          type: integer
+          description: Total number of parts in the job
+          example: 60
+        num_tagged_parts:
+          type: integer
+          description: Number of parts that were successfully tagged and uploaded
+          example: 60
+
+  securitySchemes:
+    TokenAuth: # <-- arbitrary name for the security scheme
+      type: http
+      scheme: bearer
+      bearerFormat: |
+        Base64 encoded JSON element of the following form: `{ "qspace_id": "...", "addr":"...", "txid":"..." }`
+      description: |
+        <p/>
+        <div class="auth">
+
+        Access to content fabric objects and resources is governed by an Ethereum-compatible blockchain.  Each API resource (for example a library, content type or content object) is governed by a blockchain 'smart-contract'.  All content fabric API operations require authentication using the "Bearer" token scheme.  This scheme encompasses both "authentication" (identifying the caller) and "authorization" (specification of the operations that the caller has access to).  The "Bearer" token is obtained by executing specific 'smart-contract' blockchain transactions for the API resources being accessed.
+
+        Private fabric nodes or development environments can also be configured for alternative authentication schemes.  Currently this includes "Basic" authentication and, for development environments, no authentication.
+
+        The "Bearer" token can be specified as follows:
+
+        <ol>
+          <li>
+            as an HTTP header
+            <code>Authorization: Bearer TOKEN</code>
+          </li>
+          <li>
+            as a query parameter
+            <code>?authorization=TOKEN</code>
+          </li>
+        </ol>
+
+        Bearer token general format: <code>PAYLOAD.SIGNATURE</code>
+
+        Where <code>PAYLOAD</code> is a base64 encoding of the JSON object:
+        <pre class="description">
+          {
+            "qspace_id":  "SPACE-ID",
+            "qlib_id": "LIBRARY-ID",
+            "addr": "BLOCKCHAIN-ADDRESS",
+            "tx_id" : "BLOCKCHAIN-TRANSACTION-ID"
+          }
+        </pre>
+
+        <code>SIGNATURE</code> is a base64 encoding of the Ethereum signature, calculated as specified by the Ethereum protocol: https://github.com/ethereum/wiki/wiki/JSON-RPC#eth_sign
+
+        Creating, modifying and accessing content fabric objects require either "access" or "update" transaction IDs.  These operations can only be executed by full blockchain user accounts, which must be funded in order to execute transactions.  Once the transaction is executed by the blockchain, its ID will be specified in the token field "tx_id".
+
+        Consumer operations don't require funded blockchain accounts, and they are restricted to "viewer" operations, which are only available on content objects that have been specifically published for consumer access.  The token is generated by executing a state channel transaction - the state channel allows for low latency response to the user (not requiring waiting for the execution of a blockchain transaction) and mass scalability by posting aggregated transactions to the blockchain in large batches.
+        </div>
+
+security:
+  - TokenAuth: []

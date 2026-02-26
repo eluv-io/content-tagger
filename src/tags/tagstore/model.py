@@ -29,6 +29,7 @@ class Batch:
     track: str
     timestamp: float
     author: str
+    additional_info: dict
 
 @dataclass
 class Track:

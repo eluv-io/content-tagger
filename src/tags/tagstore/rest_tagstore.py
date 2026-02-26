@@ -131,7 +131,8 @@ class RestTagstore(Tagstore):
             qhit=qhit,
             track=track,
             timestamp=time.time(),
-            author=author
+            author=author,
+            additional_info=result.get("additional_info", {})
         )
         
         return batch
@@ -408,7 +409,8 @@ class RestTagstore(Tagstore):
                 qhit=qhit,
                 track=batch_data['track'],
                 timestamp=parser.isoparse(batch_data['created_at'].replace("Z", "+00:00")).timestamp(),
-                author=batch_data['author']
+                author=batch_data['author'],
+                additional_info=batch_data.get("additional_info", {})
             )
             
             return batch
@@ -431,5 +433,26 @@ class RestTagstore(Tagstore):
             timeout=self.timeout
         )
         
+        if not response.ok:
+            self._log_response_and_raise(response)
+
+    def update_batch(self,
+        qhit: str,
+        batch_id: str,
+        additional_info: dict,
+        q: Content | None = None,
+    ) -> None:
+        """
+        Update batch metadata (merges additional_info)
+        """
+        assert q is not None
+
+        response = self.session.patch(
+            f"{self.base_url}/{qhit}/batches/{batch_id}",
+            json={"additional_info": additional_info},
+            headers=self._get_headers(q),
+            timeout=self.timeout
+        )
+
         if not response.ok:
             self._log_response_and_raise(response)

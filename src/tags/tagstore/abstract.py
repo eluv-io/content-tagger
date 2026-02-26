@@ -26,6 +26,14 @@ class Tagstore(Protocol):
         q: Content | None=None,
     ) -> Batch:
         ...
+        
+    def update_batch(self, 
+        qhit: str,
+        batch_id: str,
+        additional_info: dict,
+        q: Content | None=None,
+    ) -> None:
+        ...
 
     def upload_tags(self, tags: list[Tag], batch_id: str, q: Content | None=None) -> None:
         ...

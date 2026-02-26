@@ -7,7 +7,7 @@ import pytest
 from src.common.content import Content
 from src.fetch.model import DownloadRequest, DownloadResult, FetchSession, MediaMetadata, Source, VideoMetadata, VideoScope
 from src.fetch.model import VideoScope
-from src.tag_containers.model import ContainerRequest, MediaInput, ModelConfig, ModelTag
+from src.tag_containers.model import *
 from src.tagging.fabric_tagging.model import FabricTaggerConfig, TagArgs
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tagging.scheduling.scheduler import ContainerScheduler
@@ -109,6 +109,9 @@ class FakeTagContainer:
     
     def send_eof(self) -> None:
         pass
+
+    def info(self) -> ContainerInfo:
+        return ContainerInfo(image_name=f"fake/{self.feature}", annotations={"io.test.fake": "1"})
 
     def tags(self) -> list[ModelTag]:
         """
@@ -234,7 +237,7 @@ class FakeWorker(FetchSession):
         for i, filepath in enumerate([video1, video2]):
             source = Source(
                 filepath=filepath,
-                name=f"part_{i}.mp4",
+                name=f"hash{i+1}",
                 offset=i * 10000,  # 10 second parts
                 wall_clock=time.time_ns() // 1_000_000  # current time in ms
             )

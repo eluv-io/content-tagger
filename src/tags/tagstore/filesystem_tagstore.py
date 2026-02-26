@@ -76,7 +76,8 @@ class FilesystemTagStore(Tagstore):
             qhit=qhit,
             track=track,
             timestamp=time.time(),
-            author=author
+            author=author,
+            additional_info={}
         )
 
         metadata_path = self._get_batch_metadata_path(batch_id)
@@ -275,6 +276,21 @@ class FilesystemTagStore(Tagstore):
     def delete_batch(self, batch_id: str, q: Content | None = None) -> None:
         dir = self._get_batch_dir(batch_id)
         shutil.rmtree(dir, ignore_errors=True)
+
+    def update_batch(self,
+        qhit: str,
+        batch_id: str,
+        additional_info: dict,
+        q: Content | None = None,
+    ) -> None:
+        metadata_path = self._get_batch_metadata_path(batch_id)
+        if not os.path.exists(metadata_path):
+            raise ValueError(f"Batch {batch_id} not found.")
+        with open(metadata_path, 'r') as f:
+            batch_data = json.load(f)
+        batch_data['additional_info'] = additional_info
+        with open(metadata_path, 'w') as f:
+            json.dump(batch_data, f, indent=2)
 
     def count_tags(self, q: Content | None = None, **filters) -> int:
         """Count tags matching the given filters without loading all data"""

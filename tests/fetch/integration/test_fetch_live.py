@@ -132,3 +132,39 @@ def test_live_worker_respects_ignore_sources(
 
     first_source = result.sources[0]
     assert first_source.name == f"video:segment_{chunk_size}_2"
+
+    result = worker.download()
+    assert len(result.sources) == 1
+    assert result.sources[0].name == f"video:segment_{chunk_size}_3"
+
+    result = worker.download()
+    assert len(result.sources) == 0
+    assert result.done is True
+
+def test_live_worker_all_ignored(
+    fetcher: FetchFactory,
+    q_live: Content,
+    temp_dir: str
+):
+    """LiveWorker should skip source names provided in ignore_sources."""
+    chunk_size = 4
+    ignored = [
+        f"video:segment_{chunk_size}_0",
+        f"video:segment_{chunk_size}_1",
+        f"video:segment_{chunk_size}_2",
+        f"video:segment_{chunk_size}_3",
+    ]
+
+    req = DownloadRequest(
+        scope=LiveScope(stream="video", chunk_size=chunk_size, max_duration=20),
+        output_dir=temp_dir,
+        preserve_track="",
+    )
+
+    worker = fetcher.get_session(q_live, req)
+    assert isinstance(worker, LiveWorker)
+    worker.ignore_sources = set(ignored)
+
+    result = worker.download()
+    assert len(result.sources) == 0
+    assert result.done is True
