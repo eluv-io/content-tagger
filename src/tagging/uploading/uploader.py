@@ -4,7 +4,7 @@ from dataclasses import asdict
 from src.tags.tagstore.model import Tag
 from src.tags.tagstore.abstract import Tagstore
 from src.tag_containers.model import ModelTag
-from src.fetch.model import VideoMetadata
+from src.fetch.model import AssetMetadata, VideoMetadata
 from src.common.content import Content
 from src.common.logging import logger
 from src.tagging.fabric_tagging.media_state import MediaState
@@ -71,6 +71,9 @@ class UploadSession:
                 batch_id=self._get_or_create_batch(model_tag.model_track),
                 frame_info=deepcopy(model_tag.frame_info),
             )
+            if tag.frame_info is not None and fps is None and not isinstance(stream_meta, AssetMetadata):
+                # drop frame tags if we can't fix the frame index and it's not an asset tag
+                continue
             tags2upload.append(self._fix_tag_timing_info(tag, original_src.offset, original_src.wall_clock, fps))
 
         try:
@@ -114,7 +117,6 @@ class UploadSession:
                 frame_offset = round(offset * fps)
                 tag.frame_info["frame_idx"] = tag.frame_info["frame_idx"] + frame_offset
             else:
-                logger.warning("tag has frame_info but stream fps is unknown: removing frame_info")
                 tag.frame_info = None
         return tag
     

@@ -155,8 +155,9 @@ class RestTagstore(Tagstore):
                 "end_time": tag.end_time,
                 "tag": tag.text,
                 "source": tag.source,
-                "additional_info": tag.additional_info
             }
+            if tag.additional_info is not None:
+                api_tag["additional_info"] = tag.additional_info
             if tag.frame_info is not None:
                 api_tag["frame_info"] = tag.frame_info
             api_tags.append(api_tag)
@@ -245,7 +246,7 @@ class RestTagstore(Tagstore):
                 start_time=api_tag['start_time'],
                 end_time=api_tag['end_time'],
                 text=api_tag['tag'],
-                additional_info=api_tag.get('additional_info', {}),
+                additional_info=api_tag.get('additional_info'),
                 source=api_tag.get('source', ''),
                 batch_id=api_tag['batch_id'],
                 frame_info=api_tag.get('frame_info'),

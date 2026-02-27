@@ -239,7 +239,7 @@ def test_fetch_assets_with_preserve_track(
             start_time=0,
             end_time=1,
             text="asset_track",
-            additional_info={},
+            additional_info=None,
             source=asset,
             batch_id=new_job.id
         )
