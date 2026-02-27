@@ -13,7 +13,6 @@ from src.tagging.fabric_tagging.model import FabricTaggerConfig
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tagging.scheduling.model import SysConfig
 from src.tags.track_resolver import TrackArgs, TrackResolverConfig
-from src.tags.conversion import TagConverterConfig
 from src.tags.tagstore.model import TagstoreConfig
 
 @pytest.fixture()

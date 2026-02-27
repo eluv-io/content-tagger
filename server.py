@@ -15,12 +15,10 @@ from src.tags.tagstore.factory import create_tagstore
 from src.fetch.factory import FetchFactory
 from src.common.content import ContentFactory
 from src.tag_containers.registry import ContainerRegistry
-from src.tags.conversion import TagConverter
 from src.tags.track_resolver import TrackResolver
 from src.common.logging import logger
 
 from src.api.tagging.handlers import handle_tag, handle_status, handle_stop_model, handle_stop_content
-from src.api.upload.handlers import handle_commit
 from src.api.content_status.handlers import handle_content_status
 from src.api.model_status.handlers import handle_model_status
 from src.common.errors import *
@@ -67,10 +65,6 @@ def configure_routes(app: Flask) -> None:
     def stop_content(qhit: str) -> Response:
         return handle_stop_content(qhit)
 
-    @app.route('/<qhit>/commit', methods=['POST'])
-    def commit(qhit: str) -> Response:
-        return handle_commit(qhit)
-
     @app.route('/<qhit>/tag-status', methods=['GET'])
     def content_status(qhit: str) -> Response:
         return handle_content_status(qhit)
@@ -102,8 +96,6 @@ def boot_state(app: Flask, cfg: AppConfig) -> None:
     )
 
     app_state["content_factory"] = ContentFactory(cfg.content)
-
-    app_state["tag_converter"] = TagConverter(cfg.tag_converter)
 
     app.config["state"] = app_state
 
