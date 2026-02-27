@@ -114,7 +114,7 @@ class UploadSession:
         tag.end_time += offset
         if tag.frame_info is not None:
             if fps is not None:
-                frame_offset = round(offset * fps)
+                frame_offset = int((offset / 1000) * fps)
                 tag.frame_info["frame_idx"] = tag.frame_info["frame_idx"] + frame_offset
             else:
                 tag.frame_info = None
