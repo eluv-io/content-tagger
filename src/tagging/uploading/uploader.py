@@ -1,5 +1,4 @@
 from copy import deepcopy
-import math
 from dataclasses import asdict
 
 from src.tags.tagstore.model import Tag
@@ -56,8 +55,6 @@ class UploadSession:
         stream_meta = self.media.worker.metadata()
         fps = None
         if isinstance(stream_meta, VideoMetadata):
-            # in order to map the frame tags to their appropriate timestamps
-            # TODO: missing this for live
             fps = stream_meta.fps
 
         # convert ModelTag to Tagstore DTO
@@ -70,9 +67,9 @@ class UploadSession:
                 end_time=model_tag.end_time,
                 text=model_tag.text,
                 additional_info=deepcopy(model_tag.additional_info),
-                frame_tags=deepcopy(model_tag.frame_tags),
                 source=original_src.name,
                 batch_id=self._get_or_create_batch(model_tag.model_track),
+                frame_info=deepcopy(model_tag.frame_info),
             )
             tags2upload.append(self._fix_tag_timing_info(tag, original_src.offset, original_src.wall_clock, fps))
 
@@ -103,41 +100,22 @@ class UploadSession:
         return source_q.get_child(destination_qid)
     
     def _fix_tag_timing_info(self, tag: Tag, offset: int, wall_clock: int | None, fps: float | None) -> Tag:
-        """Fix tag timestamps & frame indices. The model outputs timestamps relative to the start of the media file
+        """Fix tag timestamps & frame index. The model outputs timestamps relative to the start of the media file
         but this will help place it relative to the full content object (or do nothing for assets).
         """
         if wall_clock is not None:
+            if tag.additional_info is None:
+                tag.additional_info = {}
             tag.additional_info["timestamp_ms"] = wall_clock + tag.start_time
         tag.start_time += offset
         tag.end_time += offset
-        if tag.frame_tags:
+        if tag.frame_info is not None:
             if fps is not None:
-                tag = self._fix_frame_indices(tag, offset, fps)
+                frame_offset = round(offset * fps)
+                tag.frame_info["frame_idx"] = tag.frame_info["frame_idx"] + frame_offset
             else:
-                logger.warning("model returned frame tags, but stream fps is unknown: removing frame tags.")
-                tag.frame_tags = {}
-        return tag
-
-    def _fix_frame_indices(self, tag: Tag, offset: float, fps: float) -> Tag:
-        if not tag.frame_tags:
-            return tag
-
-        frame_tags = tag.frame_tags
-        frame_offset = round(offset * fps)
-        residual = (offset * fps) - frame_offset
-        if not math.isclose(residual, 0.0, abs_tol=1e-6):
-            logger.warning(f"Non-integer frame offset detected\noffset: {offset}, fps: {fps}, frame_offset: {frame_offset}, residual: {residual}")
-
-        adjusted = {}
-        for frame_idx, label in frame_tags.items():
-            try:
-                frame_idx = int(frame_idx)
-            except ValueError:
-                logger.error(f"Invalid frame index: {tag}")
-                continue
-            adjusted[frame_idx + frame_offset] = label
-
-        tag.frame_tags = adjusted
+                logger.warning("tag has frame_info but stream fps is unknown: removing frame_info")
+                tag.frame_info = None
         return tag
     
     def _get_destination_q(self, q: Content, destination_qid: str) -> Content:

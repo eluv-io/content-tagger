@@ -139,7 +139,7 @@ def test_tags_video_only_video_tags(video_tag_container):
         assert tag1.start_time == 0
         assert tag1.end_time == 5
         assert tag1.text == "person walking"
-        assert tag1.frame_tags == {}
+        assert tag1.frame_info is None
         
         tag2 = outputs[1]
         assert tag2.source_media.endswith("video1.mp4")
@@ -184,20 +184,21 @@ def test_tags_video_with_frame_tags(video_tag_container):
     with patch('src.tag_containers.containers.get_fps', return_value=30.0):
         outputs = video_tag_container.tags()
         
-        assert len(outputs) == 1
+        # 1 video tag + 3 frame tags = 4 total
+        assert len(outputs) == 4
         
-        tag = outputs[0]
-        assert tag.text == "person walking"
-        assert tag.frame_tags
+        video_tags = [t for t in outputs if t.frame_info is None]
+        frame_tags = [t for t in outputs if t.frame_info is not None]
         
-        frame_info = tag.frame_tags
-        assert len(frame_info) == 2
+        assert len(video_tags) == 1
+        assert video_tags[0].text == "person walking"
         
-        assert "30" in frame_info
-        assert "90" in frame_info
-        assert frame_info["30"]["confidence"] == 0.95
-        assert frame_info["30"]["box"] == [0.1, 0.1, 0.2, 0.2]
-        assert frame_info["90"]["confidence"] == 0.85
+        assert len(frame_tags) == 3
+        for ft in frame_tags:
+            assert ft.text == "person walking"
+            assert ft.start_time == ft.end_time
+            assert ft.frame_info["box"] is not None
+            assert ft.additional_info.get("confidence") is not None
 
 
 def test_tags_video_multiple_sources(video_tag_container):
@@ -251,12 +252,14 @@ def test_tags_image_files(image_tag_container):
     assert tag1.start_time == 0
     assert tag1.end_time == 0
     assert tag1.text == "cat"
-    assert tag1.frame_tags["0"]["confidence"] == 0.9
-    assert tag1.frame_tags["0"]["box"] == [0.05, 0.05, 0.15, 0.15]
+    assert tag1.frame_info["frame_idx"] == 0
+    assert tag1.frame_info["box"] == [0.05, 0.05, 0.15, 0.15]
+    assert tag1.additional_info["confidence"] == 0.9
     
     tag2 = outputs[1]
     assert tag2.text == "dog"
-    assert tag2.frame_tags["0"]["confidence"] == 0.8
+    assert tag2.frame_info["frame_idx"] == 0
+    assert tag2.additional_info["confidence"] == 0.8
 
 
 def test_tags_no_files(video_tag_container):
@@ -264,23 +267,24 @@ def test_tags_no_files(video_tag_container):
     assert outputs == []
 
 
-def test_tags_frame_tags_no_text_match(video_tag_container):
+def test_tags_frame_tags_independent_of_video_tags(video_tag_container):
+    """Frame tags are emitted as separate ModelTags, independent of video tags."""
     tags_dir = video_tag_container.cfg.tags_dir
     
     video_tags_data = [
         {
             "start_time": 0,
-            "end_time": 5,
+            "end_time": 5000,
             "text": "person walking"
         }
     ]
     
     frame_tags_data = {
-        30: {
+        "30": [{
             "text": "car driving",
             "confidence": 0.9,
             "box": [0.1, 0.1, 0.2, 0.2]
-        }
+        }]
     }
 
     create_video_tags_file(tags_dir, "video1.mp4", video_tags_data)
@@ -289,21 +293,28 @@ def test_tags_frame_tags_no_text_match(video_tag_container):
     with patch('src.tag_containers.containers.get_fps', return_value=30.0):
         outputs = video_tag_container.tags()
         
-        assert len(outputs) == 1
-        tag = outputs[0]
-        assert tag.text == "person walking"
-        assert not tag.frame_tags or len(tag.frame_tags) == 0
+        assert len(outputs) == 2
+        video_tags = [t for t in outputs if t.frame_info is None]
+        frame_tags = [t for t in outputs if t.frame_info is not None]
+        
+        assert len(video_tags) == 1
+        assert video_tags[0].text == "person walking"
+        
+        assert len(frame_tags) == 1
+        assert frame_tags[0].text == "car driving"
+        assert frame_tags[0].frame_info["frame_idx"] == 30
+        assert frame_tags[0].start_time == frame_tags[0].end_time == 1000
 
 
 def test_tags_missing_video_tags_file(video_tag_container):
     tags_dir = video_tag_container.cfg.tags_dir
     
-    frame_tags_data = {30: {"text": "test", "confidence": 0.9}}
+    frame_tags_data = {30: [{"text": "test", "confidence": 0.9, "box": [0.1, 0.1, 0.2, 0.2]}]}
     create_frame_tags_file(tags_dir, "video1.mp4", frame_tags_data)
     
     with patch('src.tag_containers.containers.get_fps', return_value=30.0):
         outputs = video_tag_container.tags()
-        assert isinstance(outputs, list)
+        assert len(outputs) == 1
 
 
 def test_source_from_filename(video_tag_container: TagContainer, image_tag_container: TagContainer):
@@ -317,93 +328,75 @@ def test_source_from_filename(video_tag_container: TagContainer, image_tag_conta
     assert source.endswith("image1.jpg")
 
 
-def test_tags_frame_tags_only_overlapping_frames(video_tag_container):
+def test_tags_frame_tags_timestamps(video_tag_container):
+    """Frame tags get correct timestamps derived from frame index and fps."""
     tags_dir = video_tag_container.cfg.tags_dir
     
-    video_tags_data = [
-        {
-            "start_time": 2,
-            "end_time": 4,
-            "text": "person walking"
-        }
-    ]
-    
     frame_tags_data = {
-        30: {
+        "30": [{
             "text": "person walking",
             "confidence": 0.9
-        },
-        60: {
+        }],
+        "60": [{
             "text": "person walking",
             "confidence": 0.9
-        },
-        90: {
+        }],
+        "150": [{
             "text": "person walking",
             "confidence": 0.9
-        },
-        120: {
-            "text": "person walking",
-            "confidence": 0.9
-        },
-        150: {
-            "text": "person walking",
-            "confidence": 0.9
-        }
+        }]
     }
     
-    create_video_tags_file(tags_dir, "video1.mp4", video_tags_data)
     create_frame_tags_file(tags_dir, "video1.mp4", frame_tags_data)
     
     with patch('src.tag_containers.containers.get_fps', return_value=30.0):
         outputs = video_tag_container.tags()
         
-        assert len(outputs) == 1
-        tag = outputs[0]
+        assert len(outputs) == 3
         
-        if tag.frame_tags:
-            frame_tags = tag.frame_tags
-            frame_indices = [int(fidx) for fidx in frame_tags]
-            assert 30 not in frame_indices
-            assert 150 not in frame_indices
-            assert 60 in frame_indices
-            assert 90 in frame_indices
-            assert 120 in frame_indices
+        outputs.sort(key=lambda t: t.start_time)
+        
+        # frame 30 at 30fps = 1000ms
+        assert outputs[0].start_time == 1000
+        assert outputs[0].end_time == 1000
+        assert outputs[0].frame_info["frame_idx"] == 30
+        
+        # frame 60 at 30fps = 2000ms
+        assert outputs[1].start_time == 2000
+        assert outputs[1].end_time == 2000
+        assert outputs[1].frame_info["frame_idx"] == 60
+        
+        # frame 150 at 30fps = 5000ms
+        assert outputs[2].start_time == 5000
+        assert outputs[2].end_time == 5000
+        assert outputs[2].frame_info["frame_idx"] == 150
 
 
-def test_tags_case_insensitive_text_matching(video_tag_container):
+def test_tags_frame_tags_multiple_per_frame(video_tag_container):
+    """Multiple frame tags on the same frame each become their own ModelTag."""
     tags_dir = video_tag_container.cfg.tags_dir
     
-    video_tags_data = [
-        {
-            "start_time": 0,
-            "end_time": 5,
-            "text": "Person Walking"
-        }
-    ]
-    
     frame_tags_data = {
-        30: {
-            "text": "person walking",
-            "confidence": 0.9
-        },
-        60: {
-            "text": "PERSON WALKING",
-            "confidence": 0.8
-        }
+        "30": [
+            {"text": "person walking", "confidence": 0.9, "box": [0.1, 0.1, 0.2, 0.2]},
+            {"text": "car driving", "confidence": 0.8, "box": [0.3, 0.3, 0.4, 0.4]}
+        ],
+        "60": [
+            {"text": "PERSON WALKING", "confidence": 0.8}
+        ]
     }
     
-    create_video_tags_file(tags_dir, "video1.mp4", video_tags_data)
     create_frame_tags_file(tags_dir, "video1.mp4", frame_tags_data)
     
     with patch('src.tag_containers.containers.get_fps', return_value=30.0):
         outputs = video_tag_container.tags()
         
-        assert len(outputs) == 1
-        tag = outputs[0]
+        assert len(outputs) == 3
+        frame30_tags = [t for t in outputs if t.frame_info["frame_idx"] == 30]
+        frame60_tags = [t for t in outputs if t.frame_info["frame_idx"] == 60]
         
-        if tag.frame_tags:
-            frame_tags = tag.frame_tags
-            assert len(frame_tags) == 2
+        assert len(frame30_tags) == 2
+        assert len(frame60_tags) == 1
 
 def test_container_with_directory_input(mock_podman_client, temp_dir):
     videos_dir = os.path.join(temp_dir, "videos")
@@ -528,10 +521,13 @@ def test_tags_get_fps_cached_per_video(video_tag_container):
         call_args = mock_get_fps.call_args[0]
         assert call_args[0].endswith("video1.mp4")
         
-        assert len(outputs) == 3
+        # 3 video tags + 3 frame tags
+        assert len(outputs) == 6
         
-        for tag in outputs:
-            assert tag.frame_tags
+        frame_tags = [t for t in outputs if t.frame_info is not None]
+        assert len(frame_tags) == 3
+        for tag in frame_tags:
+            assert tag.frame_info is not None
 
 def test_source_from_tag_file_with_source_media_field(video_tag_container):
     tags_dir = video_tag_container.cfg.tags_dir

@@ -71,24 +71,17 @@ class ModelTag:
     start_time: int
     end_time: int
     text: str
-    frame_tags: dict
     source_media: str
     model_track: str
-    additional_info: dict = field(default_factory=dict)
+    frame_info: dict | None = None
+    additional_info: dict | None = None
 
     def __hash__(self) -> int:
-        return hash((self.start_time, self.end_time, self.text, self.source_media, self.model_track, frozenset(self.additional_info.items()) if self.additional_info else None))
+        fi_hash = self.frame_info.get("frame_idx") if self.frame_info else None
+        return hash((self.start_time, self.end_time, self.text, self.source_media, self.model_track, fi_hash, frozenset(self.additional_info.items()) if self.additional_info else None))
     
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, ModelTag):
             return False
         
-        return (self.start_time, self.end_time, self.text, self.source_media, self.model_track, self.additional_info) == (other.start_time, other.end_time, other.text, other.source_media, other.model_track, other.additional_info)
-            
-
-@dataclass
-class FrameTag:
-    frame_idx: str
-    confidence: float
-    box: dict
-    text: str
+        return (self.start_time, self.end_time, self.text, self.source_media, self.model_track, self.frame_info, self.additional_info) == (other.start_time, other.end_time, other.text, other.source_media, other.model_track, other.frame_info, other.additional_info)

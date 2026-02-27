@@ -105,13 +105,16 @@ def test_video_model(client, q):
     jobid = tagstore.find_batches(q=q)[0]
     tags = tagstore.find_tags(batch_id=jobid, q=q)
     tags = sorted(tags, key=lambda x: x.start_time)
+    vtags = [t for t in tags if t.frame_info is None]
     # TODO: this randomly gave 124 one time and I can't reproduce it
-    assert len(tags) == 122
+    assert len(vtags) == 122
     next_tag = 'hello1'
-    for tag in tags:
+    for tag in vtags:
         assert tag.text == next_tag
         next_tag = 'hello2' if next_tag == 'hello1' else 'hello1'
-        assert tag.frame_tags
+
+    ftags = [t for t in tags if t.frame_info is not None]
+    assert len(ftags) == 122
 
     assert completed, "Timeout waiting for jobs to complete"
 
@@ -191,16 +194,17 @@ def test_live_video_model(is_live_content, app, last_res_has_media, q):
     jobid = tagstore.find_batches(q=q)[0]
     tags = tagstore.find_tags(batch_id=jobid, q=q)
     tags = sorted(tags, key=lambda x: x.start_time)
+
+    vtags = [t for t in tags if t.frame_info is None]
     
     # Should have same number of tags as regular video model test
-    assert len(tags) == 122, f"Expected 122 tags, got {len(tags)}"
+    assert len(vtags) == 122, f"Expected 122 tags, got {len(vtags)}"
     
     # Verify tags alternate between hello1 and hello2
     next_tag = 'hello1'
-    for tag in tags:
+    for tag in vtags:
         assert tag.text == next_tag, f"Expected {next_tag}, got {tag.text}"
         next_tag = 'hello2' if next_tag == 'hello1' else 'hello1'
-        assert tag.frame_tags
         
     logger.info(f"Live test completed successfully with {fake_worker_ref[0].call_count} fetch calls (last_res_has_media={last_res_has_media})")
 
@@ -278,12 +282,14 @@ def test_real_live_stream(app, q_live):
     jobid = tagstore.find_batches(q=q_live, qhit=q_live.qid)[0]
     tags = tagstore.find_tags(batch_id=jobid, q=q_live)
     tags = sorted(tags, key=lambda x: x.start_time)
+    vtags = [ t for t in tags if t.frame_info is None ]
     
     # Should have at least some tags from the segments
-    assert len(tags) >= 2
+    assert len(vtags) >= 2
 
     last_wall_clock = 0
-    for tag in tags:
+    for tag in vtags:
+        assert tag.additional_info is not None
         assert 'timestamp_ms' in tag.additional_info
         assert tag.additional_info["timestamp_ms"] > last_wall_clock
         last_wall_clock = tag.additional_info["timestamp_ms"]

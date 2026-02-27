@@ -461,6 +461,7 @@ def test_tags_have_timestamp_ms_field(fabric_tagger: FabricTagger, q: Content, s
     assert len(tags) > 0
 
     for tag in tags:
+        assert tag.additional_info is not None
         assert "timestamp_ms" in tag.additional_info
         assert isinstance(tag.additional_info["timestamp_ms"], int)
         assert tag.additional_info["timestamp_ms"] > 0
@@ -495,8 +496,8 @@ def test_track_override_uploads_to_multiple_tracks(fabric_tagger, q, make_tag_ar
             tags = []
             finished_files = self.fileargs if self.is_stopped else self.fileargs[:-1]
             for i, filepath in enumerate(finished_files):
-                tags.append(ModelTag(0, 5000, f"default_track_tag_{i}", {}, filepath, ""))
-                tags.append(ModelTag(5000, 10000, f"pretty_track_tag_{i}", {}, filepath, "pretty"))
+                tags.append(ModelTag(0, 5000, f"default_track_tag_{i}", filepath, "", None))
+                tags.append(ModelTag(5000, 10000, f"pretty_track_tag_{i}", filepath, "pretty", None))
             return tags
 
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
@@ -543,7 +544,6 @@ def test_default_defer_to_model_track(fabric_tagger, q, make_tag_args):
                     start_time=0,
                     end_time=5000,
                     text=f"default_track_tag_{i}",
-                    frame_tags={},
                     source_media=filepath,
                     model_track="random_track"
                 ))
@@ -623,7 +623,7 @@ def test_replace(
     first_batch = fabric_tagger.tagstore.find_batches(q=q, track="object_detection")[0]
     tags = fabric_tagger.tagstore.find_tags(q=q, track="object_detection", batch_id=first_batch)
 
-    timestamps = tuple(sorted(t.additional_info["timestamp_ms"] for t in tags))
+    timestamps = tuple(sorted(t.additional_info["timestamp_ms"] for t in tags if t.additional_info is not None))
 
     args = make_tag_args(feature="caption", stream="video", replace=True)
     fabric_tagger.tag(q, args)
@@ -635,7 +635,7 @@ def test_replace(
 
     new_tags = fabric_tagger.tagstore.find_tags(q=q, batch_id=second_batch)
 
-    new_timestamps = tuple(sorted(t.additional_info["timestamp_ms"] for t in new_tags))
+    new_timestamps = tuple(sorted(t.additional_info["timestamp_ms"] for t in new_tags if t.additional_info is not None))
 
     assert new_timestamps > timestamps
 

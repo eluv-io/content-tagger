@@ -135,7 +135,6 @@ class FakeTagContainer:
                     start_time=0,
                     end_time=5000,  # 5 seconds in ms
                     text=f"{self.feature}_tag_{i}",
-                    frame_tags={},
                     source_media=filepath,
                     model_track=""
                 ),
@@ -143,7 +142,6 @@ class FakeTagContainer:
                     start_time=5000,
                     end_time=10000,  # 5-10 seconds in ms
                     text=f"{self.feature}_tag_{i}_2",
-                    frame_tags={},
                     source_media=filepath,
                     model_track=""
                 )
