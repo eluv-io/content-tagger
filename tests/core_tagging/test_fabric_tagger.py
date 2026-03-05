@@ -158,7 +158,7 @@ def test_cleanup(fabric_tagger, q, sample_tag_args):
     time.sleep(1)
     
     # Check shutdown signal is set
-    assert fabric_tagger.shutdown_requested
+    assert fabric_tagger.shutdown_requested()
     
     # check is_running for all containers
     assert len(fabric_tagger.jobstore.active_jobs) == 0

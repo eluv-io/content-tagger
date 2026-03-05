@@ -303,7 +303,7 @@ def fabric_tagger(system_tagger, fake_container_registry, tag_store, fake_fetche
         cfg=tagger_config
     )
     yield tagger
-    if not tagger.shutdown_requested:
+    if not tagger.shutdown_requested():
         tagger.cleanup()
 
 

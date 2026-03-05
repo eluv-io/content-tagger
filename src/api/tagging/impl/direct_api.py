@@ -15,3 +15,9 @@ class DirectAPI(TagAPI):
 
     def stop(self, qhit: str, feature: str | None, stream: str | None) -> list[TagStopResult]:
         return self.tagger.stop(qhit, feature, stream)
+    
+    def cleanup(self) -> None:
+        return self.tagger.cleanup()
+    
+    def shutdown_requested(self) -> bool:
+        return self.tagger.shutdown_requested()

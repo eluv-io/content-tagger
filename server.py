@@ -97,7 +97,9 @@ def boot_state(app: Flask, cfg: AppConfig) -> None:
         track_resolver=track_resolver,
     )
 
-    app_state["tagger"] = DirectAPI(fabric_tagger)
+    app_state["tagger"] = fabric_tagger
+
+    app_state["service"] = DirectAPI(fabric_tagger)
 
     app_state["content_factory"] = ContentFactory(cfg.content)
 
@@ -107,8 +109,8 @@ def configure_lifecycle(app: Flask) -> None:
 
     def shutdown():
         app_state = app.config["state"]
-        tagger: FabricTagger = app_state["tagger"]
-        if tagger.shutdown_requested is False:
+        tagger: TagAPI = app_state["service"]
+        if tagger.shutdown_requested() is False:
             tagger.cleanup()
 
     atexit.register(shutdown)

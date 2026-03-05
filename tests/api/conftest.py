@@ -65,7 +65,7 @@ def app(static_dir, app_config):
     app.config["TESTING"] = True
     yield app
     tagger: FabricTagger = app.config["state"]["tagger"]
-    if not tagger.shutdown_requested:
+    if not tagger.shutdown_requested():
         tagger.cleanup()
 
 @pytest.fixture()
