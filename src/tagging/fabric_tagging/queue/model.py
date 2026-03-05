@@ -6,10 +6,17 @@ from src.tagging.fabric_tagging.model import TagArgs, TagJobStatusReport
 job_status = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 
 @dataclass
+class JobStatus:
+    error: str | None
+    details: TagJobStatusReport | None
+
+@dataclass
 class QueueItem:
     id: str
     qid: str
     params: TagArgs
+    status_details: JobStatus
+    stop_requested: bool
     auth: str
     user: str
     tenant: str
@@ -19,10 +26,11 @@ class CreateQueueItem:
     qid: str
     params: TagArgs
     status: job_status
-    status_details: TagJobStatusReport
+    status_details: JobStatus
 
 @dataclass
 class ListJobArgs:
+    status: job_status | None = None
     qid: str | None = None
     user: str | None = None
     tenant: str | None = None
@@ -31,4 +39,4 @@ class ListJobArgs:
 class UpdateJobRequest:
     id: str
     status: job_status
-    status_details: TagJobStatusReport
+    status_details: JobStatus

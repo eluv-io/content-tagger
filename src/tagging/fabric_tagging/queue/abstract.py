@@ -7,9 +7,9 @@ class JobStore(Protocol):
     def create_job(self, args: CreateQueueItem, auth: str) -> None:
         ...
 
-    def claim_job(self, qid: str, auth: str) -> bool:
+    def claim_job(self, id: str, auth: str) -> bool:
         ...
-    
+
     def list_jobs(self, args: ListJobArgs, auth: str) -> list[QueueItem]:
         ...
 

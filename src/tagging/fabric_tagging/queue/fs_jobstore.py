@@ -2,9 +2,10 @@ import json
 import os
 import uuid
 from dataclasses import asdict
+from dacite import from_dict
 
-from src.tagging.fabric_tagging.model import TagArgs
-from src.tagging.fabric_tagging.queue.model import CreateQueueItem, QueueItem, ListJobArgs, UpdateJobRequest
+from src.tagging.fabric_tagging.model import TagArgs, TagJobStatusReport
+from src.tagging.fabric_tagging.queue.model import *
 from src.fetch.model import Scope
 
 
@@ -43,12 +44,12 @@ class FsJobStore:
             "auth": auth,
         })
 
-    def claim_job(self, qid: str, auth: str) -> bool:
-        for job in self._all_jobs():
-            if job["qid"] == qid and job["status"] == "queued":
-                job["status"] = "running"
-                self._write_job(job["id"], job)
-                return True
+    def claim_job(self, id: str, auth: str) -> bool:
+        job = self._read_job(id)
+        if job["status"] == "queued":
+            job["status"] = "running"
+            self._write_job(id, job)
+            return True
         return False
 
     def list_jobs(self, args: ListJobArgs, auth: str) -> list[QueueItem]:
@@ -59,6 +60,8 @@ class FsJobStore:
             if args.user and job["user"] != args.user:
                 continue
             if args.tenant and job["tenant"] != args.tenant:
+                continue
+            if args.status and job["status"] != args.status:
                 continue
             p = job["params"]
             params = TagArgs(
@@ -73,6 +76,8 @@ class FsJobStore:
                 id=job["id"],
                 qid=job["qid"],
                 params=params,
+                status_details=from_dict(JobStatus, job["status_details"]),
+                stop_requested=job["stop_requested"],
                 auth=job["auth"],
                 user=job["user"],
                 tenant=job["tenant"],
@@ -87,5 +92,5 @@ class FsJobStore:
 
     def stop_job(self, id: str, auth: str) -> None:
         job = self._read_job(id)
-        job["status"] = "cancelled"
+        job["stop_requested"] = True
         self._write_job(id, job)
