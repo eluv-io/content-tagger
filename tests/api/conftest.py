@@ -45,13 +45,6 @@ def container_registry_config(static_dir) -> RegistryConfig:
 def app_config(static_dir, tagger_config, content_config, fetcher_config, container_registry_config) -> AppConfig:
     """Create test configuration."""
     return AppConfig(
-        tag_converter=TagConverterConfig(
-            interval=10,
-            coalesce_tracks=[],
-            single_tag_tracks=[],
-            name_mapping={},
-            max_sentence_words=100
-        ),
         root_dir=static_dir,
         content=content_config,
         tagstore=TagstoreConfig(

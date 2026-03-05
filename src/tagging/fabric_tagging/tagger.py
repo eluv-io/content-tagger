@@ -439,6 +439,7 @@ class FabricTagger:
         log.info("entering complete phase")
 
         # catch any remaining tags - this blocks the main thread briefly but it's not called very often
+        # TODO: if this errors does job stay in active state?
         self._run_upload(job)
 
         for source in job.state.media.downloaded:
