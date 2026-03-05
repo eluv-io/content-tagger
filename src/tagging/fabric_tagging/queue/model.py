@@ -28,4 +28,3 @@ class UpdateJobRequest:
     id: str
     status: str
     status_details: TagJobStatusReport
-
