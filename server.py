@@ -9,6 +9,7 @@ import sys
 from waitress import serve
 import os
 
+from src.api.tagging.impl.direct_api import DirectAPI
 from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tags.tagstore.factory import create_tagstore
@@ -21,6 +22,7 @@ from src.common.logging import logger
 from src.api.tagging.handlers import handle_tag, handle_status, handle_stop_model, handle_stop_content
 from src.api.content_status.handlers import handle_content_status
 from src.api.model_status.handlers import handle_model_status
+from src.api.tagging.abstract import TagAPI
 from src.common.errors import *
 from app_config import AppConfig
 
@@ -86,7 +88,7 @@ def boot_state(app: Flask, cfg: AppConfig) -> None:
     container_registry = ContainerRegistry(cfg.container_registry)
     track_resolver = TrackResolver(cfg.track_resolver)
 
-    app_state["tagger"] = FabricTagger(
+    fabric_tagger = FabricTagger(
         system_tagger=system_tagger,
         fetcher=fetcher,
         cregistry=container_registry,
@@ -94,6 +96,8 @@ def boot_state(app: Flask, cfg: AppConfig) -> None:
         cfg=cfg.tagger,
         track_resolver=track_resolver,
     )
+
+    app_state["tagger"] = DirectAPI(fabric_tagger)
 
     app_state["content_factory"] = ContentFactory(cfg.content)
 

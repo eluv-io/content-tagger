@@ -6,6 +6,7 @@ import os
 from flask import Response, request, current_app
 from dacite import from_dict
 
+from src.api.tagging.abstract import TagAPI
 from src.api.tagging.request_mapping import map_video_tag_dto
 from src.api.tagging.response_format import StartStatus, StartTaggingResponse
 from src.api.tagging.response_format import StartStatus
@@ -39,7 +40,7 @@ def handle_tag(qhit: str) -> Response:
 
 def _execute_tagging(q: Content, tag_args: list[TagArgs]) -> Response:
     """Execute tagging for multiple features and return start status response."""
-    tagger: FabricTagger = current_app.config["state"]["tagger"]
+    tagger: TagAPI = current_app.config["state"]["tagger"]
     
     jobs: list[StartStatus] = []
     for tag_arg in tag_args:
@@ -87,7 +88,7 @@ def handle_status(qhit: str) -> Response:
     else:
         _get_authorized_content(qhit)
 
-    tagger: FabricTagger = current_app.config["state"]["tagger"]
+    tagger: TagAPI = current_app.config["state"]["tagger"]
 
     reports = tagger.status(qhit)
 
@@ -99,7 +100,7 @@ def handle_stop_model(
 ) -> Response:
     q = _get_authorized_content(qhit)
 
-    tagger: FabricTagger = current_app.config["state"]["tagger"]
+    tagger: TagAPI = current_app.config["state"]["tagger"]
 
     stop_res = tagger.stop(q.qhit, feature, None)
 
@@ -112,7 +113,7 @@ def handle_stop_content(
 ) -> Response:
     q = _get_authorized_content(qhit)
 
-    tagger: FabricTagger = current_app.config["state"]["tagger"]
+    tagger: TagAPI = current_app.config["state"]["tagger"]
 
     stop_res = tagger.stop(q.qhit, None, None)
 
