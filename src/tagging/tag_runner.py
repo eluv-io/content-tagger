@@ -74,6 +74,7 @@ class TagRunner:
         self._shutdown.set()
         self._poll_thread.join()
         self._status_thread.join()
+        self.tagger.cleanup()
         logger.info("TagRunner stopped")
 
     def _poll_loop(self) -> None:
@@ -86,6 +87,9 @@ class TagRunner:
             self._shutdown.wait(self.cfg.poll_interval)
 
     def _poll_once(self) -> None:
+        """Check for queued jobs and start them. Also checks for stop requests on running jobs."""
+
+        # start queued jobs
         queued = self.jobstore.list_jobs(ListJobArgs(status="queued"), auth="")
         for item in queued:
             with self._lock:
@@ -109,6 +113,22 @@ class TagRunner:
                 daemon=True,
                 name=f"tag-runner-job-{item.id}",
             ).start()
+
+        # check for stop requests
+        stop_requested = self.jobstore.list_jobs(ListJobArgs(status="running"), auth="")
+        for item in stop_requested:
+            if not item.stop_requested:
+                continue
+
+            with self._lock:
+                if item.id not in self._running_jobs:
+                    continue
+
+            logger.info("stop requested for job", job_id=item.id)
+            try:
+                self.tagger.stop(item.qid, item.params.feature, stream=None)
+            except Exception as e:
+                logger.opt(exception=e).warning("failed to stop job", job_id=item.id)
 
     def _run_job(self, item: QueueItem) -> None:
         log = logger.bind(job_id=item.id, qid=item.qid)
