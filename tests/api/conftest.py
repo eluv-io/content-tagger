@@ -12,6 +12,7 @@ from src.tag_containers.model import ModelConfig, RegistryConfig
 from src.tagging.fabric_tagging.model import FabricTaggerConfig
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tagging.scheduling.model import SysConfig
+from src.tagging.tag_runner import TagRunnerConfig
 from src.tags.track_resolver import TrackArgs, TrackResolverConfig
 from src.tags.tagstore.model import TagstoreConfig
 
@@ -54,7 +55,8 @@ def app_config(static_dir, tagger_config, content_config, fetcher_config, contai
         fetcher=fetcher_config,
         container_registry=container_registry_config,
         tagger=tagger_config,
-        track_resolver=TrackResolverConfig(mapping={"test_model": TrackArgs(name="test_model", label="TEST MODEL")})
+        track_resolver=TrackResolverConfig(mapping={"test_model": TrackArgs(name="test_model", label="TEST MODEL")}),
+        tag_runner=TagRunnerConfig(poll_interval=1, status_interval=1)
     )
 
 

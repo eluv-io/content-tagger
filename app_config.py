@@ -7,6 +7,7 @@ from src.common.content import ContentConfig
 from src.fetch.model import FetcherConfig
 from src.tag_containers.model import RegistryConfig
 from src.tagging.scheduling.model import SysConfig
+from src.tagging.tag_runner import TagRunnerConfig
 from src.tags.tagstore.model import TagstoreConfig
 from src.tagging.fabric_tagging.model import FabricTaggerConfig
 from src.tags.track_resolver import TrackResolverConfig
@@ -21,6 +22,7 @@ class AppConfig:
     container_registry: RegistryConfig
     tagger: FabricTaggerConfig
     track_resolver: TrackResolverConfig
+    tag_runner: TagRunnerConfig
 
     @staticmethod
     def from_yaml(filename: str) -> 'AppConfig':

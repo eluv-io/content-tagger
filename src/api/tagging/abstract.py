@@ -12,9 +12,3 @@ class TagAPI(Protocol):
 
     def stop(self, qhit: str, feature: str | None, stream: str | None) -> list[TagStopResult]:
         ...
-
-    def shutdown_requested(self) -> bool:
-        ...
-
-    def cleanup(self) -> None:
-        ...

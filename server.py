@@ -10,6 +10,7 @@ from waitress import serve
 import os
 
 from src.api.tagging.impl.direct_api import DirectAPI
+from src.api.tagging.impl.queue_based import QueueClient
 from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tags.tagstore.factory import create_tagstore
@@ -23,6 +24,9 @@ from src.api.tagging.handlers import handle_tag, handle_status, handle_stop_mode
 from src.api.content_status.handlers import handle_content_status
 from src.api.model_status.handlers import handle_model_status
 from src.api.tagging.abstract import TagAPI
+from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
+from src.tagging.fabric_tagging.queue.abstract import JobStore
+from src.tagging.tag_runner import TagRunner
 from src.common.errors import *
 from app_config import AppConfig
 
@@ -99,26 +103,33 @@ def boot_state(app: Flask, cfg: AppConfig) -> None:
 
     app_state["tagger"] = fabric_tagger
 
-    app_state["service"] = DirectAPI(fabric_tagger)
+    app_state["job_store"] = FsJobStore("./job-store")
+
+    app_state["service"] = QueueClient(app_state["job_store"])
 
     app_state["content_factory"] = ContentFactory(cfg.content)
 
+    app_state["loop"] = TagRunner(app_state["tagger"], app_state["job_store"], app_state["content_factory"], cfg.tag_runner)
+
     app.config["state"] = app_state
+
+def start_tagger(loop: TagRunner) -> None:
+    loop.start()
 
 def configure_lifecycle(app: Flask) -> None:
 
     def shutdown():
         app_state = app.config["state"]
-        tagger: TagAPI = app_state["service"]
-        if tagger.shutdown_requested() is False:
-            tagger.cleanup()
-
+        loop: TagRunner = app_state["loop"]
+        loop.stop()
+    
     atexit.register(shutdown)
 
 def create_app(config: AppConfig) -> Flask:
     """Main entry point for the server."""
     app = Flask(__name__)
     boot_state(app, config)
+    start_tagger(app.config["state"]["loop"])
     configure_routes(app)
     configure_lifecycle(app)
     CORS(app)
