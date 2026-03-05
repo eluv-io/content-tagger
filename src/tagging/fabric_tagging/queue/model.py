@@ -10,6 +10,7 @@ class QueueItem:
     id: str
     qid: str
     params: TagArgs
+    auth: str
     user: str
     tenant: str
 
