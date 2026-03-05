@@ -24,7 +24,7 @@ def _job_status_from_report(report: TagJobStatusReport) -> job_status:
     return status
 
 
-@dataclass
+@dataclass(frozen=True)
 class TagRunnerConfig:
     poll_interval: float = 5.0
     status_interval: float = 10.0
@@ -59,8 +59,6 @@ class TagRunner:
         self._running_jobs: dict[str, JobInfo] = {}
         self._lock = threading.Lock()
         self._shutdown = threading.Event()
-
-    # -- public API -----------------------------------------------------------
 
     def start(self) -> None:
         """Start the background polling loops."""
