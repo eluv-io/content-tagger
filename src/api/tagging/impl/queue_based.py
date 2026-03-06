@@ -77,7 +77,7 @@ class QueueClient(TagAPI):
                 reports.append(
                     TagJobStatusReport(
                         job_id=JobID(qhit=item.qid, feature=item.params.feature, stream=stream),
-                        status="Fetching content",
+                        status="Queued",
                         time_running=0,
                         tagging_progress="0/0",
                         missing_tags=[],
@@ -91,17 +91,18 @@ class QueueClient(TagAPI):
 
     def stop(self, qhit: str, feature: str | None, stream: str | None) -> list[TagStopResult]:
         """Request a stop for matching jobs in the queue."""
-        items = self.jobstore.list_jobs(ListJobArgs(qid=qhit), auth="")
+        items = self.jobstore.list_jobs(ListJobArgs(qid=qhit, status="running"), auth="")
+        items = [item for item in items if item.params.feature == feature or feature is None]
 
+        if not items:
+            errstr = f"No running jobs found for qhit: {qhit}"
+            if feature:
+                errstr += f", feature: {feature}"
+            raise MissingResourceError(errstr)
+        
         results: list[TagStopResult] = []
         for item in items:
-            if feature is not None and item.params.feature != feature:
-                continue
-
             item_stream = _stream_from_scope(item.params.scope)
-            if stream is not None and item_stream != stream:
-                continue
-
             self.jobstore.stop_job(item.id, auth=item.auth)
             job_id = JobID(qhit=item.qid, feature=item.params.feature, stream=item_stream)
             results.append(TagStopResult(job_id=job_id, message="Stop requested"))

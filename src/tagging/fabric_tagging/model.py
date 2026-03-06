@@ -23,6 +23,7 @@ class TagArgs:
     max_fetch_retries: int
 
 JobStateDescription = Literal[
+    "Queued",
     "Fetching content",
     "Tagging content",
     "Completed",

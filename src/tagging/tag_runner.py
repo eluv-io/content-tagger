@@ -26,8 +26,7 @@ def _job_status_from_report(report: TagJobStatusReport) -> job_status:
 
 @dataclass(frozen=True)
 class TagRunnerConfig:
-    poll_interval: float = 5.0
-    status_interval: float = 10.0
+    poll_interval: float
 
 @dataclass(frozen=True)
 class JobInfo:
