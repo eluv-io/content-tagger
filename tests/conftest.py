@@ -7,10 +7,12 @@ from unittest.mock import Mock
 
 from src.api.tagging.request_mapping import is_live_content
 from src.fetch.model import FetcherConfig
+from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tags.tagstore.abstract import Tagstore
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.tags.tagstore.rest_tagstore import RestTagstore
 from src.common.content import Content, ContentConfig, ContentFactory
+from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
 
 dotenv.load_dotenv()
 
@@ -137,3 +139,18 @@ def fetcher_config() -> FetcherConfig:
         author="tagger",
         max_downloads=4
     )
+
+"""JobStore Fixtures"""
+
+@pytest.fixture
+def jobstore(temp_dir) -> JobStore:
+    """Create a JobStore for testing.
+    
+    If JOBSTORE_URL is set, a remote jobstore would be used — but that is not
+    yet implemented.  If the variable is not set the local FsJobStore backed by
+    a temporary directory is used instead.
+    """
+    url = os.getenv("JOBSTORE_URL")
+    if url:
+        raise NotImplementedError("Remote jobstore (JOBSTORE_URL) is not yet implemented")
+    return FsJobStore(store_dir=os.path.join(temp_dir, "jobstore"))
