@@ -6,7 +6,7 @@ import os
 from flask import Response, request, current_app
 from dacite import from_dict
 
-from src.api.tagging.abstract import TagAPI
+from src.service.abstract import TagAPI
 from src.api.tagging.request_mapping import map_video_tag_dto
 from src.api.tagging.response_format import StartStatus, StartTaggingResponse
 from src.api.tagging.response_format import StartStatus

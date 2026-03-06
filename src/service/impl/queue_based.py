@@ -11,7 +11,7 @@ from src.tagging.fabric_tagging.model import (
 )
 from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tagging.fabric_tagging.queue.model import CreateQueueItem, JobStatus, ListJobArgs
-from src.api.tagging.abstract import TagAPI
+from src.service.abstract import TagAPI
 
 logger = logger.bind(name="Queue Client")
 

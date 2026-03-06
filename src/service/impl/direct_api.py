@@ -1,7 +1,7 @@
 from src.common.content import Content
 from src.tagging.fabric_tagging.model import TagArgs, TagJobStatusReport, TagStartResult, TagStopResult
 from src.tagging.fabric_tagging.tagger import FabricTagger
-from src.api.tagging.abstract import TagAPI
+from src.service.abstract import TagAPI
 
 class DirectAPI(TagAPI):
     def __init__(self, tagger: FabricTagger):

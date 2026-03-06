@@ -23,7 +23,7 @@ from src.common.logging import logger
 from src.api.tagging.handlers import handle_tag, handle_status, handle_stop_model, handle_stop_content
 from src.api.content_status.handlers import handle_content_status
 from src.api.model_status.handlers import handle_model_status
-from src.api.tagging.abstract import TagAPI
+from src.service.abstract import TagAPI
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
 from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tagging.tag_runner import TagRunner
