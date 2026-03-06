@@ -45,4 +45,4 @@ class ListJobArgs:
 class UpdateJobRequest:
     id: str
     status: job_status
-    status_details: JobStatus
+    status_details: JobStatus | None = None

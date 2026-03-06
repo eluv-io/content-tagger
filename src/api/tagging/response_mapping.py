@@ -4,6 +4,7 @@ from datetime import datetime
 from src.service.model import *
 from src.api.tagging.request_format import StatusRequest
 from src.api.tagging.response_format import StatusResponse, StatusMeta, JobStatus, StopStatus, StopTaggingResponse, TagDetails
+from src.common.logging import logger
 
 _STATUS_SORT_ORDER = ["running", "queued", "failed", "succeeded", "cancelled"]
 
@@ -25,6 +26,8 @@ def map_all_jobs_status_to_response(
         filtered = [j for j in filtered if j.tenant == req.tenant]
     if req.user is not None:
         filtered = [j for j in filtered if j.user == req.user]
+
+    logger.debug(f"Filtered jobs status from {len(all_jobs_status)} to {len(filtered)} based on query parameters", feature="status_filtering", total=len(all_jobs_status), filtered=len(filtered), status=req.status, tenant=req.tenant, user=req.user)
 
     # sort
     filtered.sort(key=_status_sort_key)

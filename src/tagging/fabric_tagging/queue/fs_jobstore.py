@@ -122,7 +122,8 @@ class FsJobStore:
     def update_job(self, args: UpdateJobRequest, auth: str) -> None:
         job = self._read_job(args.id)
         job["status"] = args.status
-        job["status_details"] = asdict(args.status_details)
+        if args.status_details is not None:
+            job["status_details"] = asdict(args.status_details)
         self._write_job(args.id, job)
 
     def stop_job(self, id: str, auth: str) -> None:

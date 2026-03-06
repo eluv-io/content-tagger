@@ -69,7 +69,20 @@ class TagRunner:
         """Signal both loops to stop and wait for them to finish."""
         self._shutdown.set()
         self._poll_thread.join()
+        for job in list(self._running_jobs.values()):
+            try:
+                self.jobstore.update_job(
+                    UpdateJobRequest(
+                        id=job.id,
+                        status="cancelled",
+                    ),
+                    auth=job.auth,
+                )
+            except Exception as e:
+                logger.opt(exception=e).warning("failed to cancel job on shutdown", job_id=job.id)
+        self._running_jobs.clear()
         self.tagger.cleanup()
+
         logger.info("TagRunner stopped")
 
     def _poll_loop(self) -> None:

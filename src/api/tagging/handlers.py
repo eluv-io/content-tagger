@@ -93,24 +93,17 @@ def handle_status(qhit: str) -> Response:
 
     response = map_all_jobs_status_to_response(reports, status_req)
 
-
     return Response(response=json.dumps(asdict(response)), status=200, mimetype='application/json')
 
 def _parse_status_request() -> StatusRequest:
     """Parse status query parameters into a StatusRequest."""
-    status_filter = request.args.get("status", None)
-    tenant_filter = request.args.get("tenant", None)
-    user_filter = request.args.get("user", None)
     try:
-        start = int(request.args.get("start", 0))
-    except (TypeError, ValueError):
-        raise BadRequestError("'start' parameter must be an integer")
-    limit_raw = request.args.get("limit", None)
-    try:
-        limit = int(limit_raw) if limit_raw is not None else None
-    except (TypeError, ValueError):
-        raise BadRequestError("'limit' parameter must be an integer")
-    return StatusRequest(start=start, limit=limit, status=status_filter, tenant=tenant_filter, user=user_filter)
+        args = request.args.to_dict()
+        if "authorization" in args:
+            del args["authorization"]
+        return from_dict(data_class=StatusRequest, data=args, config=Config(strict=True))
+    except Exception as e:
+        raise BadRequestError(f"Invalid status query parameters: {e}") from e
 
 def handle_stop_model(
     qhit: str, 
