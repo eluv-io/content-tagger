@@ -41,11 +41,6 @@ def _status_for(
     assert matches, f"Missing status for model={model}, stream={stream}"
     return matches[0]
 
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
 class TestQueueTag:
     def test_tag_returns_started(self, queue_client, q, make_tag_args, tag_runner):
         args = make_tag_args(feature="caption", stream="video")
@@ -57,16 +52,16 @@ class TestQueueTag:
         args = make_tag_args(feature="caption", stream="video")
         queue_client.tag(q, args)
 
-        reports = _wait_for_status(queue_client, q.qhit, "Completed")
+        reports = _wait_for_status(queue_client, q.qhit, "succeeded")
         assert len(reports) >= 1
-        assert any(r.status == "Completed" for r in reports)
+        assert any(r.status == "succeeded" for r in reports)
 
     def test_multiple_jobs_complete(self, queue_client, q, sample_tag_args, tag_runner):
         for args in sample_tag_args:
             queue_client.tag(q, args)
 
-        reports = _wait_for_status(queue_client, q.qhit, "Completed")
-        completed = [r for r in reports if r.status == "Completed"]
+        reports = _wait_for_status(queue_client, q.qhit, "succeeded")
+        completed = [r for r in reports if r.status == "succeeded"]
         assert len(completed) == len(sample_tag_args)
 
 
@@ -88,7 +83,7 @@ class TestQueueStatus:
         for args in sample_tag_args:
             queue_client.tag(q, args)
 
-        reports = _wait_for_status(queue_client, q.qhit, "Completed")
+        reports = _wait_for_status(queue_client, q.qhit, "succeeded")
         assert len(reports) == 2
         assert any(r.model == "caption" for r in reports)
         assert any(r.model == "asr" for r in reports)
