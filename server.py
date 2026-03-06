@@ -122,7 +122,7 @@ def create_app_queue_based(config: AppConfig) -> Flask:
 
     fabric_tagger = _build_fabric_tagger(config)
     content_factory = ContentFactory(config.content)
-    job_store: JobStore = FsJobStore("./job-store")
+    job_store: JobStore = FsJobStore(config.jobstore.base_url)
     loop = TagRunner(fabric_tagger, job_store, content_factory, config.tag_runner)
 
     app.config["state"] = {
@@ -136,7 +136,8 @@ def create_app_queue_based(config: AppConfig) -> Flask:
     loop.start()
 
     def shutdown():
-        loop.stop()
+        if not loop._shutdown.is_set():
+            loop.stop()
 
     atexit.register(shutdown)
     configure_routes(app)

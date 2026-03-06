@@ -57,23 +57,19 @@ class TagRunner:
         self.cfg = cfg
 
         self._running_jobs: dict[str, JobInfo] = {}
-        self._lock = threading.Lock()
         self._shutdown = threading.Event()
 
     def start(self) -> None:
         """Start the background polling loops."""
         self._shutdown.clear()
         self._poll_thread = threading.Thread(target=self._poll_loop, daemon=True, name="tag-runner-poll")
-        self._status_thread = threading.Thread(target=self._status_loop, daemon=True, name="tag-runner-status")
         self._poll_thread.start()
-        self._status_thread.start()
         logger.info("TagRunner started")
 
     def stop(self) -> None:
         """Signal both loops to stop and wait for them to finish."""
         self._shutdown.set()
         self._poll_thread.join()
-        self._status_thread.join()
         self.tagger.cleanup()
         logger.info("TagRunner stopped")
 
@@ -84,6 +80,10 @@ class TagRunner:
                 self._poll_once()
             except Exception:
                 logger.opt(exception=True).error("error during job poll")
+            try:
+                self._status_tick()
+            except Exception:
+                logger.opt(exception=True).error("error during status tick")
             self._shutdown.wait(self.cfg.poll_interval)
 
     def _poll_once(self) -> None:
@@ -92,9 +92,8 @@ class TagRunner:
         # start queued jobs
         queued = self.jobstore.list_jobs(ListJobArgs(status="queued"), auth="")
         for item in queued:
-            with self._lock:
-                if item.id in self._running_jobs:
-                    continue
+            if item.id in self._running_jobs:
+                continue
 
             claimed = self.jobstore.claim_job(item.id, item.auth)
             if not claimed:
@@ -103,15 +102,9 @@ class TagRunner:
             logger.info("claimed job", job_id=item.id, qid=item.qid)
 
             feature = item.params.feature
-            with self._lock:
-                self._running_jobs[item.id] = JobInfo(id=item.id, qid=item.qid, feature=feature, auth=item.auth)
+            self._running_jobs[item.id] = JobInfo(id=item.id, qid=item.qid, feature=feature, auth=item.auth)
 
-            threading.Thread(
-                target=self._run_job,
-                args=(item,),
-                daemon=True,
-                name=f"tag-runner-job-{item.id}",
-            ).start()
+            self._run_job(item)
 
         # check for stop requests
         stop_requested = self.jobstore.list_jobs(ListJobArgs(status="running"), auth="")
@@ -119,9 +112,8 @@ class TagRunner:
             if not item.stop_requested:
                 continue
 
-            with self._lock:
-                if item.id not in self._running_jobs:
-                    continue
+            if item.id not in self._running_jobs:
+                continue
 
             logger.info("stop requested for job", job_id=item.id)
             try:
@@ -157,18 +149,8 @@ class TagRunner:
         finally:
             self._finish_job(item.id)
 
-    def _status_loop(self) -> None:
-        """Periodically check the status of running jobs and sync with the queue."""
-        while not self._shutdown.is_set():
-            try:
-                self._status_tick()
-            except Exception:
-                logger.opt(exception=True).error("error during status tick")
-            self._shutdown.wait(self.cfg.status_interval)
-
     def _status_tick(self) -> None:
-        with self._lock:
-            items = list(self._running_jobs.values())
+        items = list(self._running_jobs.values())
 
         # group by qhit so we make one status() call per content object
         qhits: dict[str, list[JobInfo]] = {}
@@ -207,5 +189,4 @@ class TagRunner:
                     self._finish_job(item.id)
 
     def _finish_job(self, id: str) -> None:
-        with self._lock:
-            self._running_jobs.pop(id, None)
+        self._running_jobs.pop(id, None)

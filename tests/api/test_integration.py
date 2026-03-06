@@ -1,3 +1,5 @@
+import os
+
 import pytest
 from unittest.mock import Mock, patch
 import time
@@ -13,6 +15,9 @@ from src.tagging.fabric_tagging.model import TagArgs, TagStartResult
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from tests.api.conftest import FakeLiveWorker
+
+def is_queue_mode():
+    return os.getenv("USE_QUEUE") == "true"
 
 def is_job_success(client, q: Content):
     """Check if all jobs for content_id completed successfully."""
@@ -352,6 +357,8 @@ def test_stop_workflow(client, q):
     response = client.post(f"/{q.qid}/stop/test_model?authorization={video_auth}")
     assert response.status_code == 200
     assert len(response.get_json()["jobs"]) == 1
+
+    time.sleep(1)
     
     # Check status - job should be stopped
     response = client.get(f"/{q.qid}/job-status?authorization={video_auth}")
@@ -367,6 +374,9 @@ def test_stop_workflow(client, q):
 
 def test_double_run(client, q):
     """Run same job twice, expect second to be rejected."""
+    if is_queue_mode():
+        pytest.skip()
+
     video_auth = get_auth(q)
     
     # Start initial job
@@ -618,6 +628,9 @@ def test_start_two_jobs_one_fails_partial_failure_response(client, q):
     Start two jobs in one request; force tagger.tag() to raise for feature == 'fail_model'.
     Expect HTTP 200 with per-job start statuses (one success, one failure).
     """
+    if is_queue_mode():
+        pytest.skip()
+
     auth = get_auth(q)
 
     tagger: FabricTagger = client.application.config["state"]["tagger"]

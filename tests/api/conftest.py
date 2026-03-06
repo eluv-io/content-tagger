@@ -66,14 +66,19 @@ def app_config(static_dir, tagger_config, content_config, fetcher_config, contai
 @pytest.fixture()
 def app(static_dir, app_config):
     shutil.rmtree(static_dir, ignore_errors=True)
-    if os.getenv("queue_mode") == "true":
+    if os.getenv("USE_QUEUE") == "true":
         app = create_app_queue_based(app_config)
     else:
         app = create_app_direct(app_config)
     app.config["TESTING"] = True
     yield app
-    tagger: FabricTagger = app.config["state"]["tagger"]
-    tagger.cleanup()
+    state = app.config["state"]
+    if "loop" in state:
+        state["loop"].stop()
+        return
+    tagger: FabricTagger = state["tagger"]
+    if not tagger.shutdown_requested:
+        tagger.cleanup()
 
 @pytest.fixture()
 def client(app):
