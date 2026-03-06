@@ -8,16 +8,21 @@ class TagStartResult:
     created_at: float
 
 @dataclass(frozen=True)
-class TagJobStatusReport:
-    job_id: str
-    status: str
-    created_at: float
+class TagDetails:
+    tag_status: str
+    stream: str
     time_running: float
     tagging_progress: str
     failed: list[str]
+
+@dataclass(frozen=True)
+class TagJobStatusReport:
+    job_id: str
+    status: str
     model: str
-    stream: str
+    created_at: float
     message: str | None = None
+    tagger_details: TagDetails | None = None
 
 @dataclass(frozen=True)
 class TagStopResult:

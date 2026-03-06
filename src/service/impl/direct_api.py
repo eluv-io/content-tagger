@@ -2,9 +2,19 @@ import time
 
 from src.common.content import Content
 from src.tagging.fabric_tagging.model import TagArgs
-from src.service.model import TagJobStatusReport, TagStopResult, TagStartResult
+from src.service.model import *
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.service.abstract import TagAPI
+
+def _tag_status_to_job_status(status: str) -> str:
+    mapping: dict[str, str] = {
+        "Fetching content": "running",
+        "Tagging content": "running",
+        "Completed": "succeeded",
+        "Failed": "failed",
+        "Stopped": "cancelled",
+    }
+    return mapping[status]
 
 class DirectAPI(TagAPI):
     def __init__(self, tagger: FabricTagger):
@@ -24,14 +34,17 @@ class DirectAPI(TagAPI):
         res = self.tagger.status(qhit)
         return [TagJobStatusReport(
             job_id=str(r.job_id),
-            status=r.status,
+            status=_tag_status_to_job_status(r.status),
             message=r.message,
-            time_running=r.time_running,
-            tagging_progress=r.tagging_progress,
             created_at=time.time() - r.time_running,
             model=r.model,
-            stream=r.stream,
-            failed=r.failed,
+            tagger_details=TagDetails(
+                tag_status=r.status,
+                stream=r.stream,
+                time_running=r.time_running,
+                tagging_progress=r.tagging_progress,
+                failed=r.failed,
+            ),
         ) for r in res]
 
     def stop(self, qhit: str, feature: str | None, stream: str | None) -> list[TagStopResult]:

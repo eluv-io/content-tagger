@@ -2,7 +2,7 @@
 from datetime import datetime
 
 from src.service.model import *
-from src.api.tagging.response_format import StatusResponse, JobStatus, StopStatus, StopTaggingResponse
+from src.api.tagging.response_format import StatusResponse, JobStatus, StopStatus, StopTaggingResponse, TagDetails
 
 def map_all_jobs_status_to_response(all_jobs_status: list[TagJobStatusReport]) -> StatusResponse:
     return StatusResponse(
@@ -15,12 +15,15 @@ def map_job_status_to_response(js: TagJobStatusReport) -> JobStatus:
     return JobStatus(
         job_id=str(js.job_id),
         model=js.model,
-        stream=js.stream,
         status=js.status,
-        time_running=js.time_running,
-        tagging_progress=js.tagging_progress,
         created_at=created_at,
-        failed=js.failed,
+        tag_details=TagDetails(
+            tag_status=js.tagger_details.tag_status,
+            stream=js.tagger_details.stream,
+            time_running=js.tagger_details.time_running,
+            tagging_progress=js.tagger_details.tagging_progress,
+            failed=js.tagger_details.failed,
+        ) if js.tagger_details else None,
     )
 
 def map_stop_results_to_response(stop_results: list[TagStopResult]) -> StopTaggingResponse:

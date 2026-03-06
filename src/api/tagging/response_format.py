@@ -13,15 +13,20 @@ class StartTaggingResponse:
     jobs: list[StartStatus]
 
 @dataclass(frozen=True)
+class TagDetails:
+    tag_status: str
+    stream: str
+    time_running: float
+    tagging_progress: str
+    failed: list[str]
+
+@dataclass(frozen=True)
 class JobStatus:
     job_id: str
     status: str
     created_at: str
-    time_running: float
-    tagging_progress: str
-    failed: list[str]
     model: str
-    stream: str
+    tag_details: TagDetails | None
 
 @dataclass(frozen=True)
 class StatusResponse:

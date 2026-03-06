@@ -27,7 +27,7 @@ def is_job_success(client, q: Content):
         return False
     data = response.get_json()
     reports = data['jobs']
-    return all(r['status'] == 'Completed' for r in reports)
+    return all(r['status'] == 'succeeded' for r in reports)
 
 def get_auth(content: Content) -> str:
     return content._client.token
@@ -53,7 +53,7 @@ def wait_for_jobs_completion(client, contents: list[Content], timeout=30):
             print(json.dumps(reports, indent=2))
             
             for report in reports:
-                if report['status'] not in ['Completed', 'Failed']:
+                if report['status'] not in ['succeeded', 'failed', 'cancelled']:
                     all_finished = False
                     break
                     
@@ -260,14 +260,14 @@ def test_real_live_stream(app, q_live):
             print(json.dumps(reports, indent=2))
             
             # Find the test_model job in the list
-            test_model_reports = [r for r in reports if r['model'] == 'test_model' and r['stream'] == 'video']
+            test_model_reports = [r for r in reports if r['model'] == 'test_model' and r['tag_details']['stream'] == 'video']
             if test_model_reports:
                 report = test_model_reports[0]
                 status = report['status']
                 progress = report['tagging_progress']
                 
                 # Once we see completion, we know segments were processed
-                if status == "Completed":
+                if status == "succeeded":
                     segments_found = True
                     break
         
@@ -279,9 +279,9 @@ def test_real_live_stream(app, q_live):
     data = response.get_json()
     reports = data['jobs']
     
-    test_model_report = next(r for r in reports if r['model'] == 'test_model' and r['stream'] == 'video')
+    test_model_report = next(r for r in reports if r['model'] == 'test_model' and r['tag_details']['stream'] == 'video')
     final_status = test_model_report['status']
-    assert final_status in ['Stopped', 'Completed'], f"Expected Stopped or Completed, got {final_status}"
+    assert final_status in ['cancelled', 'succeeded'], f"Expected Stopped or Completed, got {final_status}"
     
     # verify we have some tags
     jobid = tagstore.find_batches(q=q_live, qhit=q_live.qid)[0]
@@ -367,10 +367,10 @@ def test_stop_workflow(client, q):
     reports = data['jobs']
     
     # The job should exist and be in a stopped state
-    test_model_reports = [r for r in reports if r['model'] == 'test_model' and r['stream'] == 'video']
+    test_model_reports = [r for r in reports if r['model'] == 'test_model' and r['tag_details']['stream'] == 'video']
     assert test_model_reports, "test_model job not found in status"
     status = test_model_reports[0]['status']
-    assert status == 'Stopped', f"Expected job to be stopped, got {status}"
+    assert status == 'cancelled', f"Expected job to be cancelled, got {status}"
 
 def test_double_run(client, q):
     """Run same job twice, expect second to be rejected."""
@@ -510,7 +510,7 @@ def test_stop_live_job(app, q_live):
         if response.status_code == 200:
             data = response.get_json()
             reports = data['jobs']
-            test_model_reports = [r for r in reports if r['model'] == 'test_model' and r['stream'] == 'video']
+            test_model_reports = [r for r in reports if r['model'] == 'test_model' and r['tag_details']['stream'] == 'video']
             
             if test_model_reports:
                 progress = test_model_reports[0]['tagging_progress']
@@ -545,9 +545,9 @@ def test_stop_live_job(app, q_live):
     data = response.get_json()
     reports = data['jobs']
     
-    test_model_report = next(r for r in reports if r['model'] == 'test_model' and r['stream'] == 'video')
+    test_model_report = next(r for r in reports if r['model'] == 'test_model' and r['tag_details']['stream'] == 'video')
     final_status = test_model_report['status']
-    assert final_status == 'Stopped', f"Expected Stopped, got {final_status}"
+    assert final_status == 'cancelled', f"Expected cancelled, got {final_status}"
     
     # Verify we have partial tags (not all of them)
     jobid = tagstore.find_batches(q=q_live, qhit=q_live.qid)[0]
@@ -621,7 +621,7 @@ def test_stop_all_jobs(client, q):
     reports = data['jobs']
     
     for report in reports:
-        assert report['status'] == 'Stopped'
+        assert report['status'] == 'cancelled', f"Expected cancelled, got {report['status']}"
 
 def test_start_two_jobs_one_fails_partial_failure_response(client, q):
     """

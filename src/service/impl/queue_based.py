@@ -3,6 +3,7 @@ from src.common.errors import MissingResourceError
 from src.common.logging import logger
 from src.fetch.model import AssetScope, LiveScope, TimeRangeScope, VideoScope
 from src.service.model import (
+    TagDetails,
     TagJobStatusReport,
     TagStartResult,
     TagStopResult,
@@ -63,14 +64,17 @@ class QueueClient(TagAPI):
             if item.status_details.details is not None:
                 reports.append(TagJobStatusReport(
                     job_id=item.id,
-                    status=item.status_details.details.status,
+                    status=item.status,
                     message=item.status_details.error,
-                    time_running=item.status_details.details.time_running,
-                    tagging_progress=item.status_details.details.tagging_progress,
                     created_at=item.created_at,
                     model=item.params.feature,
-                    stream=_stream_from_scope(item.params.scope),
-                    failed=item.status_details.details.failed,
+                    tagger_details=TagDetails(
+                        tag_status=item.status,
+                        stream=_stream_from_scope(item.params.scope),
+                        time_running=item.status_details.details.time_running,
+                        tagging_progress=item.status_details.details.tagging_progress,
+                        failed=item.status_details.details.failed,
+                    ),
                 ))
             else:
                 # job is still queued / no report yet — synthesise a minimal one
@@ -78,14 +82,11 @@ class QueueClient(TagAPI):
                 reports.append(
                     TagJobStatusReport(
                         job_id=item.id,
-                        status="Queued",
-                        time_running=0,
-                        tagging_progress="0/0",
+                        status=item.status,
                         created_at=item.created_at,
-                        failed=[],
                         model=item.params.feature,
-                        stream=stream,
-                        message=item.status_details.error,
+                        tagger_details=None,
+                        message=None,
                     )
                 )
         return reports
