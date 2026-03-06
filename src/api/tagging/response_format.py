@@ -4,7 +4,6 @@ from dataclasses import dataclass
 class StartStatus:
     job_id: str
     model: str
-    stream: str
     started: bool
     message: str
     error: str | None
@@ -17,9 +16,9 @@ class StartTaggingResponse:
 class JobStatus:
     job_id: str
     status: str
+    created_at: str
     time_running: float
     tagging_progress: str
-    missing_tags: list[str]
     failed: list[str]
     model: str
     stream: str

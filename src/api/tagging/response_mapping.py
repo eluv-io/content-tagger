@@ -1,6 +1,7 @@
-from dataclasses import asdict, fields
 
-from src.tagging.fabric_tagging.model import *
+from datetime import datetime
+
+from src.service.model import *
 from src.api.tagging.response_format import StatusResponse, JobStatus, StopStatus, StopTaggingResponse
 
 def map_all_jobs_status_to_response(all_jobs_status: list[TagJobStatusReport]) -> StatusResponse:
@@ -9,6 +10,8 @@ def map_all_jobs_status_to_response(all_jobs_status: list[TagJobStatusReport]) -
     )
 
 def map_job_status_to_response(js: TagJobStatusReport) -> JobStatus:
+    # convert float (seconds) to ISO string
+    created_at = datetime.fromtimestamp(js.created_at).isoformat()
     return JobStatus(
         job_id=str(js.job_id),
         model=js.model,
@@ -16,7 +19,7 @@ def map_job_status_to_response(js: TagJobStatusReport) -> JobStatus:
         status=js.status,
         time_running=js.time_running,
         tagging_progress=js.tagging_progress,
-        missing_tags=js.missing_tags,
+        created_at=created_at,
         failed=js.failed,
     )
 

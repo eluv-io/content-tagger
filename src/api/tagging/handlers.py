@@ -52,7 +52,6 @@ def _execute_tagging(q: Content, tag_args: list[TagArgs]) -> Response:
                 StartStatus(
                     job_id="",
                     model=tag_arg.feature,
-                    stream="",
                     started=False,
                     message="Tag job failed to start",
                     error=str(e),
@@ -60,12 +59,10 @@ def _execute_tagging(q: Content, tag_args: list[TagArgs]) -> Response:
             )
             continue
 
-        job_id = result.job_id
         jobs.append(
             StartStatus(
-                job_id=str(job_id),
-                model=job_id.feature,
-                stream=job_id.stream,
+                job_id=result.job_id,
+                model=tag_arg.feature,
                 started=result.started,
                 message=result.message,
                 error=None,
