@@ -4,12 +4,15 @@ import time
 from unittest.mock import Mock
 import pytest
 
-from src.common.content import Content
+from src.common.content import Content, ContentFactory
 from src.fetch.model import DownloadRequest, DownloadResult, FetchSession, MediaMetadata, Source, VideoMetadata, VideoScope
 from src.fetch.model import VideoScope
 from src.tag_containers.model import *
 from src.tagging.fabric_tagging.model import FabricTaggerConfig, TagArgs
 from src.tagging.fabric_tagging.tagger import FabricTagger
+from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
+from src.tagging.tag_runner import TagRunner, TagRunnerConfig
+from src.api.tagging.impl.queue_based import QueueClient
 from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.tagging.scheduling.model import SysConfig
 from src.tags.track_resolver import TrackArgs, TrackResolver, TrackResolverConfig
@@ -341,3 +344,28 @@ def sample_tag_args(make_tag_args):
         make_tag_args(feature="caption", stream="video"),
         make_tag_args(feature="asr", stream="audio"),
     ]
+
+
+
+@pytest.fixture
+def queue_jobstore(tmp_path) -> FsJobStore:
+    return FsJobStore(store_dir=str(tmp_path / "jobstore"))
+
+
+@pytest.fixture
+def queue_client(queue_jobstore) -> QueueClient:
+    return QueueClient(jobstore=queue_jobstore)
+
+
+@pytest.fixture
+def tag_runner(fabric_tagger, queue_jobstore, qfactory):
+    """A TagRunner wired to the same FsJobStore, polling fast for tests."""
+    runner = TagRunner(
+        tagger=fabric_tagger,
+        jobstore=queue_jobstore,
+        content_factory=qfactory,
+        cfg=TagRunnerConfig(poll_interval=0.1, status_interval=0.2),
+    )
+    runner.start()
+    yield runner
+    runner.stop()
