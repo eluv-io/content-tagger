@@ -6,7 +6,7 @@ import time
 import pytest
 
 from app_config import AppConfig
-from server import create_app
+from server import create_app_direct, create_app_queue_based
 from src.fetch.model import DownloadResult, FetchSession, MediaMetadata
 from src.tag_containers.model import ModelConfig, RegistryConfig
 from src.tagging.fabric_tagging.model import FabricTaggerConfig
@@ -66,13 +66,14 @@ def app_config(static_dir, tagger_config, content_config, fetcher_config, contai
 @pytest.fixture()
 def app(static_dir, app_config):
     shutil.rmtree(static_dir, ignore_errors=True)
-    app = create_app(app_config)
+    if os.getenv("queue_mode") == "true":
+        app = create_app_queue_based(app_config)
+    else:
+        app = create_app_direct(app_config)
     app.config["TESTING"] = True
     yield app
-    loop: TagRunner = app.config["state"]["loop"]
-    loop.stop()
-    jobstore: FsJobStore = app.config["state"]["job_store"]
-    shutil.rmtree(jobstore.store_dir)
+    tagger: FabricTagger = app.config["state"]["tagger"]
+    tagger.cleanup()
 
 @pytest.fixture()
 def client(app):

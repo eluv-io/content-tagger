@@ -83,55 +83,63 @@ def configure_routes(app: Flask) -> None:
     def docs_route():
         return send_from_directory('docs/api', 'openapi.html')
 
-def boot_state(app: Flask, cfg: AppConfig) -> None:
-    app_state = {}
-
-    system_tagger = ContainerScheduler(cfg.system)
-    tagstore = create_tagstore(cfg.tagstore)
-    fetcher = FetchFactory(cfg.fetcher, tagstore)
-    container_registry = ContainerRegistry(cfg.container_registry)
-    track_resolver = TrackResolver(cfg.track_resolver)
-
-    fabric_tagger = FabricTagger(
-        system_tagger=system_tagger,
-        fetcher=fetcher,
-        cregistry=container_registry,
-        tagstore=tagstore,
+def _build_fabric_tagger(cfg: AppConfig) -> FabricTagger:
+    return FabricTagger(
+        system_tagger=ContainerScheduler(cfg.system),
+        fetcher=FetchFactory(cfg.fetcher, create_tagstore(cfg.tagstore)),
+        cregistry=ContainerRegistry(cfg.container_registry),
+        tagstore=create_tagstore(cfg.tagstore),
         cfg=cfg.tagger,
-        track_resolver=track_resolver,
+        track_resolver=TrackResolver(cfg.track_resolver),
     )
 
-    app_state["tagger"] = fabric_tagger
 
-    app_state["job_store"] = FsJobStore("./job-store")
+def create_app_direct(config: AppConfig) -> Flask:
+    """Standalone mode: API handlers call FabricTagger directly."""
+    app = Flask(__name__)
 
-    app_state["service"] = QueueClient(app_state["job_store"])
-
-    app_state["content_factory"] = ContentFactory(cfg.content)
-
-    app_state["loop"] = TagRunner(app_state["tagger"], app_state["job_store"], app_state["content_factory"], cfg.tag_runner)
-
-    app.config["state"] = app_state
-
-def start_tagger(loop: TagRunner) -> None:
-    loop.start()
-
-def configure_lifecycle(app: Flask) -> None:
+    fabric_tagger = _build_fabric_tagger(config)
+    app.config["state"] = {
+        "tagger": fabric_tagger,
+        "service": DirectAPI(fabric_tagger),
+        "content_factory": ContentFactory(config.content),
+    }
 
     def shutdown():
-        app_state = app.config["state"]
-        loop: TagRunner = app_state["loop"]
-        loop.stop()
-    
-    atexit.register(shutdown)
+        tagger: FabricTagger = app.config["state"]["tagger"]
+        if not tagger.shutdown_requested:
+            tagger.cleanup()
 
-def create_app(config: AppConfig) -> Flask:
-    """Main entry point for the server."""
-    app = Flask(__name__)
-    boot_state(app, config)
-    start_tagger(app.config["state"]["loop"])
+    atexit.register(shutdown)
     configure_routes(app)
-    configure_lifecycle(app)
+    CORS(app)
+    return app
+
+
+def create_app_queue_based(config: AppConfig) -> Flask:
+    """Queue-based mode: API handlers enqueue via QueueClient; TagRunner drives FabricTagger."""
+    app = Flask(__name__)
+
+    fabric_tagger = _build_fabric_tagger(config)
+    content_factory = ContentFactory(config.content)
+    job_store: JobStore = FsJobStore("./job-store")
+    loop = TagRunner(fabric_tagger, job_store, content_factory, config.tag_runner)
+
+    app.config["state"] = {
+        "tagger": fabric_tagger,
+        "service": QueueClient(job_store),
+        "content_factory": content_factory,
+        "job_store": job_store,
+        "loop": loop,
+    }
+
+    loop.start()
+
+    def shutdown():
+        loop.stop()
+
+    atexit.register(shutdown)
+    configure_routes(app)
     CORS(app)
     return app
 
@@ -143,7 +151,13 @@ def main():
         logger.info(f"changed directory to {args.directory}")
 
     cfg = AppConfig.from_yaml(args.config)
-    app = create_app(cfg)
+
+    if args.queue:
+        logger.info("starting in queue-based mode")
+        app = create_app_queue_based(cfg)
+    else:
+        logger.info("starting in direct mode")
+        app = create_app_direct(cfg)
 
     serve(app, host=args.host, port=args.port)
 
@@ -154,5 +168,6 @@ if __name__ == '__main__':
     parser.add_argument('--host', type=str, default="127.0.0.1")
     parser.add_argument('--config', type=str, default="config.yml")
     parser.add_argument('--directory', type=str)
+    parser.add_argument('--queue', action='store_true', help='Run in queue-based mode')
     args = parser.parse_args()
     main()
