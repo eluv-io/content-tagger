@@ -18,6 +18,7 @@ class JobStatus:
 class QueueItem:
     id: str
     qid: str
+    created_at: float
     params: TagArgs
     status_details: JobStatus
     stop_requested: bool

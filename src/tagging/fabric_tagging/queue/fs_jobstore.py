@@ -1,5 +1,6 @@
 import json
 import os
+import time
 import uuid
 from dataclasses import asdict
 from dacite import from_dict
@@ -44,13 +45,36 @@ class FsJobStore:
                 id = fname[:-5]
                 jobs.append(self._read_job(id))
         return jobs
+    
+    def _convert_job_dict(self, job: dict) -> QueueItem:
+        p = job["params"]
+        params = TagArgs(
+            feature=p["feature"],
+            run_config=p["run_config"],
+            scope=_convert_scope(p["scope"]),
+            replace=p["replace"],
+            destination_qid=p["destination_qid"],
+            max_fetch_retries=p["max_fetch_retries"],
+        )
+        return QueueItem(
+            id=job["id"],
+            qid=job["qid"],
+            params=params,
+            created_at=job["created_at"],
+            status_details=from_dict(JobStatus, job["status_details"]),
+            stop_requested=job["stop_requested"],
+            auth=job["auth"],
+            user=job["user"],
+            tenant=job["tenant"],
+        )
 
-    def create_job(self, args: CreateQueueItem, auth: str) -> None:
+    def create_job(self, args: CreateQueueItem, auth: str) -> QueueItem:
         id = str(uuid.uuid4())
         self._write_job(id, {
             "id": id,
             "qid": args.qid,
             "status": "queued",
+            "created_at": time.time(),
             "params": asdict(args.params),
             "status_details": asdict(args.status_details),
             "stop_requested": False,
@@ -58,6 +82,8 @@ class FsJobStore:
             "tenant": "",
             "auth": auth,
         })
+        job_data = self._read_job(id)
+        return self._convert_job_dict(job_data)
 
     def claim_job(self, id: str, auth: str) -> bool:
         job = self._read_job(id)
@@ -78,25 +104,7 @@ class FsJobStore:
                 continue
             if args.status and job["status"] != args.status:
                 continue
-            p = job["params"]
-            params = TagArgs(
-                feature=p["feature"],
-                run_config=p["run_config"],
-                scope=_convert_scope(p["scope"]),
-                replace=p["replace"],
-                destination_qid=p["destination_qid"],
-                max_fetch_retries=p["max_fetch_retries"],
-            )
-            results.append(QueueItem(
-                id=job["id"],
-                qid=job["qid"],
-                params=params,
-                status_details=from_dict(JobStatus, job["status_details"]),
-                stop_requested=job["stop_requested"],
-                auth=job["auth"],
-                user=job["user"],
-                tenant=job["tenant"],
-            ))
+            results.append(self._convert_job_dict(job))
         return results
 
     def update_job(self, args: UpdateJobRequest, auth: str) -> None:

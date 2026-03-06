@@ -4,7 +4,7 @@ from src.tagging.fabric_tagging.model import *
 from src.tagging.fabric_tagging.queue.model import *
 
 class JobStore(Protocol):
-    def create_job(self, args: CreateQueueItem, auth: str) -> None:
+    def create_job(self, args: CreateQueueItem, auth: str) -> QueueItem:
         ...
 
     def claim_job(self, id: str, auth: str) -> bool:
