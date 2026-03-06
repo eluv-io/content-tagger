@@ -40,7 +40,7 @@ def handle_tag(qhit: str) -> Response:
 
 def _execute_tagging(q: Content, tag_args: list[TagArgs]) -> Response:
     """Execute tagging for multiple features and return start status response."""
-    tagger: TagAPI = current_app.config["state"]["tagger"]
+    tagger: TagAPI = current_app.config["state"]["service"]
     
     jobs: list[StartStatus] = []
     for tag_arg in tag_args:
@@ -88,9 +88,9 @@ def handle_status(qhit: str) -> Response:
     else:
         _get_authorized_content(qhit)
 
-    tagger: TagAPI = current_app.config["state"]["tagger"]
+    service: TagAPI = current_app.config["state"]["service"]
 
-    reports = tagger.status(qhit)
+    reports = service.status(qhit)
 
     return Response(response=json.dumps(asdict(map_all_jobs_status_to_response(reports))), status=200, mimetype='application/json')
 
@@ -100,7 +100,7 @@ def handle_stop_model(
 ) -> Response:
     q = _get_authorized_content(qhit)
 
-    tagger: TagAPI = current_app.config["state"]["tagger"]
+    tagger: TagAPI = current_app.config["state"]["service"]
 
     stop_res = tagger.stop(q.qhit, feature, None)
 
@@ -113,7 +113,7 @@ def handle_stop_content(
 ) -> Response:
     q = _get_authorized_content(qhit)
 
-    tagger: TagAPI = current_app.config["state"]["tagger"]
+    tagger: TagAPI = current_app.config["state"]["service"]
 
     stop_res = tagger.stop(q.qhit, None, None)
 

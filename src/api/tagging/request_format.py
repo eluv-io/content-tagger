@@ -48,4 +48,4 @@ class JobSpec:
 @dataclass
 class StartJobsRequest:
     options: TaggerOptions = field(default_factory=TaggerOptions)
-    jobs: list[JobSpec] = field(default_factory=list)   
+    jobs: list[JobSpec] = field(default_factory=list)

@@ -6,6 +6,10 @@ from src.tagging.fabric_tagging.model import TagArgs, TagJobStatusReport
 job_status = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 
 @dataclass
+class JobStoreConfig:
+    base_url: str
+
+@dataclass
 class JobStatus:
     error: str | None
     details: TagJobStatusReport | None

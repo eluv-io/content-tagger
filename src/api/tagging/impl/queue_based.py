@@ -1,4 +1,5 @@
 from src.common.content import Content
+from src.common.errors import MissingResourceError
 from src.common.logging import logger
 from src.fetch.model import AssetScope, LiveScope, TimeRangeScope, VideoScope
 from src.tagging.fabric_tagging.model import (
@@ -62,6 +63,8 @@ class QueueClient(TagAPI):
     def status(self, qhit: str) -> list[TagJobStatusReport]:
         """Return the latest status for all jobs targeting *qhit*."""
         items = self.jobstore.list_jobs(ListJobArgs(qid=qhit), auth="")
+        if not items:
+            raise MissingResourceError(f"No tagging jobs found for qhit: {qhit}")
 
         reports: list[TagJobStatusReport] = []
         for item in items:

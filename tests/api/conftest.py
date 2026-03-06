@@ -10,9 +10,11 @@ from server import create_app
 from src.fetch.model import DownloadResult, FetchSession, MediaMetadata
 from src.tag_containers.model import ModelConfig, RegistryConfig
 from src.tagging.fabric_tagging.model import FabricTaggerConfig
+from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
+from src.tagging.fabric_tagging.queue.model import JobStoreConfig
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tagging.scheduling.model import SysConfig
-from src.tagging.tag_runner import TagRunnerConfig
+from src.tagging.tag_runner import TagRunner, TagRunnerConfig
 from src.tags.track_resolver import TrackArgs, TrackResolverConfig
 from src.tags.tagstore.model import TagstoreConfig
 
@@ -48,6 +50,7 @@ def app_config(static_dir, tagger_config, content_config, fetcher_config, contai
     return AppConfig(
         root_dir=static_dir,
         content=content_config,
+        jobstore=JobStoreConfig(base_url=os.path.join(static_dir, "jobstore")),
         tagstore=TagstoreConfig(
             base_dir=os.path.join(static_dir, "tags")
         ),
@@ -56,7 +59,7 @@ def app_config(static_dir, tagger_config, content_config, fetcher_config, contai
         container_registry=container_registry_config,
         tagger=tagger_config,
         track_resolver=TrackResolverConfig(mapping={"test_model": TrackArgs(name="test_model", label="TEST MODEL")}),
-        tag_runner=TagRunnerConfig(poll_interval=1, status_interval=1)
+        tag_runner=TagRunnerConfig(poll_interval=0.1, status_interval=0.1)
     )
 
 
@@ -66,9 +69,10 @@ def app(static_dir, app_config):
     app = create_app(app_config)
     app.config["TESTING"] = True
     yield app
-    tagger: FabricTagger = app.config["state"]["tagger"]
-    if not tagger.shutdown_requested():
-        tagger.cleanup()
+    loop: TagRunner = app.config["state"]["loop"]
+    loop.stop()
+    jobstore: FsJobStore = app.config["state"]["job_store"]
+    shutil.rmtree(jobstore.store_dir)
 
 @pytest.fixture()
 def client(app):

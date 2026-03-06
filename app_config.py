@@ -8,6 +8,7 @@ from src.fetch.model import FetcherConfig
 from src.tag_containers.model import RegistryConfig
 from src.tagging.scheduling.model import SysConfig
 from src.tagging.tag_runner import TagRunnerConfig
+from src.tagging.fabric_tagging.queue.model import JobStoreConfig
 from src.tags.tagstore.model import TagstoreConfig
 from src.tagging.fabric_tagging.model import FabricTaggerConfig
 from src.tags.track_resolver import TrackResolverConfig
@@ -16,6 +17,7 @@ from src.tags.track_resolver import TrackResolverConfig
 class AppConfig:
     root_dir: str
     content: ContentConfig
+    jobstore: JobStoreConfig
     tagstore: TagstoreConfig
     system: SysConfig
     fetcher: FetcherConfig

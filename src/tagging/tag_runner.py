@@ -94,9 +94,6 @@ class TagRunner:
         for item in queued:
             with self._lock:
                 if item.id in self._running_jobs:
-                    #if item.stop_requested:
-                    #    # TODO: check that we only call once
-                    #    self.tagger.stop(item.qid, item.params.feature, stream=None)
                     continue
 
             claimed = self.jobstore.claim_job(item.id, item.auth)
@@ -104,8 +101,10 @@ class TagRunner:
                 continue
 
             logger.info("claimed job", job_id=item.id, qid=item.qid)
+
+            feature = item.params.feature
             with self._lock:
-                self._running_jobs[item.id] = JobInfo(id=item.id, qid=item.qid, feature=item.params.feature, auth=item.auth)
+                self._running_jobs[item.id] = JobInfo(id=item.id, qid=item.qid, feature=feature, auth=item.auth)
 
             threading.Thread(
                 target=self._run_job,

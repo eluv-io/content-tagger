@@ -4,10 +4,22 @@ import uuid
 from dataclasses import asdict
 from dacite import from_dict
 
-from src.tagging.fabric_tagging.model import TagArgs, TagJobStatusReport
+from src.tagging.fabric_tagging.model import TagArgs
 from src.tagging.fabric_tagging.queue.model import *
-from src.fetch.model import Scope
+from src.fetch.model import *
 
+def _convert_scope(data: dict) -> Scope:
+    type = data.get("type")
+    if type == "processor":
+        return TimeRangeScope(**data)
+    elif type == "assets":
+        return AssetScope(**data)
+    elif type == "video":
+        return VideoScope(**data)
+    elif type == "livestream":
+        return LiveScope(**data)
+    else:
+        raise ValueError(f"Unknown scope type: {type}")
 
 class FsJobStore:
     def __init__(self, store_dir: str):
@@ -41,6 +53,9 @@ class FsJobStore:
             "status": "queued",
             "params": asdict(args.params),
             "status_details": asdict(args.status_details),
+            "stop_requested": False,
+            "user": "",
+            "tenant": "",
             "auth": auth,
         })
 
@@ -67,7 +82,7 @@ class FsJobStore:
             params = TagArgs(
                 feature=p["feature"],
                 run_config=p["run_config"],
-                scope=Scope(**p["scope"]),
+                scope=_convert_scope(p["scope"]),
                 replace=p["replace"],
                 destination_qid=p["destination_qid"],
                 max_fetch_retries=p["max_fetch_retries"],
