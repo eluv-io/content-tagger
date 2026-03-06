@@ -18,10 +18,13 @@ def map_all_jobs_status_to_response(
     req: StatusRequest,
 ) -> StatusResponse:
     # filter
+    filtered = list(all_jobs_status)
     if req.status is not None:
-        filtered = [j for j in all_jobs_status if j.status == req.status]
-    else:
-        filtered = list(all_jobs_status)
+        filtered = [j for j in filtered if j.status == req.status]
+    if req.tenant is not None:
+        filtered = [j for j in filtered if j.tenant == req.tenant]
+    if req.user is not None:
+        filtered = [j for j in filtered if j.user == req.user]
 
     # sort
     filtered.sort(key=_status_sort_key)
@@ -50,6 +53,8 @@ def map_job_status_to_response(js: TagJobStatusReport) -> JobStatus:
         status=js.status,
         created_at=created_at,
         params=js.params,
+        tenant=js.tenant,
+        user=js.user,
         tag_details=TagDetails(
             tag_status=js.tagger_details.tag_status,
             stream=js.tagger_details.stream,

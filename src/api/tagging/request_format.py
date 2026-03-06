@@ -55,3 +55,5 @@ class StatusRequest:
     start: int = 0
     limit: int | None = None
     status: str | None = None
+    tenant: str | None = None
+    user: str | None = None

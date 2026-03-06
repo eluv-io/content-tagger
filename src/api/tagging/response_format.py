@@ -27,6 +27,8 @@ class JobStatus:
     created_at: str
     model: str
     params: dict
+    tenant: str
+    user: str
     tag_details: TagDetails | None
 
 @dataclass(frozen=True)

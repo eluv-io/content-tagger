@@ -82,6 +82,8 @@ class QueueClient(TagAPI):
                     created_at=item.created_at,
                     model=item.params.feature,
                     params=asdict(item.params),
+                    tenant=item.tenant,
+                    user=item.user,
                     tagger_details=TagDetails(
                         tag_status=item.status_details.details.status,
                         stream=_stream_from_scope(item.params.scope),
@@ -100,6 +102,8 @@ class QueueClient(TagAPI):
                         created_at=item.created_at,
                         model=item.params.feature,
                         params=asdict(item.params),
+                        tenant=item.tenant,
+                        user=item.user,
                         tagger_details=None,
                         message=None,
                     )

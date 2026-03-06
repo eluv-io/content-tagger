@@ -22,6 +22,8 @@ class TagJobStatusReport:
     model: str
     created_at: float
     params: dict
+    tenant: str = ""
+    user: str = ""
     message: str | None = None
     tagger_details: TagDetails | None = None
 
