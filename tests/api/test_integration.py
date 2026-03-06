@@ -374,9 +374,6 @@ def test_stop_workflow(client, q):
 
 def test_double_run(client, q):
     """Run same job twice, expect second to be rejected."""
-    if is_queue_mode():
-        pytest.skip()
-
     video_auth = get_auth(q)
     
     # Start initial job
