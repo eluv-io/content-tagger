@@ -4,6 +4,7 @@ import time
 import uuid
 from dataclasses import asdict
 from dacite import from_dict
+import requests
 
 from src.tagging.fabric_tagging.model import TagArgs
 from src.tagging.fabric_tagging.queue.model import *
@@ -21,6 +22,10 @@ def _convert_scope(data: dict) -> Scope:
         return LiveScope(**data)
     else:
         raise ValueError(f"Unknown scope type: {type}")
+
+def get_tenant(qid: str, auth: str) -> str:
+    resp = requests.get(f"https://main.net955305.contentfabric.io/{qid}", headers={"Authorization": f"Bearer {auth}"}).json()
+    return resp["content_profile"]["tenant_id"]
 
 class FsJobStore:
     def __init__(self, store_dir: str):
@@ -71,6 +76,7 @@ class FsJobStore:
 
     def create_job(self, args: CreateQueueItem, auth: str) -> QueueItem:
         id = str(uuid.uuid4())
+        tenant = get_tenant(args.qid, auth)
         self._write_job(id, {
             "id": id,
             "qid": args.qid,
@@ -79,8 +85,8 @@ class FsJobStore:
             "params": asdict(args.params),
             "status_details": asdict(args.status_details),
             "stop_requested": False,
-            "user": "",
-            "tenant": "",
+            "user": tenant,
+            "tenant": tenant,
             "auth": auth,
         })
         job_data = self._read_job(id)
