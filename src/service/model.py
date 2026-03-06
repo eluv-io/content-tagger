@@ -21,6 +21,7 @@ class TagJobStatusReport:
     status: str
     model: str
     created_at: float
+    params: dict
     message: str | None = None
     tagger_details: TagDetails | None = None
 

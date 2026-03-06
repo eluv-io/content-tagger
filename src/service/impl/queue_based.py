@@ -1,3 +1,5 @@
+from dataclasses import asdict
+
 from src.common.content import Content
 from src.common.errors import MissingResourceError
 from src.common.logging import logger
@@ -79,8 +81,9 @@ class QueueClient(TagAPI):
                     message=item.status_details.error,
                     created_at=item.created_at,
                     model=item.params.feature,
+                    params=asdict(item.params),
                     tagger_details=TagDetails(
-                        tag_status=item.status,
+                        tag_status=item.status_details.details.status,
                         stream=_stream_from_scope(item.params.scope),
                         time_running=item.status_details.details.time_running,
                         tagging_progress=item.status_details.details.tagging_progress,
@@ -96,6 +99,7 @@ class QueueClient(TagAPI):
                         status=item.status,
                         created_at=item.created_at,
                         model=item.params.feature,
+                        params=asdict(item.params),
                         tagger_details=None,
                         message=None,
                     )

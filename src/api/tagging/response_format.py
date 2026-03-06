@@ -26,11 +26,20 @@ class JobStatus:
     status: str
     created_at: str
     model: str
+    params: dict
     tag_details: TagDetails | None
+
+@dataclass(frozen=True)
+class StatusMeta:
+    total: int
+    start: int
+    limit: int | None
+    count: int
 
 @dataclass(frozen=True)
 class StatusResponse:
     jobs: list[JobStatus]
+    meta: StatusMeta
 
 @dataclass(frozen=True)
 class StopStatus:

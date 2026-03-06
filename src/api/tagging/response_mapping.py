@@ -2,11 +2,43 @@
 from datetime import datetime
 
 from src.service.model import *
-from src.api.tagging.response_format import StatusResponse, JobStatus, StopStatus, StopTaggingResponse, TagDetails
+from src.api.tagging.request_format import StatusRequest
+from src.api.tagging.response_format import StatusResponse, StatusMeta, JobStatus, StopStatus, StopTaggingResponse, TagDetails
 
-def map_all_jobs_status_to_response(all_jobs_status: list[TagJobStatusReport]) -> StatusResponse:
+_STATUS_SORT_ORDER = ["running", "queued", "failed", "succeeded", "cancelled"]
+
+def _status_sort_key(job: TagJobStatusReport) -> int:
+    try:
+        return _STATUS_SORT_ORDER.index(job.status)
+    except ValueError:
+        return len(_STATUS_SORT_ORDER)
+
+def map_all_jobs_status_to_response(
+    all_jobs_status: list[TagJobStatusReport],
+    req: StatusRequest,
+) -> StatusResponse:
+    # filter
+    if req.status is not None:
+        filtered = [j for j in all_jobs_status if j.status == req.status]
+    else:
+        filtered = list(all_jobs_status)
+
+    # sort
+    filtered.sort(key=_status_sort_key)
+
+    total = len(filtered)
+
+    # paginate
+    paginated = filtered[req.start:] if req.limit is None else filtered[req.start:req.start + req.limit]
+
     return StatusResponse(
-        jobs=[map_job_status_to_response(job_status) for job_status in all_jobs_status]
+        jobs=[map_job_status_to_response(job_status) for job_status in paginated],
+        meta=StatusMeta(
+            total=total,
+            start=req.start,
+            limit=req.limit,
+            count=len(paginated),
+        ),
     )
 
 def map_job_status_to_response(js: TagJobStatusReport) -> JobStatus:
@@ -17,6 +49,7 @@ def map_job_status_to_response(js: TagJobStatusReport) -> JobStatus:
         model=js.model,
         status=js.status,
         created_at=created_at,
+        params=js.params,
         tag_details=TagDetails(
             tag_status=js.tagger_details.tag_status,
             stream=js.tagger_details.stream,

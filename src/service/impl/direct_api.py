@@ -38,6 +38,7 @@ class DirectAPI(TagAPI):
             message=r.message,
             created_at=time.time() - r.time_running,
             model=r.model,
+            params={},
             tagger_details=TagDetails(
                 tag_status=r.status,
                 stream=r.stream,
