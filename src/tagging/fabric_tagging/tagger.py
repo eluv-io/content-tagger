@@ -603,7 +603,7 @@ class FabricTagger:
             self._set_stop_state(job_id, "Stopped", "Shutdown requested")
         
         self.shutdown_signal = True
-        self.system_tagger.shutdown()
+        self.system_tagger.cleanup()
 
         message.response_mailbox.put(Response(data=None, error=None))
 
