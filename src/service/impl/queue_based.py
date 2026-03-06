@@ -2,13 +2,12 @@ from src.common.content import Content
 from src.common.errors import MissingResourceError
 from src.common.logging import logger
 from src.fetch.model import AssetScope, LiveScope, TimeRangeScope, VideoScope
-from src.tagging.fabric_tagging.model import (
-    JobID,
-    TagArgs,
+from src.service.model import (
     TagJobStatusReport,
     TagStartResult,
     TagStopResult,
 )
+from src.tagging.fabric_tagging.model import TagArgs
 from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tagging.fabric_tagging.queue.model import CreateQueueItem, JobStatus, ListJobArgs
 from src.service.abstract import TagAPI
@@ -31,12 +30,6 @@ def _stream_from_scope(scope) -> str:
 
 
 class QueueClient(TagAPI):
-    """Drop-in replacement for FabricTagger that enqueues work via a JobStore
-    instead of running it directly.
-
-    Exposes the same public interface (tag / status / stop) so API handlers
-    can use it without changes.
-    """
 
     def __init__(self, jobstore: JobStore):
         self.jobstore = jobstore
@@ -44,10 +37,8 @@ class QueueClient(TagAPI):
     def tag(self, q: Content, args: TagArgs) -> TagStartResult:
         """Enqueue a tagging job and return immediately."""
         auth = q.token()
-        stream = _stream_from_scope(args.scope)
-        job_id = JobID(qhit=q.qhit, feature=args.feature, stream=stream)
 
-        self.jobstore.create_job(
+        job = self.jobstore.create_job(
             CreateQueueItem(
                 qid=q.qhit,
                 params=args,
@@ -57,8 +48,8 @@ class QueueClient(TagAPI):
             auth=auth,
         )
 
-        logger.info("enqueued tagging job", job_id=str(job_id))
-        return TagStartResult(started=True, job_id=job_id, message="Job enqueued")
+        logger.info("enqueued tagging job", job_id=str(job.id))
+        return TagStartResult(started=True, created_at=job.created_at, job_id=job.id, message="Job enqueued")
 
     def status(self, qhit: str) -> list[TagJobStatusReport]:
         """Return the latest status for all jobs targeting *qhit*."""
@@ -70,17 +61,27 @@ class QueueClient(TagAPI):
         for item in items:
             # if the TagRunner has already posted back a full report, use it
             if item.status_details.details is not None:
-                reports.append(item.status_details.details)
+                reports.append(TagJobStatusReport(
+                    job_id=item.id,
+                    status=item.status_details.details.status,
+                    message=item.status_details.error,
+                    time_running=item.status_details.details.time_running,
+                    tagging_progress=item.status_details.details.tagging_progress,
+                    created_at=item.created_at,
+                    model=item.params.feature,
+                    stream=_stream_from_scope(item.params.scope),
+                    failed=item.status_details.details.failed,
+                ))
             else:
                 # job is still queued / no report yet — synthesise a minimal one
                 stream = _stream_from_scope(item.params.scope)
                 reports.append(
                     TagJobStatusReport(
-                        job_id=JobID(qhit=item.qid, feature=item.params.feature, stream=stream),
+                        job_id=item.id,
                         status="Queued",
                         time_running=0,
                         tagging_progress="0/0",
-                        missing_tags=[],
+                        created_at=item.created_at,
                         failed=[],
                         model=item.params.feature,
                         stream=stream,
@@ -102,10 +103,8 @@ class QueueClient(TagAPI):
         
         results: list[TagStopResult] = []
         for item in items:
-            item_stream = _stream_from_scope(item.params.scope)
             self.jobstore.stop_job(item.id, auth=item.auth)
-            job_id = JobID(qhit=item.qid, feature=item.params.feature, stream=item_stream)
-            results.append(TagStopResult(job_id=job_id, message="Stop requested"))
-            logger.info("stop requested", job_id=str(job_id))
+            results.append(TagStopResult(job_id=item.id, message="Stop requested"))
+            logger.info("stop requested", job_id=str(item.id))
 
         return results

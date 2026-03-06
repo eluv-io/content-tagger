@@ -1,7 +1,8 @@
 from typing import Protocol
 
 from src.common.content import Content
-from src.tagging.fabric_tagging.model import TagArgs, TagJobStatusReport, TagStartResult, TagStopResult
+from src.tagging.fabric_tagging.model import TagArgs
+from src.service.model import TagJobStatusReport, TagStopResult, TagStartResult
 
 class TagAPI(Protocol):
     def tag(self, q: Content, args: TagArgs) -> TagStartResult:
