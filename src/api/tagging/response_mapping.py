@@ -7,11 +7,11 @@ from src.api.tagging.response_format import StatusResponse, StatusMeta, JobStatu
 
 _STATUS_SORT_ORDER = ["running", "queued", "failed", "succeeded", "cancelled"]
 
-def _status_sort_key(job: TagJobStatusReport) -> int:
+def _status_sort_key(job: TagJobStatusReport) -> tuple:
     try:
-        return _STATUS_SORT_ORDER.index(job.status)
+        return (_STATUS_SORT_ORDER.index(job.status), -job.created_at)
     except ValueError:
-        return len(_STATUS_SORT_ORDER)
+        return (len(_STATUS_SORT_ORDER), -job.created_at)
 
 def map_all_jobs_status_to_response(
     all_jobs_status: list[TagJobStatusReport],
