@@ -4,7 +4,7 @@ import time
 from unittest.mock import Mock
 import pytest
 
-from src.common.content import Content, ContentFactory
+from src.common.content import Content
 from src.fetch.model import DownloadRequest, DownloadResult, FetchSession, MediaMetadata, Source, VideoMetadata, VideoScope
 from src.fetch.model import VideoScope
 from src.tag_containers.model import *
@@ -12,7 +12,7 @@ from src.tagging.fabric_tagging.model import FabricTaggerConfig, TagArgs
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
 from src.tagging.tag_runner import TagRunner, TagRunnerConfig
-from src.api.tagging.impl.queue_based import QueueClient
+from src.service.impl.queue_based import QueueClient
 from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.tagging.scheduling.model import SysConfig
 from src.tags.track_resolver import TrackArgs, TrackResolver, TrackResolverConfig
@@ -364,7 +364,7 @@ def tag_runner(fabric_tagger, queue_jobstore, qfactory):
         tagger=fabric_tagger,
         jobstore=queue_jobstore,
         content_factory=qfactory,
-        cfg=TagRunnerConfig(poll_interval=0.1, status_interval=0.2),
+        cfg=TagRunnerConfig(poll_interval=0.1),
     )
     runner.start()
     yield runner

@@ -92,7 +92,8 @@ class QueueClient(TagAPI):
 
     def stop(self, qhit: str, feature: str | None, stream: str | None) -> list[TagStopResult]:
         """Request a stop for matching jobs in the queue."""
-        items = self.jobstore.list_jobs(ListJobArgs(qid=qhit, status="running"), auth="")
+        items = self.jobstore.list_jobs(ListJobArgs(qid=qhit), auth="")
+        items = [item for item in items if item.status in ("queued", "running")]
         items = [item for item in items if item.params.feature == feature or feature is None]
 
         if not items:

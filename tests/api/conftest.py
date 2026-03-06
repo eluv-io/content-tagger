@@ -59,7 +59,7 @@ def app_config(static_dir, tagger_config, content_config, fetcher_config, contai
         container_registry=container_registry_config,
         tagger=tagger_config,
         track_resolver=TrackResolverConfig(mapping={"test_model": TrackArgs(name="test_model", label="TEST MODEL")}),
-        tag_runner=TagRunnerConfig(poll_interval=0.1, status_interval=0.1)
+        tag_runner=TagRunnerConfig(poll_interval=0.1)
     )
 
 

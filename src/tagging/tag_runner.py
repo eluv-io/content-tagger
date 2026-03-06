@@ -77,12 +77,12 @@ class TagRunner:
         while not self._shutdown.is_set():
             try:
                 self._poll_once()
-            except Exception:
-                logger.opt(exception=True).error("error during job poll")
+            except Exception as e:
+                logger.opt(exception=e).error("error during job poll")
             try:
                 self._status_tick()
-            except Exception:
-                logger.opt(exception=True).error("error during status tick")
+            except Exception as e:
+                logger.opt(exception=e).error("error during status tick")
             self._shutdown.wait(self.cfg.poll_interval)
 
     def _poll_once(self) -> None:
@@ -92,6 +92,11 @@ class TagRunner:
         queued = self.jobstore.list_jobs(ListJobArgs(status="queued"), auth="")
         for item in queued:
             if item.id in self._running_jobs:
+                continue
+
+            if item.stop_requested:
+                logger.info("skipping job with stop requested", job_id=item.id)
+                self._set_stopped(item)
                 continue
 
             claimed = self.jobstore.claim_job(item.id, item.auth)
@@ -143,8 +148,8 @@ class TagRunner:
                 ),
                 auth=item.auth,
             )
-        except Exception:
-            logger.opt(exception=True).warning("failed to update job with error status", job_id=item.id)
+        except Exception as e:
+            logger.opt(exception=e).warning("failed to update job with error status", job_id=item.id)
         finally:
             self._finish_job(item.id)
 
@@ -180,8 +185,8 @@ class TagRunner:
                         )),
                         auth=item.auth,
                     )
-                except Exception:
-                    logger.opt(exception=True).warning("failed to update job", job_id=item.id)
+                except Exception as e:
+                    logger.opt(exception=e).warning("failed to update job", job_id=item.id)
 
                 # if the job reached a terminal state, clean it up
                 if report.status in TERMINAL_STATUSES:
@@ -189,3 +194,15 @@ class TagRunner:
 
     def _finish_job(self, id: str) -> None:
         self._running_jobs.pop(id, None)
+
+    def _set_stopped(self, item: QueueItem) -> None:
+        try:
+            self.jobstore.update_job(
+                UpdateJobRequest(id=item.id, status="cancelled", status_details=JobStatus(
+                    error="Job was stopped before it was started",
+                    details=None,
+                )),
+                auth=item.auth,
+            )
+        except Exception as e:
+            logger.opt(exception=e).warning("failed to update job with stopped status", job_id=item.id)

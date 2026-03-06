@@ -61,6 +61,7 @@ class FsJobStore:
             qid=job["qid"],
             params=params,
             created_at=job["created_at"],
+            status=job["status"],
             status_details=from_dict(JobStatus, job["status_details"]),
             stop_requested=job["stop_requested"],
             auth=job["auth"],

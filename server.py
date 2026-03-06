@@ -9,8 +9,8 @@ import sys
 from waitress import serve
 import os
 
-from src.api.tagging.impl.direct_api import DirectAPI
-from src.api.tagging.impl.queue_based import QueueClient
+from src.service.impl.direct_api import DirectAPI
+from src.service.impl.queue_based import QueueClient
 from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tags.tagstore.factory import create_tagstore

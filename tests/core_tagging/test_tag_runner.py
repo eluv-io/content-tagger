@@ -10,11 +10,6 @@ import pytest
 from src.common.errors import MissingResourceError
 from src.tagging.fabric_tagging.model import TagJobStatusReport
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 def _wait_for_status(
     client,
     qhit: str,
@@ -108,9 +103,9 @@ class TestQueueStop:
         assert len(results) == 1
         assert results[0].message == "Stop requested"
 
-    def test_stop_wrong_feature_returns_empty(self, queue_client, q, make_tag_args, tag_runner):
+    def test_stop_wrong_feature_raises_exception(self, queue_client, q, make_tag_args, tag_runner):
         args = make_tag_args(feature="caption", stream="video")
         queue_client.tag(q, args)
 
-        results = queue_client.stop(q.qhit, "nonexistent", None)
-        assert results == []
+        with pytest.raises(MissingResourceError):
+            queue_client.stop(q.qhit, "nonexistent", None)

@@ -20,6 +20,7 @@ class QueueItem:
     qid: str
     created_at: float
     params: TagArgs
+    status: job_status
     status_details: JobStatus
     stop_requested: bool
     auth: str
