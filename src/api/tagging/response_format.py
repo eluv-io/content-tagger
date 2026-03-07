@@ -22,6 +22,7 @@ class TagDetails:
 
 @dataclass(frozen=True)
 class JobStatus:
+    qid: str
     job_id: str
     status: str
     created_at: str

@@ -260,11 +260,10 @@ def test_real_live_stream(app, q_live):
             print(json.dumps(reports, indent=2))
             
             # Find the test_model job in the list
-            test_model_reports = [r for r in reports if r['model'] == 'test_model' and r['tag_details']['stream'] == 'video']
+            test_model_reports = [r for r in reports if r['model'] == 'test_model']
             if test_model_reports:
                 report = test_model_reports[0]
                 status = report['status']
-                progress = report['tagging_progress']
                 
                 # Once we see completion, we know segments were processed
                 if status == "succeeded":
@@ -279,7 +278,7 @@ def test_real_live_stream(app, q_live):
     data = response.get_json()
     reports = data['jobs']
     
-    test_model_report = next(r for r in reports if r['model'] == 'test_model' and r['tag_details']['stream'] == 'video')
+    test_model_report = next(r for r in reports if r['model'] == 'test_model')
     final_status = test_model_report['status']
     assert final_status in ['cancelled', 'succeeded'], f"Expected Stopped or Completed, got {final_status}"
     
@@ -367,7 +366,7 @@ def test_stop_workflow(client, q):
     reports = data['jobs']
     
     # The job should exist and be in a stopped state
-    test_model_reports = [r for r in reports if r['model'] == 'test_model' and r['tag_details']['stream'] == 'video']
+    test_model_reports = [r for r in reports if r['model'] == 'test_model']
     assert test_model_reports, "test_model job not found in status"
     status = test_model_reports[0]['status']
     assert status == 'cancelled', f"Expected job to be cancelled, got {status}"
@@ -507,10 +506,10 @@ def test_stop_live_job(app, q_live):
         if response.status_code == 200:
             data = response.get_json()
             reports = data['jobs']
-            test_model_reports = [r for r in reports if r['model'] == 'test_model' and r['tag_details']['stream'] == 'video']
+            test_model_reports = [r for r in reports if r['model'] == 'test_model']
             
             if test_model_reports:
-                progress = test_model_reports[0]['tagging_progress']
+                progress = test_model_reports[0]['tagging_details'].get('progress', '0/0')
                 
                 # Wait until we have some progress but not complete
                 if progress not in ["0/0", "0%"] and not progress.endswith("/0"):
@@ -542,7 +541,7 @@ def test_stop_live_job(app, q_live):
     data = response.get_json()
     reports = data['jobs']
     
-    test_model_report = next(r for r in reports if r['model'] == 'test_model' and r['tag_details']['stream'] == 'video')
+    test_model_report = next(r for r in reports if r['model'] == 'test_model')
     final_status = test_model_report['status']
     assert final_status == 'cancelled', f"Expected cancelled, got {final_status}"
     

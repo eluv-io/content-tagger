@@ -15,6 +15,7 @@ from src.common.logging import logger
 from src.common.errors import *
 from src.api.auth import *
 from src.common.content import Content, ContentFactory
+from src.common.tenant import get_tenant
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.api.tagging.request_mapping import *
 from src.api.tagging.response_mapping import *
@@ -90,6 +91,36 @@ def handle_status(qhit: str) -> Response:
     reports = service.status(qhit)
 
     status_req = _parse_status_request()
+
+    response = map_all_jobs_status_to_response(reports, status_req)
+
+    return Response(response=json.dumps(asdict(response)), status=200, mimetype='application/json')
+
+def handle_status_all() -> Response:
+    """Global job-status endpoint. Requires ?tenant= filter.
+    
+    Authentication: the caller's auth token is verified by picking the first
+    returned job's qid and confirming get_tenant(qid, auth) matches the
+    requested tenant.
+    """
+    auth = get_authorization(request)
+    status_req = _parse_status_request()
+
+    if not status_req.tenant:
+        raise BadRequestError("The 'tenant' query parameter is required for /job-status")
+
+    service: TagAPI = current_app.config["state"]["service"]
+
+    reports = service.status_all(status_req.tenant)
+
+    # Authenticate: resolve tenant from the first result's qid and verify it matches
+    if reports:
+        first_qid = reports[0].qid
+        resolved_tenant = get_tenant(first_qid, auth)
+        if resolved_tenant != status_req.tenant:
+            raise BadRequestError(
+                f"Authorization failed: the provided token does not belong to tenant '{status_req.tenant}'"
+            )
 
     response = map_all_jobs_status_to_response(reports, status_req)
 

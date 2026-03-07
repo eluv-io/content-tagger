@@ -4,12 +4,12 @@ import time
 import uuid
 from dataclasses import asdict
 from dacite import from_dict
-import requests
 
 from src.tagging.fabric_tagging.model import TagArgs
 from src.tagging.fabric_tagging.queue.model import *
 from src.fetch.model import *
 from src.common.logging import logger
+from src.common.tenant import get_tenant
 
 def _convert_scope(data: dict) -> Scope:
     type = data.get("type")
@@ -23,14 +23,6 @@ def _convert_scope(data: dict) -> Scope:
         return LiveScope(**data)
     else:
         raise ValueError(f"Unknown scope type: {type}")
-
-def get_tenant(qid: str, auth: str) -> str:
-    try:
-        resp = requests.get(f"https://main.net955305.contentfabric.io/q/{qid}?profile&authorization={auth}").json()
-        return resp["content_profile"]["tenant_id"]
-    except Exception as e:
-        logger.opt(exception=e).error("Failed to get tenant for qid", qid=qid)
-        return ""
 
 class FsJobStore:
     def __init__(self, store_dir: str):

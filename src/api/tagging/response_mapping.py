@@ -51,6 +51,7 @@ def map_job_status_to_response(js: TagJobStatusReport) -> JobStatus:
     # convert float (seconds) to ISO string
     created_at = datetime.fromtimestamp(js.created_at).isoformat()
     return JobStatus(
+        qid=js.qid,
         job_id=str(js.job_id),
         model=js.model,
         status=js.status,

@@ -30,9 +30,13 @@ class DirectAPI(TagAPI):
             message=res.message,
         )
 
+    def status_all(self, tenant: str) -> list[TagJobStatusReport]:
+        raise NotImplementedError("status_all is not supported in direct mode")
+
     def status(self, qhit: str) -> list[TagJobStatusReport]:
         res = self.tagger.status(qhit)
         return [TagJobStatusReport(
+            qid=qhit,
             job_id=str(r.job_id),
             status=_tag_status_to_job_status(r.status),
             message=r.message,

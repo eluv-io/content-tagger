@@ -65,17 +65,27 @@ class QueueClient(TagAPI):
         logger.info("enqueued tagging job", job_id=str(job.id))
         return TagStartResult(started=True, created_at=job.created_at, job_id=job.id, message="Job enqueued")
 
+    def status_all(self, tenant: str) -> list[TagJobStatusReport]:
+        """Return the latest status for all jobs matching the given tenant."""
+        items = self.jobstore.list_jobs(ListJobArgs(tenant=tenant), auth="")
+        return self._items_to_reports(items)
+
     def status(self, qhit: str) -> list[TagJobStatusReport]:
         """Return the latest status for all jobs targeting *qhit*."""
         items = self.jobstore.list_jobs(ListJobArgs(qid=qhit), auth="")
         if not items:
             raise MissingResourceError(f"No tagging jobs found for qhit: {qhit}")
 
+        return self._items_to_reports(items)
+
+    def _items_to_reports(self, items: list) -> list[TagJobStatusReport]:
+        """Convert a list of QueueItems to TagJobStatusReport objects."""
         reports: list[TagJobStatusReport] = []
         for item in items:
             # if the TagRunner has already posted back a full report, use it
             if item.status_details.details is not None:
                 reports.append(TagJobStatusReport(
+                    qid=item.qid,
                     job_id=item.id,
                     status=item.status,
                     message=item.status_details.error,
@@ -97,6 +107,7 @@ class QueueClient(TagAPI):
                 stream = _stream_from_scope(item.params.scope)
                 reports.append(
                     TagJobStatusReport(
+                        qid=item.qid,
                         job_id=item.id,
                         status=item.status,
                         created_at=item.created_at,
