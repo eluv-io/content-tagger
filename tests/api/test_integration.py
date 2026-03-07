@@ -509,7 +509,7 @@ def test_stop_live_job(app, q_live):
             test_model_reports = [r for r in reports if r['model'] == 'test_model']
             
             if test_model_reports:
-                progress = test_model_reports[0]['tagging_details'].get('progress', '0/0')
+                progress = test_model_reports[0].get('tagging_details', {}).get('progress', '0/0')
                 
                 # Wait until we have some progress but not complete
                 if progress not in ["0/0", "0%"] and not progress.endswith("/0"):
