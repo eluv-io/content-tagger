@@ -157,12 +157,12 @@ def main():
 
     cfg = AppConfig.from_yaml(args.config)
 
-    if args.queue:
+    if args.standalone:
+        logger.info("starting in standalone mode")
+        app = create_app_direct(cfg)
+    else:
         logger.info("starting in queue-based mode")
         app = create_app_queue_based(cfg)
-    else:
-        logger.info("starting in direct mode")
-        app = create_app_direct(cfg)
 
     serve(app, host=args.host, port=args.port)
 
@@ -173,6 +173,6 @@ if __name__ == '__main__':
     parser.add_argument('--host', type=str, default="127.0.0.1")
     parser.add_argument('--config', type=str, default="config.yml")
     parser.add_argument('--directory', type=str)
-    parser.add_argument('--queue', action='store_true', help='Run in queue-based mode')
+    parser.add_argument('--standalone', action='store_true', help='Run in standalone mode')
     args = parser.parse_args()
     main()
