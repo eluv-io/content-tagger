@@ -132,7 +132,7 @@ def _parse_status_request() -> StatusRequest:
         args = request.args.to_dict()
         if "authorization" in args:
             del args["authorization"]
-        return from_dict(data_class=StatusRequest, data=args, config=Config(strict=True))
+        return from_dict(data_class=StatusRequest, data=args, config=Config(strict=True, cast=[int]))
     except Exception as e:
         raise BadRequestError(f"Invalid status query parameters: {e}") from e
 
