@@ -26,6 +26,8 @@ def map_all_jobs_status_to_response(
         filtered = [j for j in filtered if j.tenant == req.tenant]
     if req.user is not None:
         filtered = [j for j in filtered if j.user == req.user]
+    if req.model is not None:
+        filtered = [j for j in filtered if j.model == req.model]
 
     logger.debug(f"Filtered jobs status from {len(all_jobs_status)} to {len(filtered)} based on query parameters", feature="status_filtering", total=len(all_jobs_status), filtered=len(filtered), status=req.status, tenant=req.tenant, user=req.user)
 

@@ -57,3 +57,4 @@ class StatusRequest:
     status: str | None = None
     tenant: str | None = None
     user: str | None = None
+    model: str | None = None
