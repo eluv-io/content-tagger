@@ -38,7 +38,103 @@ const video_params = {
     ]
 };
 
-// --- Helper Functions ---
+//////////////////////////////////////////
+// --- Helper Functions and Classes --- // 
+//////////////////////////////////////////
+ class PromiseWorker {
+  
+  #promiseSlots = []  
+  #work = []
+  #workAvailable = null
+  #resolveWork = null
+  #servicing = true
+  
+  constructor(slots = 3) {    
+    this.#promiseSlots = new Array(slots).fill(null)
+    this.#workAvailable = new Promise((resolve) => { this.#resolveWork = resolve })
+    this.log = function() {}
+  }
+
+  addWork(job) {
+    const ret = new Promise(async (resolve, reject) => {
+      this.#work.push({ job, resolve, reject} )
+    })
+    
+    if (this.#work.length == 1) {
+      this.#resolveWork()
+      this.#workAvailable = new Promise((resolve) => { this.#resolveWork = resolve })
+    }
+    
+    return ret
+  }
+
+  async servicer() {
+
+    this.log("performwork " + this.#work.length)
+    
+    while (true) {
+      let workelement = undefined
+
+      while (workelement === undefined && this.#servicing) {
+        workelement = this.#work.shift()
+        if (workelement === undefined) await this.#workAvailable        
+      }
+
+      if (this.#servicing == false) break
+      
+      this.log("exec work", workelement)
+
+      const job = workelement.job
+      const callerResolve = workelement.resolve
+      const callerReject = workelement.reject
+
+      let slot
+      while (true) {        
+        slot = this.#promiseSlots.findIndex( (v) => v == null)            
+        
+        if (slot >= 0) break
+        
+        if (!this.#promiseSlots.some( (v) => v != null )) {
+          console.error("No free slots but no in use slots either")
+          throw new Error("No free slots but no in use slots either")
+        }
+        
+        const [done] = await Promise.race(this.#promiseSlots.filter( (v) => v != null))
+        this.log("finished slot", done)
+        this.#promiseSlots[done] = null
+      }
+
+      if (this.#servicing == false) break
+      
+      this.#promiseSlots[slot] = new Promise( async (resolve, reject) => {
+        try { 
+          this.log(`(${slot}) WORKER START ${slot}`)
+          const result = await job()
+          this.log(`(${slot}) WORKER DONE ${slot} RESULT ${result}`)
+          resolve([slot])
+          callerResolve(result)
+          return
+        }
+        catch (err) {
+          this.log(`(${slot}) WORKER DONE ${slot} ERR ${err}`)              
+          resolve([slot])
+          callerReject(err)
+          return
+        }
+      })      
+    }
+    this.#work = null
+    this.#promiseSlots = null    
+  }
+  
+  stopService() {
+    this.#servicing = false
+    if (this.#work.length == 0) {
+      this.#resolveWork()
+      this.#workAvailable = new Promise((resolve) => { this.#resolveWork = resolve })
+    }
+  } 
+}
 
 class ReadlineInput {
   #currentTimeout = 0
