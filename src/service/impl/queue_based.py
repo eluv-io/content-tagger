@@ -62,7 +62,7 @@ class QueueClient(TagAPI):
             auth=auth,
         )
 
-        logger.info("enqueued tagging job", job_id=str(job.id))
+        logger.info("enqueued tagging job", job_id=str(job.id), qid=q.qid)
         return TagStartResult(started=True, created_at=job.created_at, job_id=job.id, message="Job enqueued")
 
     def status_all(self, tenant: str) -> list[TagJobStatusReport]:

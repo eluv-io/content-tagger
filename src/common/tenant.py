@@ -1,8 +1,11 @@
+from functools import lru_cache
+
 import requests
 
 from src.common.logging import logger
 
 
+@lru_cache(maxsize=128)
 def get_tenant(qid: str, auth: str) -> str:
     """Resolve the tenant ID for a given content object ID using the fabric profile endpoint."""
     try:
