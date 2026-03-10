@@ -140,8 +140,6 @@ def fetcher_config() -> FetcherConfig:
         max_downloads=4
     )
 
-"""JobStore Fixtures"""
-
 @pytest.fixture
 def jobstore(temp_dir) -> JobStore:
     """Create a JobStore for testing.

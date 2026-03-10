@@ -1,7 +1,7 @@
 from dataclasses import asdict
 
 from src.common.content import Content
-from src.common.errors import MissingResourceError
+from src.common.errors import BadRequestError, MissingResourceError
 from src.common.logging import logger
 from src.fetch.model import AssetScope, LiveScope, TimeRangeScope, VideoScope
 from src.service.model import (
@@ -51,6 +51,10 @@ class QueueClient(TagAPI):
                     message=f"A job with params {args} is already running",
                     created_at=item.created_at,
                 )
+            
+        title = q.content_object_metadata(metadata_subtree="/public/name")
+        if not isinstance(title, str):
+            raise BadRequestError(f"Received non-string value at /meta/public/name for qid={q.qid}")
 
         job = self.jobstore.create_job(
             CreateQueueItem(
@@ -58,7 +62,7 @@ class QueueClient(TagAPI):
                 params=args,
                 status="queued",
                 status_details=JobStatus(error=None, details=None),
-                additional_info={},
+                additional_info={"title": title},
             ),
             auth=auth,
         )
