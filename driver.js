@@ -14,7 +14,8 @@ const tagstore = process.env.TAGSTORE_URL || "https://ai.contentfabric.io/tagsto
 // Global state to mimic Python script
 let written = {};
 
-// Default configs
+// Default configs -- these should probably be updated
+
 const assets_params = {
     "options": {
         "destination_qid": "",
@@ -175,9 +176,12 @@ class ReadlineInput {
   }
 
   #setTimeout() {
+    if (this.#currentTimeoutId != null) clearTimeout(this.#currentTimeoutId)
     if (this.#currentTimeout > 0) {
-      if (this.#currentTimeoutId != null) clearTimeout(this.#currentTimeoutId)
       this.#currentTimeoutId = setTimeout(this._ontimeout, this.#currentTimeout)
+    }
+    else {
+      this.#currentTimeoutId = null
     }
   }
 
@@ -254,7 +258,7 @@ function formatTime(t) {
   return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 };
 
-// fetch handle errors
+// fetch wrapper that forces response to a dict, and does crappy error handling
 async function fetch_dict_with_status(...args) {
   let resp
   try {
@@ -332,39 +336,90 @@ async function get_status(qhit, auth) {
     url.searchParams.append("authorization", auth);
 
     const response_data = await fetch_dict_with_status(url);
-
-    if (response_data && response_data.jobs) {
-        const reports = response_data.jobs;
-        const status = {};
-        for (const report of reports) {
-            const stream = report.stream;
-            const model = report.model;
-            if (!status[stream]) {
-                status[stream] = {};
-            }
-            status[stream][model] = {
-                'status': report.status,
-                'tagging_progress': report.tagging_progress,
-                'time_running': report.time_running,
-                'failed': report.failed,
-                'missing_tags': report.missing_tags
-            };
-            if (report.message) {
-                status[stream][model].message = report.message;
-            }
-        }
-        return status;
-    } else if (response_data && response_data.error) {
-        return response_data;
-    } else {
-        return response_data;
-    }
+    return response_data;
 }
 
-async function tag(contents, auth, assets, params, startTime = null, endTime = null) {
+const stateMap = {}
 
+async function getState(contents, auth, tag_config, maxInProgress = 0) {
+
+    let models = get_available_models(tag_config);
+
+    let inProgressCount = 0;
+    let nothings = 0;
+
+    //const promiseWorker = new PromiseWorker(10);
+    //promiseWorker.servicer();
+
+    //const promises = []
     for (let i = 0; i < contents.length; i++) {
         const qhit = contents[i];
+        if (stateMap[qhit] == "done") {
+            console.debug(`Already marked ${qhit} as done, skipping...`);
+            continue;
+        }
+           
+        if (maxInProgress > 0 && inProgressCount > maxInProgress) return inProgressCount;
+        //if (maxInProgress > 0 && nothings > maxInProgress) return inProgressCount;
+        const stat_raw = await get_status(qhit, auth)
+        const stat = Object.fromEntries((stat_raw.jobs ||[]).map(job => [job.model, job]))
+
+        let dones = 0
+        for (const model of models) {
+            if (!stat[model]) stat[model] = { status: "Not started" }
+            const status = stat[model].status
+            if (status == "Completed") {
+                console.debug(`Marking ${qhit} ${model} as done on tagger since status is ${status}`);
+                dones += 1
+            }
+            else if (status == "Failed") {
+                console.debug(`Marking ${qhit} ${model} as "done" even though status is ${status}`);
+                dones += 1
+            }
+            else if (status.toLowerCase().includes("fetch") || status.toLowerCase().includes("tagging")) {
+                console.debug(`${qhit} ${model} fetching, waiting to tag, or tagging`);
+                inProgressCount += 1;
+                break;
+            }
+            else {
+                nothings += 1
+                console.debug(`${qhit} ${model} status: ${status} ${inProgressCount}`);
+            }
+        }        
+        if (dones == models.length) stateMap[qhit] = "done";
+    }
+
+    return inProgressCount;
+}
+
+async function tag(contents, auth, assets, params, startTime = null, endTime = null, inProgressLimit = 0, status_secret = auth) {
+
+    for (let i = 0; i < contents.length; i++) {
+
+        if (inProgressLimit > 0) {
+            while (true) {
+                const inProgressCount = await getState(contents, status_secret, params, inProgressLimit + 2);
+                if (inProgressCount >= inProgressLimit) {
+                    process.stdout.write(`> ${inProgressCount} in progress <    \r`);
+                    console.debug(`In progress count ${inProgressCount} has reached the limit of ${inProgressLimit}. Sleeping for a while.`);
+                    await new Promise(resolve => setTimeout(resolve, 30 * 1000)); 
+                }
+                else {
+                    process.stdout.write(`[ ${inProgressCount} in progress ]     \r`);
+                    console.debug(`In progress count ${inProgressCount} -- can start (another) content`)
+                    break;
+                }
+            }7
+        }
+        
+        let qhit = contents[i];
+
+        while (stateMap[qhit] == "done" && i < contents.length) {
+            console.log(`${qhit} has "Completed" job, skipping...`);
+            i++;
+            qhit = contents[i];
+        }
+
         let url;
         if (assets) {
             url = `${server}/${qhit}/image_tag`;
@@ -384,7 +439,7 @@ async function tag(contents, auth, assets, params, startTime = null, endTime = n
             if (endTime !== null) currentParams.options.scope.end_time = parseInt(endTime);
         }
 
-        console.log(JSON.stringify(currentParams, null, 2));
+        console.log(JSON.stringify(currentParams, null, ""));
 
         const urlObj = new URL(url);
         urlObj.searchParams.append("authorization", auth);
@@ -394,9 +449,9 @@ async function tag(contents, auth, assets, params, startTime = null, endTime = n
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(currentParams)
         });
-        console.log(res)
+        console.log(JSON.stringify(res, null, ""));
 
-        const sleepTime = parseFloat(process.env.TAGGERV2_START_SLEEP || 0);
+        const sleepTime = parseFloat(process.env.TAGGERV2_START_SLEEP || (inProgressLimit > 0 ? 7 : 0));
         if (sleepTime > 0) {
             await new Promise(resolve => setTimeout(resolve, sleepTime * 1000));
         }
@@ -440,7 +495,7 @@ async function aggregate(qhit, config, do_commit) {
     console.log("****************************");
     console.log("");
 
-    if (process.env.TAGGERV3_AGG_NODELAY === undefined) {
+    if (process.env.TAGGERV3_AGG_NODELAY != undefined) {
         await new Promise(resolve => setTimeout(resolve, 5000));
     }
 
@@ -626,13 +681,28 @@ async function main() {
             default: false,
             description: 'force replaces'
         })
+        .option('status-secret-file', {
+            type: 'string',
+            default: null,
+            description: 'file to read the status secret from'
+        })
+        .option('debug', {
+            type: 'boolean',
+            default: false,
+            description: 'enable console.debug() output'
+        })
         .check((argv) => {
             if (!argv.contents && (!argv.iq || argv.iq.length === 0)) {
                 throw new Error("One of arguments -c/--contents or -q/--iq is required");
             }
             return true;
         })
+        .wrap(null)
         .parse();
+
+    if (!argv.debug) {
+        console.debug = () => {};
+    }
 
     let tag_config;
     if (argv['tag-config'] !== "") {
@@ -675,7 +745,13 @@ async function main() {
 
     console.log("getting auth...");
     const auth = get_auth(argv.config, contents[0]);
-
+    let status_secret = auth
+  
+    if (argv['status-secret-file']) {
+      status_secret = fs.readFileSync(argv['status-secret-file'], 'utf8').replaceAll("\n", "").replaceAll("\r", "")
+      console.debug("read status secret file")
+    }
+  
     let start_time = parseInt(argv['start-time']);
     let end_time = argv['end-time'] !== null ? parseInt(argv['end-time']) : null;
 
@@ -723,7 +799,7 @@ async function main() {
                 if (user_split.length > 1) {
                     if (!new RegExp(user_split[1]).test(qhit)) continue;
                 }
-                const status = await get_status(qhit, auth);
+                const status = await get_status(qhit, status_secret);
                 statuses[qhit] = status;
                 console.log(qhit, JSON.stringify(status, null, 2));
             }
@@ -765,7 +841,7 @@ async function main() {
                 stop_models = models;
             }
             await stop(iq, auth, stop_models);
-        } else if (["tag", "t"].includes(user_input)) {
+        } else if (["tag", "t", "pacetag"].includes(user_input)) {
             const this_tag_config = JSON.parse(JSON.stringify(tag_config));
             let iqsub = null;
             if (user_split.length > 1) iqsub = user_split[1];
@@ -782,8 +858,7 @@ async function main() {
             }
 
             const contentsub = contents.filter(x => iqsub === null || new RegExp(iqsub).test(x));
-            await tag(contentsub, auth, argv.assets, this_tag_config, start_time, end_time);
-
+            await tag(contentsub, auth, argv.assets, this_tag_config, start_time, end_time, user_input === "pacetag" ? 4 : 0, status_secret);
         } else if (user_input.startsWith("+") || user_input.startsWith("-")) {
             let val = parseFloat(user_input);
             val = val * 60;
@@ -797,7 +872,7 @@ async function main() {
 
             console.log(`[${start_time}-${end_time}] [${formatTime(start_time)} - ${formatTime(end_time)}]`);
 
-        } else if (user_input === "qs") {
+        } else if (user_input === "qs" || user_input === "quickstatus" || (user_input === "qsp")) {
             reset_quickstatus = false;
             if (user_split.length > 1 && user_split[1] === "watch") {
                 quickstatus_watch = ["qs", ...user_split.slice(2)].join(" ");
@@ -807,9 +882,14 @@ async function main() {
                 quickstatus_watch = null;
             } else {
                 const filter = user_split.slice(1).join(" ");
+                const worker = new PromiseWorker(user_input === "qsp" ? 10 : 1);
+                worker.servicer()
+                resultPromises = []
                 for (const qhit of contents) {
-                    await quick_status(auth, qhit, filter);
+                    resultPromises.push(worker.addWork(() => quick_status(status_secret, qhit, filter)));
                 }
+                await Promise.all(resultPromises);
+                worker.stopService();
             }
         } else if (["reverse"].includes(user_input)) {
             contents.reverse();
@@ -818,6 +898,11 @@ async function main() {
             let contentsub = contents;
             if (user_split.length > 1) contentsub = user_split.slice(1);
             await write_all(contentsub, argv.config, argv.commit, false);
+        } else if (["getstate"].includes(user_input)) {
+            for (key in stateMap) delete stateMap[key]
+            const inProgressCount = await getState(contents, status_secret, tag_config);
+            console.log(`Total contents currently in progress: ${inProgressCount}`);
+            console.dir(stateMap);
         } else if (["forcewrite"].includes(user_input)) {
             let contentsub = contents;
             if (user_split.length > 1) contentsub = user_split.slice(1);
