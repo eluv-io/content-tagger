@@ -4,6 +4,7 @@ from flask_cors import CORS
 import json
 from requests.exceptions import HTTPError
 import atexit
+import signal
 import setproctitle
 import sys
 from waitress import serve
@@ -163,6 +164,13 @@ def main():
     else:
         logger.info("starting in queue-based mode")
         app = create_app_queue_based(cfg)
+
+    def _handle_signal(signum, frame):
+        logger.info(f"Received signal {signum}, shutting down")
+        sys.exit(0)  # raises SystemExit, which triggers atexit handlers
+
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
 
     serve(app, host=args.host, port=args.port)
 
