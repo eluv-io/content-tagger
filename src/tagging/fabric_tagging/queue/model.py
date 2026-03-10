@@ -26,6 +26,7 @@ class QueueItem:
     auth: str
     user: str
     tenant: str
+    additional_info: dict
 
 @dataclass
 class CreateQueueItem:
@@ -33,6 +34,7 @@ class CreateQueueItem:
     params: TagArgs
     status: job_status
     status_details: JobStatus
+    additional_info: dict
 
 @dataclass
 class ListJobArgs:

@@ -41,10 +41,10 @@ class QueueClient(TagAPI):
         """Enqueue a tagging job and return immediately."""
         auth = q.token()
 
-        existing = self.jobstore.list_jobs(ListJobArgs(qid=q.qhit), auth=auth)
+        existing = self.jobstore.list_jobs(ListJobArgs(qid=q.qid), auth=auth)
         for item in existing:
             if item.status in ("queued", "running") and item.params.feature == args.feature:
-                logger.info("duplicate job rejected", qhit=q.qhit, feature=args.feature, existing_job_id=str(item.id))
+                logger.info("duplicate job rejected", qhit=q.qid, feature=args.feature, existing_job_id=str(item.id))
                 return TagStartResult(
                     job_id="",
                     started=False,
@@ -54,10 +54,11 @@ class QueueClient(TagAPI):
 
         job = self.jobstore.create_job(
             CreateQueueItem(
-                qid=q.qhit,
+                qid=q.qid,
                 params=args,
                 status="queued",
                 status_details=JobStatus(error=None, details=None),
+                additional_info={},
             ),
             auth=auth,
         )

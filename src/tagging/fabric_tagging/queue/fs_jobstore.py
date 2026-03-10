@@ -69,6 +69,7 @@ class FsJobStore:
             auth=job["auth"],
             user=job["user"],
             tenant=job["tenant"],
+            additional_info=job.get("additional_info", {}),
         )
 
     def create_job(self, args: CreateQueueItem, auth: str) -> QueueItem:
@@ -85,6 +86,7 @@ class FsJobStore:
             "user": tenant,
             "tenant": tenant,
             "auth": auth,
+            "additional_info": args.additional_info,
         })
         job_data = self._read_job(id)
         return self._convert_job_dict(job_data)

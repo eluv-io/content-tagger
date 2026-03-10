@@ -27,12 +27,13 @@ def _make_tag_args(feature: str = "test_feature") -> TagArgs:
     )
 
 
-def _make_create_item(qid: str = "iq__test", feature: str = "test_feature") -> CreateQueueItem:
+def _make_create_item(qid: str = "iq__test", feature: str = "test_feature", additional_info: dict = {}) -> CreateQueueItem:
     return CreateQueueItem(
         qid=qid,
         params=_make_tag_args(feature),
         status="queued",
         status_details=JobStatus(error=None, details=None),
+        additional_info=additional_info,
     )
 
 
@@ -72,6 +73,13 @@ class TestCreateAndList:
         jobstore.create_job(_make_create_item(qid="iq__b"), auth="test-auth")
         jobs = _list_all(jobstore)
         assert len(jobs) == 2
+
+    def test_additional_info_is_stored_and_retrieved(self, jobstore):
+        info = {"key1": "value1", "key2": 42}
+        jobstore.create_job(_make_create_item(additional_info=info), auth="test-auth")
+        jobs = _list_all(jobstore)
+        assert len(jobs) == 1
+        assert jobs[0].additional_info == info
 
 
 class TestListFiltering:
