@@ -22,10 +22,6 @@ def map_all_jobs_status_to_response(
     filtered = list(all_jobs_status)
     if req.status is not None:
         filtered = [j for j in filtered if j.status == req.status]
-    if req.tenant is not None:
-        filtered = [j for j in filtered if j.tenant == req.tenant]
-    if req.user is not None:
-        filtered = [j for j in filtered if j.user == req.user]
     if req.model is not None:
         filtered = [j for j in filtered if j.model == req.model]
 

@@ -1,6 +1,13 @@
 from dataclasses import dataclass
 
 @dataclass(frozen=True)
+class StatusArgs:
+    qid: str | None
+    user: str | None
+    tenant: str | None
+    title: str | None
+
+@dataclass(frozen=True)
 class TagStartResult:
     job_id: str
     started: bool
@@ -25,6 +32,7 @@ class TagJobStatusReport:
     params: dict
     tenant: str = ""
     user: str = ""
+    title: str = ""
     message: str | None = None
     tagger_details: TagDetails | None = None
 

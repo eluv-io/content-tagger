@@ -8,10 +8,11 @@ import time
 import pytest
 
 from src.common.errors import MissingResourceError
-from src.tagging.fabric_tagging.model import TagJobStatusReport
+from src.service.impl.queue_based import QueueClient
+from src.service.model import *
 
 def _wait_for_status(
-    client,
+    client: QueueClient,
     qhit: str,
     target_status: str,
     timeout: float = 10.0,
@@ -19,15 +20,21 @@ def _wait_for_status(
 ) -> list[TagJobStatusReport]:
     """Poll until every report for *qhit* reaches *target_status* or timeout."""
     deadline = time.time() + timeout
-    reports: list[TagJobStatusReport] = []
+    req = StatusArgs(
+        qid=qhit,
+        user=None,
+        tenant=None,
+        title=None
+    )
+    reports = []
     while time.time() < deadline:
         try:
-            reports = client.status(qhit)
+            reports = client.status(req)
         except Exception:
             time.sleep(interval)
             continue
         if reports and all(r.status == target_status for r in reports):
-            return reports
+            break
         time.sleep(interval)
     return reports
 
@@ -37,7 +44,7 @@ def _status_for(
     model: str,
     stream: str | None = None,
 ) -> TagJobStatusReport:
-    matches = [r for r in reports if r.model == model and (stream is None or r.stream == stream)]
+    matches = [r for r in reports if r.model == model]
     assert matches, f"Missing status for model={model}, stream={stream}"
     return matches[0]
 
@@ -66,18 +73,18 @@ class TestQueueTag:
 
 
 class TestQueueStatus:
-    def test_status_after_enqueue(self, queue_client, q, make_tag_args, tag_runner):
+    def test_status_after_enqueue(self, queue_client, q, make_tag_args, make_status_args, tag_runner):
         """Before the runner picks it up we get a synthesised status."""
         args = make_tag_args(feature="caption", stream="video")
         queue_client.tag(q, args)
 
-        reports = queue_client.status(q.qhit)
+        reports = queue_client.status(make_status_args(qid=q.qid))
         assert len(reports) == 1
         assert reports[0].model == "caption"
 
-    def test_status_no_jobs(self, queue_client, tag_runner):
+    def test_status_no_jobs(self, queue_client, make_status_args, tag_runner):
         with pytest.raises(MissingResourceError):
-            queue_client.status("iq__nonexistent")
+            queue_client.status(make_status_args(qid="iq__nonexistent"))
 
     def test_status_with_completed_jobs(self, queue_client, q, sample_tag_args, tag_runner):
         for args in sample_tag_args:

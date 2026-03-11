@@ -21,7 +21,7 @@ from src.tag_containers.registry import ContainerRegistry
 from src.tags.track_resolver import TrackResolver
 from src.common.logging import logger
 
-from src.api.tagging.handlers import handle_tag, handle_status, handle_status_all, handle_stop_model, handle_stop_content
+from src.api.tagging.handlers import handle_tag, handle_status, handle_status_content, handle_stop_model, handle_stop_content
 from src.api.content_status.handlers import handle_content_status
 from src.api.model_status.handlers import handle_model_status
 from src.service.abstract import TagAPI
@@ -62,11 +62,11 @@ def configure_routes(app: Flask) -> None:
     
     @app.route('/<qhit>/job-status', methods=['GET'])
     def status(qhit: str) -> Response:
-        return handle_status(qhit)
+        return handle_status_content(qhit)
 
     @app.route('/job-status', methods=['GET'])
     def status_all() -> Response:
-        return handle_status_all()
+        return handle_status()
     
     @app.route('/<qhit>/stop/<feature>', methods=['POST'])
     def stop_model(qhit: str, feature: str) -> Response:

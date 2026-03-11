@@ -78,7 +78,7 @@ def _execute_tagging(q: Content, tag_args: list[TagArgs]) -> Response:
         mimetype="application/json",
     )
 
-def handle_status(qhit: str) -> Response:
+def handle_status_content(qhit: str) -> Response:
     status_secret = os.environ.get("STATUS_SECRET", None)
     
     if status_secret is not None and get_authorization(request) == status_secret:
@@ -88,7 +88,12 @@ def handle_status(qhit: str) -> Response:
 
     service: TagAPI = current_app.config["state"]["service"]
 
-    reports = service.status(qhit)
+    reports = service.status(StatusArgs(
+        qid=qhit,
+        user=None,
+        tenant=None,
+        title=None
+    ))
 
     status_req = _parse_status_request()
 
@@ -96,7 +101,7 @@ def handle_status(qhit: str) -> Response:
 
     return Response(response=json.dumps(asdict(response)), status=200, mimetype='application/json')
 
-def handle_status_all() -> Response:
+def handle_status() -> Response:
     """Global job-status endpoint. Requires ?tenant= filter.
     
     Authentication: the caller's auth token is verified by picking the first
@@ -111,7 +116,9 @@ def handle_status_all() -> Response:
 
     service: TagAPI = current_app.config["state"]["service"]
 
-    reports = service.status_all(status_req.tenant)
+    args = status_request_to_internal(status_req)
+
+    reports = service.status(args)
 
     # Authenticate: resolve tenant from the first result's qid and verify it matches
     if reports:

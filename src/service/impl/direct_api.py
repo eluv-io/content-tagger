@@ -1,6 +1,7 @@
 import time
 
 from src.common.content import Content
+from src.common.errors import BadRequestError
 from src.tagging.fabric_tagging.model import TagArgs
 from src.service.model import *
 from src.tagging.fabric_tagging.tagger import FabricTagger
@@ -29,14 +30,13 @@ class DirectAPI(TagAPI):
             created_at=time.time(),
             message=res.message,
         )
-
-    def status_all(self, tenant: str) -> list[TagJobStatusReport]:
-        raise NotImplementedError("status_all is not supported in direct mode")
-
-    def status(self, qhit: str) -> list[TagJobStatusReport]:
-        res = self.tagger.status(qhit)
+    
+    def status(self, req: StatusArgs) -> list[TagJobStatusReport]:
+        if not req.qid:
+            raise BadRequestError("qid parameter must be specified for direct api")
+        res = self.tagger.status(req.qid)
         return [TagJobStatusReport(
-            qid=qhit,
+            qid=req.qid,
             job_id=str(r.job_id),
             status=_tag_status_to_job_status(r.status),
             message=r.message,

@@ -7,6 +7,7 @@ import pytest
 from src.common.content import Content
 from src.fetch.model import DownloadRequest, DownloadResult, FetchSession, MediaMetadata, Source, VideoMetadata, VideoScope
 from src.fetch.model import VideoScope
+from src.service.model import StatusArgs
 from src.tag_containers.model import *
 from src.tagging.fabric_tagging.model import FabricTaggerConfig, TagArgs
 from src.tagging.fabric_tagging.tagger import FabricTagger
@@ -369,3 +370,20 @@ def tag_runner(fabric_tagger, queue_jobstore, qfactory):
     runner.start()
     yield runner
     runner.stop()
+
+@pytest.fixture
+def make_status_args():
+    def _make(
+        qid: str | None=None, 
+        user: str | None=None,
+        tenant: str | None=None,
+        title: str | None=None
+    ):
+        return StatusArgs(
+            qid=qid,
+            user=user,
+            tenant=tenant,
+            title=title
+        )
+    
+    return _make

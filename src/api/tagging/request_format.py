@@ -54,7 +54,9 @@ class StartJobsRequest:
 class StatusRequest:
     start: int = 0
     limit: int | None = None
+    qid: str | None = None
     status: str | None = None
     tenant: str | None = None
     user: str | None = None
     model: str | None = None
+    title: str | None = None

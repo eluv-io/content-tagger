@@ -9,6 +9,7 @@ from common_ml.utils.dictionary import nested_update
 
 from src.api.tagging.request_format import *
 from src.fetch.model import *
+from src.service.model import StatusArgs
 from src.tag_containers.registry import ContainerRegistry
 from src.tagging.fabric_tagging.model import TagArgs
 from src.common.content import Content
@@ -177,3 +178,11 @@ def is_live_content(q: Content) -> bool:
         return False
 
     return isinstance(edge_write_token, str) and edge_write_token.startswith("tqw__")
+
+def status_request_to_internal(req: StatusRequest) -> StatusArgs:
+    return StatusArgs(
+        qid=req.qid,
+        user=req.user,
+        tenant=req.tenant,
+        title=req.title
+    )

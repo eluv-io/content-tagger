@@ -4,12 +4,7 @@ from src.common.content import Content
 from src.common.errors import BadRequestError, MissingResourceError
 from src.common.logging import logger
 from src.fetch.model import AssetScope, LiveScope, TimeRangeScope, VideoScope
-from src.service.model import (
-    TagDetails,
-    TagJobStatusReport,
-    TagStartResult,
-    TagStopResult,
-)
+from src.service.model import *
 from src.tagging.fabric_tagging.model import TagArgs
 from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tagging.fabric_tagging.queue.model import CreateQueueItem, JobStatus, ListJobArgs
@@ -70,16 +65,16 @@ class QueueClient(TagAPI):
         logger.info("enqueued tagging job", job_id=str(job.id), qid=q.qid)
         return TagStartResult(started=True, created_at=job.created_at, job_id=job.id, message="Job enqueued")
 
-    def status_all(self, tenant: str) -> list[TagJobStatusReport]:
-        """Return the latest status for all jobs matching the given tenant."""
-        items = self.jobstore.list_jobs(ListJobArgs(tenant=tenant), auth="")
-        return self._items_to_reports(items)
-
-    def status(self, qhit: str) -> list[TagJobStatusReport]:
+    def status(self, req: StatusArgs) -> list[TagJobStatusReport]:
         """Return the latest status for all jobs targeting *qhit*."""
-        items = self.jobstore.list_jobs(ListJobArgs(qid=qhit), auth="")
+        items = self.jobstore.list_jobs(
+            ListJobArgs(qid=req.qid, user=req.user, tenant=req.tenant), 
+            auth="")
         if not items:
-            raise MissingResourceError(f"No tagging jobs found for qhit: {qhit}")
+            raise MissingResourceError(f"No tagging jobs found for qhit: {req.qid}")
+
+        if req.title is not None:
+            items = [item for item in items if item.additional_info.get("title") == req.title]
 
         return self._items_to_reports(items)
 
@@ -99,6 +94,7 @@ class QueueClient(TagAPI):
                     params=asdict(item.params),
                     tenant=item.tenant,
                     user=item.user,
+                    title=item.additional_info.get("title", ""),
                     tagger_details=TagDetails(
                         tag_status=item.status_details.details.status,
                         stream=_stream_from_scope(item.params.scope),
