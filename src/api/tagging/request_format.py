@@ -48,4 +48,13 @@ class JobSpec:
 @dataclass
 class StartJobsRequest:
     options: TaggerOptions = field(default_factory=TaggerOptions)
-    jobs: list[JobSpec] = field(default_factory=list)   
+    jobs: list[JobSpec] = field(default_factory=list)
+
+@dataclass
+class StatusRequest:
+    start: int = 0
+    limit: int | None = None
+    status: str | None = None
+    tenant: str | None = None
+    user: str | None = None
+    model: str | None = None

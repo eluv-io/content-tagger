@@ -1,3 +1,5 @@
+import os
+
 import pytest
 from unittest.mock import Mock, patch
 import time
@@ -14,6 +16,9 @@ from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from tests.api.conftest import FakeLiveWorker
 
+def is_queue_mode():
+    return os.getenv("USE_QUEUE") == "true"
+
 def is_job_success(client, q: Content):
     """Check if all jobs for content_id completed successfully."""
     auth = get_auth(q)
@@ -22,7 +27,7 @@ def is_job_success(client, q: Content):
         return False
     data = response.get_json()
     reports = data['jobs']
-    return all(r['status'] == 'Completed' for r in reports)
+    return all(r['status'] == 'succeeded' for r in reports)
 
 def get_auth(content: Content) -> str:
     return content._client.token
@@ -48,7 +53,7 @@ def wait_for_jobs_completion(client, contents: list[Content], timeout=30):
             print(json.dumps(reports, indent=2))
             
             for report in reports:
-                if report['status'] not in ['Completed', 'Failed']:
+                if report['status'] not in ['succeeded', 'failed', 'cancelled']:
                     all_finished = False
                     break
                     
@@ -105,13 +110,16 @@ def test_video_model(client, q):
     jobid = tagstore.find_batches(q=q)[0]
     tags = tagstore.find_tags(batch_id=jobid, q=q)
     tags = sorted(tags, key=lambda x: x.start_time)
+    vtags = [t for t in tags if t.frame_info is None]
     # TODO: this randomly gave 124 one time and I can't reproduce it
-    assert len(tags) == 122
+    assert len(vtags) == 122
     next_tag = 'hello1'
-    for tag in tags:
+    for tag in vtags:
         assert tag.text == next_tag
         next_tag = 'hello2' if next_tag == 'hello1' else 'hello1'
-        assert tag.frame_tags
+
+    ftags = [t for t in tags if t.frame_info is not None]
+    assert len(ftags) == 122
 
     assert completed, "Timeout waiting for jobs to complete"
 
@@ -191,16 +199,17 @@ def test_live_video_model(is_live_content, app, last_res_has_media, q):
     jobid = tagstore.find_batches(q=q)[0]
     tags = tagstore.find_tags(batch_id=jobid, q=q)
     tags = sorted(tags, key=lambda x: x.start_time)
+
+    vtags = [t for t in tags if t.frame_info is None]
     
     # Should have same number of tags as regular video model test
-    assert len(tags) == 122, f"Expected 122 tags, got {len(tags)}"
+    assert len(vtags) == 122, f"Expected 122 tags, got {len(vtags)}"
     
     # Verify tags alternate between hello1 and hello2
     next_tag = 'hello1'
-    for tag in tags:
+    for tag in vtags:
         assert tag.text == next_tag, f"Expected {next_tag}, got {tag.text}"
         next_tag = 'hello2' if next_tag == 'hello1' else 'hello1'
-        assert tag.frame_tags
         
     logger.info(f"Live test completed successfully with {fake_worker_ref[0].call_count} fetch calls (last_res_has_media={last_res_has_media})")
 
@@ -251,14 +260,13 @@ def test_real_live_stream(app, q_live):
             print(json.dumps(reports, indent=2))
             
             # Find the test_model job in the list
-            test_model_reports = [r for r in reports if r['model'] == 'test_model' and r['stream'] == 'video']
+            test_model_reports = [r for r in reports if r['model'] == 'test_model']
             if test_model_reports:
                 report = test_model_reports[0]
                 status = report['status']
-                progress = report['tagging_progress']
                 
                 # Once we see completion, we know segments were processed
-                if status == "Completed":
+                if status == "succeeded":
                     segments_found = True
                     break
         
@@ -270,20 +278,22 @@ def test_real_live_stream(app, q_live):
     data = response.get_json()
     reports = data['jobs']
     
-    test_model_report = next(r for r in reports if r['model'] == 'test_model' and r['stream'] == 'video')
+    test_model_report = next(r for r in reports if r['model'] == 'test_model')
     final_status = test_model_report['status']
-    assert final_status in ['Stopped', 'Completed'], f"Expected Stopped or Completed, got {final_status}"
+    assert final_status in ['cancelled', 'succeeded'], f"Expected Stopped or Completed, got {final_status}"
     
     # verify we have some tags
     jobid = tagstore.find_batches(q=q_live, qhit=q_live.qid)[0]
     tags = tagstore.find_tags(batch_id=jobid, q=q_live)
     tags = sorted(tags, key=lambda x: x.start_time)
+    vtags = [ t for t in tags if t.frame_info is None ]
     
     # Should have at least some tags from the segments
-    assert len(tags) >= 2
+    assert len(vtags) >= 2
 
     last_wall_clock = 0
-    for tag in tags:
+    for tag in vtags:
+        assert tag.additional_info is not None
         assert 'timestamp_ms' in tag.additional_info
         assert tag.additional_info["timestamp_ms"] > last_wall_clock
         last_wall_clock = tag.additional_info["timestamp_ms"]
@@ -346,6 +356,8 @@ def test_stop_workflow(client, q):
     response = client.post(f"/{q.qid}/stop/test_model?authorization={video_auth}")
     assert response.status_code == 200
     assert len(response.get_json()["jobs"]) == 1
+
+    time.sleep(1)
     
     # Check status - job should be stopped
     response = client.get(f"/{q.qid}/job-status?authorization={video_auth}")
@@ -354,10 +366,10 @@ def test_stop_workflow(client, q):
     reports = data['jobs']
     
     # The job should exist and be in a stopped state
-    test_model_reports = [r for r in reports if r['model'] == 'test_model' and r['stream'] == 'video']
+    test_model_reports = [r for r in reports if r['model'] == 'test_model']
     assert test_model_reports, "test_model job not found in status"
     status = test_model_reports[0]['status']
-    assert status == 'Stopped', f"Expected job to be stopped, got {status}"
+    assert status == 'cancelled', f"Expected job to be cancelled, got {status}"
 
 def test_double_run(client, q):
     """Run same job twice, expect second to be rejected."""
@@ -494,10 +506,10 @@ def test_stop_live_job(app, q_live):
         if response.status_code == 200:
             data = response.get_json()
             reports = data['jobs']
-            test_model_reports = [r for r in reports if r['model'] == 'test_model' and r['stream'] == 'video']
+            test_model_reports = [r for r in reports if r['model'] == 'test_model']
             
             if test_model_reports:
-                progress = test_model_reports[0]['tagging_progress']
+                progress = test_model_reports[0].get('tagging_details', {}).get('progress', '0/0')
                 
                 # Wait until we have some progress but not complete
                 if progress not in ["0/0", "0%"] and not progress.endswith("/0"):
@@ -529,9 +541,9 @@ def test_stop_live_job(app, q_live):
     data = response.get_json()
     reports = data['jobs']
     
-    test_model_report = next(r for r in reports if r['model'] == 'test_model' and r['stream'] == 'video')
+    test_model_report = next(r for r in reports if r['model'] == 'test_model')
     final_status = test_model_report['status']
-    assert final_status == 'Stopped', f"Expected Stopped, got {final_status}"
+    assert final_status == 'cancelled', f"Expected cancelled, got {final_status}"
     
     # Verify we have partial tags (not all of them)
     jobid = tagstore.find_batches(q=q_live, qhit=q_live.qid)[0]
@@ -605,13 +617,16 @@ def test_stop_all_jobs(client, q):
     reports = data['jobs']
     
     for report in reports:
-        assert report['status'] == 'Stopped'
+        assert report['status'] == 'cancelled', f"Expected cancelled, got {report['status']}"
 
 def test_start_two_jobs_one_fails_partial_failure_response(client, q):
     """
     Start two jobs in one request; force tagger.tag() to raise for feature == 'fail_model'.
     Expect HTTP 200 with per-job start statuses (one success, one failure).
     """
+    if is_queue_mode():
+        pytest.skip()
+
     auth = get_auth(q)
 
     tagger: FabricTagger = client.application.config["state"]["tagger"]

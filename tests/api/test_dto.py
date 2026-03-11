@@ -2,16 +2,18 @@ from unittest import result
 
 import pytest
 from unittest.mock import Mock, patch
+from flask import Flask
 
 from src.api.tagging.request_mapping import _set_defaults
 from src.api.tagging.request_mapping import map_video_tag_dto
 from src.fetch.model import AssetScope, LiveScope, TimeRangeScope, VideoScope
 from src.tag_containers.registry import ContainerRegistry
 from src.api.tagging.request_format import (
-    StartJobsRequest, JobSpec, TaggerOptions, 
+    StartJobsRequest, JobSpec, TaggerOptions, StatusRequest,
 )
 from src.common.errors import BadRequestError
 from src.tagging.fabric_tagging.model import TagArgs
+from src.api.tagging.handlers import _parse_status_request
 
 @pytest.fixture
 def mock_registry():
@@ -621,3 +623,36 @@ def test_set_defaults_complex_scope_override(mock_registry, mock_content):
     assert result.scope.start_time == 0  # From defaults
     assert result.scope.end_time == 500  # From override
     assert result.scope.stream == "override_stream"  # From override
+
+
+def test_parse_status_request():
+    app = Flask(__name__)
+
+    def parse(qs=""):
+        with app.test_request_context(f"/status{qs}"):
+            return _parse_status_request()
+
+    # Defaults
+    assert parse() == StatusRequest()
+
+    # Int coercion from query string
+    req = parse("?start=10&limit=5")
+    assert req.start == 10 and req.limit == 5
+
+    # All fields together
+    req = parse("?start=2&limit=20&status=done&tenant=fox&user=bob")
+    assert req == StatusRequest(start=2, limit=20, status="done", tenant="fox", user="bob")
+
+    # 'authorization' param is silently stripped
+    assert parse("?limit=3&authorization=secret_token").limit == 3
+
+    # Unknown field raises (strict mode)
+    with pytest.raises(BadRequestError):
+        parse("?bogus_field=xyz")
+
+    # Non-numeric value for int field raises
+    with pytest.raises(BadRequestError):
+        parse("?limit=abc")
+
+    req = parse("?start=2&status=done&tenant=fox&user=bob")
+    assert req == StatusRequest(start=2, limit=None, status="done", tenant="fox", user="bob")

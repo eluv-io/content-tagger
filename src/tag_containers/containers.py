@@ -11,7 +11,6 @@ from functools import lru_cache
 from common_ml.utils.files import get_file_type
 from common_ml.video_processing import get_fps
 
-from src.tag_containers.model import FrameTag
 from src.common.errors import BadRequestError
 from src.tag_containers.model import *
 from src.tag_containers.model import ContainerInfo
@@ -242,14 +241,17 @@ class TagContainer:
     def _output_from_image_tags(self, source_image: str, image_tags: list[dict]) -> list[ModelTag]:
         tags = []
         for image_tag_data in image_tags:
+            additional_info = image_tag_data.get("additional_info", {})
+            if "confidence" in image_tag_data:
+                additional_info["confidence"] = image_tag_data["confidence"]
             tags.append(ModelTag(
                 start_time=0,
                 end_time=0,
                 text=image_tag_data.get("text", ""),
-                frame_tags={"0": {"confidence": image_tag_data.get("confidence", 0.0),
-                    "box": image_tag_data.get("box", [])}},
                 source_media=source_image,
-                model_track=""
+                model_track="",
+                frame_info={"frame_idx": 0, "box": image_tag_data.get("box")},
+                additional_info=additional_info,
             ))
         return tags
     
@@ -280,9 +282,9 @@ class TagContainer:
 
     def _output_from_tags(self, source_video: str, tag_files: list[str]) -> list[ModelTag]:
         ftype = get_file_type(source_video)
-    
+
         vid_tags = []
-        frame_tags = {}
+        frame_tags_data = {}
 
         for tag_file in tag_files:
             try:
@@ -291,61 +293,47 @@ class TagContainer:
                         vid_tags += json.load(f)
                 elif tag_file.endswith("_frametags.json"):
                     with open(tag_file, 'r') as f:
-                        frame_tags.update(json.load(f))
+                        frame_tags_data.update(json.load(f))
             except Exception as e:
                 logger.error(f"Error loading tags from {tag_file}: {e}")
                 continue
-        
-        if frame_tags and ftype == "video":
-            fps = self._get_fps(source_video)
-        else:
-            fps = None
 
         out = []
 
-        # format as ModelTag and add frame tags if available
+        # Video-level tags
         for video_tag_data in vid_tags:
-            start_time = round(video_tag_data.get("start_time", 0))
-            end_time = round(video_tag_data.get("end_time", 0))
-            text = video_tag_data.get("text", "")
-            track = video_tag_data.get("track", "")
-            additional_info = video_tag_data.get("additional_info", {})
-            
-            # TODO: feels a little weird that we don't pull the source_media from here too rather we pass as param - MUST CLEAN
-
-            # get the frame tags which overlap with this video tag
-            frame_info = {}
-            if frame_tags:
-                if ftype != "video":
-                    raise ValueError("Frame tags can only be associated with video files")
-                
-                assert fps is not None
-                overlapping_frame_tags = self._find_overlapping_frame_tags(
-                    start_time, end_time, text, frame_tags, fps
-                )
-                
-                if overlapping_frame_tags:
-                    frame_info = {}
-                    for ftag in overlapping_frame_tags:
-                        frame_info[ftag.frame_idx] = {
-                            "confidence": ftag.confidence,
-                            "box": ftag.box
-                        }
-
-            tag = ModelTag(
+            out.append(ModelTag(
                 start_time=round(video_tag_data.get("start_time", 0)),
                 end_time=round(video_tag_data.get("end_time", 0)),
                 text=video_tag_data.get("text", ""),
-                frame_tags=frame_info,
                 source_media=source_video,
-                model_track=track,
-                additional_info=additional_info
-            )
+                model_track=video_tag_data.get("track", ""),
+                additional_info=video_tag_data.get("additional_info", None),
+            ))
 
-            out.append(tag)
+        # Frame-level tags (each becomes its own ModelTag)
+        if frame_tags_data:
+            if ftype != "video":
+                raise ValueError("Frame tags can only be associated with video files")
+            fps = self._get_fps(source_video)
+            for fidx, ftags in frame_tags_data.items():
+                frame_time = round((int(fidx) / fps) * 1000)
+                for ftag in ftags:
+                    additional_info = None
+                    if "confidence" in ftag:
+                        additional_info = {"confidence": ftag["confidence"]}
+                    out.append(ModelTag(
+                        start_time=frame_time,
+                        end_time=frame_time,
+                        text=ftag.get("text", ""),
+                        source_media=source_video,
+                        model_track="",
+                        frame_info={"frame_idx": int(fidx), "box": ftag.get("box")},
+                        additional_info=additional_info,
+                    ))
 
         return out
-        
+
     def _source_from_filename(self, filename: str) -> str:
         """Deprecated method for retrieving source media from filename"""
 
@@ -362,31 +350,6 @@ class TagContainer:
         original_filebase = "_".join(path_parts[:-1])
 
         return self.basename_to_source[original_filebase]
-
-    def _find_overlapping_frame_tags(
-        self, 
-        start_time: int, 
-        end_time: int, 
-        text: str,
-        frame_tags_data: dict, 
-        fps: float
-    ) -> list[FrameTag]:
-        """
-        Find all frame tags which overlap with the given time range and match the text.
-        """
-        overlapping_tags = []
-        for fidx, ftags in frame_tags_data.items():
-            frame_time = (int(fidx) / fps) * 1000
-            if start_time <= frame_time < end_time:
-                for ftag in ftags:
-                    if ftag.get("text", "") == text:
-                        overlapping_tags.append(FrameTag(
-                            frame_idx=fidx,
-                            confidence=ftag.get("confidence", 0.0),
-                            box=ftag.get("box", None),
-                            text=ftag.get("text", "")
-                        ))
-        return overlapping_tags
 
     def _find_common_root(self, filepaths: list[str]) -> str:
         """Find the common root directory for all files"""

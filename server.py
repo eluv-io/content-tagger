@@ -4,25 +4,30 @@ from flask_cors import CORS
 import json
 from requests.exceptions import HTTPError
 import atexit
+import signal
 import setproctitle
 import sys
 from waitress import serve
 import os
 
+from src.service.impl.direct_api import DirectAPI
+from src.service.impl.queue_based import QueueClient
 from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tags.tagstore.factory import create_tagstore
 from src.fetch.factory import FetchFactory
 from src.common.content import ContentFactory
 from src.tag_containers.registry import ContainerRegistry
-from src.tags.conversion import TagConverter
 from src.tags.track_resolver import TrackResolver
 from src.common.logging import logger
 
-from src.api.tagging.handlers import handle_tag, handle_status, handle_stop_model, handle_stop_content
-from src.api.upload.handlers import handle_commit
+from src.api.tagging.handlers import handle_tag, handle_status, handle_status_all, handle_stop_model, handle_stop_content
 from src.api.content_status.handlers import handle_content_status
 from src.api.model_status.handlers import handle_model_status
+from src.service.abstract import TagAPI
+from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
+from src.tagging.fabric_tagging.queue.abstract import JobStore
+from src.tagging.tag_runner import TagRunner
 from src.common.errors import *
 from app_config import AppConfig
 
@@ -58,6 +63,10 @@ def configure_routes(app: Flask) -> None:
     @app.route('/<qhit>/job-status', methods=['GET'])
     def status(qhit: str) -> Response:
         return handle_status(qhit)
+
+    @app.route('/job-status', methods=['GET'])
+    def status_all() -> Response:
+        return handle_status_all()
     
     @app.route('/<qhit>/stop/<feature>', methods=['POST'])
     def stop_model(qhit: str, feature: str) -> Response:
@@ -66,10 +75,6 @@ def configure_routes(app: Flask) -> None:
     @app.route('/<qhit>/stop', methods=['POST'])
     def stop_content(qhit: str) -> Response:
         return handle_stop_content(qhit)
-
-    @app.route('/<qhit>/commit', methods=['POST'])
-    def commit(qhit: str) -> Response:
-        return handle_commit(qhit)
 
     @app.route('/<qhit>/tag-status', methods=['GET'])
     def content_status(qhit: str) -> Response:
@@ -83,46 +88,64 @@ def configure_routes(app: Flask) -> None:
     def docs_route():
         return send_from_directory('docs/api', 'openapi.html')
 
-def boot_state(app: Flask, cfg: AppConfig) -> None:
-    app_state = {}
-
-    system_tagger = ContainerScheduler(cfg.system)
-    tagstore = create_tagstore(cfg.tagstore)
-    fetcher = FetchFactory(cfg.fetcher, tagstore)
-    container_registry = ContainerRegistry(cfg.container_registry)
-    track_resolver = TrackResolver(cfg.track_resolver)
-
-    app_state["tagger"] = FabricTagger(
-        system_tagger=system_tagger,
-        fetcher=fetcher,
-        cregistry=container_registry,
-        tagstore=tagstore,
+def _build_fabric_tagger(cfg: AppConfig) -> FabricTagger:
+    return FabricTagger(
+        system_tagger=ContainerScheduler(cfg.system),
+        fetcher=FetchFactory(cfg.fetcher, create_tagstore(cfg.tagstore)),
+        cregistry=ContainerRegistry(cfg.container_registry),
+        tagstore=create_tagstore(cfg.tagstore),
         cfg=cfg.tagger,
-        track_resolver=track_resolver,
+        track_resolver=TrackResolver(cfg.track_resolver),
     )
 
-    app_state["content_factory"] = ContentFactory(cfg.content)
 
-    app_state["tag_converter"] = TagConverter(cfg.tag_converter)
+def create_app_direct(config: AppConfig) -> Flask:
+    """Standalone mode: API handlers call FabricTagger directly."""
+    app = Flask(__name__)
 
-    app.config["state"] = app_state
-
-def configure_lifecycle(app: Flask) -> None:
+    fabric_tagger = _build_fabric_tagger(config)
+    app.config["state"] = {
+        "tagger": fabric_tagger,
+        "service": DirectAPI(fabric_tagger),
+        "content_factory": ContentFactory(config.content),
+    }
 
     def shutdown():
-        app_state = app.config["state"]
-        tagger: FabricTagger = app_state["tagger"]
-        if tagger.shutdown_requested is False:
+        tagger: FabricTagger = app.config["state"]["tagger"]
+        if not tagger.shutdown_requested:
             tagger.cleanup()
 
     atexit.register(shutdown)
-
-def create_app(config: AppConfig) -> Flask:
-    """Main entry point for the server."""
-    app = Flask(__name__)
-    boot_state(app, config)
     configure_routes(app)
-    configure_lifecycle(app)
+    CORS(app)
+    return app
+
+
+def create_app_queue_based(config: AppConfig) -> Flask:
+    """Queue-based mode: API handlers enqueue via QueueClient; TagRunner drives FabricTagger."""
+    app = Flask(__name__)
+
+    fabric_tagger = _build_fabric_tagger(config)
+    content_factory = ContentFactory(config.content)
+    job_store: JobStore = FsJobStore(config.jobstore.base_url)
+    loop = TagRunner(fabric_tagger, job_store, content_factory, config.tag_runner)
+
+    app.config["state"] = {
+        "tagger": fabric_tagger,
+        "service": QueueClient(job_store),
+        "content_factory": content_factory,
+        "job_store": job_store,
+        "loop": loop,
+    }
+
+    loop.start()
+
+    def shutdown():
+        if not loop._shutdown.is_set():
+            loop.stop()
+
+    atexit.register(shutdown)
+    configure_routes(app)
     CORS(app)
     return app
 
@@ -134,7 +157,20 @@ def main():
         logger.info(f"changed directory to {args.directory}")
 
     cfg = AppConfig.from_yaml(args.config)
-    app = create_app(cfg)
+
+    if args.standalone:
+        logger.info("starting in standalone mode")
+        app = create_app_direct(cfg)
+    else:
+        logger.info("starting in queue-based mode")
+        app = create_app_queue_based(cfg)
+
+    def _handle_signal(signum, frame):
+        logger.info(f"Received signal {signum}, shutting down")
+        sys.exit(0)  # raises SystemExit, which triggers atexit handlers
+
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
 
     serve(app, host=args.host, port=args.port)
 
@@ -145,5 +181,6 @@ if __name__ == '__main__':
     parser.add_argument('--host', type=str, default="127.0.0.1")
     parser.add_argument('--config', type=str, default="config.yml")
     parser.add_argument('--directory', type=str)
+    parser.add_argument('--standalone', action='store_true', help='Run in standalone mode')
     args = parser.parse_args()
     main()

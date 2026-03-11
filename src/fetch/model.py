@@ -23,10 +23,12 @@ class TimeRangeScope(Scope):
     end_time: int | None
     chunk_size: int
     stream: str
+    type: str = "processor"
 
 @dataclass
 class AssetScope(Scope):
     assets: list[str] | None
+    type: str = "assets"
 
 @dataclass
 class VideoScope(Scope):
@@ -34,12 +36,14 @@ class VideoScope(Scope):
     # in seconds
     start_time: int
     end_time: float | int
+    type: str = "video"
 
 @dataclass
 class LiveScope(Scope):
     stream: str
     chunk_size: int
     max_duration: int | None
+    type: str = "livestream"
 
 class MediaMetadata: ...
 

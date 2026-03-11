@@ -66,7 +66,7 @@ class FabricTagger:
         self.cfg = cfg
 
         self.jobstore = JobStore()
-        self.shutdown_requested = False
+        self.shutdown_signal = False
 
         self.mailbox = queue.Queue()
         
@@ -94,6 +94,9 @@ class FabricTagger:
         request = CleanupRequest()
         return self._submit(request)
 
+    def shutdown_requested(self) -> bool:
+        return self.shutdown_signal
+
     def _end_job(self, jobid: JobID, status: Literal["Stopped", "Failed", "Completed"], error: Exception | None) -> None:
         """Used to abort a job early in case of error."""
         log = logger.bind(job_id=jobid)
@@ -111,7 +114,7 @@ class FabricTagger:
         else:
             log_req = req
         logger.info("submitting synchronous request", extra={"request": log_req, "queue_size": self.mailbox.qsize()})
-        if self.shutdown_requested:
+        if self.shutdown_requested():
             raise RuntimeError("FabricTagger received shutdown signal, cannot accept new requests")
         caller_mailbox = queue.Queue()
         message = Message(req, caller_mailbox)
@@ -130,7 +133,7 @@ class FabricTagger:
         self.mailbox.put(message)
 
     def _schedule_upload_tick(self):
-        if not self.shutdown_requested:
+        if not self.shutdown_requested():
             self.upload_timer = threading.Timer(0.2, lambda: self._submit_async(UploadTick()))
             self.upload_timer.start()
 
@@ -138,7 +141,7 @@ class FabricTagger:
         """Main actor loop - processes all messages sequentially"""
         logger.info("FabricTagger actor started")
 
-        while not self.shutdown_requested:
+        while not self.shutdown_requested():
             try:
                 message = self.mailbox.get(timeout=1.0)
             except queue.Empty:
@@ -439,6 +442,7 @@ class FabricTagger:
         log.info("entering complete phase")
 
         # catch any remaining tags - this blocks the main thread briefly but it's not called very often
+        # TODO: if this errors does job stay in active state?
         self._run_upload(job)
 
         for source in job.state.media.downloaded:
@@ -598,8 +602,8 @@ class FabricTagger:
         for job_id in active_jobs:
             self._set_stop_state(job_id, "Stopped", "Shutdown requested")
         
-        self.shutdown_requested = True
-        self.system_tagger.shutdown()
+        self.shutdown_signal = True
+        self.system_tagger.cleanup()
 
         message.response_mailbox.put(Response(data=None, error=None))
 

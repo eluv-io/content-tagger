@@ -22,3 +22,5 @@ docs/_build
 integration_private_keys.json
 
 node_modules
+package-lock.json
+buildinfo.json

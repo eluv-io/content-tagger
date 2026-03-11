@@ -6,14 +6,16 @@ import time
 import pytest
 
 from app_config import AppConfig
-from server import create_app
+from server import create_app_direct, create_app_queue_based
 from src.fetch.model import DownloadResult, FetchSession, MediaMetadata
 from src.tag_containers.model import ModelConfig, RegistryConfig
 from src.tagging.fabric_tagging.model import FabricTaggerConfig
+from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
+from src.tagging.fabric_tagging.queue.model import JobStoreConfig
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tagging.scheduling.model import SysConfig
+from src.tagging.tag_runner import TagRunner, TagRunnerConfig
 from src.tags.track_resolver import TrackArgs, TrackResolverConfig
-from src.tags.conversion import TagConverterConfig
 from src.tags.tagstore.model import TagstoreConfig
 
 @pytest.fixture()
@@ -46,15 +48,9 @@ def container_registry_config(static_dir) -> RegistryConfig:
 def app_config(static_dir, tagger_config, content_config, fetcher_config, container_registry_config) -> AppConfig:
     """Create test configuration."""
     return AppConfig(
-        tag_converter=TagConverterConfig(
-            interval=10,
-            coalesce_tracks=[],
-            single_tag_tracks=[],
-            name_mapping={},
-            max_sentence_words=100
-        ),
         root_dir=static_dir,
         content=content_config,
+        jobstore=JobStoreConfig(base_url=os.path.join(static_dir, "jobstore")),
         tagstore=TagstoreConfig(
             base_dir=os.path.join(static_dir, "tags")
         ),
@@ -62,17 +58,25 @@ def app_config(static_dir, tagger_config, content_config, fetcher_config, contai
         fetcher=fetcher_config,
         container_registry=container_registry_config,
         tagger=tagger_config,
-        track_resolver=TrackResolverConfig(mapping={"test_model": TrackArgs(name="test_model", label="TEST MODEL")})
+        track_resolver=TrackResolverConfig(mapping={"test_model": TrackArgs(name="test_model", label="TEST MODEL")}),
+        tag_runner=TagRunnerConfig(poll_interval=0.1)
     )
 
 
 @pytest.fixture()
 def app(static_dir, app_config):
     shutil.rmtree(static_dir, ignore_errors=True)
-    app = create_app(app_config)
+    if os.getenv("USE_QUEUE") == "true":
+        app = create_app_queue_based(app_config)
+    else:
+        app = create_app_direct(app_config)
     app.config["TESTING"] = True
     yield app
-    tagger: FabricTagger = app.config["state"]["tagger"]
+    state = app.config["state"]
+    if "loop" in state:
+        state["loop"].stop()
+        return
+    tagger: FabricTagger = state["tagger"]
     if not tagger.shutdown_requested:
         tagger.cleanup()
 

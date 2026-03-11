@@ -10,6 +10,9 @@ from src.fetch.model import VideoScope
 from src.tag_containers.model import *
 from src.tagging.fabric_tagging.model import FabricTaggerConfig, TagArgs
 from src.tagging.fabric_tagging.tagger import FabricTagger
+from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
+from src.tagging.tag_runner import TagRunner, TagRunnerConfig
+from src.service.impl.queue_based import QueueClient
 from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.tagging.scheduling.model import SysConfig
 from src.tags.track_resolver import TrackArgs, TrackResolver, TrackResolverConfig
@@ -135,7 +138,6 @@ class FakeTagContainer:
                     start_time=0,
                     end_time=5000,  # 5 seconds in ms
                     text=f"{self.feature}_tag_{i}",
-                    frame_tags={},
                     source_media=filepath,
                     model_track=""
                 ),
@@ -143,7 +145,6 @@ class FakeTagContainer:
                     start_time=5000,
                     end_time=10000,  # 5-10 seconds in ms
                     text=f"{self.feature}_tag_{i}_2",
-                    frame_tags={},
                     source_media=filepath,
                     model_track=""
                 )
@@ -305,7 +306,7 @@ def fabric_tagger(system_tagger, fake_container_registry, tag_store, fake_fetche
         cfg=tagger_config
     )
     yield tagger
-    if not tagger.shutdown_requested:
+    if not tagger.shutdown_requested():
         tagger.cleanup()
 
 
@@ -343,3 +344,28 @@ def sample_tag_args(make_tag_args):
         make_tag_args(feature="caption", stream="video"),
         make_tag_args(feature="asr", stream="audio"),
     ]
+
+
+
+@pytest.fixture
+def queue_jobstore(tmp_path) -> FsJobStore:
+    return FsJobStore(store_dir=str(tmp_path / "jobstore"))
+
+
+@pytest.fixture
+def queue_client(queue_jobstore) -> QueueClient:
+    return QueueClient(jobstore=queue_jobstore)
+
+
+@pytest.fixture
+def tag_runner(fabric_tagger, queue_jobstore, qfactory):
+    """A TagRunner wired to the same FsJobStore, polling fast for tests."""
+    runner = TagRunner(
+        tagger=fabric_tagger,
+        jobstore=queue_jobstore,
+        content_factory=qfactory,
+        cfg=TagRunnerConfig(poll_interval=0.1),
+    )
+    runner.start()
+    yield runner
+    runner.stop()

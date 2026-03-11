@@ -17,10 +17,10 @@ class Tag:
     start_time: int
     end_time: int
     text: str
-    frame_tags: dict
-    additional_info: dict
+    additional_info: dict | None
     source: str
     batch_id: str
+    frame_info: dict | None = None
 
 @dataclass
 class Batch:

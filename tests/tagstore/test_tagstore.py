@@ -110,7 +110,7 @@ def test_upload_tags_appends_to_existing(tag_store, job_args, q):
     
     # Upload initial tags
     initial_tags = [
-        Tag(100, 200, "person", {}, {}, "llava", sample_job.id),
+        Tag(100, 200, "person", None, "llava", sample_job.id),
     ]
     tag_store.upload_tags(initial_tags, sample_job.id, q=q)
     
@@ -121,7 +121,7 @@ def test_upload_tags_appends_to_existing(tag_store, job_args, q):
     
     # Upload additional tags
     additional_tags = [
-        Tag(300, 400, "car", {}, {}, "llava", sample_job.id),
+        Tag(300, 400, "car", None, "llava", sample_job.id),
     ]
     tag_store.upload_tags(additional_tags, sample_job.id, q=q)
     
@@ -248,10 +248,10 @@ def test_filter_track(tag_store, q):
 
     # upload tags
     tags_job1 = [
-        Tag(100, 200, "person", {}, {}, "llava", job1.id),
+        Tag(100, 200, "person", None, "llava", job1.id),
     ]
     tags_job2 = [
-        Tag(300, 400, "hello world", {}, {}, "asr", job2.id)
+        Tag(300, 400, "hello world", None, "asr", job2.id)
     ]
 
     tag_store.upload_tags(tags_job1, job1.id, q=q)
@@ -369,11 +369,11 @@ def test_tag_appending(tag_store, job_args, q):
     sample_job = tag_store.create_batch(**job_args, q=q)
     
     # Upload initial tags
-    initial_tags = [Tag(100, 200, "person", {}, {}, "llava", sample_job.id)]
+    initial_tags = [Tag(100, 200, "person", None, "llava", sample_job.id)]
     tag_store.upload_tags(initial_tags, sample_job.id, q=q)
     
     # Upload additional tags
-    additional_tags = [Tag(300, 400, "car", {}, {}, "llava", sample_job.id)]
+    additional_tags = [Tag(300, 400, "car", None, "llava", sample_job.id)]
     tag_store.upload_tags(additional_tags, sample_job.id, q=q)
     
     # Check that both tags are present
@@ -389,9 +389,9 @@ def test_source_with_slash_encoding(filesystem_tagstore, job_args, q):
     
     # Create tags with sources containing slashes
     tags_with_slashes = [
-        Tag(100, 200, "person", {}, {}, "video/segment_1", sample_job.id),
-        Tag(300, 400, "car", {}, {}, "audio/track_2", sample_job.id),
-        Tag(500, 600, "building", {}, {}, "normal_source", sample_job.id),  # No slash
+        Tag(100, 200, "person", None, "video/segment_1", sample_job.id),
+        Tag(300, 400, "car", None, "audio/track_2", sample_job.id),
+        Tag(500, 600, "building", None, "normal_source", sample_job.id),  # No slash
     ]
     
     tag_store.upload_tags(tags_with_slashes, sample_job.id, q=q)

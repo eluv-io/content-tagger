@@ -6,6 +6,7 @@ import os
 from flask import Response, request, current_app
 from dacite import from_dict
 
+from src.service.abstract import TagAPI
 from src.api.tagging.request_mapping import map_video_tag_dto
 from src.api.tagging.response_format import StartStatus, StartTaggingResponse
 from src.api.tagging.response_format import StartStatus
@@ -14,6 +15,7 @@ from src.common.logging import logger
 from src.common.errors import *
 from src.api.auth import *
 from src.common.content import Content, ContentFactory
+from src.common.tenant import get_tenant
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.api.tagging.request_mapping import *
 from src.api.tagging.response_mapping import *
@@ -39,7 +41,7 @@ def handle_tag(qhit: str) -> Response:
 
 def _execute_tagging(q: Content, tag_args: list[TagArgs]) -> Response:
     """Execute tagging for multiple features and return start status response."""
-    tagger: FabricTagger = current_app.config["state"]["tagger"]
+    tagger: TagAPI = current_app.config["state"]["service"]
     
     jobs: list[StartStatus] = []
     for tag_arg in tag_args:
@@ -51,7 +53,6 @@ def _execute_tagging(q: Content, tag_args: list[TagArgs]) -> Response:
                 StartStatus(
                     job_id="",
                     model=tag_arg.feature,
-                    stream="",
                     started=False,
                     message="Tag job failed to start",
                     error=str(e),
@@ -59,12 +60,10 @@ def _execute_tagging(q: Content, tag_args: list[TagArgs]) -> Response:
             )
             continue
 
-        job_id = result.job_id
         jobs.append(
             StartStatus(
-                job_id=str(job_id),
-                model=job_id.feature,
-                stream=job_id.stream,
+                job_id=result.job_id,
+                model=tag_arg.feature,
                 started=result.started,
                 message=result.message,
                 error=None,
@@ -87,11 +86,55 @@ def handle_status(qhit: str) -> Response:
     else:
         _get_authorized_content(qhit)
 
-    tagger: FabricTagger = current_app.config["state"]["tagger"]
+    service: TagAPI = current_app.config["state"]["service"]
 
-    reports = tagger.status(qhit)
+    reports = service.status(qhit)
 
-    return Response(response=json.dumps(asdict(map_all_jobs_status_to_response(reports))), status=200, mimetype='application/json')
+    status_req = _parse_status_request()
+
+    response = map_all_jobs_status_to_response(reports, status_req)
+
+    return Response(response=json.dumps(asdict(response)), status=200, mimetype='application/json')
+
+def handle_status_all() -> Response:
+    """Global job-status endpoint. Requires ?tenant= filter.
+    
+    Authentication: the caller's auth token is verified by picking the first
+    returned job's qid and confirming get_tenant(qid, auth) matches the
+    requested tenant.
+    """
+    auth = get_authorization(request)
+    status_req = _parse_status_request()
+
+    if not status_req.tenant:
+        raise BadRequestError("The 'tenant' query parameter is required for /job-status")
+
+    service: TagAPI = current_app.config["state"]["service"]
+
+    reports = service.status_all(status_req.tenant)
+
+    # Authenticate: resolve tenant from the first result's qid and verify it matches
+    if reports:
+        first_qid = reports[0].qid
+        resolved_tenant = get_tenant(first_qid, auth)
+        if resolved_tenant != status_req.tenant:
+            raise BadRequestError(
+                f"Authorization failed: the provided token does not belong to tenant '{status_req.tenant}'"
+            )
+
+    response = map_all_jobs_status_to_response(reports, status_req)
+
+    return Response(response=json.dumps(asdict(response)), status=200, mimetype='application/json')
+
+def _parse_status_request() -> StatusRequest:
+    """Parse status query parameters into a StatusRequest."""
+    try:
+        args = request.args.to_dict()
+        if "authorization" in args:
+            del args["authorization"]
+        return from_dict(data_class=StatusRequest, data=args, config=Config(strict=True, cast=[int]))
+    except Exception as e:
+        raise BadRequestError(f"Invalid status query parameters: {e}") from e
 
 def handle_stop_model(
     qhit: str, 
@@ -99,7 +142,7 @@ def handle_stop_model(
 ) -> Response:
     q = _get_authorized_content(qhit)
 
-    tagger: FabricTagger = current_app.config["state"]["tagger"]
+    tagger: TagAPI = current_app.config["state"]["service"]
 
     stop_res = tagger.stop(q.qhit, feature, None)
 
@@ -112,7 +155,7 @@ def handle_stop_content(
 ) -> Response:
     q = _get_authorized_content(qhit)
 
-    tagger: FabricTagger = current_app.config["state"]["tagger"]
+    tagger: TagAPI = current_app.config["state"]["service"]
 
     stop_res = tagger.stop(q.qhit, None, None)
 
