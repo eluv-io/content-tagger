@@ -1,7 +1,7 @@
 import threading
 from dataclasses import dataclass
 
-from src.common.content import ContentFactory
+from src.common.content import Content
 from src.common.logging import logger
 from src.tagging.fabric_tagging.model import TagJobStatusReport, JobStateDescription
 from src.tagging.fabric_tagging.tagger import FabricTagger
@@ -47,12 +47,10 @@ class TagRunner:
         self,
         tagger: FabricTagger,
         jobstore: JobStore,
-        content_factory: ContentFactory,
         cfg: TagRunnerConfig,
     ):
         self.tagger = tagger
         self.jobstore = jobstore
-        self.content_factory = content_factory
         self.cfg = cfg
 
         self._running_jobs: dict[str, JobInfo] = {}
@@ -141,7 +139,7 @@ class TagRunner:
     def _run_job(self, item: QueueItem) -> None:
         log = logger.bind(job_id=item.id, qid=item.qid)
         try:
-            content = self.content_factory.create_content(item.qid, item.auth)
+            content = Content(qid=item.qid, token=item.auth)
             result = self.tagger.tag(content, item.params)
             log.info("tag started", extra={"started": result.started, "message": result.message})
         except Exception as e:

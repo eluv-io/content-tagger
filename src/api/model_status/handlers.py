@@ -1,15 +1,15 @@
 from dataclasses import asdict
 import json
 
-from flask import Response, current_app
+from flask import Response, current_app, request
 
-from src.api.tagging.handlers import _get_authorized_content
+from src.api.auth import authorize
 from src.status.model_status import get_model_status
 from src.tagging.fabric_tagging.tagger import FabricTagger
 
 
 def handle_model_status(qid: str, model: str) -> Response:
-    q = _get_authorized_content(qid)
+    q = authorize(qid, request)
 
     tagger: FabricTagger = current_app.config["state"]["tagger"]
 

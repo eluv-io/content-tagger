@@ -26,8 +26,6 @@ class UploadSession:
         self.tagstore = tagstore
         self.source_q = source_q
 
-        self.dest_q = self._resolve_destination(source_q, destination_qid)
-        
         # Mutable state
         self.track_to_batch: dict[str, str] = {}
         self.uploaded_tags: set[ModelTag] = set()
@@ -77,19 +75,6 @@ class UploadSession:
             return
 
         self.tagstore.update_batch(qid=self.dest_q.qid, batch_id=batch, additional_info={"tagger": asdict(report)}, q=self.dest_q)
-    
-    def _resolve_destination(self, source_q: Content, destination_qid: str) -> Content:
-        """Resolve destination content object"""
-        if destination_qid == "" or destination_qid == source_q.qid:
-            return source_q
-        return source_q.get_child(destination_qid)
-    
-    def _get_destination_q(self, q: Content, destination_qid: str) -> Content:
-        if destination_qid == q.qid:
-            return q
-
-        dest_q = q.get_child(destination_qid)
-        return dest_q
     
     def _get_batch(self, model_track: str) -> str | None:
         """Get or create a batch for the given model track."""

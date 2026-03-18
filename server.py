@@ -10,6 +10,7 @@ import sys
 from waitress import serve
 import os
 
+from src.api.arg_resolver import ArgsResolver
 from src.api.auth import Authenticator
 from src.service.impl.direct_api import DirectAPI
 from src.service.impl.queue_based import QueueClient
@@ -17,7 +18,7 @@ from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tags.tagstore.factory import create_tagstore
 from src.fetch.factory import FetchFactory
-from src.common.content import ContentFactory
+from src.common.content import QAPIFactory
 from src.tag_containers.registry import ContainerRegistry
 from src.tags.track_resolver import TrackResolver
 from src.common.logging import logger
@@ -25,7 +26,6 @@ from src.common.logging import logger
 from src.api.tagging.handlers import handle_tag, handle_status, handle_status_content, handle_stop_model, handle_stop_content
 from src.api.content_status.handlers import handle_content_status
 from src.api.model_status.handlers import handle_model_status
-from src.service.abstract import TagAPI
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
 from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tagging.tag_runner import TagRunner
@@ -105,10 +105,12 @@ def create_app_direct(config: AppConfig) -> Flask:
     app = Flask(__name__)
 
     fabric_tagger = _build_fabric_tagger(config)
+    arg_resolver = ArgsResolver(fabric_tagger.cregistry, QAPIFactory(config.content))
     app.config["state"] = {
         "tagger": fabric_tagger,
         "service": DirectAPI(fabric_tagger),
         "authenticator": Authenticator(config.content.config_url),
+        "arg_resolver": arg_resolver,
     }
 
     def shutdown():
@@ -128,11 +130,13 @@ def create_app_queue_based(config: AppConfig) -> Flask:
 
     fabric_tagger = _build_fabric_tagger(config)
     job_store: JobStore = FsJobStore(config.jobstore.base_url)
-    loop = TagRunner(fabric_tagger, job_store, content_factory, config.tag_runner)
+    arg_resolver = ArgsResolver(fabric_tagger.cregistry, QAPIFactory(config.content))
+    loop = TagRunner(fabric_tagger, job_store, config.tag_runner)
 
     app.config["state"] = {
         "tagger": fabric_tagger,
         "service": QueueClient(job_store),
+        "arg_resolver": arg_resolver,
         "authenticator": Authenticator(config.content.config_url),
         "job_store": job_store,
         "loop": loop,

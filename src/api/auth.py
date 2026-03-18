@@ -1,9 +1,7 @@
 
-from typing import Dict
-
 import requests
 from elv_client_py import ElvClient
-from flask import Request, Response, make_response
+from flask import Request, Response, current_app, make_response
 from requests.exceptions import HTTPError
 
 from src.common.errors import BadRequestError
@@ -21,6 +19,13 @@ class Authenticator:
         except HTTPError as e:
             raise HTTPError(
                 f"Failed to access the requested content with the provided authorization: {q.qid}") from e
+
+def authorize(qid: str, request: Request) -> Content:
+    token = get_authorization(request)
+    q = Content(qid=qid, token=token)
+    authenticator: Authenticator = current_app.config["state"]["authenticator"]
+    authenticator.authenticate(q)
+    return q
 
 def get_authorization(req: Request) -> str:
     """Get the authorization token from the request headers or query parameters."""
