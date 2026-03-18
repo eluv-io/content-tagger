@@ -9,15 +9,18 @@ from requests.exceptions import HTTPError
 from src.common.errors import BadRequestError
 from src.common.content import Content, parse_qhit
 
+class Authenticator:
+    def __init__(self, config_url: str):
+        self.config_url = config_url
 
-def authenticate(client: ElvClient, qid: str) -> None:
-    """Basic authentication against the object. Returns None if successful, raises HTTPError if authentication fails."""
-    try:
-        client.content_object(**parse_qhit(qid))
-    except HTTPError as e:
-        raise HTTPError(
-            f"Failed to access the requested content with the provided authorization: {qid}") from e
-
+    def authenticate(self, q: Content) -> None:
+        """Basic authentication against the content. Returns None if successful, raises HTTPError if authentication fails."""
+        try:
+            client = ElvClient.from_configuration_url(config_url=self.config_url, static_token=q.token)
+            client.content_object(**parse_qhit(q.qid))
+        except HTTPError as e:
+            raise HTTPError(
+                f"Failed to access the requested content with the provided authorization: {q.qid}") from e
 
 def get_authorization(req: Request) -> str:
     """Get the authorization token from the request headers or query parameters."""
@@ -27,31 +30,7 @@ def get_authorization(req: Request) -> str:
         raise BadRequestError("Authorization token is required")
     return auth
 
-
-def get_client(req: Request, qhi: str, config_url: str) -> ElvClient:
-    """Get an ElvClient instance from the request and qid.
-    This will raise a BadRequestError if the authorization token is not provided or HTTPError if the authentication fails.
-    """
-    auth = get_authorization(req)
-    client = ElvClient.from_configuration_url(
-        config_url=config_url, static_token=auth)
-    # will throw http error if bad authentication, server will handle this and return the appropriate response
-    authenticate(client, qhi)
-    return client
-
 def convert_response(resp: requests.Response) -> Response:
     flask_response = make_response(resp.content)
     flask_response.status_code = resp.status_code
     return flask_response
-
-def is_same_auth_ctx(q: Content, other_qhit: str) -> bool:
-    """Check if the other_qhit belongs to the same authorization context as q.
-    
-    This is used in the tag redirect feature.
-    """
-    try:
-        q.content_object(**parse_qhit(other_qhit))
-    except HTTPError:
-        return False
-
-    return True
