@@ -204,8 +204,8 @@ async function fetch_dict_with_status(...args) {
   }
 }
 
-function get_auth(config, qhit) {
-    const cmd = `qfab_cli content token create ${qhit} --update --config ${config}`;
+function get_auth(config, qid) {
+    const cmd = `qfab_cli content token create ${qid} --update --config ${config}`;
     try {
         const out = execSync(cmd).toString();
         const token = JSON.parse(out).bearer;
@@ -216,11 +216,11 @@ function get_auth(config, qhit) {
     }
 }
 
-function get_write_token(qhit, config) {
-    if (qhit.startsWith("tqw")) {
-        return qhit;
+function get_write_token(qid, config) {
+    if (qid.startsWith("tqw")) {
+        return qid;
     }
-    const cmd = `qfab_cli content edit ${qhit} --config ${config}`;
+    const cmd = `qfab_cli content edit ${qid} --config ${config}`;
     try {
         const out = execSync(cmd).toString();
         const write_token = JSON.parse(out).q.write_token;
@@ -231,8 +231,8 @@ function get_write_token(qhit, config) {
     }
 }
 
-async function get_status(qhit, auth) {
-    const url = new URL(`${server}/${qhit}/job-status`);
+async function get_status(qid, auth) {
+    const url = new URL(`${server}/${qid}/job-status`);
     url.searchParams.append("authorization", auth);
 
     const response_data = await fetch_dict_with_status(url);
@@ -268,12 +268,12 @@ async function get_status(qhit, auth) {
 async function tag(contents, auth, assets, params, startTime = null, endTime = null) {
 
     for (let i = 0; i < contents.length; i++) {
-        const qhit = contents[i];
+        const qid = contents[i];
         let url;
         if (assets) {
-            url = `${server}/${qhit}/image_tag`;
+            url = `${server}/${qid}/image_tag`;
         } else {
-            url = `${server}/${qhit}/tag`;
+            url = `${server}/${qid}/tag`;
         }
 
         // Deep copy params to avoid modifying the original for subsequent iterations
@@ -317,10 +317,10 @@ function commit(write_token, config) {
     }
 }
 
-async function write(qhit, config, do_commit, force = false, leave_open = false) {
-    const auth_token = get_auth(config, qhit);
-    const write_token = get_write_token(qhit, config);
-    const write_url = new URL(`${tagstore}/${qhit}/write`);
+async function write(qid, config, do_commit, force = false, leave_open = false) {
+    const auth_token = get_auth(config, qid);
+    const write_token = get_write_token(qid, config);
+    const write_url = new URL(`${tagstore}/${qid}/write`);
     write_url.searchParams.append("write_token", write_token);
 
     const respdict = await fetch_dict_with_status(write_url, {
@@ -335,7 +335,7 @@ async function write(qhit, config, do_commit, force = false, leave_open = false)
     return write_token;
 }
 
-async function aggregate(qhit, config, do_commit) {
+async function aggregate(qid, config, do_commit) {
     console.log("");
     console.log("****************************");
     console.log("Aggregating is not necessary (tagstore does it on write)");
@@ -348,9 +348,9 @@ async function aggregate(qhit, config, do_commit) {
         await new Promise(resolve => setTimeout(resolve, 5000));
     }
 
-    const auth_token = get_auth(config, qhit);
-    const write_token = get_write_token(qhit, config);
-    const aggregate_url = new URL(`https://ai.contentfabric.io/tagging/${qhit}/aggregate`);
+    const auth_token = get_auth(config, qid);
+    const write_token = get_write_token(qid, config);
+    const aggregate_url = new URL(`https://ai.contentfabric.io/tagging/${qid}/aggregate`);
     aggregate_url.searchParams.append("authorization", auth_token);
     aggregate_url.searchParams.append("write_token", write_token);
     aggregate_url.searchParams.append("replace", "true");
@@ -365,44 +365,44 @@ async function aggregate(qhit, config, do_commit) {
 }
 
 async function write_all(contents, config, do_commit, force = false) {
-    for (const qhit of contents) {
-        if (written[qhit]) {
-            console.log(`${qhit} already written, clearwritten to clear list`);
+    for (const qid of contents) {
+        if (written[qid]) {
+            console.log(`${qid} already written, clearwritten to clear list`);
             continue;
         }
 
-        console.log(`Finalizing ${qhit} force = ${force}`);
+        console.log(`Finalizing ${qid} force = ${force}`);
         try {
             let leave_open = false;
             let current_do_commit = do_commit;
-            if (qhit.startsWith("tqw")) {
+            if (qid.startsWith("tqw")) {
                 leave_open = true;
                 current_do_commit = false;
             }
 
-            await write(qhit, config, current_do_commit, force, leave_open);
-            written[qhit] = true;
+            await write(qid, config, current_do_commit, force, leave_open);
+            written[qid] = true;
         } catch (e) {
-            console.log(`${e} while finalizing ${qhit}`);
+            console.log(`${e} while finalizing ${qid}`);
         }
     }
 }
 
-async function stop(qhit, auth, models) {
+async function stop(qid, auth, models) {
     const params = new URLSearchParams({ authorization: auth });
     for (const model of models) {
-        const url = `${server}/${qhit}/stop/${model}`;
+        const url = `${server}/${qid}/stop/${model}`;
         try {
             const urlObj = new URL(url);
             urlObj.search = params.toString();
             const res = await fetch_dict_with_status(urlObj, { method: 'POST' });
             if (res.status === 200) {
-                console.log(`Successfully stopped tagging for ${qhit} on model ${model}.`);
+                console.log(`Successfully stopped tagging for ${qid} on model ${model}.`);
             } else {
-                console.log(`Failed to stop tagging for ${qhit} on model ${model}: ${res.status} ${res.statusText}`);
+                console.log(`Failed to stop tagging for ${qid} on model ${model}: ${res.status} ${res.statusText}`);
             }
         } catch (e) {
-            console.log(`Error while stopping tagging for ${qhit} on model ${model}: ${e}`);
+            console.log(`Error while stopping tagging for ${qid} on model ${model}: ${e}`);
         }
     }
 }
@@ -435,15 +435,15 @@ function get_available_models(tag_config) {
     return [];
 }
 
-async function quick_status(auth, qhit, filter = null) {
+async function quick_status(auth, qid, filter = null) {
     if (filter === "") filter = null;
-    const url = new URL(`${server}/${qhit}/job-status`);
+    const url = new URL(`${server}/${qid}/job-status`);
     url.searchParams.append("authorization", auth);
 
     const status_data = await fetch_dict_with_status(url);
 
     if (status_data && status_data.error) {
-        const line = `[${"".padStart(9)}] ${qhit.padEnd(32)} / err: ${status_data.error}`;
+        const line = `[${"".padStart(9)}] ${qid.padEnd(32)} / err: ${status_data.error}`;
         if (filter === null || (new RegExp(filter)).test(line)) {
             console.log(line);
         }
@@ -457,7 +457,7 @@ async function quick_status(auth, qhit, filter = null) {
             const stream = report.stream;
             const progress = report.tagging_progress || '';
             const status = report.status || '??';
-            const line = `[${String(progress).padStart(9)}] ${qhit.padEnd(32)} / (${stream}) ${model}: ${status}`;
+            const line = `[${String(progress).padStart(9)}] ${qid.padEnd(32)} / (${stream}) ${model}: ${status}`;
             if (filter === null || (new RegExp(filter)).test(line)) {
                 console.log(line);
             }
@@ -472,7 +472,7 @@ async function quick_status(auth, qhit, filter = null) {
             for (const [model, stat] of Object.entries(models)) {
                 const progress = stat.tagging_progress || "";
                 const status = stat.status || "??";
-                const line = `[${String(progress).padStart(9)}] ${qhit.padEnd(32)} / (${imgorvid}) ${model}: ${status}`;
+                const line = `[${String(progress).padStart(9)}] ${qid.padEnd(32)} / (${imgorvid}) ${model}: ${status}`;
                 if (filter === null || (new RegExp(filter)).test(line)) {
                     console.log(line);
                 }
@@ -622,13 +622,13 @@ async function main() {
         if (["status", "s"].includes(user_input)) {
             reset_quickstatus = false;
             const statuses = {};
-            for (const qhit of contents) {
+            for (const qid of contents) {
                 if (user_split.length > 1) {
-                    if (!new RegExp(user_split[1]).test(qhit)) continue;
+                    if (!new RegExp(user_split[1]).test(qid)) continue;
                 }
-                const status = await get_status(qhit, auth);
-                statuses[qhit] = status;
-                console.log(qhit, JSON.stringify(status, null, 2));
+                const status = await get_status(qid, auth);
+                statuses[qid] = status;
+                console.log(qid, JSON.stringify(status, null, 2));
             }
             if (!fs.existsSync("rundriver")) fs.mkdirSync("rundriver");
             fs.writeFileSync("rundriver/status.json", JSON.stringify(statuses, null, 2));
@@ -710,8 +710,8 @@ async function main() {
                 quickstatus_watch = null;
             } else {
                 const filter = user_split.slice(1).join(" ");
-                for (const qhit of contents) {
-                    await quick_status(auth, qhit, filter);
+                for (const qid of contents) {
+                    await quick_status(auth, qid, filter);
                 }
             }
         } else if (["reverse"].includes(user_input)) {
@@ -728,8 +728,8 @@ async function main() {
         } else if (["agg", "aggregate"].includes(user_input)) {
             let contentsub = contents;
             if (user_split.length > 1) contentsub = user_split.slice(1);
-            for (const qhit of contentsub) {
-                await aggregate(qhit, argv.config, argv.commit);
+            for (const qid of contentsub) {
+                await aggregate(qid, argv.config, argv.commit);
             }
         } else if (["quit", "exit"].includes(user_input)) {
           break

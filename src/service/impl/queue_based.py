@@ -39,7 +39,7 @@ class QueueClient(TagAPI):
         existing = self.jobstore.list_jobs(ListJobArgs(qid=q.qid), auth=auth)
         for item in existing:
             if item.status in ("queued", "running") and item.params.feature == args.feature:
-                logger.info("duplicate job rejected", qhit=q.qid, feature=args.feature, existing_job_id=str(item.id))
+                logger.info("duplicate job rejected", qid=q.qid, feature=args.feature, existing_job_id=str(item.id))
                 return TagStartResult(
                     job_id="",
                     started=False,
@@ -66,12 +66,12 @@ class QueueClient(TagAPI):
         return TagStartResult(started=True, created_at=job.created_at, job_id=job.id, message="Job enqueued")
 
     def status(self, req: StatusArgs) -> list[TagJobStatusReport]:
-        """Return the latest status for all jobs targeting *qhit*."""
+        """Return the latest status for all jobs targeting *qid*."""
         items = self.jobstore.list_jobs(
             ListJobArgs(qid=req.qid, user=req.user, tenant=req.tenant), 
             auth="")
         if not items:
-            raise MissingResourceError(f"No tagging jobs found for qhit: {req.qid}")
+            raise MissingResourceError(f"No tagging jobs found for qid: {req.qid}")
 
         if req.title is not None:
             items = [item for item in items if item.additional_info.get("title") == req.title]
@@ -122,14 +122,14 @@ class QueueClient(TagAPI):
                 )
         return reports
 
-    def stop(self, qhit: str, feature: str | None, stream: str | None) -> list[TagStopResult]:
+    def stop(self, qid: str, feature: str | None, stream: str | None) -> list[TagStopResult]:
         """Request a stop for matching jobs in the queue."""
-        items = self.jobstore.list_jobs(ListJobArgs(qid=qhit), auth="")
+        items = self.jobstore.list_jobs(ListJobArgs(qid=qid), auth="")
         items = [item for item in items if item.status in ("queued", "running")]
         items = [item for item in items if item.params.feature == feature or feature is None]
 
         if not items:
-            errstr = f"No running jobs found for qhit: {qhit}"
+            errstr = f"No running jobs found for qid: {qid}"
             if feature:
                 errstr += f", feature: {feature}"
             raise MissingResourceError(errstr)

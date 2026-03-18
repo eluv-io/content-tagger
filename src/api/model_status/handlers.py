@@ -8,8 +8,8 @@ from src.status.model_status import get_model_status
 from src.tagging.fabric_tagging.tagger import FabricTagger
 
 
-def handle_model_status(qhit: str, model: str) -> Response:
-    q = _get_authorized_content(qhit)
+def handle_model_status(qid: str, model: str) -> Response:
+    q = _get_authorized_content(qid)
 
     tagger: FabricTagger = current_app.config["state"]["tagger"]
 

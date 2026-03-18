@@ -77,7 +77,7 @@ class TagJob:
             stream = "video"
         else:
             raise ValueError(f"unknown scope type: {type(self.args.scope)}")
-        return JobID(qhit=self.args.q.qid, feature=self.args.feature, stream=stream)
+        return JobID(qid=self.args.q.qid, feature=self.args.feature, stream=stream)
 
 @dataclass
 class JobStore:

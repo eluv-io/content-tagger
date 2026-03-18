@@ -5,7 +5,7 @@ from src.tags.tagstore.model import *
 
 class Tagstore(Protocol):
     def create_track(self, 
-        qhit: str,
+        qid: str,
         name: str,
         label: str,
         q: Content | None=None,
@@ -13,14 +13,14 @@ class Tagstore(Protocol):
         ...
 
     def get_track(self,
-        qhit: str,
+        qid: str,
         name: str,
         q: Content | None=None,
     ) -> Track | None:
         ...
 
     def create_batch(self,
-        qhit: str,
+        qid: str,
         track: str,
         author: str,
         q: Content | None=None,
@@ -28,7 +28,7 @@ class Tagstore(Protocol):
         ...
         
     def update_batch(self, 
-        qhit: str,
+        qid: str,
         batch_id: str,
         additional_info: dict,
         q: Content | None=None,
@@ -43,7 +43,7 @@ class Tagstore(Protocol):
         Find tags with flexible filtering.
         
         Supported filters:
-        - qhit: str
+        - qid: str
         - stream: str  
         - track: str
         - batch_id: str

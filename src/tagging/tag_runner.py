@@ -169,16 +169,16 @@ class TagRunner:
     def _status_tick(self) -> None:
         items = list(self._running_jobs.values())
 
-        # group by qhit so we make one status() call per content object
+        # group by qid so we make one status() call per content object
         qhits: dict[str, list[JobInfo]] = {}
         for item in items:
             qhits.setdefault(item.qid, []).append(item)
 
-        for qhit, job_items in qhits.items():
+        for qid, job_items in qhits.items():
             try:
-                reports = self.tagger.status(qhit)
+                reports = self.tagger.status(qid)
             except Exception:
-                logger.opt(exception=True).warning("failed to get status", qhit=qhit)
+                logger.opt(exception=True).warning("failed to get status", qid=qid)
                 continue
 
             report_by_feature: dict[str, TagJobStatusReport] = {r.job_id.feature: r for r in reports}

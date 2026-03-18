@@ -34,11 +34,11 @@ class FetchFactory:
         req: DownloadRequest, 
         exit: threading.Event | None = None
     ) -> FetchSession:
-        log = logger.bind(qhit=q.qid, scope=str(req.scope), preserve_track=req.preserve_track)
+        log = logger.bind(qid=q.qid, scope=str(req.scope), preserve_track=req.preserve_track)
 
-        with timeit(f"Getting media metadata: qhit={q.qid}, scope={req.scope}"):
+        with timeit(f"Getting media metadata: qid={q.qid}, scope={req.scope}"):
             meta = self._get_metadata(q, req.scope)
-        with timeit(f"Getting already tagged sources so we can ignore them: qhit={q.qid}, scope={req.scope}, track={req.preserve_track}"):
+        with timeit(f"Getting already tagged sources so we can ignore them: qid={q.qid}, scope={req.scope}, track={req.preserve_track}"):
             # TODO: the real tagstore doesn't have a great way to query for unique values yet. 
             ignore_sources = self._get_ignored_sources(q, req.preserve_track)
         log.info(
@@ -95,7 +95,7 @@ class FetchFactory:
             return []
         existing_tags = self.ts.find_tags(
             author=self.config.author, 
-            qhit=q.qid,
+            qid=q.qid,
             track=preserve_track,
             q=q
         )

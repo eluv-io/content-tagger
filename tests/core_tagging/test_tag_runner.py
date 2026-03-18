@@ -13,15 +13,15 @@ from src.service.model import *
 
 def _wait_for_status(
     client: QueueClient,
-    qhit: str,
+    qid: str,
     target_status: str,
     timeout: float = 10.0,
     interval: float = 0.15,
 ) -> list[TagJobStatusReport]:
-    """Poll until every report for *qhit* reaches *target_status* or timeout."""
+    """Poll until every report for *qid* reaches *target_status* or timeout."""
     deadline = time.time() + timeout
     req = StatusArgs(
-        qid=qhit,
+        qid=qid,
         user=None,
         tenant=None,
         title=None

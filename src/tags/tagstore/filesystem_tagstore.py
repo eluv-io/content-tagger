@@ -17,7 +17,7 @@ class FilesystemTagStore(Tagstore):
         os.makedirs(self.base_path, exist_ok=True)
 
     def create_track(self,
-        qhit: str,
+        qid: str,
         name: str,
         label: str,
         q: Content | None = None,
@@ -25,28 +25,28 @@ class FilesystemTagStore(Tagstore):
         """
         Create a new track with metadata
         """
-        track_dir = self._get_track_dir(qhit, name)
+        track_dir = self._get_track_dir(qid, name)
         os.makedirs(track_dir)
 
         track = Track(
             name=name,
             label=label,
-            qhit=qhit
+            qid=qid
         )
 
-        metadata_path = self._get_track_metadata_path(qhit, name)
+        metadata_path = self._get_track_metadata_path(qid, name)
         with open(metadata_path, 'w') as f:
             json.dump(asdict(track), f, indent=2)
 
     def get_track(self,
-        qhit: str,
+        qid: str,
         name: str,
         q: Content | None = None,
     ) -> Track | None:
         """
         Get track metadata
         """
-        metadata_path = self._get_track_metadata_path(qhit, name)
+        metadata_path = self._get_track_metadata_path(qid, name)
         
         if not os.path.exists(metadata_path):
             return None
@@ -59,7 +59,7 @@ class FilesystemTagStore(Tagstore):
             return None
 
     def create_batch(self,
-        qhit: str,
+        qid: str,
         track: str,
         author: str,
         q: Content | None = None
@@ -67,13 +67,13 @@ class FilesystemTagStore(Tagstore):
         """
         Starts a new batch with provided metadata
         """
-        batch_id = qhit + "/" + track + "/" + datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + str(uuid.uuid4())[0:4]
+        batch_id = qid + "/" + track + "/" + datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + str(uuid.uuid4())[0:4]
         batch_dir = self._get_batch_dir(batch_id)
         os.makedirs(batch_dir, exist_ok=True)
 
         batch = Batch(
             id=batch_id,
-            qhit=qhit,
+            qid=qid,
             track=track,
             timestamp=time.time(),
             author=author,
@@ -145,7 +145,7 @@ class FilesystemTagStore(Tagstore):
         NOTE: the filesystem implementation does not implement the shadowing logic.
         
         Supported filters:
-        - qhit: str
+        - qid: str
         - stream: str  
         - track: str
         - batch_id: str  
@@ -161,8 +161,8 @@ class FilesystemTagStore(Tagstore):
         
         # First, get all batches that match batch-level filters
         batch_filters = {}
-        if 'qhit' in filters:
-            batch_filters['qhit'] = filters['qhit']
+        if 'qid' in filters:
+            batch_filters['qid'] = filters['qid']
         if 'stream' in filters:
             batch_filters['stream'] = filters['stream']
         if 'track' in filters:
@@ -222,7 +222,7 @@ class FilesystemTagStore(Tagstore):
         Find batch IDs with flexible filtering.
         
         Supported filters:
-        - qhit: str
+        - qid: str
         - stream: str
         - track: str 
         - author: str
@@ -249,7 +249,7 @@ class FilesystemTagStore(Tagstore):
                 continue
             
             # Apply filters
-            if 'qhit' in filters and batch.qhit != filters['qhit']:
+            if 'qid' in filters and batch.qid != filters['qid']:
                 continue
             if 'track' in filters and batch.track != filters['track']:
                 continue
@@ -278,7 +278,7 @@ class FilesystemTagStore(Tagstore):
         shutil.rmtree(dir, ignore_errors=True)
 
     def update_batch(self,
-        qhit: str,
+        qid: str,
         batch_id: str,
         additional_info: dict,
         q: Content | None = None,
@@ -313,23 +313,23 @@ class FilesystemTagStore(Tagstore):
             batch_data = json.load(f)
             return Batch(**batch_data)
 
-    def _get_track_dir(self, qhit: str, track: str) -> str:
+    def _get_track_dir(self, qid: str, track: str) -> str:
         """Get the directory path for a specific track"""
-        return os.path.join(self.base_path, qhit, track)
+        return os.path.join(self.base_path, qid, track)
 
-    def _get_track_metadata_path(self, qhit: str, track: str) -> str:
+    def _get_track_metadata_path(self, qid: str, track: str) -> str:
         """Get the path to track metadata file"""
-        return os.path.join(self._get_track_dir(qhit, track), "trackmeta.json")
+        return os.path.join(self._get_track_dir(qid, track), "trackmeta.json")
 
     def _get_batch_ids_with_paths(self) -> list[tuple[str, str]]:
         """Get all batch IDs with their corresponding paths"""
         if not os.path.exists(self.base_path):
             return []
         
-        # batch_ids are represented by qhit/track/batch_name
+        # batch_ids are represented by qid/track/batch_name
         batch_ids = []
-        for qhit in os.listdir(self.base_path):
-            qhit_path = os.path.join(self.base_path, qhit)
+        for qid in os.listdir(self.base_path):
+            qhit_path = os.path.join(self.base_path, qid)
             if not os.path.isdir(qhit_path):
                 continue
                 
@@ -343,7 +343,7 @@ class FilesystemTagStore(Tagstore):
                     # Skip the trackmeta.json file
                     if not os.path.isdir(batch_path):
                         continue
-                    batch_ids.append((f"{qhit}/{track}/{batch_name}", batch_path))
+                    batch_ids.append((f"{qid}/{track}/{batch_name}", batch_path))
 
         return batch_ids
 

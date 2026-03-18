@@ -76,7 +76,7 @@ class UploadSession:
             logger.error("no batch found for report, skipping upload", feature=report.params.feature, destination_qid=self.dest_q.qid)
             return
 
-        self.tagstore.update_batch(qhit=self.dest_q.qid, batch_id=batch, additional_info={"tagger": asdict(report)}, q=self.dest_q)
+        self.tagstore.update_batch(qid=self.dest_q.qid, batch_id=batch, additional_info={"tagger": asdict(report)}, q=self.dest_q)
     
     def _resolve_destination(self, source_q: Content, destination_qid: str) -> Content:
         """Resolve destination content object"""
@@ -109,7 +109,7 @@ class UploadSession:
 
         try:
             self.tagstore.create_track(
-                qhit=self.dest_q.qid,
+                qid=self.dest_q.qid,
                 name=track,
                 label=track_args.label,
                 q=self.dest_q,
@@ -119,14 +119,14 @@ class UploadSession:
             pass
 
         db_track = self.tagstore.get_track(
-            qhit=self.dest_q.qid,
+            qid=self.dest_q.qid,
             name=track,
             q=self.dest_q,
         )
 
         assert db_track is not None and db_track.name == track
         ts_batch = self.tagstore.create_batch(
-            qhit=self.dest_q.qid,
+            qid=self.dest_q.qid,
             track=track,
             author="tagger",
             q=self.dest_q,
@@ -145,7 +145,7 @@ class UploadSession:
         for tag in tags:
             batch_to_tags.setdefault(tag.batch_id, []).append(tag)
 
-        logger.info("uploading tags", num_tags=len(tags), qhit=q.qid, num_batches=len(batch_to_tags))
+        logger.info("uploading tags", num_tags=len(tags), qid=q.qid, num_batches=len(batch_to_tags))
 
         for batch, tags in batch_to_tags.items():
             try:

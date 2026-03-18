@@ -137,7 +137,7 @@ class LivePartWorker(FetchSession):
         exit: threading.Event | None = None
     ):
         self.q = q
-        # derive new Content with edge_token qhit
+        # derive new Content with edge_token qid
         edge_token = q.content_object_metadata(
             metadata_subtree="live_recording/status/edge_write_token",
             resolve_links=False,
@@ -310,7 +310,7 @@ class LivePartWorker(FetchSession):
             )
             
         except Exception as e:
-            logger.error(f"Failed to download part {part_hash} for {self.qwt.qhit}: {str(e)}")
+            logger.error(f"Failed to download part {part_hash} for {self.qwt.qid}: {str(e)}")
 
             if os.path.exists(save_path):
                 os.remove(save_path)
@@ -334,13 +334,13 @@ class LivePartWorker(FetchSession):
             )
         except HTTPError as e:
             raise HTTPError(
-                f"Failed to retrieve periods for live recording {self.qwt.qhit}"
+                f"Failed to retrieve periods for live recording {self.qwt.qid}"
             ) from e
 
         assert isinstance(periods, list)
 
         if len(periods) == 0:
-            raise MissingResourceError(f"Live recording {self.qwt.qhit} is empty")
+            raise MissingResourceError(f"Live recording {self.qwt.qid} is empty")
 
         stream = (
             periods[-1]
@@ -369,7 +369,7 @@ class LivePartWorker(FetchSession):
             )
         except HTTPError as e:
             raise HTTPError(
-                f"Failed to retrieve live stream metadata from {self.qwt.qhit}"
+                f"Failed to retrieve live stream metadata from {self.qwt.qid}"
             ) from e
 
         fps = None
@@ -381,7 +381,7 @@ class LivePartWorker(FetchSession):
                 )
             except HTTPError as e:
                 raise HTTPError(
-                    f"Failed to retrieve live stream metadata from {self.qwt.qhit}"
+                    f"Failed to retrieve live stream metadata from {self.qwt.qid}"
                 ) from e
             
             assert isinstance(live_stream_info, list)

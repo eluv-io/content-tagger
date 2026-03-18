@@ -9,7 +9,7 @@ from src.tags.track_resolver import TrackResolver
 from src.common.content import Content
 
 def get_content_summary(q: Content, tagstore: Tagstore, track_resolver: TrackResolver) -> ContentStatusResponse:
-    batch_ids = tagstore.find_batches(q=q, qhit=q.qid, author="tagger")
+    batch_ids = tagstore.find_batches(q=q, qid=q.qid, author="tagger")
 
     # Collect all batches and group by track
     batches_by_track: dict[str, list[Batch]] = defaultdict(list)

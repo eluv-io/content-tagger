@@ -8,7 +8,7 @@ from src.tags.tagstore.model import Batch
 def make_batch(id: str, track: str, timestamp: float, all_sources: list, tagged_sources: list) -> Batch:
     return Batch(
         id=id,
-        qhit="iq__test",
+        qid="iq__test",
         track=track,
         timestamp=timestamp,
         author="tagger",
@@ -84,7 +84,7 @@ def test_no_upload_status(track_resolver, mock_tagstore):
     """Batches without upload_status should yield 0% completion."""
     batch = Batch(
         id="b1",
-        qhit="iq__test",
+        qid="iq__test",
         track="llava_track",
         timestamp=1000.0,
         author="tagger",

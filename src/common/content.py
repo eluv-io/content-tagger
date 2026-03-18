@@ -27,7 +27,7 @@ class QAPI:
     Serves the following uses:
         - Caches qinfo call (qid, qhash, qlib) so that they don't need to be requeried
         - Bridges the the parts and regular fabric APIs into one interface
-        - Helps reduce parameter counts in functions by not requiring the qhit & the ElvClient to
+        - Helps reduce parameter counts in functions by not requiring the qid & the ElvClient to
             be passed separately
     """
 
@@ -56,7 +56,7 @@ class QAPI:
             logger.opt(exception=e).error("Failed to create live media client")
             live_client = None
 
-        # will raise HTTPError if auth is invalid or qhit is not found
+        # will raise HTTPError if auth is invalid or qid is not found
         qinfo = client.content_object(**parse_qhit(q.qid))
 
         self.qid = qinfo["id"]
@@ -66,7 +66,7 @@ class QAPI:
         assert self.qhash or self.qwt, f"Content object must have either a hash or a write token. {qinfo}"
 
         self.qlib = qinfo["qlib_id"]
-        self.qhit = q.qid
+        self.qid = q.qid
         self._client = client
         self._parts_client = parts_client
         self._live_client = live_client
@@ -148,7 +148,7 @@ class QAPI:
         return attr
 
     def __str__(self):
-        return f"Content(qhit={self.qhit}, qid={self.qid}, qhash={self.qhash}, qlib={self.qlib})"
+        return f"Content(qid={self.qid}, qid={self.qid}, qhash={self.qhash}, qlib={self.qlib})"
 
 class QAPIFactory:
     def __init__(self, cfg: ContentConfig):
@@ -157,17 +157,17 @@ class QAPIFactory:
     def create_content(self, q: Content) -> QAPI:
         return QAPI(q, self.cfg)
 
-def parse_qhit(qhit: str) -> dict[str, str]:
-    """Parse a qhit into a dictionary so it can be passed to elv_client_py functions 
+def parse_qhit(qid: str) -> dict[str, str]:
+    """Parse a qid into a dictionary so it can be passed to elv_client_py functions 
     and use the correct argument."""
-    if not isinstance(qhit, str):
-        raise BadRequestError(f"qhit must be a string, got {type(qhit)}")
+    if not isinstance(qid, str):
+        raise BadRequestError(f"qid must be a string, got {type(qid)}")
 
-    if qhit.startswith("hq__"):
-        return {"version_hash": qhit}
-    elif qhit.startswith("tqw__"):
-        return {"write_token": qhit}
-    elif qhit.startswith("iq__"):
-        return {"object_id": qhit}
+    if qid.startswith("hq__"):
+        return {"version_hash": qid}
+    elif qid.startswith("tqw__"):
+        return {"write_token": qid}
+    elif qid.startswith("iq__"):
+        return {"object_id": qid}
 
-    raise BadRequestError(f"Invalid qhit: {qhit}")
+    raise BadRequestError(f"Invalid qid: {qid}")

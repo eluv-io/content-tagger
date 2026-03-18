@@ -82,12 +82,12 @@ class FabricTagger:
         request = TagRequest(q=q, args=args)
         return self._submit(request)
 
-    def status(self, qhit: str) -> list[TagJobStatusReport]:
-        request = StatusRequest(qhit=qhit)
+    def status(self, qid: str) -> list[TagJobStatusReport]:
+        request = StatusRequest(qid=qid)
         return self._submit(request)
 
-    def stop(self, qhit: str, feature: str | None, stream: str | None) -> list[TagStopResult]:
-        request = StopRequest(qhit=qhit, feature=feature, stream=stream, status="Stopped")
+    def stop(self, qid: str, feature: str | None, stream: str | None) -> list[TagStopResult]:
+        request = StopRequest(qid=qid, feature=feature, stream=stream, status="Stopped")
         return self._submit(request)
 
     def cleanup(self) -> None:
@@ -102,7 +102,7 @@ class FabricTagger:
         log = logger.bind(job_id=jobid)
         if error:
             log.opt(exception=error).error("job ended with error", status=status)
-        request = StopRequest(qhit=jobid.qhit, feature=jobid.feature, stream=jobid.stream, status=status)
+        request = StopRequest(qid=jobid.qid, feature=jobid.feature, stream=jobid.stream, status=status)
         return self._submit_async(request)
 
     def _submit(self, req: Request) -> Any:
@@ -190,7 +190,7 @@ class FabricTagger:
         args = request.args
     
         self._validate_args(args)
-        logger.info("processing tag request", extra={"qhit": q.qid, "args": args})
+        logger.info("processing tag request", extra={"qid": q.qid, "args": args})
 
         job = self._create_job(q, args.feature, args)
 
@@ -514,11 +514,11 @@ class FabricTagger:
         active_jobs = self.jobstore.active_jobs
         inactive_jobs = self.jobstore.inactive_jobs
 
-        jobids = {jobid for jobid in active_jobs.keys() if jobid.qhit == request.qhit}
-        jobids |= {jobid for jobid in inactive_jobs.keys() if jobid.qhit == request.qhit}
+        jobids = {jobid for jobid in active_jobs.keys() if jobid.qid == request.qid}
+        jobids |= {jobid for jobid in inactive_jobs.keys() if jobid.qid == request.qid}
 
         if len(jobids) == 0:
-            raise MissingResourceError(f"No jobs started for {request.qhit}")
+            raise MissingResourceError(f"No jobs started for {request.qid}")
 
         res = []
         for jid in jobids:
@@ -555,7 +555,7 @@ class FabricTagger:
         log = logger.bind(request=message.data)
 
         def _job_filter(jobid: JobID) -> bool:
-            if jobid.qhit != request.qhit:
+            if jobid.qid != request.qid:
                 return False
             if request.feature and jobid.feature != request.feature:
                 return False
@@ -572,8 +572,8 @@ class FabricTagger:
             old_jobs = [jobid for jobid in inactive_jobs.keys() 
                         if _job_filter(jobid)]
             if old_jobs:
-                raise MissingResourceError(f"Job for {request.feature} on {request.qhit} is already complete")
-            raise MissingResourceError(f"No job running for {request.feature} on {request.qhit}")
+                raise MissingResourceError(f"Job for {request.feature} on {request.qid} is already complete")
+            raise MissingResourceError(f"No job running for {request.feature} on {request.qid}")
 
         jobs = [active_jobs[jid] for jid in jobids]
         results = []

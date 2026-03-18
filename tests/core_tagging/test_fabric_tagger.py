@@ -178,7 +178,7 @@ def test_many_concurrent_jobs(fabric_tagger, make_tag_args):
     """Run many jobs and make sure that they all run"""
     contents = []
     for i in range(5):
-        contents.append(Mock(qid=f"iq__content{i}", qhit=f"iq__content{i}", auth=f"token{i}"))
+        contents.append(Mock(qid=f"iq__content{i}", qid=f"iq__content{i}", auth=f"token{i}"))
 
     all_args = []
     for _content in contents:
@@ -203,7 +203,7 @@ def test_many_concurrent_jobs(fabric_tagger, make_tag_args):
 
     statuses = []
     for content in contents:
-        statuses.append(fabric_tagger.status(content.qhit))
+        statuses.append(fabric_tagger.status(content.qid))
     for status in statuses:
         caption = _status_for(status, "caption", "video")
         asr = _status_for(status, "asr", "audio")
@@ -212,7 +212,7 @@ def test_many_concurrent_jobs(fabric_tagger, make_tag_args):
 
     time.sleep(2)
     for content in contents:
-        status = fabric_tagger.status(content.qhit)
+        status = fabric_tagger.status(content.qid)
         caption = _status_for(status, "caption", "video")
         asr = _status_for(status, "asr", "audio")
         assert caption.status == "Completed"
@@ -425,7 +425,7 @@ def test_container_nonzero_exit_code(fabric_tagger, q, make_tag_args):
 
 
 def test_destination_qid_uploads_to_correct_qhit(sample_tag_args, fabric_tagger: FabricTagger, q, q_legacy):
-    """Test that when destination_qid is set, tags are uploaded to that qhit instead of source"""
+    """Test that when destination_qid is set, tags are uploaded to that qid instead of source"""
 
     # doesn't really matter what the other content is as long as it's in same tenant
     q2 = q_legacy
@@ -438,11 +438,11 @@ def test_destination_qid_uploads_to_correct_qhit(sample_tag_args, fabric_tagger:
     time.sleep(0.5)
     
     # Verify tags were uploaded to destination_qhit
-    tag_count_destination = fabric_tagger.tagstore.count_tags(qhit=q2.qid, q=q2)
+    tag_count_destination = fabric_tagger.tagstore.count_tags(qid=q2.qid, q=q2)
     assert tag_count_destination > 0
 
-    # Verify no tags were uploaded to source qhit
-    tag_count_source = fabric_tagger.tagstore.count_tags(qhit=q.qid, q=q)
+    # Verify no tags were uploaded to source qid
+    tag_count_source = fabric_tagger.tagstore.count_tags(qid=q.qid, q=q)
     assert tag_count_source == 0
 
 def test_tags_have_timestamp_ms_field(fabric_tagger: FabricTagger, q: Content, sample_tag_args):
@@ -454,7 +454,7 @@ def test_tags_have_timestamp_ms_field(fabric_tagger: FabricTagger, q: Content, s
     wait_tag(fabric_tagger, q.qid, timeout=5)
     
     tags = fabric_tagger.tagstore.find_tags(
-        qhit=q.qid,
+        qid=q.qid,
         q=q
     )
 
@@ -525,7 +525,7 @@ def test_uploaded_track_label(fabric_tagger: FabricTagger, q, make_tag_args):
     track_arg = fabric_tagger.track_resolver.resolve(args.feature)
     
     track = fabric_tagger.tagstore.get_track(
-        qhit=q.qid,
+        qid=q.qid,
         q=q,
         name=track_arg.name
     )
@@ -560,7 +560,7 @@ def test_default_defer_to_model_track(fabric_tagger, q, make_tag_args):
     default_tags = fabric_tagger.tagstore.find_tags(q=q, track="random_track")
     assert len(default_tags) == 2
 
-    track = fabric_tagger.tagstore.get_track(qhit=q.qid, q=q, name="random_track")
+    track = fabric_tagger.tagstore.get_track(qid=q.qid, q=q, name="random_track")
     assert track.label == "Random Track"
 
 def test_fetcher_returns_no_sources(fabric_tagger, q, make_tag_args):
@@ -584,7 +584,7 @@ def test_fetcher_returns_no_sources(fabric_tagger, q, make_tag_args):
     assert len(report.failed) == 0
     
     # Verify no tags were uploaded
-    tag_count = fabric_tagger.tagstore.count_tags(qhit=q.qid, q=q)
+    tag_count = fabric_tagger.tagstore.count_tags(qid=q.qid, q=q)
     assert tag_count == 0
 
 def test_batch_report_on_success(fabric_tagger, q, make_tag_args):
@@ -595,7 +595,7 @@ def test_batch_report_on_success(fabric_tagger, q, make_tag_args):
 
     wait_tag(fabric_tagger, q.qid, timeout=5)
 
-    batches = fabric_tagger.tagstore.find_batches(qhit=q.qid, q=q)
+    batches = fabric_tagger.tagstore.find_batches(qid=q.qid, q=q)
     assert len(batches) == 1
 
     batch = fabric_tagger.tagstore.get_batch(batches[0], q=q)

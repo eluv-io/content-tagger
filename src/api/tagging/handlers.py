@@ -20,8 +20,8 @@ from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.api.tagging.request_mapping import *
 from src.api.tagging.response_mapping import *
 
-def handle_tag(qhit: str) -> Response:
-    q = _get_authorized_content(qhit)
+def handle_tag(qid: str) -> Response:
+    q = _get_authorized_content(qid)
 
     try:
         args = from_dict(data_class=StartJobsRequest, data=request.get_json(), config=Config(strict=True))
@@ -48,7 +48,7 @@ def _execute_tagging(q: Content, tag_args: list[TagArgs]) -> Response:
         try:
             result = tagger.tag(q, tag_arg)
         except Exception as e:
-            logger.opt(exception=e).error("Failed to start tagging", feature=tag_arg.feature, qhit=q.qid)
+            logger.opt(exception=e).error("Failed to start tagging", feature=tag_arg.feature, qid=q.qid)
             jobs.append(
                 StartStatus(
                     job_id="",
@@ -78,18 +78,18 @@ def _execute_tagging(q: Content, tag_args: list[TagArgs]) -> Response:
         mimetype="application/json",
     )
 
-def handle_status_content(qhit: str) -> Response:
+def handle_status_content(qid: str) -> Response:
     status_secret = os.environ.get("STATUS_SECRET", None)
     
     if status_secret is not None and get_authorization(request) == status_secret:
         pass
     else:
-        _get_authorized_content(qhit)
+        _get_authorized_content(qid)
 
     service: TagAPI = current_app.config["state"]["service"]
 
     reports = service.status(StatusArgs(
-        qid=qhit,
+        qid=qid,
         user=None,
         tenant=None,
         title=None
@@ -144,10 +144,10 @@ def _parse_status_request() -> StatusRequest:
         raise BadRequestError(f"Invalid status query parameters: {e}") from e
 
 def handle_stop_model(
-    qhit: str, 
+    qid: str, 
     feature: str
 ) -> Response:
-    q = _get_authorized_content(qhit)
+    q = _get_authorized_content(qid)
 
     tagger: TagAPI = current_app.config["state"]["service"]
 
@@ -158,9 +158,9 @@ def handle_stop_model(
     return Response(response=json.dumps(asdict(api_res)), status=200, mimetype='application/json')
 
 def handle_stop_content(
-    qhit: str
+    qid: str
 ) -> Response:
-    q = _get_authorized_content(qhit)
+    q = _get_authorized_content(qid)
 
     tagger: TagAPI = current_app.config["state"]["service"]
 
@@ -170,10 +170,10 @@ def handle_stop_content(
 
     return Response(response=json.dumps(asdict(api_res)), status=200, mimetype='application/json')
 
-def _get_authorized_content(qhit: str) -> Content:
+def _get_authorized_content(qid: str) -> Content:
     auth = get_authorization(request)
     qfactory: ContentFactory = current_app.config["state"]["content_factory"]
-    return qfactory.create_content(qhit, auth)
+    return qfactory.create_content(qid, auth)
 
 def _validate_destination_auth(source_q: Content, dest_qid: str) -> None:
     """Validate that the destination qid is accessible with the same auth context."""

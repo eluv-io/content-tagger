@@ -283,7 +283,7 @@ def test_real_live_stream(app, q_live):
     assert final_status in ['cancelled', 'succeeded'], f"Expected Stopped or Completed, got {final_status}"
     
     # verify we have some tags
-    jobid = tagstore.find_batches(q=q_live, qhit=q_live.qid)[0]
+    jobid = tagstore.find_batches(q=q_live, qid=q_live.qid)[0]
     tags = tagstore.find_tags(batch_id=jobid, q=q_live)
     tags = sorted(tags, key=lambda x: x.start_time)
     vtags = [ t for t in tags if t.frame_info is None ]
@@ -326,7 +326,7 @@ def test_asset_tag(client, q_assets):
     status = client.get(f"/{qid}/job-status?authorization={auth}")
     print(status.get_json())
     tagstore: FilesystemTagStore = client.application.config["state"]["tagger"].tagstore
-    jobid = tagstore.find_batches(qhit=q_assets.qid)[0]
+    jobid = tagstore.find_batches(qid=q_assets.qid)[0]
     tags = tagstore.find_tags(batch_id=jobid)
     tags = sorted(tags, key=lambda x: x.start_time)
     assert len(tags) > 0
@@ -515,7 +515,7 @@ def test_stop_live_job(app, q_live):
                 if progress not in ["0/0", "0%"] and not progress.endswith("/0"):
                     # Check we actually have some tags
                     try:
-                        jobid = tagstore.find_batches(q=q_live, qhit=q_live.qid)[0]
+                        jobid = tagstore.find_batches(q=q_live, qid=q_live.qid)[0]
                         tags = tagstore.find_tags(batch_id=jobid, q=q_live)
                         if len(tags) > 0:
                             some_tags_found = True
@@ -546,7 +546,7 @@ def test_stop_live_job(app, q_live):
     assert final_status == 'cancelled', f"Expected cancelled, got {final_status}"
     
     # Verify we have partial tags (not all of them)
-    jobid = tagstore.find_batches(q=q_live, qhit=q_live.qid)[0]
+    jobid = tagstore.find_batches(q=q_live, qid=q_live.qid)[0]
     final_tags = tagstore.find_tags(batch_id=jobid, q=q_live)
     
     assert len(final_tags) > 0, "Should have some tags"
@@ -576,7 +576,7 @@ def test_invalid_model_name(client, q):
     assert response.status_code == 400
 
 def test_stop_all_jobs(client, q):
-    """Test stopping all jobs for a qhit."""
+    """Test stopping all jobs for a qid."""
     auth = get_auth(q)
     
     response = client.post(

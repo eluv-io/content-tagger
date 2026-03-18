@@ -37,7 +37,7 @@ def mock_registry():
 @pytest.fixture
 def mock_content():
     """Mock Content object for testing."""
-    content = Mock(qhit="iq__source", qid="iq__source")
+    content = Mock(qid="iq__source", qid="iq__source")
     return content
 
 def test_auto_detect_livestream(mock_registry, mock_content):

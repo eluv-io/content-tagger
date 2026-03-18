@@ -7,7 +7,7 @@ from src.tags.tagstore.model import Tag
 def job_args(qid):
     """Create a sample job for testing"""
     return {
-        "qhit": qid,
+        "qid": qid,
         "track": "llava",
         "author": "test-user"
     }

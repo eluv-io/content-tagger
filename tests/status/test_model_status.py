@@ -20,7 +20,7 @@ def make_batch(
 ) -> Batch:
     return Batch(
         id=id,
-        qhit="iq__test",
+        qid="iq__test",
         track=track,
         timestamp=timestamp,
         author="tagger",
@@ -43,7 +43,7 @@ def test_single_batch_full_completion(track_resolver, mock_tagstore):
     batches = [make_batch("b1", "llava_track", 1000.0, sources, sources, sources)]
     tagstore = mock_tagstore(batches)
 
-    result = get_model_status(Mock(qhit="iq__test"), "llava", tagstore, track_resolver)
+    result = get_model_status(Mock(qid="iq__test"), "llava", tagstore, track_resolver)
 
     assert result.summary.model == "llava"
     assert result.summary.track == "llava_track"
@@ -55,7 +55,7 @@ def test_single_batch_partial_completion(track_resolver, mock_tagstore):
     batches = [make_batch("b1", "llava_track", 1000.0, ["s1", "s2", "s3", "s4"], ["s1", "s2"], ["s1"])]
     tagstore = mock_tagstore(batches)
 
-    result = get_model_status(Mock(qhit="iq__test"), "llava", tagstore, track_resolver)
+    result = get_model_status(Mock(qid="iq__test"), "llava", tagstore, track_resolver)
 
     assert result.summary.tagging_progress == pytest.approx(0.25)
     assert result.summary.num_content_parts == 4
@@ -69,7 +69,7 @@ def test_multiple_batches_union_sources(track_resolver, mock_tagstore):
     ]
     tagstore = mock_tagstore(batches)
 
-    result = get_model_status(Mock(qhit="iq__test"), "llava", tagstore, track_resolver)
+    result = get_model_status(Mock(qid="iq__test"), "llava", tagstore, track_resolver)
 
     assert result.summary.num_content_parts == 4
     assert result.summary.tagging_progress == pytest.approx(0.75)
@@ -84,7 +84,7 @@ def test_num_content_parts_is_max_not_union(track_resolver, mock_tagstore):
     ]
     tagstore = mock_tagstore(batches)
 
-    result = get_model_status(Mock(qhit="iq__test"), "llava", tagstore, track_resolver)
+    result = get_model_status(Mock(qid="iq__test"), "llava", tagstore, track_resolver)
 
     assert result.summary.num_content_parts == 3
 
@@ -93,7 +93,7 @@ def test_job_detail_fields(track_resolver, mock_tagstore):
     batches = [make_batch("b1", "llava_track", 1000.0, ["s1", "s2"], ["s1", "s2"], ["s1"], source_qid="iq__src1", job_status="Completed")]
     tagstore = mock_tagstore(batches)
 
-    result = get_model_status(Mock(qhit="iq__test"), "llava", tagstore, track_resolver)
+    result = get_model_status(Mock(qid="iq__test"), "llava", tagstore, track_resolver)
 
     assert len(result.jobs) == 1
     job = result.jobs[0]
@@ -108,7 +108,7 @@ def test_job_upload_status_shows_counts_not_lists(track_resolver, mock_tagstore)
     batches = [make_batch("b1", "llava_track", 1000.0, ["s1", "s2", "s3"], ["s1", "s2"], ["s1"])]
     tagstore = mock_tagstore(batches)
 
-    result = get_model_status(Mock(qhit="iq__test"), "llava", tagstore, track_resolver)
+    result = get_model_status(Mock(qid="iq__test"), "llava", tagstore, track_resolver)
 
     upload = result.jobs[0].upload_status
     assert upload is not None
@@ -122,7 +122,7 @@ def test_no_batches_raises_missing_resource(track_resolver, mock_tagstore):
     tagstore = mock_tagstore([])
 
     with pytest.raises(MissingResourceError):
-        get_model_status(Mock(qhit="iq__test"), "llava", tagstore, track_resolver)
+        get_model_status(Mock(qid="iq__test"), "llava", tagstore, track_resolver)
 
 
 def test_only_other_track_batches_raises_missing_resource(track_resolver, mock_tagstore):
@@ -130,14 +130,14 @@ def test_only_other_track_batches_raises_missing_resource(track_resolver, mock_t
     tagstore = mock_tagstore(batches)
 
     with pytest.raises(MissingResourceError):
-        get_model_status(Mock(qhit="iq__test"), "llava", tagstore, track_resolver)
+        get_model_status(Mock(qid="iq__test"), "llava", tagstore, track_resolver)
 
 
 def test_no_upload_status_in_batch(track_resolver, mock_tagstore):
     """Batches without upload_status should still appear as jobs with zero counts."""
     batch = Batch(
         id="b1",
-        qhit="iq__test",
+        qid="iq__test",
         track="llava_track",
         timestamp=1000.0,
         author="tagger",
@@ -152,4 +152,4 @@ def test_no_upload_status_in_batch(track_resolver, mock_tagstore):
     tagstore = mock_tagstore([batch])
 
     with pytest.raises(BadRequestError):
-        get_model_status(Mock(qhit="iq__test"), "llava", tagstore, track_resolver)
+        get_model_status(Mock(qid="iq__test"), "llava", tagstore, track_resolver)

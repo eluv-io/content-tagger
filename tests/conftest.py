@@ -41,7 +41,7 @@ def q(qfactory, qid):
     if not auth_token:
         pytest.skip("TEST_AUTH not set in environment")
 
-    return qfactory.create_content(qhit=qid, auth=auth_token)
+    return qfactory.create_content(qid=qid, auth=auth_token)
 
 @pytest.fixture
 def qid_legacy():
@@ -53,7 +53,7 @@ def q_legacy(qfactory, qid_legacy):
     if not auth_token:
         pytest.skip("TEST_AUTH not set in environment")
 
-    return qfactory.create_content(qhit=qid_legacy, auth=auth_token)
+    return qfactory.create_content(qid=qid_legacy, auth=auth_token)
 
 @pytest.fixture
 def qid_live():
@@ -65,7 +65,7 @@ def q_live(qfactory, qid_live):
     if not token:
         pytest.skip("LIVE_AUTH not set in environment")
 
-    q = qfactory.create_content(qhit=qid_live, auth=token)
+    q = qfactory.create_content(qid=qid_live, auth=token)
 
     if not is_live_content(q):
         pytest.skip("livestream is not running")
@@ -82,7 +82,7 @@ def q_assets(qfactory, qid_assets):
     if not auth_token:
         pytest.skip("ASSETS_AUTH not set in environment")
 
-    return qfactory.create_content(qhit=qid_assets, auth=auth_token)
+    return qfactory.create_content(qid=qid_assets, auth=auth_token)
 
 
 """Basic utility fixtures"""

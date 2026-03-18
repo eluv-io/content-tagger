@@ -25,7 +25,7 @@ class Tag:
 @dataclass
 class Batch:
     id: str
-    qhit: str
+    qid: str
     track: str
     timestamp: float
     author: str
@@ -33,6 +33,6 @@ class Batch:
 
 @dataclass
 class Track:
-    qhit: str
+    qid: str
     name: str
     label: str

@@ -15,20 +15,20 @@ class TagRequest:
 
 @dataclass
 class StatusRequest:
-    qhit: str
+    qid: str
 
     def __str__(self):
-        return f"StatusRequest(qhit={self.qhit})"
+        return f"StatusRequest(qid={self.qid})"
 
 @dataclass
 class StopRequest:
-    qhit: str
+    qid: str
     feature: str | None
     stream: str | None
     status: Literal["Stopped", "Failed", "Completed"]
 
     def __str__(self):
-        return f"StopRequest(qhit={self.qhit}, feature={self.feature}, stream={self.stream}, status={self.status})"
+        return f"StopRequest(qid={self.qid}, feature={self.feature}, stream={self.stream}, status={self.status})"
 
 @dataclass
 class EnterFetchingPhase:

@@ -41,16 +41,16 @@ class JobID:
     """
     Unique identifier for a job to prevent duplication.
     """
-    qhit: str
+    qid: str
     feature: str
     # TODO: weirdness
     stream: str
 
     def __hash__(self):
-        return hash((self.qhit, self.feature, self.stream))
+        return hash((self.qid, self.feature, self.stream))
     
     def __str__(self):
-        return f"(qid={self.qhit}, model={self.feature}, stream={self.stream})"
+        return f"(qid={self.qid}, model={self.feature}, stream={self.stream})"
     
 @dataclass(frozen=True)
 class TagStartResult:

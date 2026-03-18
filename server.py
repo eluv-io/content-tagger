@@ -56,33 +56,33 @@ def configure_routes(app: Flask) -> None:
         logger.opt(exception=e).error("External service error")
         return jsonify({'error': "An upstream service that tagging depends on is not available"}), 502
 
-    @app.route('/<qhit>/tag', methods=['POST'])
-    def tag(qhit: str) -> Response:
-        return handle_tag(qhit)
+    @app.route('/<qid>/tag', methods=['POST'])
+    def tag(qid: str) -> Response:
+        return handle_tag(qid)
     
-    @app.route('/<qhit>/job-status', methods=['GET'])
-    def status(qhit: str) -> Response:
-        return handle_status_content(qhit)
+    @app.route('/<qid>/job-status', methods=['GET'])
+    def status(qid: str) -> Response:
+        return handle_status_content(qid)
 
     @app.route('/job-status', methods=['GET'])
     def status_all() -> Response:
         return handle_status()
     
-    @app.route('/<qhit>/stop/<feature>', methods=['POST'])
-    def stop_model(qhit: str, feature: str) -> Response:
-        return handle_stop_model(qhit, feature)
+    @app.route('/<qid>/stop/<feature>', methods=['POST'])
+    def stop_model(qid: str, feature: str) -> Response:
+        return handle_stop_model(qid, feature)
 
-    @app.route('/<qhit>/stop', methods=['POST'])
-    def stop_content(qhit: str) -> Response:
-        return handle_stop_content(qhit)
+    @app.route('/<qid>/stop', methods=['POST'])
+    def stop_content(qid: str) -> Response:
+        return handle_stop_content(qid)
 
-    @app.route('/<qhit>/tag-status', methods=['GET'])
-    def content_status(qhit: str) -> Response:
-        return handle_content_status(qhit)
+    @app.route('/<qid>/tag-status', methods=['GET'])
+    def content_status(qid: str) -> Response:
+        return handle_content_status(qid)
 
-    @app.route('/<qhit>/tag-status/<model>', methods=['GET'])
-    def model_status(qhit: str, model: str) -> Response:
-        return handle_model_status(qhit, model)
+    @app.route('/<qid>/tag-status/<model>', methods=['GET'])
+    def model_status(qid: str, model: str) -> Response:
+        return handle_model_status(qid, model)
 
     @app.route('/docs', strict_slashes=False)
     def docs_route():

@@ -90,23 +90,23 @@ video_params = {
     ]
 }
     
-def get_auth(config: str, qhit: str) -> str:
-    cmd = f"qfab_cli content token create {qhit} --update --config {config}"
+def get_auth(config: str, qid: str) -> str:
+    cmd = f"qfab_cli content token create {qid} --update --config {config}"
     out = subprocess.run(cmd, shell=True, check=True, capture_output=True).stdout.decode("utf-8")
     token = json.loads(out)["bearer"]
     return token
 
-def get_write_token(qhit: str, config: str) -> str:
-    if qhit.startswith("tqw"):
-        return qhit
+def get_write_token(qid: str, config: str) -> str:
+    if qid.startswith("tqw"):
+        return qid
     
-    cmd = f"qfab_cli content edit {qhit} --config {config}"
+    cmd = f"qfab_cli content edit {qid} --config {config}"
     out = subprocess.run(cmd, shell=True, check=True, capture_output=True).stdout.decode("utf-8")
     write_token = json.loads(out)["q"]["write_token"]
     return write_token
 
-def get_status(qhit: str, auth: str):
-    res = requests.get(f"{server}/{qhit}/job-status", params={"authorization": auth})
+def get_status(qid: str, auth: str):
+    res = requests.get(f"{server}/{qid}/job-status", params={"authorization": auth})
     response_data = response_force_dict(res)
     
     # Handle new {"jobs": [...]} format
@@ -137,8 +137,8 @@ def get_status(qhit: str, auth: str):
 def tag(contents: list, auth: str, assets: bool, params: dict, start_time: float = None, end_time: float = None):
     
     llama_models = ["elv-llamavision:1"]
-    for i, qhit in enumerate(contents):
-        url = f"{server}/{qhit}/tag"
+    for i, qid in enumerate(contents):
+        url = f"{server}/{qid}/tag"
         
         # Update llava model params if present
         for job in params["jobs"]:
@@ -162,8 +162,8 @@ def tag(contents: list, auth: str, assets: bool, params: dict, start_time: float
 
         time.sleep(float(os.environ.get("TAGGERV2_START_SLEEP", 0)))
 
-def is_running(qhit: str, auth: str):
-    res = requests.get(f"{server}/{qhit}/job-status", params={"authorization": auth})
+def is_running(qid: str, auth: str):
+    res = requests.get(f"{server}/{qid}/job-status", params={"authorization": auth})
     resdict = response_force_dict(res)
     
     # Handle new {"jobs": [...]} format
@@ -199,10 +199,10 @@ def response_force_dict(resp):
             "content": resp.content
         }
 
-def write(qhit: str, config: str, do_commit: bool, force = False, leave_open = False):
-    auth_token = get_auth(config, qhit)
-    write_token = get_write_token(qhit, config)
-    write_url = f"{tagstore}/{qhit}/write"
+def write(qid: str, config: str, do_commit: bool, force = False, leave_open = False):
+    auth_token = get_auth(config, qid)
+    write_token = get_write_token(qid, config)
+    write_url = f"{tagstore}/{qid}/write"
     resp = requests.post(write_url, params={"write_token": write_token}, headers={"Authorization": f"Bearer {auth_token}"})
     respdict = response_force_dict(resp)
     print(respdict)
@@ -211,7 +211,7 @@ def write(qhit: str, config: str, do_commit: bool, force = False, leave_open = F
 
     return write_token
 
-def aggregate(qhit: str, config: str, do_commit: bool):
+def aggregate(qid: str, config: str, do_commit: bool):
 
     print("")
     print("****************************")
@@ -224,9 +224,9 @@ def aggregate(qhit: str, config: str, do_commit: bool):
     if os.environ.get("TAGGERV3_AGG_NODELAY", None) is not None:
         time.sleep(5)
 
-    auth_token = get_auth(config, qhit)
-    write_token = get_write_token(qhit, config)
-    aggregate_url = f"https://ai.contentfabric.io/tagging/{qhit}/aggregate?authorization={auth_token}"
+    auth_token = get_auth(config, qid)
+    write_token = get_write_token(qid, config)
+    aggregate_url = f"https://ai.contentfabric.io/tagging/{qid}/aggregate?authorization={auth_token}"
     resp = requests.post(aggregate_url, params={"write_token": write_token, "replace": "true"})
     respdict = response_force_dict(resp)
     print(respdict)
@@ -236,45 +236,45 @@ def aggregate(qhit: str, config: str, do_commit: bool):
     return write_token
 
 def write_all(contents: list, config: str, do_commit: bool, force = False):
-    for qhit in contents:
-        if qhit in written:
-            print(f"{qhit} already written, clearwritten to clear list")
+    for qid in contents:
+        if qid in written:
+            print(f"{qid} already written, clearwritten to clear list")
             continue
 
-        print(f"Finalizing {qhit} force = {force}")
+        print(f"Finalizing {qid} force = {force}")
         try:
             leave_open = False
-            if qhit.startswith("tqw"):
+            if qid.startswith("tqw"):
                 leave_open = True
                 do_commit = False
             
-            write(qhit, config, do_commit, force, leave_open)
-            written[qhit] = True ### xxx store a hash of written job IDs
+            write(qid, config, do_commit, force, leave_open)
+            written[qid] = True ### xxx store a hash of written job IDs
             
         except Exception as e:
-            print(f"{e} while finalizing {qhit}")
+            print(f"{e} while finalizing {qid}")
 
-def stop(qhit: str, auth: str, models: list[str]):
+def stop(qid: str, auth: str, models: list[str]):
     """
     Stops the tagging process for specific models of a given content (iq).
 
     Args:
-        qhit (str): The content identifier.
+        qid (str): The content identifier.
         auth (str): Authorization token.
         models (list): The models to stop tagging for.
     """
 
     params = {"authorization": auth}
     for model in models:
-        url = f"{server}/{qhit}/stop/{model}"
+        url = f"{server}/{qid}/stop/{model}"
         try:
             res = requests.post(url, params=params)
             if res.status_code == 200:
-                print(f"Successfully stopped tagging for {qhit} on model {model}.")
+                print(f"Successfully stopped tagging for {qid} on model {model}.")
             else:
-                print(f"Failed to stop tagging for {qhit} on model {model}: {res.status_code} {res.text}")
+                print(f"Failed to stop tagging for {qid} on model {model}: {res.status_code} {res.text}")
         except Exception as e:
-            print(f"Error while stopping tagging for {qhit} on model {model}: {e}")
+            print(f"Error while stopping tagging for {qid} on model {model}: {e}")
 
 def list_models():
     print("getting model list:")
@@ -374,12 +374,12 @@ def main():
             if user_input in [ "status", "s"]:
                 reset_quickstatus = False
                 statuses = {}
-                for qhit in contents:
+                for qid in contents:
                     if len(user_split) > 1:
-                        if not re.search(user_split[1], qhit): continue                        
-                    status = get_status(qhit, auth)
-                    statuses[qhit] = status
-                    print(qhit, json.dumps(status, indent=2))
+                        if not re.search(user_split[1], qid): continue                        
+                    status = get_status(qid, auth)
+                    statuses[qid] = status
+                    print(qid, json.dumps(status, indent=2))
                 os.makedirs("rundriver", exist_ok=True)
                 with open("rundriver/status.json", "w") as statfile:
                     statfile.write(json.dumps(statuses, indent = 2))
@@ -460,8 +460,8 @@ def main():
                     print("quickstatus off")
                     quickstatus_watch = None
                 else:
-                    for qhit in contents:
-                        quick_status(auth, qhit, " ".join(user_split[1:]))
+                    for qid in contents:
+                        quick_status(auth, qid, " ".join(user_split[1:]))
             elif user_input in [ 'reverse' ]:
                 contents.reverse()
                 print("First element:", contents[0])
@@ -479,8 +479,8 @@ def main():
                 contentsub = contents
                 if len(user_split) > 1:
                     contentsub = user_split[1:]
-                for qhit in contentsub:
-                    aggregate(qhit, args.config, args.commit)
+                for qid in contentsub:
+                    aggregate(qid, args.config, args.commit)
             elif user_input in [ "quit", "exit"]:
                 break
             elif user_input in [ "h", "help"]:
@@ -508,15 +508,15 @@ def main():
     print("Exiting")
     exit(0)
 
-def quick_status(auth, qhit, filter = None):
+def quick_status(auth, qid, filter = None):
     if filter == "": 
         filter = None
-    res = requests.get(f"{server}/{qhit}/job-status", params={"authorization": auth})
+    res = requests.get(f"{server}/{qid}/job-status", params={"authorization": auth})
     status_data = response_force_dict(res)
     
     # Handle error response
     if isinstance(status_data, dict) and status_data.get("error", None):
-        line = "[%9s] %-32s / %s: %s" % ("", qhit, "err", status_data['error']) 
+        line = "[%9s] %-32s / %s: %s" % ("", qid, "err", status_data['error']) 
         if filter is None or re.search(filter, line):
             print(line, flush=True)
         return
@@ -529,7 +529,7 @@ def quick_status(auth, qhit, filter = None):
             stream = report['stream']
             progress = report.get('tagging_progress', '')
             status = report.get('status', '??')
-            line = "[%9s] %-32s / %s: %s" % (progress, qhit, f"({stream}) {model}", status)
+            line = "[%9s] %-32s / %s: %s" % (progress, qid, f"({stream}) {model}", status)
             if filter is None or re.search(filter, line):
                 print(line)
         return
@@ -539,7 +539,7 @@ def quick_status(auth, qhit, filter = None):
         if imgorvid == "error":  # Skip error key
             continue
         for model, stat in models.items():
-            line = "[%9s] %-32s / %s: %s" % (stat.get("tagging_progress", ""), qhit, f"({imgorvid}) {model}", stat.get("status", "??"))
+            line = "[%9s] %-32s / %s: %s" % (stat.get("tagging_progress", ""), qid, f"({imgorvid}) {model}", stat.get("status", "??"))
             if filter is None or re.search(filter, line):
                 print(line)
 

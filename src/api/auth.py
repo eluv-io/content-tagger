@@ -10,13 +10,13 @@ from src.common.errors import BadRequestError
 from src.common.content import Content, parse_qhit
 
 
-def authenticate(client: ElvClient, qhit: str) -> None:
+def authenticate(client: ElvClient, qid: str) -> None:
     """Basic authentication against the object. Returns None if successful, raises HTTPError if authentication fails."""
     try:
-        client.content_object(**parse_qhit(qhit))
+        client.content_object(**parse_qhit(qid))
     except HTTPError as e:
         raise HTTPError(
-            f"Failed to access the requested content with the provided authorization: {qhit}") from e
+            f"Failed to access the requested content with the provided authorization: {qid}") from e
 
 
 def get_authorization(req: Request) -> str:
@@ -29,7 +29,7 @@ def get_authorization(req: Request) -> str:
 
 
 def get_client(req: Request, qhi: str, config_url: str) -> ElvClient:
-    """Get an ElvClient instance from the request and qhit.
+    """Get an ElvClient instance from the request and qid.
     This will raise a BadRequestError if the authorization token is not provided or HTTPError if the authentication fails.
     """
     auth = get_authorization(req)

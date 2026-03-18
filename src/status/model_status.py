@@ -23,7 +23,7 @@ def get_model_status(
     track_args = track_resolver.resolve(model)
     track_name = track_args.name
 
-    batch_ids = tagstore.find_batches(q=q, qhit=q.qid, author="tagger")
+    batch_ids = tagstore.find_batches(q=q, qid=q.qid, author="tagger")
 
     batches: list[Batch] = []
     for batch_id in batch_ids:
