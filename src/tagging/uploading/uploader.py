@@ -145,7 +145,7 @@ class UploadSession:
         for tag in tags:
             batch_to_tags.setdefault(tag.batch_id, []).append(tag)
 
-        logger.info("uploading tags", num_tags=len(tags), qhit=q.qhit, num_batches=len(batch_to_tags))
+        logger.info("uploading tags", num_tags=len(tags), qhit=q.qid, num_batches=len(batch_to_tags))
 
         for batch, tags in batch_to_tags.items():
             try:

@@ -78,7 +78,7 @@ def test_status_with_jobs(fabric_tagger, q, sample_tag_args):
         fabric_tagger.tag(q, args)
     
     # Get status
-    status = fabric_tagger.status(q.qhit)
+    status = fabric_tagger.status(q.qid)
 
     assert isinstance(status, list)
     assert len(status) == 2
@@ -103,7 +103,7 @@ def test_status_completed_jobs(fabric_tagger, q, sample_tag_args):
     time.sleep(1)
     
     # Check that job is done according to status
-    status = fabric_tagger.status(q.qhit)
+    status = fabric_tagger.status(q.qid)
     assert _status_for(status, "caption", "video").status == "Completed"
     assert _status_for(status, "asr", "audio").status == "Completed"
 
@@ -115,10 +115,10 @@ def test_stop_running_job(fabric_tagger, q, sample_tag_args):
         fabric_tagger.tag(q, args)
     
     # Stop one job
-    fabric_tagger.stop(q.qhit, "caption", None)
+    fabric_tagger.stop(q.qid, "caption", None)
     
     # Check that stop event was set
-    status = fabric_tagger.status(q.qhit)
+    status = fabric_tagger.status(q.qid)
     assert _status_for(status, "caption", "video").status == "Stopped"
     assert _status_for(status, "asr", "audio").status != "Stopped"
 
@@ -137,9 +137,9 @@ def test_stop_finished_job(fabric_tagger, q, sample_tag_args):
         fabric_tagger.tag(q, args)
     time.sleep(1)
     with pytest.raises(MissingResourceError):
-        fabric_tagger.stop(q.qhit, "caption", None)
+        fabric_tagger.stop(q.qid, "caption", None)
     # check that both are Completed
-    status = fabric_tagger.status(q.qhit)
+    status = fabric_tagger.status(q.qid)
     assert _status_for(status, "caption", "video").status == "Completed"
     assert _status_for(status, "asr", "audio").status == "Completed"
 
@@ -271,7 +271,7 @@ def test_tags_uploaded_during_and_after_job_through_status(
     end = False
     percentages = set()
     while time.time() - start < timeout:
-        reports = fabric_tagger.status(q.qhit)
+        reports = fabric_tagger.status(q.qid)
         end = True
         for r in reports:
             percentages.add(r.tagging_progress)
@@ -307,7 +307,7 @@ def test_container_tags_method_fails(fabric_tagger, q, make_tag_args):
     timeout = 3
     start_time = time.time()
     while time.time() - start_time < timeout:
-        status = fabric_tagger.status(q.qhit)
+        status = fabric_tagger.status(q.qid)
         job_status = _status_for(status, "caption", "video").status
         if job_status == "Failed":
             break
@@ -317,7 +317,7 @@ def test_container_tags_method_fails(fabric_tagger, q, make_tag_args):
     else:
         pytest.fail("Job did not fail within timeout period")
 
-    final_status = fabric_tagger.status(q.qhit)
+    final_status = fabric_tagger.status(q.qid)
     assert _status_for(final_status, "caption", "video").status == "Failed"
     assert len(fabric_tagger.jobstore.active_jobs) == 0
     assert len(fabric_tagger.jobstore.inactive_jobs) == 1
@@ -334,7 +334,7 @@ def test_start_new_container_fails(fabric_tagger, q, make_tag_args):
     timeout = 2
     start_time = time.time()
     while time.time() - start_time < timeout:
-        status = fabric_tagger.status(q.qhit)
+        status = fabric_tagger.status(q.qid)
         job_status = _status_for(status, "caption", "video").status
         if job_status == "Failed":
             break
@@ -344,7 +344,7 @@ def test_start_new_container_fails(fabric_tagger, q, make_tag_args):
     else:
         pytest.fail("Job did not fail within timeout period")
 
-    final_status = fabric_tagger.status(q.qhit)
+    final_status = fabric_tagger.status(q.qid)
     report = _status_for(final_status, "caption", "video")
     assert report.status == "Failed"
     assert report.message is not None
@@ -364,10 +364,10 @@ def test_failed_tag(fabric_tagger, q, make_tag_args):
     result = fabric_tagger.tag(q, args)
     assert result.started is True
 
-    wait_tag(fabric_tagger, q.qhit, timeout=5)
+    wait_tag(fabric_tagger, q.qid, timeout=5)
 
     # check that only one was updated
-    status = fabric_tagger.status(q.qhit)
+    status = fabric_tagger.status(q.qid)
     report = _status_for(status, "caption", "video")
     assert report.status == "Completed"
     assert len(report.failed) == 0
@@ -410,7 +410,7 @@ def test_container_nonzero_exit_code(fabric_tagger, q, make_tag_args):
     timeout = 3
     start_time = time.time()
     while time.time() - start_time < timeout:
-        status = fabric_tagger.status(q.qhit)
+        status = fabric_tagger.status(q.qid)
         job_status = _status_for(status, "caption", "video").status
         if job_status == "Failed":
             break
@@ -420,7 +420,7 @@ def test_container_nonzero_exit_code(fabric_tagger, q, make_tag_args):
     else:
         pytest.fail("Job did not fail within timeout period")
 
-    final_status = fabric_tagger.status(q.qhit)
+    final_status = fabric_tagger.status(q.qid)
     assert _status_for(final_status, "caption", "video").status == "Failed"
 
 
@@ -434,7 +434,7 @@ def test_destination_qid_uploads_to_correct_qhit(sample_tag_args, fabric_tagger:
         fabric_tagger.tag(q, dc_replace(args, destination_qid=q2.qid))
 
     # Wait for job to complete
-    wait_tag(fabric_tagger, q.qhit, timeout=10)
+    wait_tag(fabric_tagger, q.qid, timeout=10)
     time.sleep(0.5)
     
     # Verify tags were uploaded to destination_qhit
@@ -442,7 +442,7 @@ def test_destination_qid_uploads_to_correct_qhit(sample_tag_args, fabric_tagger:
     assert tag_count_destination > 0
 
     # Verify no tags were uploaded to source qhit
-    tag_count_source = fabric_tagger.tagstore.count_tags(qhit=q.qhit, q=q)
+    tag_count_source = fabric_tagger.tagstore.count_tags(qhit=q.qid, q=q)
     assert tag_count_source == 0
 
 def test_tags_have_timestamp_ms_field(fabric_tagger: FabricTagger, q: Content, sample_tag_args):
@@ -451,10 +451,10 @@ def test_tags_have_timestamp_ms_field(fabric_tagger: FabricTagger, q: Content, s
     for args in sample_tag_args:
         fabric_tagger.tag(q, args)
 
-    wait_tag(fabric_tagger, q.qhit, timeout=5)
+    wait_tag(fabric_tagger, q.qid, timeout=5)
     
     tags = fabric_tagger.tagstore.find_tags(
-        qhit=q.qhit,
+        qhit=q.qid,
         q=q
     )
 
@@ -478,9 +478,9 @@ def test_source_with_zero_tags_marked_as_missing(fabric_tagger, q, make_tag_args
     args = make_tag_args(feature="caption", stream="video")
     
     fabric_tagger.tag(q, args)
-    wait_tag(fabric_tagger, q.qhit, timeout=5)
+    wait_tag(fabric_tagger, q.qid, timeout=5)
     
-    status = fabric_tagger.status(q.qhit)
+    status = fabric_tagger.status(q.qid)
     report = _status_for(status, "caption", "video")
     assert report.status == "Completed"
     assert len(report.failed) == 0
@@ -507,7 +507,7 @@ def test_track_override_uploads_to_multiple_tracks(fabric_tagger, q, make_tag_ar
 
     args = make_tag_args(feature="asr", stream="audio")
     fabric_tagger.tag(q, args)
-    wait_tag(fabric_tagger, q.qhit, timeout=5)
+    wait_tag(fabric_tagger, q.qid, timeout=5)
 
     default_tags = fabric_tagger.tagstore.find_tags(q=q, track="speech_to_text")
     override_tags = fabric_tagger.tagstore.find_tags(q=q, track="auto_captions")
@@ -520,12 +520,12 @@ def test_uploaded_track_label(fabric_tagger: FabricTagger, q, make_tag_args):
     args = make_tag_args(feature="caption", stream="video")
     
     fabric_tagger.tag(q, args)
-    wait_tag(fabric_tagger, q.qhit, timeout=5)
+    wait_tag(fabric_tagger, q.qid, timeout=5)
     
     track_arg = fabric_tagger.track_resolver.resolve(args.feature)
     
     track = fabric_tagger.tagstore.get_track(
-        qhit=q.qhit,
+        qhit=q.qid,
         q=q,
         name=track_arg.name
     )
@@ -555,12 +555,12 @@ def test_default_defer_to_model_track(fabric_tagger, q, make_tag_args):
     with patch.object(fabric_tagger.cregistry, "get", side_effect=get_side_effect):
         args = make_tag_args(feature="asr", stream="audio")
         fabric_tagger.tag(q, args)
-        wait_tag(fabric_tagger, q.qhit, timeout=5)
+        wait_tag(fabric_tagger, q.qid, timeout=5)
 
     default_tags = fabric_tagger.tagstore.find_tags(q=q, track="random_track")
     assert len(default_tags) == 2
 
-    track = fabric_tagger.tagstore.get_track(qhit=q.qhit, q=q, name="random_track")
+    track = fabric_tagger.tagstore.get_track(qhit=q.qid, q=q, name="random_track")
     assert track.label == "Random Track"
 
 def test_fetcher_returns_no_sources(fabric_tagger, q, make_tag_args):
@@ -574,9 +574,9 @@ def test_fetcher_returns_no_sources(fabric_tagger, q, make_tag_args):
         args = make_tag_args(feature="caption", stream="video")
         result = fabric_tagger.tag(q, args)
         assert result.started is True
-        wait_tag(fabric_tagger, q.qhit, timeout=2)
+        wait_tag(fabric_tagger, q.qid, timeout=2)
 
-    final_status = fabric_tagger.status(q.qhit)
+    final_status = fabric_tagger.status(q.qid)
     report = _status_for(final_status, "caption", "video")
     assert report.status == "Completed"
     assert report.tagging_progress == "0/0"
@@ -584,7 +584,7 @@ def test_fetcher_returns_no_sources(fabric_tagger, q, make_tag_args):
     assert len(report.failed) == 0
     
     # Verify no tags were uploaded
-    tag_count = fabric_tagger.tagstore.count_tags(qhit=q.qhit, q=q)
+    tag_count = fabric_tagger.tagstore.count_tags(qhit=q.qid, q=q)
     assert tag_count == 0
 
 def test_batch_report_on_success(fabric_tagger, q, make_tag_args):
@@ -593,7 +593,7 @@ def test_batch_report_on_success(fabric_tagger, q, make_tag_args):
     result = fabric_tagger.tag(q, args)
     assert result.started
 
-    wait_tag(fabric_tagger, q.qhit, timeout=5)
+    wait_tag(fabric_tagger, q.qid, timeout=5)
 
     batches = fabric_tagger.tagstore.find_batches(qhit=q.qid, q=q)
     assert len(batches) == 1
@@ -618,7 +618,7 @@ def test_replace(
     args = make_tag_args(feature="caption", stream="video")
 
     fabric_tagger.tag(q, args)
-    wait_tag(fabric_tagger, q.qhit, timeout=5)
+    wait_tag(fabric_tagger, q.qid, timeout=5)
 
     first_batch = fabric_tagger.tagstore.find_batches(q=q, track="object_detection")[0]
     tags = fabric_tagger.tagstore.find_tags(q=q, track="object_detection", batch_id=first_batch)
@@ -627,7 +627,7 @@ def test_replace(
 
     args = make_tag_args(feature="caption", stream="video", replace=True)
     fabric_tagger.tag(q, args)
-    wait_tag(fabric_tagger, q.qhit, timeout=5)
+    wait_tag(fabric_tagger, q.qid, timeout=5)
 
     new_batches = fabric_tagger.tagstore.find_batches(q=q, track="object_detection")
     new_batches.remove(first_batch)
@@ -642,7 +642,7 @@ def test_replace(
     # try with replace = False
     args = make_tag_args(feature="caption", stream="video", replace=False)
     fabric_tagger.tag(q, args)
-    wait_tag(fabric_tagger, q.qhit, timeout=5)
+    wait_tag(fabric_tagger, q.qid, timeout=5)
 
     # doing this weird stuff for now cause prod tagstore does shadowing and local one doesn't
     batches = fabric_tagger.tagstore.find_batches(q=q, track="object_detection")

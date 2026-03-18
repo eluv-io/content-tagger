@@ -40,7 +40,7 @@ class VodWorker(FetchSession):
         return deepcopy(self.meta)
 
     def download(self) -> DownloadResult:
-        with self.rl.permit((self.q.qhit, str(self.scope.stream))):
+        with self.rl.permit((self.q.qid, str(self.scope.stream))):
             return self._download()
 
     @property
@@ -134,7 +134,7 @@ class VodWorker(FetchSession):
                     os.remove(save_path)
                 failed_parts.append(part_hash)
                 logger.error(
-                    f"Failed to download part {part_hash} for {self.q.qhit}: {str(e)}"
+                    f"Failed to download part {part_hash} for {self.q.qid}: {str(e)}"
                 )
                 continue
 

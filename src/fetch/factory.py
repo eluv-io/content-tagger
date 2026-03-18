@@ -30,15 +30,15 @@ class FetchFactory:
 
     def get_session(
         self, 
-        q: Content, 
+        q: Content,
         req: DownloadRequest, 
         exit: threading.Event | None = None
     ) -> FetchSession:
-        log = logger.bind(qhit=q.qhit, scope=str(req.scope), preserve_track=req.preserve_track)
+        log = logger.bind(qhit=q.qid, scope=str(req.scope), preserve_track=req.preserve_track)
 
-        with timeit(f"Getting media metadata: qhit={q.qhit}, scope={req.scope}"):
+        with timeit(f"Getting media metadata: qhit={q.qid}, scope={req.scope}"):
             meta = self._get_metadata(q, req.scope)
-        with timeit(f"Getting already tagged sources so we can ignore them: qhit={q.qhit}, scope={req.scope}, track={req.preserve_track}"):
+        with timeit(f"Getting already tagged sources so we can ignore them: qhit={q.qid}, scope={req.scope}, track={req.preserve_track}"):
             # TODO: the real tagstore doesn't have a great way to query for unique values yet. 
             ignore_sources = self._get_ignored_sources(q, req.preserve_track)
         log.info(
@@ -139,7 +139,7 @@ class FetchFactory:
         assert isinstance(streams, dict)
 
         if stream_name not in streams:
-            raise MissingResourceError(f"Stream {stream_name} not found in {q.qhit}")
+            raise MissingResourceError(f"Stream {stream_name} not found in {q.qid}")
 
         representations = streams[stream_name].get("representations", {})
 
@@ -151,12 +151,12 @@ class FetchFactory:
                 continue
             if tid != transcode_id:
                 logger.warning(
-                    f"Multiple transcode_ids found for stream {stream_name} in {q.qhit}! Continuing with the first one found."
+                    f"Multiple transcode_ids found for stream {stream_name} in {q.qid}! Continuing with the first one found."
                 )
 
         if transcode_id is None:
             raise MissingResourceError(
-                f"Transcode_id not found for stream {stream_name} in {q.qhit}"
+                f"Transcode_id not found for stream {stream_name} in {q.qid}"
             )
 
         transcode_meta = transcodes[transcode_id]["stream"]
@@ -195,7 +195,7 @@ class FetchFactory:
         assert isinstance(streams, dict)
 
         if stream_name not in streams:
-            raise MissingResourceError(f"Stream {stream_name} not found in {q.qhit}")
+            raise MissingResourceError(f"Stream {stream_name} not found in {q.qid}")
 
         stream = streams[stream_name].get("sources", [])
         if len(stream) == 0:
@@ -208,7 +208,7 @@ class FetchFactory:
 
         if codec_type is None:
             raise MissingResourceError(
-                f"Codec type not found for stream {stream_name} in {q.qhit}"
+                f"Codec type not found for stream {stream_name} in {q.qid}"
             )
 
         fps = None
@@ -232,13 +232,13 @@ class FetchFactory:
             )
         except HTTPError as e:
             raise HTTPError(
-                f"Failed to retrieve periods for live recording {q.qhit}"
+                f"Failed to retrieve periods for live recording {q.qid}"
             ) from e
 
         assert isinstance(periods, list)
 
         if len(periods) == 0:
-            raise MissingResourceError(f"Live recording {q.qhit} is empty")
+            raise MissingResourceError(f"Live recording {q.qid} is empty")
 
         stream = (
             periods[0]
@@ -267,7 +267,7 @@ class FetchFactory:
             )
         except HTTPError as e:
             raise HTTPError(
-                f"Failed to retrieve live stream metadata from {q.qhit}"
+                f"Failed to retrieve live stream metadata from {q.qid}"
             ) from e
 
         fps = None
@@ -279,7 +279,7 @@ class FetchFactory:
                 )
             except HTTPError as e:
                 raise HTTPError(
-                    f"Failed to retrieve live stream metadata from {q.qhit}"
+                    f"Failed to retrieve live stream metadata from {q.qid}"
                 ) from e
             
             assert isinstance(live_stream_info, list)
@@ -330,7 +330,7 @@ class FetchFactory:
     @cache_by_qhash
     def _is_live(self, q: Content) -> bool:
         """Check if content is a live stream."""
-        if not q.qhit.startswith("tqw__"):
+        if not q.qid.startswith("tqw__"):
             return False
         try:
             # TODO: make sure works for write token

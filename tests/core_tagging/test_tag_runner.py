@@ -59,7 +59,7 @@ class TestQueueTag:
         args = make_tag_args(feature="caption", stream="video")
         queue_client.tag(q, args)
 
-        reports = _wait_for_status(queue_client, q.qhit, "succeeded")
+        reports = _wait_for_status(queue_client, q.qid, "succeeded")
         assert len(reports) >= 1
         assert any(r.status == "succeeded" for r in reports)
 
@@ -67,7 +67,7 @@ class TestQueueTag:
         for args in sample_tag_args:
             queue_client.tag(q, args)
 
-        reports = _wait_for_status(queue_client, q.qhit, "succeeded")
+        reports = _wait_for_status(queue_client, q.qid, "succeeded")
         completed = [r for r in reports if r.status == "succeeded"]
         assert len(completed) == len(sample_tag_args)
 
@@ -90,7 +90,7 @@ class TestQueueStatus:
         for args in sample_tag_args:
             queue_client.tag(q, args)
 
-        reports = _wait_for_status(queue_client, q.qhit, "succeeded")
+        reports = _wait_for_status(queue_client, q.qid, "succeeded")
         assert len(reports) == 2
         assert any(r.model == "caption" for r in reports)
         assert any(r.model == "asr" for r in reports)
@@ -101,7 +101,7 @@ class TestQueueStop:
         args = make_tag_args(feature="caption", stream="video")
         queue_client.tag(q, args)
 
-        results = queue_client.stop(q.qhit, "caption", None)
+        results = queue_client.stop(q.qid, "caption", None)
         assert len(results) == 1
         assert results[0].message == "Stop requested"
 
@@ -110,4 +110,4 @@ class TestQueueStop:
         queue_client.tag(q, args)
 
         with pytest.raises(MissingResourceError):
-            queue_client.stop(q.qhit, "nonexistent", None)
+            queue_client.stop(q.qid, "nonexistent", None)

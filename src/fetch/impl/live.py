@@ -48,7 +48,7 @@ class LiveWorker(FetchSession):
         return self.output_dir
     
     def download(self) -> DownloadResult:
-        with self.rl.permit((self.q.qhit, str(self.scope.stream))):
+        with self.rl.permit((self.q.qid, str(self.scope.stream))):
             return self._download()
     
     def _download(self) -> DownloadResult:
@@ -82,7 +82,7 @@ class LiveWorker(FetchSession):
         save_path = os.path.join(self.output_dir, filename)
 
         segment_info = self.q.live_media_segment(
-            object_id=self.q.qhit,
+            object_id=self.q.qid,
             dest_path=save_path,
             segment_idx=idx,
             segment_length=chunk_size,
@@ -106,7 +106,7 @@ class LiveWorker(FetchSession):
         )
 
         logger.info(
-            f"Downloaded live segment {seg_idx} for {self.q.qhit}",
+            f"Downloaded live segment {seg_idx} for {self.q.qid}",
             segment_idx=seg_idx, offset_sec=seg_offset / 1000, seg_size_sec=seg_size / 1000, wall_clock=wall_clock / 1000
         )
 
@@ -114,7 +114,7 @@ class LiveWorker(FetchSession):
 
         if self.scope.max_duration is not None \
             and seg_offset >= self.scope.max_duration * 1000:
-            logger.info(f"Reached max duration of {self.scope.max_duration} seconds for live stream {self.q.qhit}")
+            logger.info(f"Reached max duration of {self.scope.max_duration} seconds for live stream {self.q.qid}")
             return DownloadResult(
                 sources=[],
                 failed=[],
@@ -169,7 +169,7 @@ class LivePartWorker(FetchSession):
         return self.output_dir
     
     def download(self) -> DownloadResult:
-        with self.rl.permit((self.q.qhit, str(self.scope.stream))):
+        with self.rl.permit((self.q.qid, str(self.scope.stream))):
             return self._download()
     
     def _download(self) -> DownloadResult:
@@ -197,7 +197,7 @@ class LivePartWorker(FetchSession):
         try:
             latest_meta = self._fetch_livestream_metadata(self.scope.stream)
         except Exception as e:
-            logger.error(f"Failed to fetch live metadata for {self.q.qhit}: {str(e)}")
+            logger.error(f"Failed to fetch live metadata for {self.q.qid}: {str(e)}")
             return DownloadResult(
                 sources=[],
                 failed=[],
@@ -211,7 +211,7 @@ class LivePartWorker(FetchSession):
         # First call: return last part
         if self.current_idx == -1:
             if len(current_parts) == 0:
-                logger.warning(f"No parts available yet for live stream {self.q.qhit}")
+                logger.warning(f"No parts available yet for live stream {self.q.qid}")
                 return DownloadResult(
                     sources=[],
                     failed=[],
@@ -222,31 +222,31 @@ class LivePartWorker(FetchSession):
             self.last_known_parts = current_parts
             part_hash = current_parts[self.current_idx]
             
-            logger.info(f"First call: downloading part {self.current_idx} (last available) for {self.q.qhit}")
+            logger.info(f"First call: downloading part {self.current_idx} (last available) for {self.q.qid}")
             return self._download_part(part_hash, self.current_idx)
         
         # Subsequent calls: check if there's a new part
         if len(current_parts) > len(self.last_known_parts):
-            logger.info(f"Detected new parts for live stream {self.q.qhit}")
+            logger.info(f"Detected new parts for live stream {self.q.qid}")
             # New parts available, move to next index
             self.current_idx += 1
             self.last_known_parts = current_parts
             
             if self.current_idx < len(current_parts):
                 part_hash = current_parts[self.current_idx]
-                logger.info(f"New part available: downloading part {self.current_idx} for {self.q.qhit}")
+                logger.info(f"New part available: downloading part {self.current_idx} for {self.q.qid}")
                 return self._download_part(part_hash, self.current_idx)
         else:
-            logger.info(f"No new parts available yet for {self.q.qhit}")
+            logger.info(f"No new parts available yet for {self.q.qid}")
         
         # No new parts available yet
-        logger.debug(f"No new parts available for {self.q.qhit}, returning empty result")
+        logger.debug(f"No new parts available for {self.q.qid}, returning empty result")
         
         # Check if we've reached max duration
         if self.scope.max_duration is not None:
             elapsed_time = self.current_idx * self.meta.part_duration
             if elapsed_time >= self.scope.max_duration:
-                logger.info(f"Reached max duration of {self.scope.max_duration}s for live stream {self.q.qhit}")
+                logger.info(f"Reached max duration of {self.scope.max_duration}s for live stream {self.q.qid}")
                 return DownloadResult(
                     sources=[],
                     failed=[],

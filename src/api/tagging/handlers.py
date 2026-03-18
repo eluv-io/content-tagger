@@ -48,7 +48,7 @@ def _execute_tagging(q: Content, tag_args: list[TagArgs]) -> Response:
         try:
             result = tagger.tag(q, tag_arg)
         except Exception as e:
-            logger.opt(exception=e).error("Failed to start tagging", feature=tag_arg.feature, qhit=q.qhit)
+            logger.opt(exception=e).error("Failed to start tagging", feature=tag_arg.feature, qhit=q.qid)
             jobs.append(
                 StartStatus(
                     job_id="",
@@ -151,7 +151,7 @@ def handle_stop_model(
 
     tagger: TagAPI = current_app.config["state"]["service"]
 
-    stop_res = tagger.stop(q.qhit, feature, None)
+    stop_res = tagger.stop(q.qid, feature, None)
 
     api_res = map_stop_results_to_response(stop_res)
 
@@ -164,7 +164,7 @@ def handle_stop_content(
 
     tagger: TagAPI = current_app.config["state"]["service"]
 
-    stop_res = tagger.stop(q.qhit, None, None)
+    stop_res = tagger.stop(q.qid, None, None)
 
     api_res = map_stop_results_to_response(stop_res)
 

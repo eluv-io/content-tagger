@@ -35,7 +35,7 @@ class AssetWorker(FetchSession):
         return deepcopy(self.meta)
     
     def download(self) -> DownloadResult:
-        with self.rl.permit((self.q.qhit, "assets")):
+        with self.rl.permit((self.q.qid, "assets")):
             return self._download()
 
     @property
@@ -72,7 +72,7 @@ class AssetWorker(FetchSession):
 
         total_assets = len(assets)
         assets = [asset for asset in assets if get_file_type(asset) == "image"]
-        logger.info(f"Found {len(assets)} image assets out of {total_assets} assets for {self.q.qhit}")
+        logger.info(f"Found {len(assets)} image assets out of {total_assets} assets for {self.q.qid}")
         
         if len(assets) == 0:
             return DownloadResult(
@@ -102,9 +102,9 @@ class AssetWorker(FetchSession):
                 to_download.append((asset, save_path))
 
         if already_downloaded:
-            logger.info(f"{len(already_downloaded)} assets already retrieved for {self.q.qhit}")
+            logger.info(f"{len(already_downloaded)} assets already retrieved for {self.q.qid}")
 
-        logger.info(f"{len(to_download)} assets need to be downloaded for {self.q.qhit}")
+        logger.info(f"{len(to_download)} assets need to be downloaded for {self.q.qid}")
 
         # Download new assets
         successful_sources = []

@@ -190,7 +190,7 @@ class FabricTagger:
         args = request.args
     
         self._validate_args(args)
-        logger.info("processing tag request", extra={"qhit": q.qhit, "args": args})
+        logger.info("processing tag request", extra={"qhit": q.qid, "args": args})
 
         job = self._create_job(q, args.feature, args)
 
@@ -389,7 +389,7 @@ class FabricTagger:
             media_input=media_input,
             run_config=job.args.run_config,
             live=isinstance(job.args.scope, LiveScope),
-            job_id=job.args.q.qhit + "-" + datetime.now().strftime("%Y%m%d%H%M") + "-" + str(uuid())[0:6]
+            job_id=job.args.q.qid + "-" + datetime.now().strftime("%Y%m%d%H%M") + "-" + str(uuid())[0:6]
         ))
         
         uid = self.system_tagger.start(container, job.state.tagging_done)
@@ -715,7 +715,7 @@ class FabricTagger:
         job.state.upload_session.upload_tags(tags, job.args.retry_upload)
 
     def _output_dir_from_q(self, q: Content) -> str:
-        out = os.path.join(self.cfg.media_dir, q.qhit)
+        out = os.path.join(self.cfg.media_dir, q.qid)
         os.makedirs(out, exist_ok=True)
         return out
 
