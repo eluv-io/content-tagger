@@ -1,10 +1,10 @@
 from copy import deepcopy
-from dataclasses import asdict
+from dataclasses import asdict, replace as dataclass_replace
 
 from src.tags.tagstore.model import Tag
 from src.tags.tagstore.abstract import Tagstore
 from src.tag_containers.model import ModelTag
-from src.fetch.model import AssetMetadata, VideoMetadata
+from src.fetch.model import Source, VideoMetadata
 from src.common.content import Content
 from src.common.logging import logger
 from src.tagging.fabric_tagging.media_state import MediaState
@@ -38,43 +38,36 @@ class UploadSession:
 
     def upload_tags(self, tags: list[ModelTag], retry: bool) -> None:
         """Main upload method - formats and uploads tags to tagstore"""
-        media_to_source = {s.filepath: s for s in self.media.downloaded}
+        source_by_filepath = {s.filepath: s for s in self.media.downloaded}
+        new_inputs = [t for t in tags if t.source_media in source_by_filepath and t not in self.uploaded_tags]
 
-        new_outputs = [t for t in tags if t.source_media in media_to_source and t not in self.uploaded_tags]
-
-        if not new_outputs:
+        if not new_inputs:
             return
 
         logger.info(
-            "uploading new tags", 
-            num_new_tags=len(new_outputs),
+            "uploading new tags",
+            num_new_tags=len(new_inputs),
             feature=self.feature,
             source_qid=self.source_q.qid,
         )
 
         stream_meta = self.media.worker.metadata()
-        fps = None
-        if isinstance(stream_meta, VideoMetadata):
-            fps = stream_meta.fps
+        fps = stream_meta.fps if isinstance(stream_meta, VideoMetadata) else None
 
-        # convert ModelTag to Tagstore DTO
-        tags2upload: list[Tag] = []
+        aligned = align_tags(new_inputs, self.media.downloaded, fps)
 
-        for model_tag in new_outputs:
-            original_src = media_to_source[model_tag.source_media]
-            tag = Tag(
-                start_time=model_tag.start_time,
-                end_time=model_tag.end_time,
-                text=model_tag.text,
-                additional_info=deepcopy(model_tag.additional_info),
-                source=original_src.name,
-                batch_id=self._get_or_create_batch(model_tag.model_track),
-                frame_info=deepcopy(model_tag.frame_info),
+        tags2upload: list[Tag] = [
+            Tag(
+                start_time=t.start_time,
+                end_time=t.end_time,
+                text=t.text,
+                additional_info=t.additional_info,
+                source=source_by_filepath[t.source_media].name,
+                batch_id=self._get_or_create_batch(t.model_track),
+                frame_info=t.frame_info,
             )
-            if tag.frame_info is not None and fps is None and not isinstance(stream_meta, AssetMetadata):
-                # drop frame tags if we can't fix the frame index and it's not an asset tag
-                continue
-            tags2upload.append(self._fix_tag_timing_info(tag, original_src.offset, original_src.wall_clock, fps))
+            for t in aligned
+        ]
 
         try:
             self._post_tags(tags2upload, q=self.dest_q)
@@ -84,8 +77,8 @@ class UploadSession:
             else:
                 raise
 
-        self.uploaded_sources.update(media_to_source[out.source_media].name for out in new_outputs)
-        self.uploaded_tags.update(new_outputs)
+        self.uploaded_sources.update(source_by_filepath[t.source_media].name for t in new_inputs)
+        self.uploaded_tags.update(new_inputs)
 
     def upload_report(self, report: TagContentStatusReport) -> None:
         """Upload a tagging report to the tagstore as a tag on the content object."""
@@ -101,24 +94,6 @@ class UploadSession:
         if destination_qid == "" or destination_qid == source_q.qid:
             return source_q
         return source_q.get_child(destination_qid)
-    
-    def _fix_tag_timing_info(self, tag: Tag, offset: int, wall_clock: int | None, fps: float | None) -> Tag:
-        """Fix tag timestamps & frame index. The model outputs timestamps relative to the start of the media file
-        but this will help place it relative to the full content object (or do nothing for assets).
-        """
-        if wall_clock is not None:
-            if tag.additional_info is None:
-                tag.additional_info = {}
-            tag.additional_info["timestamp_ms"] = wall_clock + tag.start_time
-        tag.start_time += offset
-        tag.end_time += offset
-        if tag.frame_info is not None:
-            if fps is not None:
-                frame_offset = int((offset / 1000) * fps)
-                tag.frame_info["frame_idx"] = tag.frame_info["frame_idx"] + frame_offset
-            else:
-                tag.frame_info = None
-        return tag
     
     def _get_destination_q(self, q: Content, destination_qid: str) -> Content:
         if destination_qid == q.qid:

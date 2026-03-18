@@ -1,0 +1,43 @@
+from copy import deepcopy
+from dataclasses import replace as dataclass_replace
+
+from src.tag_containers.model import ModelTag
+from src.fetch.model import Source
+
+def align_tags(tags: list[ModelTag], sources: list[Source], fps: float | None) -> list[ModelTag]:
+    """Align ModelTag timestamps relative to the full content object.
+
+    Filters tags to only those whose source_media matches a known source filepath,
+    then adjusts start_time, end_time, frame_info, and additional_info to be
+    relative to the full content object rather than the individual media file.
+    """
+
+    source_by_filepath = {s.filepath: s for s in sources}
+    aligned: list[ModelTag] = []
+    for tag in tags:
+        src = source_by_filepath.get(tag.source_media)
+        if src is None:
+            continue
+
+        additional_info = deepcopy(tag.additional_info)
+        if src.wall_clock is not None:
+            if additional_info is None:
+                additional_info = {}
+            additional_info["timestamp_ms"] = src.wall_clock + tag.start_time
+
+        frame_info = deepcopy(tag.frame_info)
+        if frame_info is not None:
+            if fps is not None:
+                frame_offset = int((src.offset / 1000) * fps)
+                frame_info["frame_idx"] = frame_info["frame_idx"] + frame_offset
+            else:
+                frame_info = None
+
+        aligned.append(dataclass_replace(
+            tag,
+            start_time=tag.start_time + src.offset,
+            end_time=tag.end_time + src.offset,
+            frame_info=frame_info,
+            additional_info=additional_info,
+        ))
+    return aligned
