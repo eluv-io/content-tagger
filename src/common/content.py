@@ -10,13 +10,18 @@ from elv_client_py import ElvClient
 from src.common.errors import BadRequestError, ExternalServiceError
 from src.common.logging import logger
 
+@dataclass(frozen=True)
+class Content:
+    qid: str
+    token: str
+
 @dataclass
 class ContentConfig:
     config_url: str
     parts_url: str
     live_media_url: str
 
-class Content:
+class QAPI:
     """Content object representation and API wrapper.
 
     Serves the following uses:
@@ -28,32 +33,31 @@ class Content:
 
     def __init__(
         self, 
-        qhit: str,
-        auth: str,
+        q: Content,
         cfg: ContentConfig
     ):
         try:
             client = ElvClient.from_configuration_url(
-                cfg.config_url, static_token=auth)
+                cfg.config_url, static_token=q.token)
         except Exception as e:
             raise ExternalServiceError("Failed to create content client") from e
         
         try:
             parts_client = ElvClient.from_configuration_url(
-                cfg.parts_url, static_token=auth)
+                cfg.parts_url, static_token=q.token)
         except Exception as e:
             logger.opt(exception=e).error("Failed to create parts client")
             parts_client = None
         
         try:
             live_client = ElvClient.from_configuration_url(
-                cfg.live_media_url, static_token=auth)
+                cfg.live_media_url, static_token=q.token)
         except Exception as e:
             logger.opt(exception=e).error("Failed to create live media client")
             live_client = None
 
         # will raise HTTPError if auth is invalid or qhit is not found
-        qinfo = client.content_object(**parse_qhit(qhit))
+        qinfo = client.content_object(**parse_qhit(q.qid))
 
         self.qid = qinfo["id"]
         self.qhash = qinfo.get("hash", None)
@@ -62,16 +66,15 @@ class Content:
         assert self.qhash or self.qwt, f"Content object must have either a hash or a write token. {qinfo}"
 
         self.qlib = qinfo["qlib_id"]
-        self.qhit = qhit
+        self.qhit = q.qid
         self._client = client
         self._parts_client = parts_client
         self._live_client = live_client
 
         self.cfg = cfg
 
-    def get_child(self, qhit: str) -> "Content":
-        """Get a child content object as a Content instance."""
-        return Content(qhit, self._client.token, self.cfg)
+    def id(self) -> str:
+        return self.qid
 
     def token(self) -> str:
         return self._client.token
@@ -147,13 +150,12 @@ class Content:
     def __str__(self):
         return f"Content(qhit={self.qhit}, qid={self.qid}, qhash={self.qhash}, qlib={self.qlib})"
 
-class ContentFactory:
-    # Useful for dependency injection to avoid having to pass cfg around everywhere
+class QAPIFactory:
     def __init__(self, cfg: ContentConfig):
         self.cfg = cfg
 
-    def create_content(self, qhit: str, auth: str) -> Content:
-        return Content(qhit, auth, self.cfg)
+    def create_content(self, q: Content) -> QAPI:
+        return QAPI(q, self.cfg)
 
 def parse_qhit(qhit: str) -> dict[str, str]:
     """Parse a qhit into a dictionary so it can be passed to elv_client_py functions 
