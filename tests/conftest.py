@@ -3,15 +3,13 @@ import shutil
 import tempfile
 import pytest
 import dotenv
-from unittest.mock import Mock
 
-from src.api.tagging.request_mapping import is_live_content
 from src.fetch.model import FetcherConfig
 from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tags.tagstore.abstract import Tagstore
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.tags.tagstore.rest_tagstore import RestTagstore
-from src.common.content import Content, ContentConfig, ContentFactory
+from src.common.content import Content, ContentConfig, QAPIFactory
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
 
 dotenv.load_dotenv()
@@ -27,8 +25,8 @@ def content_config() -> ContentConfig:
     )
 
 @pytest.fixture
-def qfactory(content_config) -> ContentFactory:
-    factory = ContentFactory(cfg=content_config)
+def qfactory(content_config) -> QAPIFactory:
+    factory = QAPIFactory(cfg=content_config)
     return factory
 
 @pytest.fixture
@@ -36,54 +34,48 @@ def qid():
     return "iq__3C58dDYxsn5KKSWGYrfYr44ykJRm"
 
 @pytest.fixture
-def q(qfactory, qid):
+def q(qid):
     auth_token = os.getenv("TEST_AUTH")
     if not auth_token:
         pytest.skip("TEST_AUTH not set in environment")
 
-    return qfactory.create_content(qid=qid, auth=auth_token)
+    return Content(qid=qid, token=auth_token)
 
 @pytest.fixture
 def qid_legacy():
     return "iq__cebzuQ8BqsWZyoUdnTXCe23fUgz"
 
 @pytest.fixture
-def q_legacy(qfactory, qid_legacy):
+def q_legacy(qid_legacy):
     auth_token = os.getenv("TEST_AUTH")
     if not auth_token:
         pytest.skip("TEST_AUTH not set in environment")
 
-    return qfactory.create_content(qid=qid_legacy, auth=auth_token)
+    return Content(qid=qid_legacy, token=auth_token)
 
 @pytest.fixture
 def qid_live():
     return "iq__467CAS4BvPQ39go6aLmX6v3ZaTwD"
 
 @pytest.fixture
-def q_live(qfactory, qid_live):
+def q_live(qid_live):
     token = os.getenv("LIVE_AUTH")
     if not token:
         pytest.skip("LIVE_AUTH not set in environment")
 
-    q = qfactory.create_content(qid=qid_live, auth=token)
-
-    if not is_live_content(q):
-        pytest.skip("livestream is not running")
-
-    return q
+    return Content(qid=qid_live, token=token)
 
 @pytest.fixture
 def qid_assets():
     return "iq__4BT8BBNEEDvysXqjZgj4BRA5jVo2"
 
 @pytest.fixture
-def q_assets(qfactory, qid_assets):
+def q_assets(qid_assets):
     auth_token = os.getenv("ASSETS_AUTH")
     if not auth_token:
         pytest.skip("ASSETS_AUTH not set in environment")
 
-    return qfactory.create_content(qid=qid_assets, auth=auth_token)
-
+    return Content(qid=qid_assets, token=auth_token)
 
 """Basic utility fixtures"""
 

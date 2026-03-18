@@ -1,13 +1,12 @@
 
 import pytest
 from src.tags.tagstore.model import Tag
-
+from src.common.content import Content
 
 @pytest.fixture
-def job_args(qid):
+def job_args():
     """Create a sample job for testing"""
     return {
-        "qid": qid,
         "track": "llava",
         "author": "test-user"
     }
