@@ -1,14 +1,13 @@
-from copy import deepcopy
-from dataclasses import asdict, replace as dataclass_replace
+
+from dataclasses import asdict
 
 from src.tags.tagstore.model import Tag
 from src.tags.tagstore.abstract import Tagstore
 from src.tag_containers.model import ModelTag
-from src.fetch.model import Source, VideoMetadata
 from src.common.content import Content
 from src.common.logging import logger
 from src.tagging.fabric_tagging.media_state import MediaState
-from src.tagging.fabric_tagging.model import TagContentStatusReport, TagJobStatusReport
+from src.tagging.fabric_tagging.model import TagContentStatusReport
 from src.tags.track_resolver import TrackResolver
 
 class UploadSession:
@@ -24,7 +23,6 @@ class UploadSession:
     ):
 
         self.feature = feature
-        self.media = media_state  # Read-only reference to job's media state
         self.track_resolver = track_resolver
         self.tagstore = tagstore
         self.source_q = source_q
@@ -34,12 +32,10 @@ class UploadSession:
         # Mutable state
         self.track_to_batch: dict[str, str] = {}
         self.uploaded_tags: set[ModelTag] = set()
-        self.uploaded_sources: set[str] = set()
 
     def upload_tags(self, tags: list[ModelTag], retry: bool) -> None:
         """Main upload method - formats and uploads tags to tagstore"""
-        source_by_filepath = {s.filepath: s for s in self.media.downloaded}
-        new_inputs = [t for t in tags if t.source_media in source_by_filepath and t not in self.uploaded_tags]
+        new_inputs = [t for t in tags if t not in self.uploaded_tags]
 
         if not new_inputs:
             return
@@ -51,22 +47,17 @@ class UploadSession:
             source_qid=self.source_q.qid,
         )
 
-        stream_meta = self.media.worker.metadata()
-        fps = stream_meta.fps if isinstance(stream_meta, VideoMetadata) else None
-
-        aligned = align_tags(new_inputs, self.media.downloaded, fps)
-
         tags2upload: list[Tag] = [
             Tag(
                 start_time=t.start_time,
                 end_time=t.end_time,
                 text=t.text,
                 additional_info=t.additional_info,
-                source=source_by_filepath[t.source_media].name,
+                source=t.source_media,
                 batch_id=self._get_or_create_batch(t.model_track),
                 frame_info=t.frame_info,
             )
-            for t in aligned
+            for t in new_inputs
         ]
 
         try:
@@ -77,7 +68,6 @@ class UploadSession:
             else:
                 raise
 
-        self.uploaded_sources.update(source_by_filepath[t.source_media].name for t in new_inputs)
         self.uploaded_tags.update(new_inputs)
 
     def upload_report(self, report: TagContentStatusReport) -> None:
