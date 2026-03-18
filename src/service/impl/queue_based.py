@@ -1,6 +1,6 @@
 from dataclasses import asdict
 
-from src.common.content import Content
+from src.common.content import Content, QAPIFactory
 from src.common.errors import BadRequestError, MissingResourceError
 from src.common.logging import logger
 from src.fetch.model import AssetScope, LiveScope, TimeRangeScope, VideoScope
@@ -29,12 +29,17 @@ def _stream_from_scope(scope) -> str:
 
 class QueueClient(TagAPI):
 
-    def __init__(self, jobstore: JobStore):
+    def __init__(
+        self, 
+        jobstore: JobStore,
+        qfactory: QAPIFactory
+    ):
         self.jobstore = jobstore
+        self.qfactory = qfactory
 
     def tag(self, q: Content, args: TagArgs) -> TagStartResult:
         """Enqueue a tagging job and return immediately."""
-        auth = q.token()
+        auth = q.token
 
         existing = self.jobstore.list_jobs(ListJobArgs(qid=q.qid), auth=auth)
         for item in existing:
@@ -46,8 +51,10 @@ class QueueClient(TagAPI):
                     message=f"A job with params {args} is already running",
                     created_at=item.created_at,
                 )
+
+        qapi = self.qfactory.create(q)
             
-        title = q.content_object_metadata(metadata_subtree="/public/name")
+        title = qapi.content_object_metadata(metadata_subtree="/public/name")
         if not isinstance(title, str):
             raise BadRequestError(f"Received non-string value at /meta/public/name for qid={q.qid}")
 
