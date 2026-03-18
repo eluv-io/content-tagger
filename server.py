@@ -10,6 +10,7 @@ import sys
 from waitress import serve
 import os
 
+from src.api.auth import Authenticator
 from src.service.impl.direct_api import DirectAPI
 from src.service.impl.queue_based import QueueClient
 from src.tagging.scheduling.scheduler import ContainerScheduler
@@ -107,7 +108,7 @@ def create_app_direct(config: AppConfig) -> Flask:
     app.config["state"] = {
         "tagger": fabric_tagger,
         "service": DirectAPI(fabric_tagger),
-        "content_factory": ContentFactory(config.content),
+        "authenticator": Authenticator(config.content.config_url),
     }
 
     def shutdown():
@@ -126,14 +127,13 @@ def create_app_queue_based(config: AppConfig) -> Flask:
     app = Flask(__name__)
 
     fabric_tagger = _build_fabric_tagger(config)
-    content_factory = ContentFactory(config.content)
     job_store: JobStore = FsJobStore(config.jobstore.base_url)
     loop = TagRunner(fabric_tagger, job_store, content_factory, config.tag_runner)
 
     app.config["state"] = {
         "tagger": fabric_tagger,
         "service": QueueClient(job_store),
-        "content_factory": content_factory,
+        "authenticator": Authenticator(config.content.config_url),
         "job_store": job_store,
         "loop": loop,
     }

@@ -21,7 +21,7 @@ from src.api.tagging.request_mapping import *
 from src.api.tagging.response_mapping import *
 
 def handle_tag(qid: str) -> Response:
-    q = _get_authorized_content(qid)
+    q = _authorize(qid)
 
     try:
         args = from_dict(data_class=StartJobsRequest, data=request.get_json(), config=Config(strict=True))
@@ -31,7 +31,7 @@ def handle_tag(qid: str) -> Response:
     logger.debug(args)
 
     if args.options.destination_qid:
-        _validate_destination_auth(q, args.options.destination_qid)
+        _authorize(args.options.destination_qid)
     
     tagger: FabricTagger = current_app.config["state"]["tagger"]
 
@@ -84,7 +84,7 @@ def handle_status_content(qid: str) -> Response:
     if status_secret is not None and get_authorization(request) == status_secret:
         pass
     else:
-        _get_authorized_content(qid)
+        _authorize(qid)
 
     service: TagAPI = current_app.config["state"]["service"]
 
@@ -147,11 +147,11 @@ def handle_stop_model(
     qid: str, 
     feature: str
 ) -> Response:
-    q = _get_authorized_content(qid)
+    _authorize(qid)
 
     tagger: TagAPI = current_app.config["state"]["service"]
 
-    stop_res = tagger.stop(q.qid, feature, None)
+    stop_res = tagger.stop(qid, feature, None)
 
     api_res = map_stop_results_to_response(stop_res)
 
@@ -160,7 +160,8 @@ def handle_stop_model(
 def handle_stop_content(
     qid: str
 ) -> Response:
-    q = _get_authorized_content(qid)
+    token = get_authorization(request)
+    q = Content(qid=qid, token=token)
 
     tagger: TagAPI = current_app.config["state"]["service"]
 
@@ -170,16 +171,9 @@ def handle_stop_content(
 
     return Response(response=json.dumps(asdict(api_res)), status=200, mimetype='application/json')
 
-def _get_authorized_content(qid: str) -> Content:
-    auth = get_authorization(request)
-    qfactory: ContentFactory = current_app.config["state"]["content_factory"]
-    return qfactory.create_content(qid, auth)
-
-def _validate_destination_auth(source_q: Content, dest_qid: str) -> None:
-    """Validate that the destination qid is accessible with the same auth context."""
-    if not dest_qid:
-        return
-    if not is_same_auth_ctx(source_q, dest_qid):
-        raise BadRequestError(
-            f"Destination content {dest_qid} and source content {source_q.qid} do not share the same authorization context."
-        )
+def _authorize(qid: str) -> Content:
+    token = get_authorization(request)
+    q = Content(qid=qid, token=token)
+    authenticator: Authenticator = current_app.config["state"]["authenticator"]
+    authenticator.authenticate(q)
+    return q
