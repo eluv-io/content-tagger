@@ -15,7 +15,6 @@ class UploadSession:
     def __init__(
         self,
         feature: str,
-        media_state: MediaState,
         track_resolver: TrackResolver,
         tagstore: Tagstore,
         source_q: Content,
