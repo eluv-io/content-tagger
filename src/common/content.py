@@ -154,7 +154,7 @@ class QAPIFactory:
     def __init__(self, cfg: ContentConfig):
         self.cfg = cfg
 
-    def create_content(self, q: Content) -> QAPI:
+    def create(self, q: Content) -> QAPI:
         return QAPI(q, self.cfg)
 
 def parse_qhit(qid: str) -> dict[str, str]:
@@ -171,3 +171,4 @@ def parse_qhit(qid: str) -> dict[str, str]:
         return {"object_id": qid}
 
     raise BadRequestError(f"Invalid qid: {qid}")
+
