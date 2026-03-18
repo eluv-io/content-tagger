@@ -33,11 +33,18 @@ def align_tags(tags: list[ModelTag], sources: list[Source], fps: float | None) -
             else:
                 frame_info = None
 
-        aligned.append(dataclass_replace(
-            tag,
-            start_time=tag.start_time + src.offset,
-            end_time=tag.end_time + src.offset,
-            frame_info=frame_info,
-            additional_info=additional_info,
-        ))
+        # this step I feel a little weird about having in align_tags
+        src_name = source_by_filepath[tag.source_media].name
+
+        aligned.append(
+            ModelTag(
+                start_time=tag.start_time + src.offset,
+                end_time=tag.end_time + src.offset,
+                text=tag.text,
+                additional_info=additional_info,
+                source_media=src_name,
+                model_track=tag.model_track,
+                frame_info=frame_info,
+            )
+        )
     return aligned
