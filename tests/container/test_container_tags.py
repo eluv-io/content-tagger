@@ -36,12 +36,12 @@ def image_files(temp_dir):
 
 
 @pytest.fixture
-def container_spec_video(temp_dir, video_files):
+def container_spec(temp_dir):
     output_path = os.path.join(temp_dir, "output", "output.jsonl")
     
     return ContainerSpec(
         id="test_video_container",
-        media_input=video_files,
+        media_dir=temp_dir,
         run_config={},
         logs_path=os.path.join(temp_dir, "logs"),
         cache_dir=os.path.join(temp_dir, "cache"),
@@ -55,32 +55,18 @@ def container_spec_video(temp_dir, video_files):
 
 
 @pytest.fixture
-def container_spec_image(temp_dir, image_files):
-    output_path = os.path.join(temp_dir, "output", "output.jsonl")
+def tag_container(mock_podman_client, container_spec):
+    container = TagContainer(mock_podman_client, container_spec)
+
+    class EchoDict(dict):
+        def __getitem__(self, key):
+            return key
     
-    return ContainerSpec(
-        id="test_image_container",
-        media_input=image_files,
-        run_config={},
-        logs_path=os.path.join(temp_dir, "logs"),
-        cache_dir=os.path.join(temp_dir, "cache"),
-        output_path=output_path,
-        model_config=ModelConfig(
-            type="frame",
-            image="test/model:latest", 
-            resources=SystemResources(memory_mb=1024, vcpus=1)
-        )
-    )
+    # this is so we can write tags directly to the output-path without first registering
+    # the media files with add_media
+    container.basename_to_source = EchoDict()
 
-
-@pytest.fixture
-def video_tag_container(mock_podman_client, container_spec_video):
-    return TagContainer(mock_podman_client, container_spec_video)
-
-
-@pytest.fixture
-def image_tag_container(mock_podman_client, container_spec_image):
-    return TagContainer(mock_podman_client, container_spec_image)
+    return container
 
 
 def write_jsonl(output_path: str, messages: list[dict]):
@@ -90,15 +76,15 @@ def write_jsonl(output_path: str, messages: list[dict]):
             f.write(json.dumps(msg) + "\n")
 
 
-def test_tags_basic(video_tag_container):
-    output_path = video_tag_container.cfg.output_path
+def test_tags_basic(tag_container):
+    output_path = tag_container.cfg.output_path
     
     write_jsonl(output_path, [
-        {"type": "tag", "data": {"start_time": 0, "end_time": 5.0, "tag": "person walking", "source_media": "video1.mp4"}},
-        {"type": "tag", "data": {"start_time": 10.0, "end_time": 15.5, "tag": "car driving", "source_media": "video1.mp4"}},
+        {"type": "tag", "data": {"start_time": 0, "end_time": 5000, "tag": "person walking", "source_media": "video1.mp4"}},
+        {"type": "tag", "data": {"start_time": 10000, "end_time": 15500, "tag": "car driving", "source_media": "video1.mp4"}},
     ])
     
-    outputs = video_tag_container.tags()
+    outputs = tag_container.tags()
     
     assert len(outputs) == 2
     
@@ -115,8 +101,8 @@ def test_tags_basic(video_tag_container):
     assert tag2.text == "car driving"
 
 
-def test_tags_with_frame_info(video_tag_container):
-    output_path = video_tag_container.cfg.output_path
+def test_tags_with_frame_info(tag_container):
+    output_path = tag_container.cfg.output_path
     
     write_jsonl(output_path, [
         {"type": "tag", "data": {
@@ -134,7 +120,7 @@ def test_tags_with_frame_info(video_tag_container):
         }},
     ])
     
-    outputs = video_tag_container.tags()
+    outputs = tag_container.tags()
     
     assert len(outputs) == 3
     
@@ -152,15 +138,15 @@ def test_tags_with_frame_info(video_tag_container):
         assert ft.additional_info.get("confidence") is not None
 
 
-def test_tags_multiple_sources(video_tag_container):
-    output_path = video_tag_container.cfg.output_path
+def test_tags_multiple_sources(tag_container):
+    output_path = tag_container.cfg.output_path
     
     write_jsonl(output_path, [
         {"type": "tag", "data": {"start_time": 0, "end_time": 5.0, "tag": "scene1", "source_media": "video1.mp4"}},
         {"type": "tag", "data": {"start_time": 0, "end_time": 3.0, "tag": "scene2", "source_media": "video2.mp4"}},
     ])
     
-    outputs = video_tag_container.tags()
+    outputs = tag_container.tags()
     
     assert len(outputs) == 2
     
@@ -174,8 +160,8 @@ def test_tags_multiple_sources(video_tag_container):
     assert video2_tags[0].text == "scene2"
 
 
-def test_tags_image_files(image_tag_container):
-    output_path = image_tag_container.cfg.output_path
+def test_tags_image_files(tag_container):
+    output_path = tag_container.cfg.output_path
     
     write_jsonl(output_path, [
         {"type": "tag", "data": {
@@ -190,7 +176,7 @@ def test_tags_image_files(image_tag_container):
         }},
     ])
     
-    outputs = image_tag_container.tags()
+    outputs = tag_container.tags()
     
     assert len(outputs) == 2
     
@@ -208,144 +194,83 @@ def test_tags_image_files(image_tag_container):
     assert tag2.additional_info["confidence"] == 0.8
 
 
-def test_tags_no_output_file(video_tag_container):
-    outputs = video_tag_container.tags()
+def test_tags_no_output_file(tag_container):
+    outputs = tag_container.tags()
     assert outputs == []
 
 
-def test_tags_empty_output_file(video_tag_container):
-    output_path = video_tag_container.cfg.output_path
+def test_tags_empty_output_file(tag_container):
+    output_path = tag_container.cfg.output_path
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, 'w') as f:
         pass
-    outputs = video_tag_container.tags()
+    outputs = tag_container.tags()
     assert outputs == []
 
 
-def test_tags_incomplete_json_line_skipped(video_tag_container):
-    output_path = video_tag_container.cfg.output_path
+def test_tags_incomplete_json_line_skipped(tag_container):
+    output_path = tag_container.cfg.output_path
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
     with open(output_path, 'w') as f:
         f.write(json.dumps({"type": "tag", "data": {"start_time": 0, "end_time": 5.0, "tag": "person walking", "source_media": "video1.mp4"}}) + "\n")
         f.write('{"type": "tag", "data": {"start_time": 10, "end_time": 15, "tag": "incomplete')  # incomplete
     
-    outputs = video_tag_container.tags()
+    outputs = tag_container.tags()
     assert len(outputs) == 1
     assert outputs[0].text == "person walking"
 
 
-def test_errors_from_output(video_tag_container):
-    output_path = video_tag_container.cfg.output_path
+def test_errors_from_output(tag_container):
+    output_path = tag_container.cfg.output_path
     
     write_jsonl(output_path, [
         {"type": "tag", "data": {"start_time": 0, "end_time": 5.0, "tag": "person walking", "source_media": "video1.mp4"}},
         {"type": "error", "data": {"message": "unsupported format", "source_media": "video2.mp4"}},
     ])
     
-    tags = video_tag_container.tags()
-    errors = video_tag_container.errors()
+    tags = tag_container.tags()
+    errors = tag_container.errors()
     
     assert len(tags) == 1
     assert len(errors) == 1
-    assert errors[0]["message"] == "unsupported format"
-    assert errors[0]["source_media"] == "video2.mp4"
+    assert errors[0].message == "unsupported format"
+    assert errors[0].source_media == "video2.mp4"
 
 
-def test_progress_from_output(video_tag_container):
-    output_path = video_tag_container.cfg.output_path
+def test_progress_from_output(tag_container):
+    output_path = tag_container.cfg.output_path
     
     write_jsonl(output_path, [
         {"type": "tag", "data": {"start_time": 0, "end_time": 5.0, "tag": "person walking", "source_media": "video1.mp4"}},
         {"type": "progress", "data": {"source_media": "media/video1.mp4"}},
     ])
     
-    tags = video_tag_container.tags()
-    progress = video_tag_container.progress()
+    tags = tag_container.tags()
+    progress = tag_container.progress()
     
     assert len(tags) == 1
     assert len(progress) == 1
-    assert progress[0]["source_media"] == "media/video1.mp4"
+    assert progress[0].source_media == "media/video1.mp4"
 
 
-def test_track_field(video_tag_container):
-    output_path = video_tag_container.cfg.output_path
+def test_track_field(tag_container):
+    output_path = tag_container.cfg.output_path
     
     write_jsonl(output_path, [
         {"type": "tag", "data": {"start_time": 0, "end_time": 5.0, "tag": "person walking", "track": "track1", "source_media": "video1.mp4"}},
         {"type": "tag", "data": {"start_time": 10.0, "end_time": 15.0, "tag": "car driving", "track": "track2", "source_media": "video1.mp4"}},
     ])
     
-    tags = video_tag_container.tags()
+    tags = tag_container.tags()
     
     assert len(tags) == 2
     assert tags[0].model_track == "track1"
     assert tags[1].model_track == "track2"
 
 
-def test_source_media_resolved_to_full_path(video_tag_container):
-    output_path = video_tag_container.cfg.output_path
-    
-    write_jsonl(output_path, [
-        {"type": "tag", "data": {"start_time": 0, "end_time": 5.0, "tag": "scene1", "source_media": "video1.mp4"}},
-    ])
-    
-    tags = video_tag_container.tags()
-    
-    assert len(tags) == 1
-    # source_media should be resolved to full host path via basename_to_source
-    assert os.path.isabs(tags[0].source_media)
-    assert tags[0].source_media.endswith("video1.mp4")
-
-
-def test_container_with_directory_input(mock_podman_client, temp_dir):
-    videos_dir = os.path.join(temp_dir, "videos")
-    os.makedirs(videos_dir)
-    
-    video1 = os.path.join(videos_dir, "video1.mp4")
-    video2 = os.path.join(videos_dir, "video2.mp4")
-    open(video1, 'a').close()
-    open(video2, 'a').close()
-    
-    output_path = os.path.join(temp_dir, "output", "output.jsonl")
-    
-    container_spec = ContainerSpec(
-        id="test_dir_container",
-        media_input=videos_dir,
-        run_config={},
-        logs_path=os.path.join(temp_dir, "logs"),
-        cache_dir=os.path.join(temp_dir, "cache"),
-        output_path=output_path,
-        model_config=ModelConfig(
-            type="video",
-            image="test/model:latest",
-            resources=SystemResources(memory_mb=1024, vcpus=1)
-        )
-    )
-    
-    container = TagContainer(mock_podman_client, container_spec)
-    
-    write_jsonl(output_path, [
-        {"type": "tag", "data": {"start_time": 0, "end_time": 5.0, "tag": "scene1", "source_media": "video1.mp4"}},
-        {"type": "tag", "data": {"start_time": 0, "end_time": 3.0, "tag": "scene2", "source_media": "video2.mp4"}},
-    ])
-    
-    outputs = container.tags()
-    
-    assert len(outputs) == 2
-    
-    video1_tags = [tag for tag in outputs if tag.source_media.endswith("video1.mp4")]
-    video2_tags = [tag for tag in outputs if tag.source_media.endswith("video2.mp4")]
-    
-    assert len(video1_tags) == 1
-    assert video1_tags[0].text == "scene1"
-    
-    assert len(video2_tags) == 1
-    assert video2_tags[0].text == "scene2"
-
-
-def test_mixed_message_types(video_tag_container):
-    output_path = video_tag_container.cfg.output_path
+def test_mixed_message_types(tag_container):
+    output_path = tag_container.cfg.output_path
     
     write_jsonl(output_path, [
         {"type": "tag", "data": {"start_time": 0, "end_time": 5.0, "tag": "person walking", "source_media": "video1.mp4"}},
@@ -355,23 +280,10 @@ def test_mixed_message_types(video_tag_container):
         {"type": "progress", "data": {"source_media": "media/video2.mp4"}},
     ])
     
-    tags = video_tag_container.tags()
-    errors = video_tag_container.errors()
-    progress = video_tag_container.progress()
+    tags = tag_container.tags()
+    errors = tag_container.errors()
+    progress = tag_container.progress()
     
     assert len(tags) == 2
     assert len(errors) == 1
     assert len(progress) == 2
-
-
-def test_time_conversion_seconds_to_ms(video_tag_container):
-    """Times in protocol are seconds, ModelTag stores milliseconds."""
-    output_path = video_tag_container.cfg.output_path
-    
-    write_jsonl(output_path, [
-        {"type": "tag", "data": {"start_time": 10.5, "end_time": 15.0, "tag": "test", "source_media": "video1.mp4"}},
-    ])
-    
-    tags = video_tag_container.tags()
-    assert tags[0].start_time == 10500
-    assert tags[0].end_time == 15000
