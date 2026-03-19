@@ -16,9 +16,6 @@ RUN mkdir -p /root/.ssh && chmod 700 /root/.ssh
 # Add GitHub to known_hosts to bypass host verification
 RUN ssh-keyscan -t rsa github.com >> /root/.ssh/known_hosts
 
-ARG SSH_AUTH_SOCK
-ENV SSH_AUTH_SOCK ${SSH_AUTH_SOCK}
-
 COPY requirements.txt .
 
 RUN /opt/conda/envs/dummy/bin/pip install -r requirements.txt
