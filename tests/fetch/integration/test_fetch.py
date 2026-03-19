@@ -39,7 +39,6 @@ def test_download_with_replace_true(
     tagstore = fetcher.ts
 
     job = tagstore.create_batch(
-        qid=vod_content.qid,
         author="tagger",
         track="track",
         q=vod_content
@@ -166,7 +165,6 @@ def test_fetch_assets_with_preserve_track(
     tagstore = fetcher.ts
     
     job = tagstore.create_batch(
-        qid=assets_content_with_tags_clean.qid,
         author=fetcher.config.author,
         track="asset_track",
         q=assets_content_with_tags_clean
@@ -227,7 +225,6 @@ def test_fetch_assets_with_preserve_track(
     # returns all the selected assets (tagger author is special)
 
     new_job = tagstore.create_batch(
-        qid=assets_content_with_tags_clean.qid,
         author="user",
         track="another_track",
         q=assets_content_with_tags_clean

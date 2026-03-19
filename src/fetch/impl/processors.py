@@ -69,7 +69,7 @@ class SkipWorker(FetchSession):
                 with open(output_path, 'w') as f:
                     content = {
                         "iq": self.q.qid,
-                        "token": self.q._client.token,
+                        "token": self.q.token,
                         "start_time": this_start,
                         "end_time": this_end
                     }

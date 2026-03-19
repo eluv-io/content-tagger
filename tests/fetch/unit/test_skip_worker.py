@@ -13,7 +13,7 @@ def test_skip_worker(temp_dir: str) -> None:
     start_time = 35
     chunk_size = 10
 
-    fake_q = MagicMock(qid="test_qhit", _client=MagicMock(token="test_token"))
+    fake_q = MagicMock(qid="test_qhit", token="test_token")
 
     worker = SkipWorker(
         q=fake_q,

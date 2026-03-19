@@ -7,9 +7,9 @@ from src.fetch.factory import FetchFactory
 from src.fetch.model import FetcherConfig
 
 @pytest.fixture
-def fetcher(fetcher_config: FetcherConfig, tag_store) -> FetchFactory:
+def fetcher(fetcher_config: FetcherConfig, tag_store, qfactory) -> FetchFactory:
     """Create a FetchFactory instance for testing"""
-    return FetchFactory(config=fetcher_config, ts=tag_store)
+    return FetchFactory(config=fetcher_config, ts=tag_store, qfactory=qfactory)
 
 @pytest.fixture
 def legacy_vod_content_with_tags_clean(q_legacy, tag_store) -> Content:

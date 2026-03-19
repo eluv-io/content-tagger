@@ -84,7 +84,7 @@ class FetchFactory:
         elif isinstance(req.scope, TimeRangeScope):
             assert isinstance(meta, VideoMetadata)
             return SkipWorker(
-                qapi=qapi, # pyright: ignore[reportCallIssue]
+                q=q, 
                 scope=req.scope,
                 meta=meta,
                 ignore_sources=ignore_sources,
@@ -188,10 +188,10 @@ class FetchFactory:
             parts=parts, part_duration=part_duration, fps=fps, codec_type=codec_type
         )
 
-    def _fetch_legacy_vod_metadata(self, q: Content, stream_name: str) -> VideoMetadata:
+    def _fetch_legacy_vod_metadata(self, qapi: QAPI, stream_name: str) -> VideoMetadata:
         """Fetches metadata for legacy VOD content."""
 
-        streams = q.content_object_metadata(
+        streams = qapi.content_object_metadata(
             metadata_subtree="offerings/default/media_struct/streams",
             resolve_links=True,
         )
