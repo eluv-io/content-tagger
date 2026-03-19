@@ -32,8 +32,8 @@ class ContainerSpec:
     # volume to cache stuff in, i.e model weights
     cache_dir: str
     logs_path: str
-    # destination path for the tags
-    tags_dir: str
+    # path to the JSONL output file
+    output_path: str
     # media files to run the model on
     media_input: MediaInput
     # runtime params passed to the model (unique schema per model)
@@ -49,7 +49,6 @@ class ContainerRequest:
     media_input: MediaInput
     # runtime params passed to the model
     run_config: dict
-    live: bool
     # handle passed to the container for tracking
     job_id: str | None
 
@@ -62,6 +61,15 @@ class RegistryConfig:
     model_configs: dict[str, ModelConfig]
     base_dir: str
     cache_dir: str
+
+@dataclass(frozen=True)
+class Progress:
+    source_media: str
+
+@dataclass(frozen=True)
+class Error:
+    message: str
+    source_media: str | None = None
 
 @dataclass(frozen=True)
 class ModelTag:
@@ -85,3 +93,9 @@ class ModelTag:
             return False
         
         return (self.start_time, self.end_time, self.text, self.source_media, self.model_track, self.frame_info, self.additional_info) == (other.start_time, other.end_time, other.text, other.source_media, other.model_track, other.frame_info, other.additional_info)
+    
+@dataclass(frozen=True)
+class ContainerOutput:
+    tags: list[ModelTag]
+    progress: list[Progress]
+    errors: list[Error]

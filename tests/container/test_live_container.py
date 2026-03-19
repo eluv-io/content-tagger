@@ -6,7 +6,7 @@ from loguru import logger
 import time
 import subprocess
 
-from src.tag_containers.containers import LiveTagContainer
+from src.tag_containers.containers import TagContainer
 from src.tag_containers.model import ContainerSpec, ModelConfig
 from src.common.model import SystemResources
 
@@ -41,7 +41,7 @@ def create_test_video(filepath: str, duration: float = 2.0):
     subprocess.run(cmd, capture_output=True, check=True)
 
 def test_live_container_add_media(temp_dir):
-    """Test LiveTagContainer can accept new media files via add_media"""
+    """Test TagContainer can accept new media files via add_media"""
     
     # Create initial directory with one video
     videos_dir = os.path.join(temp_dir, "videos")
@@ -51,10 +51,9 @@ def test_live_container_add_media(temp_dir):
     create_test_video(video1)
     
     # Create container spec with directory input
-    tags_dir = os.path.join(temp_dir, "tags")
+    output_path = os.path.join(temp_dir, "output", "output.jsonl")
     cache_dir = os.path.join(temp_dir, "cache")
     logs_path = os.path.join(temp_dir, "container.log")
-    os.makedirs(tags_dir, exist_ok=True)
     os.makedirs(cache_dir, exist_ok=True)
     
     container_spec = ContainerSpec(
@@ -63,7 +62,7 @@ def test_live_container_add_media(temp_dir):
         run_config={},
         logs_path=logs_path,
         cache_dir=cache_dir,
-        tags_dir=tags_dir,
+        output_path=output_path,
         model_config=ModelConfig(
             type="video",
             image="localhost/test_model:latest",
@@ -72,7 +71,7 @@ def test_live_container_add_media(temp_dir):
     )
     
     pclient = podman.PodmanClient()
-    container = LiveTagContainer(pclient, container_spec)
+    container = TagContainer(pclient, container_spec)
     
     try:
         # Start the container

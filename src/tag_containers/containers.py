@@ -6,14 +6,10 @@ from copy import copy
 import socket
 from urllib.parse import unquote
 import time
-from functools import lru_cache
-
-from common_ml.utils.files import get_file_type
-from common_ml.video_processing import get_fps
 
 from src.common.errors import BadRequestError
 from src.tag_containers.model import *
-from src.tag_containers.model import ContainerInfo
+from src.tag_containers.model import ContainerInfo, ContainerOutput, Progress, Error
 
 logger = logger.bind(name="TagContainer")
 
@@ -43,38 +39,32 @@ class TagContainer:
         if max_depth > 3:
             raise BadRequestError(f"Files are too deeply nested ({max_depth} levels below common root). Maximum allowed depth is 3.\n {self.media_files}")
 
-        file_types = [get_file_type(f) for f in self.media_files]
-        if len(set(file_types)) > 1:
-            raise BadRequestError(f"All files must be of the same type: {self.media_files}")
-        if len(file_types) == 0:
-            raise ValueError("No files provided")
-        self.file_type = file_types[0]
         # check that no file has the same basename
         self.basename_to_source = {os.path.basename(f): f for f in self.media_files}
         if len(self.basename_to_source) != len(self.media_files):
             raise BadRequestError("Files must have unique basenames")
         self.pclient = pclient
         self.container = None
+        self.stdin_socket = None
+        self.eof = False
 
-    def start(
-        self, 
-        gpuidx: int | None,
-        # only used for live containers
-        # TODO: ugly
-        stdin_open: bool = False
-    ) -> None:
-        os.makedirs(self.cfg.tags_dir, exist_ok=True)
+    def start(self, gpuidx: int | None) -> None:
+        if self.eof:
+            raise RuntimeError("Container has already received EOF, cannot start again.")
+
+        output_dir = os.path.dirname(self.cfg.output_path)
+        os.makedirs(output_dir, exist_ok=True)
         
+        output_filename = os.path.basename(self.cfg.output_path)
+
         volumes = [
             {
-                "source": self.cfg.tags_dir,
-                # convention for containers to store tags in /elv/tags
-                "target": "/elv/tags",
+                "source": output_dir,
+                "target": "/elv/output",
                 "type": "bind",
             },
             {
                 "source": self.cfg.cache_dir,
-                # convention for python modules to store cache in /root/.cache
                 "target": "/root/.cache",
                 "type": "bind",
                 "read_only": False
@@ -87,7 +77,7 @@ class TagContainer:
             }
         ]
 
-        cmd = self._get_args(self._get_relative_paths(self.media_files))
+        cmd = self._get_args(output_filename)
 
         kwargs = {
             "image": self.cfg.model_config.image,
@@ -96,6 +86,8 @@ class TagContainer:
             "remove": True,
             "network_mode": "host",
             "pids_limit": -1,
+            "stdin_open": True,
+            "tty": False,
             "log_config": {
                 "Type": "k8s-file",
                 "Config": {
@@ -104,10 +96,6 @@ class TagContainer:
             }
         }
 
-        if stdin_open:
-            kwargs["stdin_open"] = True
-            kwargs["tty"] = False
-
         if gpuidx is not None:
             kwargs["devices"] = [f"nvidia.com/gpu={gpuidx}"]
 
@@ -115,7 +103,56 @@ class TagContainer:
         container.start()
         self.container = container
 
+        timeout = 10
+        start = time.time()
+        has_started = False
+        while time.time() - start < timeout:
+            if self.is_running():
+                has_started = True
+                break
+            time.sleep(0.1)
+        if not has_started:
+            raise RuntimeError(f"Container did not start in time: {self.name()}")
+        
+        self.stdin_socket = self._open_container_stdin(self.container)
+        if self.media_files:
+            self.add_media(self.media_files)
+
+    def add_media(self, new_media: list[str]) -> None:
+        if not self.is_running():
+            logger.warning("Container is not running, cannot add media", extra={"handle": self.name()})
+            return
+        
+        if len(new_media) == 0:
+            return
+        
+        for f in new_media:
+            self.basename_to_source[os.path.basename(f)] = f
+
+        assert self.stdin_socket is not None
+        
+        media_files = self._get_relative_paths(new_media)
+        logger.info(f"Adding {len(media_files)} media files to container: {media_files[:2]}...")
+        msg = "\n".join(media_files) + "\n"
+        self.stdin_socket.sendall(msg.encode())
+
+    def send_eof(self) -> None:
+        self.eof = True
+        if self.stdin_socket:
+            try:
+                try:
+                    self.stdin_socket.shutdown(socket.SHUT_WR)
+                except OSError:
+                    pass
+                finally:
+                    self.stdin_socket.close()
+            except Exception as e:
+                logger.opt(exception=e).error("Error closing stdin socket", extra={"handle": self.name()})
+        else:
+            logger.warning("No stdin socket to close", extra={"handle": self.name()})
+
     def stop(self) -> None:
+        self.send_eof()
         if not self.container:
             return
         if self.container.status == "running":
@@ -142,18 +179,17 @@ class TagContainer:
     def tags(self) -> list[ModelTag]:
         """
         Get output tags generated by the running container so far.
-
-        NOTE: this list should be append only and no previous outputs should be modified.
-        This responsibility is on the container implementation.
+        Reads the JSONL output file and returns all "tag" type messages as ModelTag objects.
         """
-        if not os.path.exists(self.cfg.tags_dir):
-            return []
+        return self._parse_output().tags
 
-        tag_files = []
-        for fpath in os.listdir(self.cfg.tags_dir):
-            tag_files.append(os.path.join(self.cfg.tags_dir, fpath))
+    def errors(self) -> list[Error]:
+        """Get error messages reported by the container."""
+        return self._parse_output().errors
 
-        return self._files_to_tags(tag_files)
+    def progress(self) -> list[Progress]:
+        """Get progress reports from the container (which files are fully processed)."""
+        return self._parse_output().progress
     
     def name(self) -> str:
         """A human friendly name for the container, useful for logging"""
@@ -169,9 +205,48 @@ class TagContainer:
         annotations = image.attrs.get("Annotations", {})
         return ContainerInfo(image_name=self.cfg.model_config.image, annotations=annotations)
 
-    def send_eof(self) -> None:
-        logger.info(f"Standard container received EOF (noop), no more media will be sent.", extra={"handle": self.name()})
-        pass
+    def _parse_output(self) -> ContainerOutput:
+        """Parse the JSONL output file."""
+        tags = []
+        progress = []
+        errors = []
+
+        if not os.path.exists(self.cfg.output_path):
+            return ContainerOutput(tags=tags, progress=progress, errors=errors)
+
+        with open(self.cfg.output_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    msg = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                msg_type = msg.get("type")
+                data = msg.get("data", {})
+
+                if msg_type == "tag":
+                    source_basename = data.get("source_media")
+                    if not source_basename:
+                        raise ValueError("Missing source_media in container output tag")
+                    full_source = self.basename_to_source[source_basename]
+                    tags.append(ModelTag(
+                        start_time=round(data.get("start_time", 0) * 1000),
+                        end_time=round(data.get("end_time", 0) * 1000),
+                        text=data.get("tag", ""),
+                        source_media=full_source,
+                        model_track=data.get("track", ""),
+                        frame_info=data.get("frame_info"),
+                        additional_info=data.get("additional_info"),
+                    ))
+                elif msg_type == "progress":
+                    progress.append(Progress(source_media=data.get("source_media", "")))
+                elif msg_type == "error":
+                    errors.append(Error(message=data.get("message", ""), source_media=data.get("source_media")))
+
+        return ContainerOutput(tags=tags, progress=progress, errors=errors)
     
     def _get_relative_paths(self, media_files: list[str]) -> list[str]:
         # Calculate paths from perspective of the container working directory "/elv"
@@ -190,166 +265,12 @@ class TagContainer:
             relative_paths.append(f"media/{rel_path}")
         return relative_paths
     
-    def _get_args(self, media_files: list[str]) -> list[str]:
+    def _get_args(self, output_filename: str) -> list[str]:
         """Get command line arguments for the container"""
-        cmd = media_files + ["--config", f"{json.dumps(self.cfg.run_config)}"]
-        return cmd
-    
-    def _files_to_tags(self, tagged_files: list[str]) -> list[ModelTag]:
-
-        if self.file_type == "image":
-            return self._load_image_tags(tagged_files)
-        else:
-            return self._load_video_tags(tagged_files)
-
-    def _source_from_tag_file(self, tagfile: str) -> str | None:
-        """Get source media from tag file, returns None if file is invalid/incomplete"""
-        data = self._load_json_file(tagfile)
-        
-        if data is None:
-            return None
-        
-        if not isinstance(data, list) or not data:
-            return self._source_from_filename(tagfile)
-            
-        sources = set()
-        for entry in data:
-            assert isinstance(entry, dict)
-            if entry.get("source_media"):
-                sources.add(entry["source_media"])
-
-        if len(sources) == 1:
-            source_file = sources.pop()
-            return self.basename_to_source[source_file]
-        else:
-            return self._source_from_filename(tagfile)
-
-    def _load_image_tags(self, tagged_files: list[str]) -> list[ModelTag]:
-        outputs = []
-        for tagged_file in tagged_files:
-            source = self._source_from_tag_file(tagged_file)
-            if source is None:
-                continue
-            
-            image_tags = self._load_json_file(tagged_file)
-            if image_tags is None:
-                continue
-            assert isinstance(image_tags, list)
-            outputs += self._output_from_image_tags(source, image_tags)
-        return outputs
-
-    def _output_from_image_tags(self, source_image: str, image_tags: list[dict]) -> list[ModelTag]:
-        tags = []
-        for image_tag_data in image_tags:
-            additional_info = image_tag_data.get("additional_info", {})
-            if "confidence" in image_tag_data:
-                additional_info["confidence"] = image_tag_data["confidence"]
-            tags.append(ModelTag(
-                start_time=0,
-                end_time=0,
-                text=image_tag_data.get("text", ""),
-                source_media=source_image,
-                model_track="",
-                frame_info={"frame_idx": 0, "box": image_tag_data.get("box")},
-                additional_info=additional_info,
-            ))
-        return tags
-    
-    def _load_video_tags(self, tagged_files: list[str]) -> list[ModelTag]:
-        
-        source_to_tagfiles = {}
-
-        for tagged_file in tagged_files:
-            source_media = self._source_from_tag_file(tagged_file)
-            if source_media is None:
-                continue
-            
-            if source_media not in source_to_tagfiles:
-                source_to_tagfiles[source_media] = []
-            source_to_tagfiles[source_media].append(tagged_file)
-
-        outputs = []
-        for source_media, tag_files in source_to_tagfiles.items():
-            model_out = self._output_from_tags(source_media, tag_files)
-            if model_out:
-                outputs += model_out
-
-        return outputs
-    
-    @lru_cache(maxsize=None)
-    def _get_fps(self, video_file: str) -> float:
-        return get_fps(video_file)
-
-    def _output_from_tags(self, source_video: str, tag_files: list[str]) -> list[ModelTag]:
-        ftype = get_file_type(source_video)
-
-        vid_tags = []
-        frame_tags_data = {}
-
-        for tag_file in tag_files:
-            try:
-                if tag_file.endswith("_tags.json"):
-                    with open(tag_file, 'r') as f:
-                        vid_tags += json.load(f)
-                elif tag_file.endswith("_frametags.json"):
-                    with open(tag_file, 'r') as f:
-                        frame_tags_data.update(json.load(f))
-            except Exception as e:
-                logger.error(f"Error loading tags from {tag_file}: {e}")
-                continue
-
-        out = []
-
-        # Video-level tags
-        for video_tag_data in vid_tags:
-            out.append(ModelTag(
-                start_time=round(video_tag_data.get("start_time", 0)),
-                end_time=round(video_tag_data.get("end_time", 0)),
-                text=video_tag_data.get("text", ""),
-                source_media=source_video,
-                model_track=video_tag_data.get("track", ""),
-                additional_info=video_tag_data.get("additional_info", None),
-            ))
-
-        # Frame-level tags (each becomes its own ModelTag)
-        if frame_tags_data:
-            if ftype != "video":
-                raise ValueError("Frame tags can only be associated with video files")
-            fps = self._get_fps(source_video)
-            for fidx, ftags in frame_tags_data.items():
-                frame_time = round((int(fidx) / fps) * 1000)
-                for ftag in ftags:
-                    additional_info = None
-                    if "confidence" in ftag:
-                        additional_info = {"confidence": ftag["confidence"]}
-                    out.append(ModelTag(
-                        start_time=frame_time,
-                        end_time=frame_time,
-                        text=ftag.get("text", ""),
-                        source_media=source_video,
-                        model_track="",
-                        frame_info={"frame_idx": int(fidx), "box": ftag.get("box")},
-                        additional_info=additional_info,
-                    ))
-
-        return out
-
-    def _source_from_filename(self, filename: str) -> str:
-        """Deprecated method for retrieving source media from filename"""
-
-        basename = os.path.basename(filename)
-        # remove _tags, _frametags, or _imagetags suffix
-        path_parts = basename.split("_")
-        if len(path_parts) < 2:
-            return ""
-        
-        suffix = path_parts[-1]
-        if suffix not in ["tags.json", "frametags.json", "imagetags.json"]:
-            return ""
-
-        original_filebase = "_".join(path_parts[:-1])
-
-        return self.basename_to_source[original_filebase]
+        return [
+            "--output-path", f"/elv/output/{output_filename}",
+            "--params", json.dumps(self.cfg.run_config),
+        ]
 
     def _find_common_root(self, filepaths: list[str]) -> str:
         """Find the common root directory for all files"""
@@ -379,89 +300,7 @@ class TagContainer:
             max_depth = max(max_depth, depth)
         
         return max_depth
-    
-    def _load_json_file(self, filepath: str) -> dict | list | None:
-        """Safely load JSON file, returning None if file is incomplete or invalid"""
-        try:
-            with open(filepath, 'r') as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"Error loading JSON from {filepath}: {e}")
-            return None
-    
-class LiveTagContainer(TagContainer):
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.stdin_socket = None
-        self.eof = False
-
-    def add_media(self, new_media: list[str]) -> None:
-        if not self.is_running():
-            logger.warning("Container is not running, cannot add media", extra={"handle": self.name()})
-            return
-        
-        if len(new_media) == 0:
-            return
-        
-        # add to base_name_to_source map
-        for f in new_media:
-            self.basename_to_source[os.path.basename(f)] = f
-
-        assert self.stdin_socket is not None
-        
-        media_files = self._get_relative_paths(new_media)
-
-        logger.info(f"Adding {len(media_files)} media files to live container: {media_files[:2]}...]")
-
-        msg = "\n".join(media_files) + "\n"
-        self.stdin_socket.sendall(msg.encode())
-
-    # TODO: need to verify that tagger handles the exceptions nicely
-    def start(self, gpuidx: int | None, stdin_open: bool=True) -> None:
-        if self.eof:
-            # TODO: not optimal
-            raise RuntimeError("Live container has already received EOF, cannot start again.")
-        super().start(gpuidx, True)
-        timeout = 10
-        start = time.time()
-        has_started = False
-        while time.time() - start < timeout:
-            if self.is_running():
-                has_started = True
-                break
-            time.sleep(0.1)
-        if not has_started:
-            raise RuntimeError(f"Container did not start in time: {self.name()}")
-        self.stdin_socket = self._open_container_stdin(self.container)
-        # add initial media files to stdin
-        if self.media_files:
-            self.add_media(self.media_files)
-
-    def send_eof(self) -> None:
-        self.eof = True
-        if self.stdin_socket:
-            try:
-                try:
-                    self.stdin_socket.shutdown(socket.SHUT_WR)
-                except OSError:
-                    pass
-                finally:
-                    self.stdin_socket.close()
-            except Exception as e:
-                logger.opt(exception=e).error("Error closing stdin socket", extra={"handle": self.name()})
-        else:
-            logger.warning("No stdin socket to close", extra={"handle": self.name()})
-
-    def stop(self) -> None:
-        self.send_eof()
-        super().stop()
-
-    def _get_args(self, media_files: list[str]) -> list[str]:
-        args = ["--config", f"{json.dumps(self.cfg.run_config)}"]
-        args.append("--live")
-        return args
-    
     def _open_container_stdin(self, container):    
         ## assume podman is on the same machine via unix socket
         consocket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

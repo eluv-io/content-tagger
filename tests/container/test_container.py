@@ -37,8 +37,7 @@ def image_files(temp_dir):
 
 @pytest.fixture
 def container_spec_video(temp_dir, video_files):
-    tags_dir = os.path.join(temp_dir, "tags")
-    os.makedirs(tags_dir, exist_ok=True)
+    output_path = os.path.join(temp_dir, "output", "output.jsonl")
     
     return ContainerSpec(
         id="test_video_container",
@@ -46,7 +45,7 @@ def container_spec_video(temp_dir, video_files):
         run_config={},
         logs_path=os.path.join(temp_dir, "logs"),
         cache_dir=os.path.join(temp_dir, "cache"),
-        tags_dir=tags_dir,
+        output_path=output_path,
         model_config=ModelConfig(
             type="video",
             image="test/model:latest",
@@ -57,8 +56,7 @@ def container_spec_video(temp_dir, video_files):
 
 @pytest.fixture
 def container_spec_image(temp_dir, image_files):
-    tags_dir = os.path.join(temp_dir, "tags")
-    os.makedirs(tags_dir, exist_ok=True)
+    output_path = os.path.join(temp_dir, "output", "output.jsonl")
     
     return ContainerSpec(
         id="test_image_container",
@@ -66,7 +64,7 @@ def container_spec_image(temp_dir, image_files):
         run_config={},
         logs_path=os.path.join(temp_dir, "logs"),
         cache_dir=os.path.join(temp_dir, "cache"),
-        tags_dir=tags_dir,
+        output_path=output_path,
         model_config=ModelConfig(
             type="frame",
             image="test/model:latest", 
@@ -85,164 +83,113 @@ def image_tag_container(mock_podman_client, container_spec_image):
     return TagContainer(mock_podman_client, container_spec_image)
 
 
-def create_video_tags_file(tags_dir: str, basename: str, tags_data: list[dict]):
-    filename = f"{basename}_tags.json"
-    filepath = os.path.join(tags_dir, filename)
-    with open(filepath, 'w') as f:
-        json.dump(tags_data, f)
-    return filename
+def write_jsonl(output_path: str, messages: list[dict]):
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    with open(output_path, 'w') as f:
+        for msg in messages:
+            f.write(json.dumps(msg) + "\n")
 
 
-def create_frame_tags_file(tags_dir: str, basename: str, frame_tags_data: dict):
-    filename = f"{basename}_frametags.json"
-    filepath = os.path.join(tags_dir, filename)
-    with open(filepath, 'w') as f:
-        json.dump(frame_tags_data, f)
-    return filename
-
-
-def create_image_tags_file(tags_dir: str, basename: str, tags_data: list[dict]):
-    filename = f"{basename}_imagetags.json"
-    filepath = os.path.join(tags_dir, filename)
-    with open(filepath, 'w') as f:
-        json.dump(tags_data, f)
-    return filename
-
-
-def test_tags_video_only_video_tags(video_tag_container):
-    tags_dir = video_tag_container.cfg.tags_dir
+def test_tags_basic(video_tag_container):
+    output_path = video_tag_container.cfg.output_path
     
-    video_tags_data = [
-        {
-            "start_time": 0,
-            "end_time": 5,
-            "text": "person walking",
-            "confidence": 0.9
-        },
-        {
-            "start_time": 10,
-            "end_time": 15,
-            "text": "car driving", 
-            "confidence": 0.8
-        }
-    ]
+    write_jsonl(output_path, [
+        {"type": "tag", "data": {"start_time": 0, "end_time": 5.0, "tag": "person walking", "source_media": "video1.mp4"}},
+        {"type": "tag", "data": {"start_time": 10.0, "end_time": 15.5, "tag": "car driving", "source_media": "video1.mp4"}},
+    ])
     
-    create_video_tags_file(tags_dir, "video1.mp4", video_tags_data)
+    outputs = video_tag_container.tags()
     
-    with patch('src.tag_containers.containers.get_fps', return_value=30.0):
-        outputs = video_tag_container.tags()
-        
-        assert len(outputs) == 2
-        
-        tag1 = outputs[0]
-        assert tag1.source_media.endswith("video1.mp4")
-        assert tag1.start_time == 0
-        assert tag1.end_time == 5
-        assert tag1.text == "person walking"
-        assert tag1.frame_info is None
-        
-        tag2 = outputs[1]
-        assert tag2.source_media.endswith("video1.mp4")
-        assert tag2.start_time == 10
-        assert tag2.end_time == 15
-        assert tag2.text == "car driving"
+    assert len(outputs) == 2
+    
+    tag1 = outputs[0]
+    assert tag1.source_media.endswith("video1.mp4")
+    assert tag1.start_time == 0
+    assert tag1.end_time == 5000
+    assert tag1.text == "person walking"
+    
+    tag2 = outputs[1]
+    assert tag2.source_media.endswith("video1.mp4")
+    assert tag2.start_time == 10000
+    assert tag2.end_time == 15500
+    assert tag2.text == "car driving"
 
 
-def test_tags_video_with_frame_tags(video_tag_container):
-    tags_dir = video_tag_container.cfg.tags_dir
+def test_tags_with_frame_info(video_tag_container):
+    output_path = video_tag_container.cfg.output_path
     
-    video_tags_data = [
-        {
-            "start_time": 1000,
-            "end_time": 3500,
-            "text": "person walking",
-            "confidence": 0.9
-        }
-    ]
+    write_jsonl(output_path, [
+        {"type": "tag", "data": {
+            "start_time": 1.0, "end_time": 3.5, "tag": "person walking", "source_media": "video1.mp4",
+        }},
+        {"type": "tag", "data": {
+            "start_time": 1.0, "end_time": 1.0, "tag": "person walking", "source_media": "video1.mp4",
+            "frame_info": {"frame_idx": 30, "box": {"x1": 0.1, "y1": 0.1, "x2": 0.2, "y2": 0.2}},
+            "additional_info": {"confidence": 0.95},
+        }},
+        {"type": "tag", "data": {
+            "start_time": 3.0, "end_time": 3.0, "tag": "person walking", "source_media": "video1.mp4",
+            "frame_info": {"frame_idx": 90, "box": {"x1": 0.11, "y1": 0.105, "x2": 0.21, "y2": 0.205}},
+            "additional_info": {"confidence": 0.85},
+        }},
+    ])
     
-    frame_tags_data = {
-        30: [{
-            "text": "person walking",
-            "confidence": 0.95,
-            "box": [0.1, 0.1, 0.2, 0.2]
-        }],
-        90: [{
-            "text": "person walking", 
-            "confidence": 0.85,
-            "box": [0.11, 0.105, 0.21, 0.205]
-        }],
-        180: [{
-            "text": "person walking",
-            "confidence": 0.7,
-            "box": [0.12, 0.11, 0.22, 0.21]
-        }]
-    }
+    outputs = video_tag_container.tags()
     
-    create_video_tags_file(tags_dir, "video1.mp4", video_tags_data)
-    create_frame_tags_file(tags_dir, "video1.mp4", frame_tags_data)
+    assert len(outputs) == 3
     
-    with patch('src.tag_containers.containers.get_fps', return_value=30.0):
-        outputs = video_tag_container.tags()
-        
-        # 1 video tag + 3 frame tags = 4 total
-        assert len(outputs) == 4
-        
-        video_tags = [t for t in outputs if t.frame_info is None]
-        frame_tags = [t for t in outputs if t.frame_info is not None]
-        
-        assert len(video_tags) == 1
-        assert video_tags[0].text == "person walking"
-        
-        assert len(frame_tags) == 3
-        for ft in frame_tags:
-            assert ft.text == "person walking"
-            assert ft.start_time == ft.end_time
-            assert ft.frame_info["box"] is not None
-            assert ft.additional_info.get("confidence") is not None
+    video_tags = [t for t in outputs if t.frame_info is None]
+    frame_tags = [t for t in outputs if t.frame_info is not None]
+    
+    assert len(video_tags) == 1
+    assert video_tags[0].text == "person walking"
+    
+    assert len(frame_tags) == 2
+    for ft in frame_tags:
+        assert ft.text == "person walking"
+        assert ft.start_time == ft.end_time
+        assert ft.frame_info["box"] is not None
+        assert ft.additional_info.get("confidence") is not None
 
 
-def test_tags_video_multiple_sources(video_tag_container):
-    tags_dir = video_tag_container.cfg.tags_dir
+def test_tags_multiple_sources(video_tag_container):
+    output_path = video_tag_container.cfg.output_path
     
-    video1_tags = [{"start_time": 0, "end_time": 5, "text": "scene1"}]
-    create_video_tags_file(tags_dir, "video1.mp4", video1_tags)
+    write_jsonl(output_path, [
+        {"type": "tag", "data": {"start_time": 0, "end_time": 5.0, "tag": "scene1", "source_media": "video1.mp4"}},
+        {"type": "tag", "data": {"start_time": 0, "end_time": 3.0, "tag": "scene2", "source_media": "video2.mp4"}},
+    ])
     
-    video2_tags = [{"start_time": 0, "end_time": 3, "text": "scene2"}]
-    create_video_tags_file(tags_dir, "video2.mp4", video2_tags)
-
-    with patch('src.tag_containers.containers.get_fps', return_value=30.0):
-        outputs = video_tag_container.tags()
-        
-        assert len(outputs) == 2
-        
-        video1_tags = [tag for tag in outputs if tag.source_media.endswith("video1.mp4")]
-        video2_tags = [tag for tag in outputs if tag.source_media.endswith("video2.mp4")]
-        
-        assert len(video1_tags) == 1
-        assert video1_tags[0].text == "scene1"
-        
-        assert len(video2_tags) == 1
-        assert video2_tags[0].text == "scene2"
+    outputs = video_tag_container.tags()
+    
+    assert len(outputs) == 2
+    
+    video1_tags = [tag for tag in outputs if tag.source_media.endswith("video1.mp4")]
+    video2_tags = [tag for tag in outputs if tag.source_media.endswith("video2.mp4")]
+    
+    assert len(video1_tags) == 1
+    assert video1_tags[0].text == "scene1"
+    
+    assert len(video2_tags) == 1
+    assert video2_tags[0].text == "scene2"
 
 
 def test_tags_image_files(image_tag_container):
-    tags_dir = image_tag_container.cfg.tags_dir
+    output_path = image_tag_container.cfg.output_path
     
-    image_tags_data = [
-        {
-            "text": "cat",
-            "confidence": 0.9,
-            "box": [0.05, 0.05, 0.15, 0.15]
-        },
-        {
-            "text": "dog",
-            "confidence": 0.8,
-            "box": [0.2, 0.2, 0.3, 0.3]
-        }
-    ]
-
-    create_image_tags_file(tags_dir, "image1.jpg", image_tags_data)
-
+    write_jsonl(output_path, [
+        {"type": "tag", "data": {
+            "start_time": 0, "end_time": 0, "tag": "cat", "source_media": "image1.jpg",
+            "frame_info": {"frame_idx": 0, "box": {"x1": 0.05, "y1": 0.05, "x2": 0.15, "y2": 0.15}},
+            "additional_info": {"confidence": 0.9},
+        }},
+        {"type": "tag", "data": {
+            "start_time": 0, "end_time": 0, "tag": "dog", "source_media": "image1.jpg",
+            "frame_info": {"frame_idx": 0, "box": {"x1": 0.2, "y1": 0.2, "x2": 0.3, "y2": 0.3}},
+            "additional_info": {"confidence": 0.8},
+        }},
+    ])
+    
     outputs = image_tag_container.tags()
     
     assert len(outputs) == 2
@@ -253,7 +200,6 @@ def test_tags_image_files(image_tag_container):
     assert tag1.end_time == 0
     assert tag1.text == "cat"
     assert tag1.frame_info["frame_idx"] == 0
-    assert tag1.frame_info["box"] == [0.05, 0.05, 0.15, 0.15]
     assert tag1.additional_info["confidence"] == 0.9
     
     tag2 = outputs[1]
@@ -262,141 +208,95 @@ def test_tags_image_files(image_tag_container):
     assert tag2.additional_info["confidence"] == 0.8
 
 
-def test_tags_no_files(video_tag_container):
+def test_tags_no_output_file(video_tag_container):
     outputs = video_tag_container.tags()
     assert outputs == []
 
 
-def test_tags_frame_tags_independent_of_video_tags(video_tag_container):
-    """Frame tags are emitted as separate ModelTags, independent of video tags."""
-    tags_dir = video_tag_container.cfg.tags_dir
-    
-    video_tags_data = [
-        {
-            "start_time": 0,
-            "end_time": 5000,
-            "text": "person walking"
-        }
-    ]
-    
-    frame_tags_data = {
-        "30": [{
-            "text": "car driving",
-            "confidence": 0.9,
-            "box": [0.1, 0.1, 0.2, 0.2]
-        }]
-    }
-
-    create_video_tags_file(tags_dir, "video1.mp4", video_tags_data)
-    create_frame_tags_file(tags_dir, "video1.mp4", frame_tags_data)
-
-    with patch('src.tag_containers.containers.get_fps', return_value=30.0):
-        outputs = video_tag_container.tags()
-        
-        assert len(outputs) == 2
-        video_tags = [t for t in outputs if t.frame_info is None]
-        frame_tags = [t for t in outputs if t.frame_info is not None]
-        
-        assert len(video_tags) == 1
-        assert video_tags[0].text == "person walking"
-        
-        assert len(frame_tags) == 1
-        assert frame_tags[0].text == "car driving"
-        assert frame_tags[0].frame_info["frame_idx"] == 30
-        assert frame_tags[0].start_time == frame_tags[0].end_time == 1000
+def test_tags_empty_output_file(video_tag_container):
+    output_path = video_tag_container.cfg.output_path
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    with open(output_path, 'w') as f:
+        pass
+    outputs = video_tag_container.tags()
+    assert outputs == []
 
 
-def test_tags_missing_video_tags_file(video_tag_container):
-    tags_dir = video_tag_container.cfg.tags_dir
+def test_tags_incomplete_json_line_skipped(video_tag_container):
+    output_path = video_tag_container.cfg.output_path
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
-    frame_tags_data = {30: [{"text": "test", "confidence": 0.9, "box": [0.1, 0.1, 0.2, 0.2]}]}
-    create_frame_tags_file(tags_dir, "video1.mp4", frame_tags_data)
+    with open(output_path, 'w') as f:
+        f.write(json.dumps({"type": "tag", "data": {"start_time": 0, "end_time": 5.0, "tag": "person walking", "source_media": "video1.mp4"}}) + "\n")
+        f.write('{"type": "tag", "data": {"start_time": 10, "end_time": 15, "tag": "incomplete')  # incomplete
     
-    with patch('src.tag_containers.containers.get_fps', return_value=30.0):
-        outputs = video_tag_container.tags()
-        assert len(outputs) == 1
+    outputs = video_tag_container.tags()
+    assert len(outputs) == 1
+    assert outputs[0].text == "person walking"
 
 
-def test_source_from_filename(video_tag_container: TagContainer, image_tag_container: TagContainer):
-    source = video_tag_container._source_from_filename("video1.mp4_tags.json")
-    assert source.endswith("video1.mp4")
+def test_errors_from_output(video_tag_container):
+    output_path = video_tag_container.cfg.output_path
     
-    source = video_tag_container._source_from_filename("video1.mp4_frametags.json") 
-    assert source.endswith("video1.mp4")
+    write_jsonl(output_path, [
+        {"type": "tag", "data": {"start_time": 0, "end_time": 5.0, "tag": "person walking", "source_media": "video1.mp4"}},
+        {"type": "error", "data": {"message": "unsupported format", "source_media": "video2.mp4"}},
+    ])
     
-    source = image_tag_container._source_from_filename("image1.jpg_imagetags.json")
-    assert source.endswith("image1.jpg")
+    tags = video_tag_container.tags()
+    errors = video_tag_container.errors()
+    
+    assert len(tags) == 1
+    assert len(errors) == 1
+    assert errors[0]["message"] == "unsupported format"
+    assert errors[0]["source_media"] == "video2.mp4"
 
 
-def test_tags_frame_tags_timestamps(video_tag_container):
-    """Frame tags get correct timestamps derived from frame index and fps."""
-    tags_dir = video_tag_container.cfg.tags_dir
+def test_progress_from_output(video_tag_container):
+    output_path = video_tag_container.cfg.output_path
     
-    frame_tags_data = {
-        "30": [{
-            "text": "person walking",
-            "confidence": 0.9
-        }],
-        "60": [{
-            "text": "person walking",
-            "confidence": 0.9
-        }],
-        "150": [{
-            "text": "person walking",
-            "confidence": 0.9
-        }]
-    }
+    write_jsonl(output_path, [
+        {"type": "tag", "data": {"start_time": 0, "end_time": 5.0, "tag": "person walking", "source_media": "video1.mp4"}},
+        {"type": "progress", "data": {"source_media": "media/video1.mp4"}},
+    ])
     
-    create_frame_tags_file(tags_dir, "video1.mp4", frame_tags_data)
+    tags = video_tag_container.tags()
+    progress = video_tag_container.progress()
     
-    with patch('src.tag_containers.containers.get_fps', return_value=30.0):
-        outputs = video_tag_container.tags()
-        
-        assert len(outputs) == 3
-        
-        outputs.sort(key=lambda t: t.start_time)
-        
-        # frame 30 at 30fps = 1000ms
-        assert outputs[0].start_time == 1000
-        assert outputs[0].end_time == 1000
-        assert outputs[0].frame_info["frame_idx"] == 30
-        
-        # frame 60 at 30fps = 2000ms
-        assert outputs[1].start_time == 2000
-        assert outputs[1].end_time == 2000
-        assert outputs[1].frame_info["frame_idx"] == 60
-        
-        # frame 150 at 30fps = 5000ms
-        assert outputs[2].start_time == 5000
-        assert outputs[2].end_time == 5000
-        assert outputs[2].frame_info["frame_idx"] == 150
+    assert len(tags) == 1
+    assert len(progress) == 1
+    assert progress[0]["source_media"] == "media/video1.mp4"
 
 
-def test_tags_frame_tags_multiple_per_frame(video_tag_container):
-    """Multiple frame tags on the same frame each become their own ModelTag."""
-    tags_dir = video_tag_container.cfg.tags_dir
+def test_track_field(video_tag_container):
+    output_path = video_tag_container.cfg.output_path
     
-    frame_tags_data = {
-        "30": [
-            {"text": "person walking", "confidence": 0.9, "box": [0.1, 0.1, 0.2, 0.2]},
-            {"text": "car driving", "confidence": 0.8, "box": [0.3, 0.3, 0.4, 0.4]}
-        ],
-        "60": [
-            {"text": "PERSON WALKING", "confidence": 0.8}
-        ]
-    }
+    write_jsonl(output_path, [
+        {"type": "tag", "data": {"start_time": 0, "end_time": 5.0, "tag": "person walking", "track": "track1", "source_media": "video1.mp4"}},
+        {"type": "tag", "data": {"start_time": 10.0, "end_time": 15.0, "tag": "car driving", "track": "track2", "source_media": "video1.mp4"}},
+    ])
     
-    create_frame_tags_file(tags_dir, "video1.mp4", frame_tags_data)
+    tags = video_tag_container.tags()
     
-    with patch('src.tag_containers.containers.get_fps', return_value=30.0):
-        outputs = video_tag_container.tags()
-        
-        assert len(outputs) == 3
-        frame30_tags = [t for t in outputs if t.frame_info["frame_idx"] == 30]
-        frame60_tags = [t for t in outputs if t.frame_info["frame_idx"] == 60]
-        
-        assert len(frame30_tags) == 2
-        assert len(frame60_tags) == 1
+    assert len(tags) == 2
+    assert tags[0].model_track == "track1"
+    assert tags[1].model_track == "track2"
+
+
+def test_source_media_resolved_to_full_path(video_tag_container):
+    output_path = video_tag_container.cfg.output_path
+    
+    write_jsonl(output_path, [
+        {"type": "tag", "data": {"start_time": 0, "end_time": 5.0, "tag": "scene1", "source_media": "video1.mp4"}},
+    ])
+    
+    tags = video_tag_container.tags()
+    
+    assert len(tags) == 1
+    # source_media should be resolved to full host path via basename_to_source
+    assert os.path.isabs(tags[0].source_media)
+    assert tags[0].source_media.endswith("video1.mp4")
+
 
 def test_container_with_directory_input(mock_podman_client, temp_dir):
     videos_dir = os.path.join(temp_dir, "videos")
@@ -407,8 +307,7 @@ def test_container_with_directory_input(mock_podman_client, temp_dir):
     open(video1, 'a').close()
     open(video2, 'a').close()
     
-    tags_dir = os.path.join(temp_dir, "tags")
-    os.makedirs(tags_dir, exist_ok=True)
+    output_path = os.path.join(temp_dir, "output", "output.jsonl")
     
     container_spec = ContainerSpec(
         id="test_dir_container",
@@ -416,7 +315,7 @@ def test_container_with_directory_input(mock_podman_client, temp_dir):
         run_config={},
         logs_path=os.path.join(temp_dir, "logs"),
         cache_dir=os.path.join(temp_dir, "cache"),
-        tags_dir=tags_dir,
+        output_path=output_path,
         model_config=ModelConfig(
             type="video",
             image="test/model:latest",
@@ -426,330 +325,53 @@ def test_container_with_directory_input(mock_podman_client, temp_dir):
     
     container = TagContainer(mock_podman_client, container_spec)
     
-    video1_tags = [{"start_time": 0, "end_time": 5, "text": "scene1"}]
-    create_video_tags_file(tags_dir, "video1.mp4", video1_tags)
+    write_jsonl(output_path, [
+        {"type": "tag", "data": {"start_time": 0, "end_time": 5.0, "tag": "scene1", "source_media": "video1.mp4"}},
+        {"type": "tag", "data": {"start_time": 0, "end_time": 3.0, "tag": "scene2", "source_media": "video2.mp4"}},
+    ])
     
-    video2_tags = [{"start_time": 0, "end_time": 3, "text": "scene2"}]
-    create_video_tags_file(tags_dir, "video2.mp4", video2_tags)
-
-    with patch('src.tag_containers.containers.get_fps', return_value=30.0):
-        outputs = container.tags()
-        
-        assert len(outputs) == 2
-        
-        video1_tags = [tag for tag in outputs if tag.source_media.endswith("video1.mp4")]
-        video2_tags = [tag for tag in outputs if tag.source_media.endswith("video2.mp4")]
-        
-        assert len(video1_tags) == 1
-        assert video1_tags[0].text == "scene1"
-        
-        assert len(video2_tags) == 1
-        assert video2_tags[0].text == "scene2"
-
-def test_tags_get_fps_only_called_with_frame_tags(video_tag_container):
-    tags_dir = video_tag_container.cfg.tags_dir
-    
-    video_tags_data = [
-        {
-            "start_time": 0,
-            "end_time": 5,
-            "text": "person walking"
-        }
-    ]
-    
-    create_video_tags_file(tags_dir, "video1.mp4", video_tags_data)
-    
-    with patch('src.tag_containers.containers.get_fps') as mock_get_fps:
-        mock_get_fps.return_value = 30.0
-        
-        outputs = video_tag_container.tags()
-        
-        mock_get_fps.assert_not_called()
-        
-        assert len(outputs) == 1
-
-def test_tags_get_fps_cached_per_video(video_tag_container):
-    tags_dir = video_tag_container.cfg.tags_dir
-    
-    video_tags_data = [
-        {
-            "start_time": 0,
-            "end_time": 2000,
-            "text": "person walking"
-        },
-        {
-            "start_time": 2000,
-            "end_time": 4000,
-            "text": "car driving"
-        },
-        {
-            "start_time": 4000,
-            "end_time": 6000,
-            "text": "bird flying"
-        }
-    ]
-    
-    frame_tags_data = {
-        "30": [{
-            "text": "person walking",
-            "confidence": 0.9,
-            "box": [0.1, 0.1, 0.2, 0.2]
-        }],
-        "90": [{
-            "text": "car driving",
-            "confidence": 0.85,
-            "box": [0.11, 0.11, 0.21, 0.21]
-        }],
-        "150": [{
-            "text": "bird flying",
-            "confidence": 0.8,
-            "box": [0.12, 0.12, 0.22, 0.22]
-        }]
-    }
-    
-    create_video_tags_file(tags_dir, "video1.mp4", video_tags_data)
-    create_frame_tags_file(tags_dir, "video1.mp4", frame_tags_data)
-    
-    with patch('src.tag_containers.containers.get_fps') as mock_get_fps:
-        mock_get_fps.return_value = 30.0
-        
-        outputs = video_tag_container.tags()
-        video_tag_container.tags()
-        
-        assert mock_get_fps.call_count == 1
-        
-        call_args = mock_get_fps.call_args[0]
-        assert call_args[0].endswith("video1.mp4")
-        
-        # 3 video tags + 3 frame tags
-        assert len(outputs) == 6
-        
-        frame_tags = [t for t in outputs if t.frame_info is not None]
-        assert len(frame_tags) == 3
-        for tag in frame_tags:
-            assert tag.frame_info is not None
-
-def test_source_from_tag_file_with_source_media_field(video_tag_container):
-    tags_dir = video_tag_container.cfg.tags_dir
-    
-    video_tags_data = [
-        {
-            "start_time": 0,
-            "end_time": 5,
-            "text": "person walking",
-            "source_media": "video1.mp4"
-        },
-        {
-            "start_time": 10,
-            "end_time": 15,
-            "text": "car driving",
-            "source_media": "video1.mp4"
-        }
-    ]
-    
-    tag_file = os.path.join(tags_dir, "arbitrary_name_tags.json")
-    with open(tag_file, 'w') as f:
-        json.dump(video_tags_data, f)
-    
-    source = video_tag_container._source_from_tag_file(tag_file)
-    assert source.endswith("video1.mp4")
-
-def test_source_from_tag_file_fallback_to_filename(video_tag_container):
-    tags_dir = video_tag_container.cfg.tags_dir
-    
-    video_tags_data = [
-        {
-            "start_time": 0,
-            "end_time": 5,
-            "text": "person walking"
-        }
-    ]
-    
-    tag_file = os.path.join(tags_dir, "video1.mp4_tags.json")
-    with open(tag_file, 'w') as f:
-        json.dump(video_tags_data, f)
-    
-    source = video_tag_container._source_from_tag_file(tag_file)
-    assert source.endswith("video1.mp4")
-
-def test_source_from_tag_file_empty_list(video_tag_container):
-    tags_dir = video_tag_container.cfg.tags_dir
-    
-    tag_file = os.path.join(tags_dir, "video1.mp4_tags.json")
-    with open(tag_file, 'w') as f:
-        json.dump([], f)
-    
-    source = video_tag_container._source_from_tag_file(tag_file)
-    assert source.endswith("video1.mp4")
-
-def test_source_from_tag_file_multiple_sources_fallback(video_tag_container):
-    tags_dir = video_tag_container.cfg.tags_dir
-    
-    video_tags_data = [
-        {
-            "start_time": 0,
-            "end_time": 5,
-            "text": "person walking",
-            "source_media": "video1.mp4"
-        },
-        {
-            "start_time": 10,
-            "end_time": 15,
-            "text": "car driving",
-            "source_media": "video2.mp4"
-        }
-    ]
-    
-    tag_file = os.path.join(tags_dir, "video1.mp4_tags.json")
-    with open(tag_file, 'w') as f:
-        json.dump(video_tags_data, f)
-    
-    source = video_tag_container._source_from_tag_file(tag_file)
-    assert source.endswith("video1.mp4")
-
-def test_output_from_tags_video_only(video_tag_container):
-    tags_dir = video_tag_container.cfg.tags_dir
-    
-    video_tags_data = [
-        {
-            "start_time": 0,
-            "end_time": 5000,
-            "text": "person walking"
-        },
-        {
-            "start_time": 10000,
-            "end_time": 15000,
-            "text": "car driving"
-        }
-    ]
-    
-    tag_file = os.path.join(tags_dir, "video1.mp4_tags.json")
-    with open(tag_file, 'w') as f:
-        json.dump(video_tags_data, f)
-    
-    with patch('src.tag_containers.containers.get_fps', return_value=30.0):
-        outputs = video_tag_container._output_from_tags("video1.mp4", [tag_file])
+    outputs = container.tags()
     
     assert len(outputs) == 2
-    assert outputs[0].start_time == 0
-    assert outputs[0].end_time == 5000
-    assert outputs[0].text == "person walking"
-    assert outputs[0].source_media == "video1.mp4"
     
-    assert outputs[1].start_time == 10000
-    assert outputs[1].end_time == 15000
-    assert outputs[1].text == "car driving"
-    assert outputs[1].source_media == "video1.mp4"
+    video1_tags = [tag for tag in outputs if tag.source_media.endswith("video1.mp4")]
+    video2_tags = [tag for tag in outputs if tag.source_media.endswith("video2.mp4")]
+    
+    assert len(video1_tags) == 1
+    assert video1_tags[0].text == "scene1"
+    
+    assert len(video2_tags) == 1
+    assert video2_tags[0].text == "scene2"
 
-def test_source_from_tags(video_tag_container):
-    # test that we can resolve the source name from the tags if it's not in the filename
-    tags_dir = video_tag_container.cfg.tags_dir
-    
-    video_tags_data = [
-        {
-            "start_time": 0,
-            "end_time": 5000,
-            "text": "person walking",
-            "source_media": "video1.mp4"
-        },
-        {
-            "start_time": 10000,
-            "end_time": 15000,
-            "text": "car driving",
-            "source_media": "video1.mp4"
-        }
-    ]
-    
-    tag_file = os.path.join(tags_dir, "asdf_tags.json")
-    with open(tag_file, 'w') as f:
-        json.dump(video_tags_data, f)
-    
-    outputs = video_tag_container.tags()
-    
-    assert len(outputs) == 2
-    assert outputs[0].source_media.endswith("video1.mp4")
-    assert outputs[1].source_media.endswith("video1.mp4")
 
-def test_bad_tag_json(video_tag_container):
-    """Test that incomplete/invalid JSON files are handled gracefully"""
-    tags_dir = video_tag_container.cfg.tags_dir
+def test_mixed_message_types(video_tag_container):
+    output_path = video_tag_container.cfg.output_path
     
-    # Create a valid tag file
-    valid_tags = [
-        {
-            "start_time": 0,
-            "end_time": 5000,
-            "text": "person walking",
-            "source_media": "video1.mp4"
-        }
-    ]
+    write_jsonl(output_path, [
+        {"type": "tag", "data": {"start_time": 0, "end_time": 5.0, "tag": "person walking", "source_media": "video1.mp4"}},
+        {"type": "progress", "data": {"source_media": "media/video1.mp4"}},
+        {"type": "tag", "data": {"start_time": 0, "end_time": 3.0, "tag": "car driving", "source_media": "video2.mp4"}},
+        {"type": "error", "data": {"message": "something went wrong", "source_media": "video2.mp4"}},
+        {"type": "progress", "data": {"source_media": "media/video2.mp4"}},
+    ])
     
-    valid_file = os.path.join(tags_dir, "video1.mp4_tags.json")
-    with open(valid_file, 'w') as f:
-        json.dump(valid_tags, f)
-    
-    # Create an invalid/incomplete JSON file (simulates container still writing)
-    invalid_file = os.path.join(tags_dir, "video2.mp4_tags.json")
-    with open(invalid_file, 'w') as f:
-        f.write('{"start_time": 0, "end_time": 5000, "text": "incomplete')  # Incomplete JSON
-    
-    # Should only return tags from valid file, skip invalid one
-    outputs = video_tag_container.tags()
-    
-    assert len(outputs) == 1
-    assert outputs[0].source_media.endswith("video1.mp4")
-    assert outputs[0].text == "person walking"
-
-def test_bad_filename(video_tag_container):
-    tags_dir = video_tag_container.cfg.tags_dir
-    
-    video_tags_data = [
-        {
-            "start_time": 0,
-            "end_time": 5000,
-            "text": "person walking",
-            "source_media": "video1.mp4"
-        },
-        {
-            "start_time": 10000,
-            "end_time": 15000,
-            "text": "car driving",
-            "source_media": "video1.mp4"
-        }
-    ]
-    
-    tag_file = os.path.join(tags_dir, "asdf.json")
-    with open(tag_file, 'w') as f:
-        json.dump(video_tags_data, f)
-    
-    outputs = video_tag_container.tags()
-    
-    assert len(outputs) == 0
-
-def test_track_field(video_tag_container):
-    tags_dir = video_tag_container.cfg.tags_dir
-    
-    video_tags_data = [
-        {
-            "start_time": 0,
-            "end_time": 5000,
-            "text": "person walking",
-            "track": "track1"
-        },
-        {
-            "start_time": 10000,
-            "end_time": 15000,
-            "text": "car driving",
-            "track": "track2"
-        }
-    ]
-    
-    tag_file = os.path.join(tags_dir, "video1.mp4_tags.json")
-    with open(tag_file, 'w') as f:
-        json.dump(video_tags_data, f)
-
     tags = video_tag_container.tags()
-
+    errors = video_tag_container.errors()
+    progress = video_tag_container.progress()
+    
     assert len(tags) == 2
-    assert tags[0].model_track == "track1"
-    assert tags[1].model_track == "track2"
+    assert len(errors) == 1
+    assert len(progress) == 2
+
+
+def test_time_conversion_seconds_to_ms(video_tag_container):
+    """Times in protocol are seconds, ModelTag stores milliseconds."""
+    output_path = video_tag_container.cfg.output_path
+    
+    write_jsonl(output_path, [
+        {"type": "tag", "data": {"start_time": 10.5, "end_time": 15.0, "tag": "test", "source_media": "video1.mp4"}},
+    ])
+    
+    tags = video_tag_container.tags()
+    assert tags[0].start_time == 10500
+    assert tags[0].end_time == 15000

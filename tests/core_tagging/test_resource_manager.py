@@ -20,7 +20,7 @@ class MockTagContainer(TagContainer):
         self.container.attrs = {"State": {"ExitCode": 0}}
         self.resources = {"A6000": 1}
         
-    def start(self, gpuidx: int | None = None, stdin_open: bool = False) -> None:
+    def start(self, gpuidx: int | None = None) -> None:
         self.is_started = True
         self.gpu_idx = gpuidx
         # Simulate work in background
@@ -257,7 +257,7 @@ def test_job_failure_handling(system_tagger: ContainerScheduler):
     container = MockTagContainer()
     
     # Mock the container to raise an exception on start
-    def failing_start(gpuidx=None, stdin_open=False):
+    def failing_start(gpuidx=None):
         raise RuntimeError("Container failed to start")
     
     container.start = failing_start

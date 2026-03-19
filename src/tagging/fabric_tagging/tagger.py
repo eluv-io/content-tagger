@@ -10,7 +10,7 @@ import os
 from src.common.logging.timing import timeit
 
 from src.fetch.model import *
-from src.tag_containers.containers import LiveTagContainer
+from src.tag_containers.containers import TagContainer
 from src.tag_containers.model import ContainerRequest
 from src.tag_containers.registry import ContainerRegistry
 from src.tagging.scheduling.scheduler import ContainerScheduler
@@ -379,8 +379,6 @@ class FabricTagger:
         """
         Send the new media to the container for tagging via stdin
         """
-        # right now this is a special class but in the future all containers will operate via stdin
-        assert isinstance(container, LiveTagContainer)
         container.add_media([s.filepath for s in new_media])
 
     def _start_new_container(self, job: TagJob) -> None:
@@ -389,7 +387,6 @@ class FabricTagger:
             model_id=job.args.feature,
             media_input=media_input,
             run_config=job.args.run_config,
-            live=isinstance(job.args.scope, LiveScope),
             job_id=job.args.q.qid + "-" + datetime.now().strftime("%Y%m%d%H%M") + "-" + str(uuid())[0:6]
         ))
         
@@ -414,7 +411,7 @@ class FabricTagger:
         job.state.tagging_done.wait()
 
         if job.stop_event.is_set():
-            log.info("tagging was stopped via stop event")
+            log.info("tagging was stopped via stop event", jobid=jobid)
             return
 
         status = self.system_tagger.status(job.state.taghandle)
