@@ -40,9 +40,7 @@ def create_test_video(filepath: str, duration: float = 2.0):
     
     subprocess.run(cmd, capture_output=True, check=True)
 
-def test_live_container_add_media(temp_dir):
-    """Test TagContainer can accept new media files via add_media"""
-    
+def test_container(temp_dir):
     # Create initial directory with one video
     videos_dir = os.path.join(temp_dir, "videos")
     os.makedirs(videos_dir)
@@ -50,7 +48,6 @@ def test_live_container_add_media(temp_dir):
     video1 = os.path.join(videos_dir, "video1.mp4")
     create_test_video(video1)
     
-    # Create container spec with directory input
     output_path = os.path.join(temp_dir, "output", "output.jsonl")
     cache_dir = os.path.join(temp_dir, "cache")
     logs_path = os.path.join(temp_dir, "container.log")
@@ -58,7 +55,7 @@ def test_live_container_add_media(temp_dir):
     
     container_spec = ContainerSpec(
         id="test_live_container",
-        media_input=videos_dir,
+        media_dir=videos_dir,
         run_config={},
         logs_path=logs_path,
         cache_dir=cache_dir,
@@ -74,12 +71,21 @@ def test_live_container_add_media(temp_dir):
     container = TagContainer(pclient, container_spec)
     
     try:
+        # add some media before it starts
+        container.add_media([video1])
+
         # Start the container
         container.start(gpuidx=None)
         
         # Wait for container to be ready
         time.sleep(1)
         assert container.is_running()
+
+        # check that we have tags for the first video
+        assert len(container.tags()) > 0
+        assert container.errors() == []
+        assert len(container.progress()) == 1
+        assert container.progress()[0].source_media == video1
         
         # Create new video files
         video2 = os.path.join(videos_dir, "video2.mp4")
@@ -92,18 +98,37 @@ def test_live_container_add_media(temp_dir):
         
         # Wait for container to process
         time.sleep(1)
+
+        statuses = container.progress()
+        assert len(statuses) == 3
+        assert statuses[0].source_media == video1
+        assert statuses[1].source_media == video2
+        assert statuses[2].source_media == video3
+
+        # create a file with no media, should error
+        bad_path = os.path.join(videos_dir, "bad")
+        open(bad_path, "a").close()
+
+        # now add a bad file and check for error
+        container.add_media([bad_path])
+
+        time.sleep(1)
+
+        assert len(container.progress()) == 3
+        errors = container.errors()
+        assert len(errors) == 1
+        assert errors[0].message
+
+        assert not container.is_running()
         
-        # Read container logs
+        # Check the container logs
         assert os.path.exists(logs_path)
         with open(logs_path, 'r') as f:
             logs = f.read()
         
-        # Check that container received the initial file
-        assert "Got video1.mp4" in logs or "Got media/video1.mp4" in logs
-        
-        # Check that container received the new files
-        assert "Got video2.mp4" in logs or "Got media/video2.mp4" in logs
-        assert "Got video3.mp4" in logs or "Got media/video3.mp4" in logs
+        assert "Got media/video1.mp4" in logs
+        assert "Got media/video2.mp4" in logs
+        assert "Got media/video3.mp4" in logs
         
     finally:
         # Cleanup
