@@ -219,11 +219,13 @@ class FabricTagger:
         # TODO: if model outputs multiple tracks this might not give us what we want
         preserve_track = self.track_resolver.resolve(feature)
 
+        output_dir = self._output_dir_from_q(q)
+
         worker = self.fetcher.get_session(
             q, 
             DownloadRequest(
                 preserve_track=preserve_track.name if not args.replace else "",
-                output_dir=self._output_dir_from_q(q),
+                output_dir=output_dir,
                 scope=args.scope,
             ),
             stop_event
@@ -231,7 +233,8 @@ class FabricTagger:
 
         media_state = MediaState(
             downloaded=[],
-            worker=worker
+            worker=worker,
+            output_dir=output_dir,
         )
 
         dest_q = Content(args.destination_qid or q.qid, q.token)
@@ -382,10 +385,10 @@ class FabricTagger:
         container.add_media([s.filepath for s in new_media])
 
     def _start_new_container(self, job: TagJob) -> None:
-        media_input = [s.filepath for s in job.state.media.downloaded]
+        media_dir = job.state.media.output_dir
         container = self.cregistry.get(ContainerRequest(
             model_id=job.args.feature,
-            media_input=media_input,
+            media_dir=media_dir,
             run_config=job.args.run_config,
             job_id=job.args.q.qid + "-" + datetime.now().strftime("%Y%m%d%H%M") + "-" + str(uuid())[0:6]
         ))

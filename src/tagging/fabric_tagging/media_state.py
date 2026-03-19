@@ -9,3 +9,4 @@ class MediaState:
     downloaded: list[Source]
     # used to get media
     worker: FetchSession
+    output_dir: str
