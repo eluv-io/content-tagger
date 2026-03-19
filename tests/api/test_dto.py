@@ -668,3 +668,43 @@ def test_parse_status_request():
 
     req = parse("?start=2&status=done&tenant=fox&user=bob")
     assert req == StatusRequest(start=2, limit=None, status="done", tenant="fox", user="bob")
+
+def test_find_default_audio_stream_priority(resolver):
+    """Test audio stream selection priority: en+stereo > en > stereo > first"""
+    mock_content = Mock()
+    
+    mock_content.content_object_metadata.return_value = {
+        "audio_es": {"codec_type": "audio", "language": "es", "channels": 2},
+        "audio_en": {"codec_type": "audio", "language": "en", "channels": 2},
+    }
+    assert resolver.find_default_audio_stream(mock_content) == "audio_en"
+    
+    mock_content.content_object_metadata.return_value = {
+        "audio_es": {"codec_type": "audio", "language": "es", "channels": 2},
+        "audio_en": {"codec_type": "audio", "language": "en", "channels": 1},
+    }
+    assert resolver.find_default_audio_stream(mock_content) == "audio_en"
+    
+    mock_content.content_object_metadata.return_value = {
+        "audio_es": {"codec_type": "audio", "language": "es", "channels": 1},
+        "audio_fr": {"codec_type": "audio", "language": "fr", "channels": 2},
+    }
+    assert resolver.find_default_audio_stream(mock_content) == "audio_fr"
+    
+    mock_content.content_object_metadata.return_value = {
+        "audio_es": {"codec_type": "audio", "language": "es", "channels": 1},
+        "audio_fr": {"codec_type": "audio", "language": "fr", "channels": 1},
+    }
+    assert resolver.find_default_audio_stream(mock_content) == "audio_es"
+    
+    mock_content.content_object_metadata.return_value = {
+        "video": {"codec_type": "video"},
+        "audio": {"codec_type": "audio", "language": "es", "channels": 1},
+    }
+    assert resolver.find_default_audio_stream(mock_content) == "audio"
+    
+    mock_content.content_object_metadata.return_value = {
+        "video": {"codec_type": "video"},
+    }
+    with pytest.raises(Exception):
+        resolver.find_default_audio_stream(mock_content)

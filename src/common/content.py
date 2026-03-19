@@ -106,13 +106,13 @@ class QAPI:
         url = self._live_client.fabric_uris[0]
         url = '/'.join([url, 'q', object_id, 'rep', 'media', 'segment'])
         resp = requests.get(
-            url, 
+            url,
             params={
                 "authorization": self._client.token,
                 "num": segment_idx,
                 "duration": segment_length,
                 "stream": stream
-            }, 
+            },
             stream=True
         )
         if resp.status_code == 200:

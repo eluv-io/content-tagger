@@ -8,8 +8,7 @@ from src.common.logging import logger
 from src.common.content import Content
 
 import podman
-from src.api.tagging.request_mapping import _find_default_audio_stream
-from src.common.content import ContentFactory
+from src.api.arg_resolver import ArgsResolver
 from src.fetch.model import DownloadRequest, FetchSession, VideoScope
 from src.tagging.fabric_tagging.model import TagArgs, TagStartResult
 from src.tagging.fabric_tagging.tagger import FabricTagger
@@ -21,16 +20,12 @@ def is_queue_mode():
 
 def is_job_success(client, q: Content):
     """Check if all jobs for content_id completed successfully."""
-    auth = get_auth(q)
-    response = client.get(f"/{q.qid}/job-status?authorization={auth}")
+    response = client.get(f"/{q.qid}/job-status?authorization={q.token}")
     if response.status_code != 200:
         return False
     data = response.get_json()
     reports = data['jobs']
     return all(r['status'] == 'succeeded' for r in reports)
-
-def get_auth(content: Content) -> str:
-    return content._client.token
 
 def wait_for_jobs_completion(client, contents: list[Content], timeout=30):
     """Wait for all jobs to complete."""
@@ -41,8 +36,7 @@ def wait_for_jobs_completion(client, contents: list[Content], timeout=30):
         all_finished = True
         
         for content in contents:
-            auth = get_auth(content)
-            response = client.get(f"/{content.qid}/job-status?authorization={auth}")
+            response = client.get(f"/{content.qid}/job-status?authorization={content.token}")
             
             if response.status_code != 200:
                 all_finished = False
@@ -78,16 +72,14 @@ def check_skip():
 
 def test_video_model(client, q):
     """Test the complete tagging workflow."""
-    # Get auth tokens
-    auth = get_auth(q)
-    
+
     # Test initial status - should return 404 for no jobs
-    response = client.get(f"/{q.qid}/job-status?authorization={auth}")
+    response = client.get(f"/{q.qid}/job-status?authorization={q.token}")
     assert response.status_code == 404
     
     # Start video tagging with GPU feature
     response = client.post(
-        f"/{q.qid}/tag?authorization={auth}", 
+        f"/{q.qid}/tag?authorization={q.token}", 
         json={
             "options": {
                 "destination_qid": "",
@@ -124,13 +116,10 @@ def test_video_model(client, q):
     assert completed, "Timeout waiting for jobs to complete"
 
 @pytest.mark.parametrize("last_res_has_media", [True, False])
-@patch('src.api.tagging.request_mapping.is_live_content')
-def test_live_video_model(is_live_content, app, last_res_has_media, q):
+def test_live_video_model(app, last_res_has_media, q):
     """Test the live tagging workflow with FakeLiveFetcher."""
-    is_live_content.return_value = True
-    # Get auth tokens
-    auth = get_auth(q)
-    qid = q.qid
+    arg_resolver: ArgsResolver = app.config["state"]["arg_resolver"]
+    arg_resolver.is_live_content = Mock(return_value=True)
     
     # Replace the real fetcher with FakeLiveFetcher
     tagger: FabricTagger = app.config["state"]["tagger"]
@@ -162,12 +151,12 @@ def test_live_video_model(is_live_content, app, last_res_has_media, q):
     client = app.test_client()
     
     # Test initial status - should return 404 for no jobs
-    response = client.get(f"/{q.qid}/job-status?authorization={auth}")
+    response = client.get(f"/{q.qid}/job-status?authorization={q.token}")
     assert response.status_code == 404
     
     # Start video tagging with GPU feature
     response = client.post(
-        f"/{q.qid}/tag?authorization={auth}", 
+        f"/{q.qid}/tag?authorization={q.token}", 
         json={
             "options": {
                 "replace": True,
@@ -216,7 +205,7 @@ def test_live_video_model(is_live_content, app, last_res_has_media, q):
 def test_real_live_stream(app, q_live):
     """Test real live stream tagging with LiveWorker."""
     qid = q_live.qid
-    auth = q_live._client.token
+    auth = q_live.token
     
     tagger: FabricTagger = app.config["state"]["tagger"]
     tagstore = tagger.tagstore
@@ -303,7 +292,7 @@ def test_real_live_stream(app, q_live):
 def test_asset_tag(client, q_assets):
     """Test asset tagging."""
     qid = q_assets.qid
-    auth = get_auth(q_assets)
+    auth = q_assets.token
     
     # Start asset tagging with CPU feature
     response = client.post(
@@ -326,14 +315,14 @@ def test_asset_tag(client, q_assets):
     status = client.get(f"/{qid}/job-status?authorization={auth}")
     print(status.get_json())
     tagstore: FilesystemTagStore = client.application.config["state"]["tagger"].tagstore
-    jobid = tagstore.find_batches(qid=q_assets.qid)[0]
-    tags = tagstore.find_tags(batch_id=jobid)
+    jobid = tagstore.find_batches(q=q_assets)[0]
+    tags = tagstore.find_tags(q=q_assets, batch_id=jobid)
     tags = sorted(tags, key=lambda x: x.start_time)
     assert len(tags) > 0
 
 def test_stop_workflow(client, q):
     """Test stopping jobs."""
-    video_auth = get_auth(q)
+    video_auth = q.token
     
     # Start a job
     response = client.post(
@@ -373,7 +362,7 @@ def test_stop_workflow(client, q):
 
 def test_double_run(client, q):
     """Run same job twice, expect second to be rejected."""
-    video_auth = get_auth(q)
+    video_auth = q.token
     
     # Start initial job
     response = client.post(
@@ -416,60 +405,25 @@ def test_double_run(client, q):
     assert duration < 2, f"Stop request took too long: {duration}s which is over 2s limit"
     assert response.status_code == 200
 
-def test_find_default_audio_stream(q):
-    result = _find_default_audio_stream(q)
+
+
+def test_find_default_audio_stream(q, app):
+    resolver: ArgsResolver = app.config["state"]["arg_resolver"]
+    qapi = resolver.api_factory.create(q)
+    result = resolver.find_default_audio_stream(qapi)
 
     assert result == "stereo"
 
-def test_find_default_audio_stream_priority():
-    """Test audio stream selection priority: en+stereo > en > stereo > first"""
-    mock_content = Mock()
-    
-    mock_content.content_object_metadata.return_value = {
-        "audio_es": {"codec_type": "audio", "language": "es", "channels": 2},
-        "audio_en": {"codec_type": "audio", "language": "en", "channels": 2},
-    }
-    assert _find_default_audio_stream(mock_content) == "audio_en"
-    
-    mock_content.content_object_metadata.return_value = {
-        "audio_es": {"codec_type": "audio", "language": "es", "channels": 2},
-        "audio_en": {"codec_type": "audio", "language": "en", "channels": 1},
-    }
-    assert _find_default_audio_stream(mock_content) == "audio_en"
-    
-    mock_content.content_object_metadata.return_value = {
-        "audio_es": {"codec_type": "audio", "language": "es", "channels": 1},
-        "audio_fr": {"codec_type": "audio", "language": "fr", "channels": 2},
-    }
-    assert _find_default_audio_stream(mock_content) == "audio_fr"
-    
-    mock_content.content_object_metadata.return_value = {
-        "audio_es": {"codec_type": "audio", "language": "es", "channels": 1},
-        "audio_fr": {"codec_type": "audio", "language": "fr", "channels": 1},
-    }
-    assert _find_default_audio_stream(mock_content) == "audio_es"
-    
-    mock_content.content_object_metadata.return_value = {
-        "video": {"codec_type": "video"},
-        "audio": {"codec_type": "audio", "language": "es", "channels": 1},
-    }
-    assert _find_default_audio_stream(mock_content) == "audio"
-    
-    mock_content.content_object_metadata.return_value = {
-        "video": {"codec_type": "video"},
-    }
-    with pytest.raises(Exception):
-        _find_default_audio_stream(mock_content)
-
-def test_is_live_content(q_live):
+def test_is_live_content(q_live, app):
     """Test the _is_live_content function."""
-    from src.api.tagging.request_mapping import is_live_content
-    assert is_live_content(q_live) == True
+    resolver: ArgsResolver = app.config["state"]["arg_resolver"]
+    qapi = resolver.api_factory.create(q_live)
+    assert resolver.is_live_content(qapi) == True
 
 def test_stop_live_job(app, q_live):
     """Test that live jobs can be stopped cleanly mid-stream."""
     qid = q_live.qid
-    auth = get_auth(q_live)
+    auth = q_live.token
     
     tagger: FabricTagger = app.config["state"]["tagger"]
     tagstore = tagger.tagstore
@@ -557,7 +511,7 @@ def test_stop_live_job(app, q_live):
 def test_invalid_model_name(client, q):
     """Test that requesting a non-existent model returns 400 error."""
     qid = q.qid
-    auth = get_auth(q)
+    auth = q.token
 
     # Try to tag with a model that doesn't exist
     response = client.post(
@@ -577,7 +531,7 @@ def test_invalid_model_name(client, q):
 
 def test_stop_all_jobs(client, q):
     """Test stopping all jobs for a qid."""
-    auth = get_auth(q)
+    auth = q.token
     
     response = client.post(
         f"/{q.qid}/tag?authorization={auth}",
@@ -627,7 +581,7 @@ def test_start_two_jobs_one_fails_partial_failure_response(client, q):
     if is_queue_mode():
         pytest.skip()
 
-    auth = get_auth(q)
+    auth = q.token
 
     tagger: FabricTagger = client.application.config["state"]["tagger"]
     original_tag = tagger.tag

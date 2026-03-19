@@ -90,9 +90,10 @@ def configure_routes(app: Flask) -> None:
         return send_from_directory('docs/api', 'openapi.html')
 
 def _build_fabric_tagger(cfg: AppConfig) -> FabricTagger:
+    qfactory = QAPIFactory(cfg.content)
     return FabricTagger(
         system_tagger=ContainerScheduler(cfg.system),
-        fetcher=FetchFactory(cfg.fetcher, create_tagstore(cfg.tagstore)),
+        fetcher=FetchFactory(cfg.fetcher, create_tagstore(cfg.tagstore), qfactory),
         cregistry=ContainerRegistry(cfg.container_registry),
         tagstore=create_tagstore(cfg.tagstore),
         cfg=cfg.tagger,
@@ -130,12 +131,13 @@ def create_app_queue_based(config: AppConfig) -> Flask:
 
     fabric_tagger = _build_fabric_tagger(config)
     job_store: JobStore = FsJobStore(config.jobstore.base_url)
-    arg_resolver = ArgsResolver(fabric_tagger.cregistry, QAPIFactory(config.content))
+    qfactory = QAPIFactory(config.content)
+    arg_resolver = ArgsResolver(fabric_tagger.cregistry, api_factory=qfactory)
     loop = TagRunner(fabric_tagger, job_store, config.tag_runner)
 
     app.config["state"] = {
         "tagger": fabric_tagger,
-        "service": QueueClient(job_store),
+        "service": QueueClient(job_store, qfactory),
         "arg_resolver": arg_resolver,
         "authenticator": Authenticator(config.content.config_url),
         "job_store": job_store,
