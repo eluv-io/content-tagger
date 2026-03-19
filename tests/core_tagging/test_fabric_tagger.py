@@ -115,7 +115,7 @@ def test_stop_running_job(fabric_tagger, q, sample_tag_args):
         fabric_tagger.tag(q, args)
     
     # Stop one job
-    fabric_tagger.stop(q.qid, "caption", None)
+    fabric_tagger.stop(q.qid, "caption")
     
     # Check that stop event was set
     status = fabric_tagger.status(q.qid)
@@ -129,7 +129,7 @@ def test_stop_nonexistent_job(fabric_tagger):
         pytest.skip("Skipping test for RestTagstore cause I don't want to have to configure many live test objects")
 
     with pytest.raises(MissingResourceError):
-        fabric_tagger.stop("iq__nonexistent", "caption", None)
+        fabric_tagger.stop("iq__nonexistent", "caption")
 
 
 def test_stop_finished_job(fabric_tagger, q, sample_tag_args):
@@ -137,7 +137,7 @@ def test_stop_finished_job(fabric_tagger, q, sample_tag_args):
         fabric_tagger.tag(q, args)
     time.sleep(1)
     with pytest.raises(MissingResourceError):
-        fabric_tagger.stop(q.qid, "caption", None)
+        fabric_tagger.stop(q.qid, "caption")
     # check that both are Completed
     status = fabric_tagger.status(q.qid)
     assert _status_for(status, "caption", "video").status == "Completed"

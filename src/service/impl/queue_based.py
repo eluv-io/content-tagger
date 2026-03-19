@@ -129,7 +129,7 @@ class QueueClient(TagAPI):
                 )
         return reports
 
-    def stop(self, qid: str, feature: str | None, stream: str | None) -> list[TagStopResult]:
+    def stop(self, qid: str, feature: str | None) -> list[TagStopResult]:
         """Request a stop for matching jobs in the queue."""
         items = self.jobstore.list_jobs(ListJobArgs(qid=qid), auth="")
         items = [item for item in items if item.status in ("queued", "running")]

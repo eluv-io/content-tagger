@@ -11,5 +11,5 @@ class TagAPI(Protocol):
     def status(self, req: StatusArgs) -> list[TagJobStatusReport]:
         ...
 
-    def stop(self, qid: str, feature: str | None, stream: str | None) -> list[TagStopResult]:
+    def stop(self, qid: str, feature: str | None) -> list[TagStopResult]:
         ...

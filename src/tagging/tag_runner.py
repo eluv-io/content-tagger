@@ -132,7 +132,7 @@ class TagRunner:
 
             logger.info("stop requested for job", job_id=item.id)
             try:
-                self.tagger.stop(item.qid, item.params.feature, stream=None)
+                self.tagger.stop(item.qid, item.params.feature)
             except Exception as e:
                 logger.opt(exception=e).warning("failed to stop job", job_id=item.id)
 

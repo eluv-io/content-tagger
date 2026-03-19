@@ -87,8 +87,8 @@ class FabricTagger:
         request = StatusRequest(qid=qid)
         return self._submit(request)
 
-    def stop(self, qid: str, feature: str | None, stream: str | None) -> list[TagStopResult]:
-        request = StopRequest(qid=qid, feature=feature, stream=stream, status="Stopped")
+    def stop(self, qid: str, feature: str | None) -> list[TagStopResult]:
+        request = StopRequest(qid=qid, feature=feature, status="Stopped")
         return self._submit(request)
 
     def cleanup(self) -> None:
@@ -103,7 +103,7 @@ class FabricTagger:
         log = logger.bind(job_id=jobid)
         if error:
             log.opt(exception=error).error("job ended with error", status=status)
-        request = StopRequest(qid=jobid.qid, feature=jobid.feature, stream=jobid.stream, status=status)
+        request = StopRequest(qid=jobid.qid, feature=jobid.feature, status=status)
         return self._submit_async(request)
 
     def _submit(self, req: Request) -> Any:
@@ -559,8 +559,6 @@ class FabricTagger:
             if jobid.qid != request.qid:
                 return False
             if request.feature and jobid.feature != request.feature:
-                return False
-            if request.stream and jobid.stream != request.stream:
                 return False
             return True
 

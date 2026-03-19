@@ -52,8 +52,8 @@ class DirectAPI(TagAPI):
             ),
         ) for r in res]
 
-    def stop(self, qid: str, feature: str | None, stream: str | None) -> list[TagStopResult]:
-        res = self.tagger.stop(qid, feature, stream)
+    def stop(self, qid: str, feature: str | None) -> list[TagStopResult]:
+        res = self.tagger.stop(qid, feature)
         return [TagStopResult(
             job_id=str(r.job_id),
             message=r.message,

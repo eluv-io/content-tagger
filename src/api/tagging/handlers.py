@@ -153,7 +153,7 @@ def handle_stop_model(
 
     tagger: TagAPI = current_app.config["state"]["service"]
 
-    stop_res = tagger.stop(q.qid, feature, None)
+    stop_res = tagger.stop(q.qid, feature)
 
     api_res = map_stop_results_to_response(stop_res)
 
@@ -166,7 +166,7 @@ def handle_stop_content(
 
     tagger: TagAPI = current_app.config["state"]["service"]
 
-    stop_res = tagger.stop(q.qid, None, None)
+    stop_res = tagger.stop(q.qid, None)
 
     api_res = map_stop_results_to_response(stop_res)
 
