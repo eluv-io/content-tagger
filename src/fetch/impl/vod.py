@@ -9,7 +9,7 @@ import threading
 
 from common_ml.video_processing import unfrag_video
 
-from src.common.content import Content
+from src.common.content import QAPI
 from src.fetch.model import *
 from src.fetch.rate_limit import FetchRateLimiter
 from src.common.errors import BadRequestError
@@ -20,7 +20,7 @@ logger = logger.bind(module="fetch vod")
 class VodWorker(FetchSession):
     def __init__(
         self,
-        q: Content,
+        qapi: QAPI,
         scope: VideoScope,
         rate_limiter: FetchRateLimiter,
         meta: VideoMetadata, 
@@ -28,7 +28,7 @@ class VodWorker(FetchSession):
         output_dir: str,
         exit: threading.Event | None = None
     ):
-        self.q = q
+        self.qapi = qapi
         self.scope = scope
         self.rl = rate_limiter
         self.meta = meta
@@ -40,7 +40,7 @@ class VodWorker(FetchSession):
         return deepcopy(self.meta)
 
     def download(self) -> DownloadResult:
-        with self.rl.permit((self.q.qid, str(self.scope.stream))):
+        with self.rl.permit((self.qapi.id(), str(self.scope.stream))):
             return self._download()
 
     @property
@@ -113,7 +113,7 @@ class VodWorker(FetchSession):
             tmpfile = os.path.join(tmp_path, f"{idx_str}_{part_hash}")
 
             try:
-                self.q.download_part(save_path=tmpfile, part_hash=part_hash)
+                self.qapi.download_part(save_path=tmpfile, part_hash=part_hash)
 
                 if self.meta.codec_type == "video":
                     unfrag_video(tmpfile, save_path)
@@ -134,7 +134,7 @@ class VodWorker(FetchSession):
                     os.remove(save_path)
                 failed_parts.append(part_hash)
                 logger.error(
-                    f"Failed to download part {part_hash} for {self.q.qid}: {str(e)}"
+                    f"Failed to download part {part_hash} for {self.qapi.id()}: {str(e)}"
                 )
                 continue
 
