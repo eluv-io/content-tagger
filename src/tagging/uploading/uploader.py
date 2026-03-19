@@ -17,14 +17,13 @@ class UploadSession:
         feature: str,
         track_resolver: TrackResolver,
         tagstore: Tagstore,
-        source_q: Content,
-        destination_qid: str,
+        dest_q: Content,
     ):
 
         self.feature = feature
         self.track_resolver = track_resolver
         self.tagstore = tagstore
-        self.source_q = source_q
+        self.dest_q = dest_q
 
         # Mutable state
         self.track_to_batch: dict[str, str] = {}
@@ -41,7 +40,7 @@ class UploadSession:
             "uploading new tags",
             num_new_tags=len(new_inputs),
             feature=self.feature,
-            source_qid=self.source_q.qid,
+            dest_qid=self.dest_q.qid,
         )
 
         tags2upload: list[Tag] = [
@@ -74,7 +73,7 @@ class UploadSession:
             logger.error("no batch found for report, skipping upload", feature=report.params.feature, destination_qid=self.dest_q.qid)
             return
 
-        self.tagstore.update_batch(qid=self.dest_q.qid, batch_id=batch, additional_info={"tagger": asdict(report)}, q=self.dest_q)
+        self.tagstore.update_batch(batch_id=batch, additional_info={"tagger": asdict(report)}, q=self.dest_q)
     
     def _get_batch(self, model_track: str) -> str | None:
         """Get or create a batch for the given model track."""
@@ -94,7 +93,6 @@ class UploadSession:
 
         try:
             self.tagstore.create_track(
-                qid=self.dest_q.qid,
                 name=track,
                 label=track_args.label,
                 q=self.dest_q,
@@ -104,14 +102,12 @@ class UploadSession:
             pass
 
         db_track = self.tagstore.get_track(
-            qid=self.dest_q.qid,
             name=track,
             q=self.dest_q,
         )
 
         assert db_track is not None and db_track.name == track
         ts_batch = self.tagstore.create_batch(
-            qid=self.dest_q.qid,
             track=track,
             author="tagger",
             q=self.dest_q,
