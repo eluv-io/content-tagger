@@ -354,8 +354,8 @@ def queue_jobstore(tmp_path) -> FsJobStore:
 
 
 @pytest.fixture
-def queue_client(queue_jobstore) -> QueueClient:
-    return QueueClient(jobstore=queue_jobstore)
+def queue_client(queue_jobstore, qfactory) -> QueueClient:
+    return QueueClient(jobstore=queue_jobstore, qfactory=qfactory)
 
 
 @pytest.fixture
@@ -364,7 +364,6 @@ def tag_runner(fabric_tagger, queue_jobstore, qfactory):
     runner = TagRunner(
         tagger=fabric_tagger,
         jobstore=queue_jobstore,
-        content_factory=qfactory,
         cfg=TagRunnerConfig(poll_interval=0.1),
     )
     runner.start()

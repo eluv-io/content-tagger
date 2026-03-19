@@ -178,7 +178,7 @@ def test_many_concurrent_jobs(fabric_tagger, make_tag_args):
     """Run many jobs and make sure that they all run"""
     contents = []
     for i in range(5):
-        contents.append(Mock(qid=f"iq__content{i}", qid=f"iq__content{i}", auth=f"token{i}"))
+        contents.append(Content(qid=f"iq__content{i}", token=f"token{i}"))
 
     all_args = []
     for _content in contents:
@@ -525,7 +525,6 @@ def test_uploaded_track_label(fabric_tagger: FabricTagger, q, make_tag_args):
     track_arg = fabric_tagger.track_resolver.resolve(args.feature)
     
     track = fabric_tagger.tagstore.get_track(
-        qid=q.qid,
         q=q,
         name=track_arg.name
     )
@@ -560,7 +559,7 @@ def test_default_defer_to_model_track(fabric_tagger, q, make_tag_args):
     default_tags = fabric_tagger.tagstore.find_tags(q=q, track="random_track")
     assert len(default_tags) == 2
 
-    track = fabric_tagger.tagstore.get_track(qid=q.qid, q=q, name="random_track")
+    track = fabric_tagger.tagstore.get_track(q=q, name="random_track")
     assert track.label == "Random Track"
 
 def test_fetcher_returns_no_sources(fabric_tagger, q, make_tag_args):
