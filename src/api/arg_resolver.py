@@ -28,6 +28,48 @@ class ArgsResolver:
             tag_arg = self._set_defaults(q, defaults, job)
             res.append(tag_arg)
         return res
+    
+    def find_default_audio_stream(self, qapi: QAPI) -> str:
+        streams = qapi.content_object_metadata(
+            metadata_subtree="offerings/default/media_struct/streams",
+            resolve_links=False,
+        )
+
+        assert isinstance(streams, dict)
+
+        # First pass: filter to only audio streams
+        audio_streams = {
+            name: info for name, info in streams.items()
+            if info.get("codec_type") == "audio"
+        }
+        
+        if not audio_streams:
+            raise MissingResourceError("No audio streams found")
+        
+        for stream_name, stream_info in audio_streams.items():
+            if stream_info.get("language") == "en" and stream_info.get("channels") == 2:
+                return stream_name
+        
+        for stream_name, stream_info in audio_streams.items():
+            if stream_info.get("language") == "en":
+                return stream_name
+        
+        for stream_name, stream_info in audio_streams.items():
+            if stream_info.get("channels") == 2:
+                return stream_name
+        
+        return list(audio_streams.keys())[0]
+
+    def is_live_content(self, qapi: QAPI) -> bool:
+        try:
+            edge_write_token = qapi.content_object_metadata(
+                metadata_subtree="live_recording/status/edge_write_token",
+                resolve_links=False,
+            )
+        except HTTPError:
+            return False
+
+        return isinstance(edge_write_token, str) and edge_write_token.startswith("tqw__")
 
     def _set_defaults(
         self,
@@ -54,7 +96,9 @@ class ArgsResolver:
         if max_fetch_retries is None:
             max_fetch_retries = 3
 
-        default_scope = self._get_default_scope_dict(job.model, q)
+        model_type = self.registry.get_model_config(feature).type
+
+        default_scope = self._get_default_scope_dict(model_type, q)
 
         # override with options provided in request
         scope_dict = nested_update(default_scope, defaults.scope)
@@ -129,50 +173,8 @@ class ArgsResolver:
             res["type"] = "video"
 
         if model_type == "audio" and not is_live:
-            res["stream"] = self._find_default_audio_stream(qapi)
+            res["stream"] = self.find_default_audio_stream(qapi)
         else:
             res["stream"] = "video"
 
         return res
-
-    def _find_default_audio_stream(self, qapi: QAPI) -> str:
-        streams = qapi.content_object_metadata(
-            metadata_subtree="offerings/default/media_struct/streams",
-            resolve_links=False,
-        )
-
-        assert isinstance(streams, dict)
-
-        # First pass: filter to only audio streams
-        audio_streams = {
-            name: info for name, info in streams.items()
-            if info.get("codec_type") == "audio"
-        }
-        
-        if not audio_streams:
-            raise MissingResourceError("No audio streams found")
-        
-        for stream_name, stream_info in audio_streams.items():
-            if stream_info.get("language") == "en" and stream_info.get("channels") == 2:
-                return stream_name
-        
-        for stream_name, stream_info in audio_streams.items():
-            if stream_info.get("language") == "en":
-                return stream_name
-        
-        for stream_name, stream_info in audio_streams.items():
-            if stream_info.get("channels") == 2:
-                return stream_name
-        
-        return list(audio_streams.keys())[0]
-
-    def is_live_content(self, qapi: QAPI) -> bool:
-        try:
-            edge_write_token = qapi.content_object_metadata(
-                metadata_subtree="live_recording/status/edge_write_token",
-                resolve_links=False,
-            )
-        except HTTPError:
-            return False
-
-        return isinstance(edge_write_token, str) and edge_write_token.startswith("tqw__")
