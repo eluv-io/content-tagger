@@ -352,10 +352,23 @@ def sample_tag_args(make_tag_args):
 def queue_jobstore(tmp_path) -> FsJobStore:
     return FsJobStore(store_dir=str(tmp_path / "jobstore"))
 
+@pytest.fixture
+def fake_qapifactory():
+    # for the queue client, all we need is to get the display title and add this to the job info
+    return Mock(
+        create=Mock(
+            return_value=Mock(
+                content_object_metadata=Mock(
+                    return_value="test-title"
+                )
+            )
+        )
+    )
+
 
 @pytest.fixture
-def queue_client(queue_jobstore, qfactory) -> QueueClient:
-    return QueueClient(jobstore=queue_jobstore, qfactory=qfactory)
+def queue_client(queue_jobstore, fake_qapifactory) -> QueueClient:
+    return QueueClient(jobstore=queue_jobstore, qfactory=fake_qapifactory)
 
 
 @pytest.fixture

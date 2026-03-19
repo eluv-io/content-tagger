@@ -16,10 +16,9 @@ from tests.core_tagging.conftest import FakeContainerRegistry, FakeTagContainer,
 def _status_for(
     reports: list[TagJobStatusReport],
     model: str,
-    stream: str | None = None,
 ) -> TagJobStatusReport:
-    matches = [r for r in reports if r.model == model and (stream is None or r.stream == stream)]
-    assert matches, f"Missing status for model={model}, stream={stream}"
+    matches = [r for r in reports if r.model == model]
+    assert matches, f"Missing status for model={model}"
     return matches[0]
 
 def test_tag_success(fabric_tagger, q, sample_tag_args):
@@ -104,8 +103,8 @@ def test_status_completed_jobs(fabric_tagger, q, sample_tag_args):
     
     # Check that job is done according to status
     status = fabric_tagger.status(q.qid)
-    assert _status_for(status, "caption", "video").status == "Completed"
-    assert _status_for(status, "asr", "audio").status == "Completed"
+    assert _status_for(status, "caption").status == "Completed"
+    assert _status_for(status, "asr").status == "Completed"
 
 
 def test_stop_running_job(fabric_tagger, q, sample_tag_args):
@@ -119,8 +118,8 @@ def test_stop_running_job(fabric_tagger, q, sample_tag_args):
     
     # Check that stop event was set
     status = fabric_tagger.status(q.qid)
-    assert _status_for(status, "caption", "video").status == "Stopped"
-    assert _status_for(status, "asr", "audio").status != "Stopped"
+    assert _status_for(status, "caption").status == "Stopped"
+    assert _status_for(status, "asr").status != "Stopped"
 
 
 def test_stop_nonexistent_job(fabric_tagger):
@@ -140,8 +139,8 @@ def test_stop_finished_job(fabric_tagger, q, sample_tag_args):
         fabric_tagger.stop(q.qid, "caption")
     # check that both are Completed
     status = fabric_tagger.status(q.qid)
-    assert _status_for(status, "caption", "video").status == "Completed"
-    assert _status_for(status, "asr", "audio").status == "Completed"
+    assert _status_for(status, "caption").status == "Completed"
+    assert _status_for(status, "asr").status == "Completed"
 
 
 def test_cleanup(fabric_tagger, q, sample_tag_args):
@@ -205,16 +204,16 @@ def test_many_concurrent_jobs(fabric_tagger, make_tag_args):
     for content in contents:
         statuses.append(fabric_tagger.status(content.qid))
     for status in statuses:
-        caption = _status_for(status, "caption", "video")
-        asr = _status_for(status, "asr", "audio")
+        caption = _status_for(status, "caption")
+        asr = _status_for(status, "asr")
         assert caption.status in ["Starting", "Fetching content"]
         assert asr.status in ["Starting", "Fetching content"]
 
     time.sleep(2)
     for content in contents:
         status = fabric_tagger.status(content.qid)
-        caption = _status_for(status, "caption", "video")
-        asr = _status_for(status, "asr", "audio")
+        caption = _status_for(status, "caption")
+        asr = _status_for(status, "asr")
         assert caption.status == "Completed"
         assert asr.status == "Completed"
         assert len(caption.failed) == 0
@@ -308,7 +307,7 @@ def test_container_tags_method_fails(fabric_tagger, q, make_tag_args):
     start_time = time.time()
     while time.time() - start_time < timeout:
         status = fabric_tagger.status(q.qid)
-        job_status = _status_for(status, "caption", "video").status
+        job_status = _status_for(status, "caption").status
         if job_status == "Failed":
             break
         elif job_status in ["Completed", "Stopped"]:
@@ -318,7 +317,7 @@ def test_container_tags_method_fails(fabric_tagger, q, make_tag_args):
         pytest.fail("Job did not fail within timeout period")
 
     final_status = fabric_tagger.status(q.qid)
-    assert _status_for(final_status, "caption", "video").status == "Failed"
+    assert _status_for(final_status, "caption").status == "Failed"
     assert len(fabric_tagger.jobstore.active_jobs) == 0
     assert len(fabric_tagger.jobstore.inactive_jobs) == 1
 
@@ -335,7 +334,7 @@ def test_start_new_container_fails(fabric_tagger, q, make_tag_args):
     start_time = time.time()
     while time.time() - start_time < timeout:
         status = fabric_tagger.status(q.qid)
-        job_status = _status_for(status, "caption", "video").status
+        job_status = _status_for(status, "caption").status
         if job_status == "Failed":
             break
         elif job_status in ["Completed", "Stopped"]:
@@ -345,7 +344,7 @@ def test_start_new_container_fails(fabric_tagger, q, make_tag_args):
         pytest.fail("Job did not fail within timeout period")
 
     final_status = fabric_tagger.status(q.qid)
-    report = _status_for(final_status, "caption", "video")
+    report = _status_for(final_status, "caption")
     assert report.status == "Failed"
     assert report.message is not None
 
@@ -368,7 +367,7 @@ def test_failed_tag(fabric_tagger, q, make_tag_args):
 
     # check that only one was updated
     status = fabric_tagger.status(q.qid)
-    report = _status_for(status, "caption", "video")
+    report = _status_for(status, "caption")
     assert report.status == "Completed"
     assert len(report.failed) == 0
     assert report.tagging_progress == "1/2"
@@ -411,7 +410,7 @@ def test_container_nonzero_exit_code(fabric_tagger, q, make_tag_args):
     start_time = time.time()
     while time.time() - start_time < timeout:
         status = fabric_tagger.status(q.qid)
-        job_status = _status_for(status, "caption", "video").status
+        job_status = _status_for(status, "caption").status
         if job_status == "Failed":
             break
         elif job_status in ["Completed", "Stopped"]:
@@ -421,7 +420,7 @@ def test_container_nonzero_exit_code(fabric_tagger, q, make_tag_args):
         pytest.fail("Job did not fail within timeout period")
 
     final_status = fabric_tagger.status(q.qid)
-    assert _status_for(final_status, "caption", "video").status == "Failed"
+    assert _status_for(final_status, "caption").status == "Failed"
 
 
 def test_destination_qid_uploads_to_correct_qhit(sample_tag_args, fabric_tagger: FabricTagger, q, q_legacy):
@@ -481,7 +480,7 @@ def test_source_with_zero_tags_marked_as_missing(fabric_tagger, q, make_tag_args
     wait_tag(fabric_tagger, q.qid, timeout=5)
     
     status = fabric_tagger.status(q.qid)
-    report = _status_for(status, "caption", "video")
+    report = _status_for(status, "caption")
     assert report.status == "Completed"
     assert len(report.failed) == 0
     assert report.tagging_progress == "1/2"
@@ -576,7 +575,7 @@ def test_fetcher_returns_no_sources(fabric_tagger, q, make_tag_args):
         wait_tag(fabric_tagger, q.qid, timeout=2)
 
     final_status = fabric_tagger.status(q.qid)
-    report = _status_for(final_status, "caption", "video")
+    report = _status_for(final_status, "caption")
     assert report.status == "Completed"
     assert report.tagging_progress == "0/0"
     assert len(report.missing_tags) == 0

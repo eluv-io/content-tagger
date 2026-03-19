@@ -35,9 +35,7 @@ def qid():
 
 @pytest.fixture
 def q(qid):
-    auth_token = os.getenv("TEST_AUTH")
-    if not auth_token:
-        pytest.skip("TEST_AUTH not set in environment")
+    auth_token = os.getenv("TEST_AUTH") or ""
 
     return Content(qid=qid, token=auth_token)
 
