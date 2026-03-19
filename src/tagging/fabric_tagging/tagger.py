@@ -17,6 +17,7 @@ from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.common.content import Content
 from src.common.errors import *
 from src.fetch.factory import FetchFactory
+from src.tagging.uploading.align import align_tags
 from src.tags.tagstore.abstract import Tagstore
 from src.tagging.fabric_tagging.message_types import *
 from src.tagging.fabric_tagging.job_state import *
@@ -233,13 +234,13 @@ class FabricTagger:
             worker=worker
         )
 
+        dest_q = Content(args.destination_qid or q.qid, q.token)
+
         upload_session = UploadSession(
             tagstore=self.tagstore,
             feature=feature,
-            source_q=q,
+            dest_q=dest_q,
             track_resolver=self.track_resolver,
-            destination_qid=args.destination_qid or q.qid,
-            media_state=media_state,
         )
 
         job = TagJob(
@@ -446,7 +447,7 @@ class FabricTagger:
         self._run_upload(job)
 
         for source in job.state.media.downloaded:
-            if source.name not in job.state.upload_session.uploaded_sources:
+            if source.name not in job.state.upload_session.get_uploaded_sources():
                 job.state.missing_tags.add(source.name)
 
         self._set_stop_state(jobid, "Completed", "")
@@ -469,7 +470,7 @@ class FabricTagger:
                 tagged_sources = downloaded_sources
             else:
                 # otherwise, we only consider the sources that generated tags as tagged, best guess
-                tagged_sources = list(job.state.upload_session.uploaded_sources)
+                tagged_sources = list(job.state.upload_session.get_uploaded_sources())
             upload_status = UploadStatus(all_sources=all_sources, downloaded_sources=downloaded_sources, tagged_sources=tagged_sources)
 
         # Container info
@@ -534,7 +535,7 @@ class FabricTagger:
             end = status.time_ended
 
         total_sources = len(state.media.downloaded) if state.media else 0
-        total_tagged = len(state.upload_session.uploaded_sources)
+        total_tagged = len(state.upload_session.get_uploaded_sources())
 
         return TagJobStatusReport(
             job_id=jobid,
@@ -712,7 +713,14 @@ class FabricTagger:
         with timeit("getting tags from container", min_duration=0.5):
             tags = job.state.container.tags()
 
-        job.state.upload_session.upload_tags(tags, job.args.retry_upload)
+        stream_meta = job.state.media.worker.metadata()
+        fps = None
+        if isinstance(stream_meta, VideoMetadata):
+            fps = stream_meta.fps
+
+        aligned_tags = align_tags(tags, job.state.media.downloaded, fps=fps)
+
+        job.state.upload_session.upload_tags(aligned_tags, job.args.retry_upload)
 
     def _output_dir_from_q(self, q: Content) -> str:
         out = os.path.join(self.cfg.media_dir, q.qid)

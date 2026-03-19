@@ -74,6 +74,10 @@ class UploadSession:
             return
 
         self.tagstore.update_batch(batch_id=batch, additional_info={"tagger": asdict(report)}, q=self.dest_q)
+
+    def get_uploaded_sources(self) -> set[str]:
+        """Get the set of source media that have been tagged in this session."""
+        return set(t.source_media for t in self.uploaded_tags)
     
     def _get_batch(self, model_track: str) -> str | None:
         """Get or create a batch for the given model track."""
