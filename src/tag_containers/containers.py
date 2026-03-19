@@ -110,6 +110,9 @@ class TagContainer:
         """Buffer media files to be sent to the container on the next flush_media call."""
         if len(new_media) == 0:
             return
+        for fpath in new_media:
+            assert os.path.dirname(fpath) == self.media_dir
+
         with self._media_lock:
             for f in new_media:
                 self.basename_to_source[os.path.basename(f)] = f
@@ -219,27 +222,41 @@ class TagContainer:
                 except json.JSONDecodeError:
                     continue
 
-                msg_type = msg.get("type")
-                data = msg.get("data", {})
+                msg_type = msg["type"]
+                data = msg["data"]
+
+                # get the source name if it exists
+                local_media_path = None
+                source_media = data.get("source_media")
+                if not source_media and msg_type != "error":
+                    raise ValueError(f"Missing source_media in container output message: {msg}")
+                elif msg_type == "error":
+                    # allow source_media to be None
+                    pass
+                else:
+                    source_basename = os.path.basename(source_media)
+                    local_media_path = self.basename_to_source[source_basename]
 
                 if msg_type == "tag":
-                    source_basename = data.get("source_media")
-                    if not source_basename:
-                        raise ValueError("Missing source_media in container output tag")
-                    full_source = self.basename_to_source[source_basename]
+                    # placate type checker
+                    assert local_media_path is not None                   
                     tags.append(ModelTag(
                         start_time=data.get("start_time", 0),
                         end_time=data.get("end_time", 0),
                         text=data.get("tag", ""),
-                        source_media=full_source,
+                        source_media=local_media_path,
                         model_track=data.get("track", ""),
                         frame_info=data.get("frame_info"),
                         additional_info=data.get("additional_info"),
                     ))
                 elif msg_type == "progress":
-                    progress.append(Progress(source_media=data.get("source_media", "")))
+                    # placate type checker
+                    assert local_media_path is not None  
+                    progress.append(Progress(source_media=local_media_path))
                 elif msg_type == "error":
-                    errors.append(Error(message=data.get("message", ""), source_media=data.get("source_media")))
+                    errors.append(Error(message=data.get("message", ""), source_media=local_media_path))
+                else:
+                    raise ValueError(f"Got unexpected message type: {msg}")
 
         return ContainerOutput(tags=tags, progress=progress, errors=errors)
     
