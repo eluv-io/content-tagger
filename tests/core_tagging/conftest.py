@@ -44,7 +44,7 @@ def tagger_config(media_dir) -> FabricTaggerConfig:
 class FakeTagContainer:
     """Fake TagContainer that simulates work and asynchronous behavior."""
     
-    def __init__(self, media: MediaInput, feature, work_duration: float = 0.25):
+    def __init__(self, media_dir: str, feature, work_duration: float = 0.25):
         """
         Initialize the FakeTagContainer.
     
@@ -53,10 +53,7 @@ class FakeTagContainer:
             feature (str): The feature being tagged.
             work_duration (float): Time in seconds to simulate work.
         """
-        if isinstance(media, str):
-            self.fileargs = [os.path.join(media, f) for f in os.listdir(media)]
-        else:
-            self.fileargs = media
+        self.media_dir = media_dir
         self.feature = feature
         self.work_duration = work_duration
         self.is_started = False
@@ -64,6 +61,7 @@ class FakeTagContainer:
         self.container = Mock()
         self.container.attrs = {"State": {"ExitCode": 0}}
         self.tag_call_count = 0
+        self.media_files = []
         self.worker_thread = None
 
     def start(self, gpu_idx: int | None = None) -> None:
@@ -116,6 +114,9 @@ class FakeTagContainer:
 
     def info(self) -> ContainerInfo:
         return ContainerInfo(image_name=f"fake/{self.feature}", annotations={"io.test.fake": "1"})
+    
+    def add_media(self, new_media: list[str]) -> None:
+        self.media_files += new_media
 
     def tags(self) -> list[ModelTag]:
         """
@@ -128,9 +129,9 @@ class FakeTagContainer:
 
         tags = []
         if not self.is_stopped:
-            finished_files = self.fileargs[:-1]
+            finished_files = self.media_files[:-1]
         else:
-            finished_files = self.fileargs
+            finished_files = self.media_files
 
         for i, filepath in enumerate(finished_files):
             # Create fake tags based on the feature
@@ -182,9 +183,9 @@ class FakeContainerRegistry:
         self.containers = {}
         
     def get(self, req: ContainerRequest) -> FakeTagContainer:
-        container_key = f"{req.model_id}_{req.media_input}"
+        container_key = f"{req.model_id}_{req.media_dir}"
         if container_key not in self.containers:
-            self.containers[container_key] = FakeTagContainer(req.media_input, req.model_id)
+            self.containers[container_key] = FakeTagContainer(req.media_dir, req.model_id)
         return self.containers[container_key]
     
     def get_model_config(self, feature: str) -> ModelConfig:
@@ -214,9 +215,13 @@ class FakeWorker(FetchSession):
             fps=30.0,
             codec_type="video"
         )
+        self._output_meta = MediaMetadata(
+            sources=self._metadata.parts,
+            fps=self._metadata.fps
+        )
 
-    def metadata(self) -> VideoMetadata:
-        return self._metadata
+    def metadata(self) -> MediaMetadata:
+        return self._output_meta
 
     def download(self) -> DownloadResult:
         """Create fake media files for testing"""
@@ -257,7 +262,7 @@ class FakeWorker(FetchSession):
     
 class NoopWorker(FetchSession):
     def metadata(self) -> MediaMetadata:
-        return MediaMetadata()
+        return MediaMetadata(sources=[], fps=None)
     
     def download(self) -> DownloadResult:
         return DownloadResult(sources=[], failed=[], done=True)

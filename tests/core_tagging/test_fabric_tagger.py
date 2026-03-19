@@ -294,7 +294,7 @@ def test_container_tags_method_fails(fabric_tagger, q, make_tag_args):
             raise RuntimeError("Simulated container tags() failure")
 
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
-        return BrokenTagsContainer(req.media_input, req.model_id)
+        return BrokenTagsContainer(req.media_dir, req.model_id)
 
     fabric_tagger.cregistry.get = get_side_effect
 
@@ -353,7 +353,7 @@ def test_failed_tag(fabric_tagger, q, make_tag_args):
     # Configure the mock to return PartialFailContainer
     
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
-        return PartialFailContainer(req.media_input, req.model_id)
+        return PartialFailContainer(req.media_dir, req.model_id)
     
     fabric_tagger.cregistry.get = get_side_effect
     
@@ -397,7 +397,7 @@ def test_container_nonzero_exit_code(fabric_tagger, q, make_tag_args):
             return None
 
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
-        return NonZeroExitContainer(req.media_input, req.model_id)
+        return NonZeroExitContainer(req.media_dir, req.model_id)
 
     fabric_tagger.cregistry.get = get_side_effect
 
@@ -470,7 +470,7 @@ def test_source_with_zero_tags_marked_as_missing(fabric_tagger, q, make_tag_args
     """Test that a source producing zero tags is marked as failed in job status"""
     
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
-        return PartialFailContainer(req.media_input, req.model_id)
+        return PartialFailContainer(req.media_dir, req.model_id)
     
     fabric_tagger.cregistry.get = get_side_effect
     
@@ -493,14 +493,14 @@ def test_track_override_uploads_to_multiple_tracks(fabric_tagger, q, make_tag_ar
     class MultiTrackContainer(FakeTagContainer):
         def tags(self) -> list[ModelTag]:
             tags = []
-            finished_files = self.fileargs if self.is_stopped else self.fileargs[:-1]
+            finished_files = self.media_files if self.is_stopped else self.media_files[:-1]
             for i, filepath in enumerate(finished_files):
                 tags.append(ModelTag(0, 5000, f"default_track_tag_{i}", filepath, "", None))
                 tags.append(ModelTag(5000, 10000, f"pretty_track_tag_{i}", filepath, "pretty", None))
             return tags
 
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
-        return MultiTrackContainer(req.media_input, req.model_id)
+        return MultiTrackContainer(req.media_dir, req.model_id)
 
     fabric_tagger.cregistry.get = get_side_effect
 
@@ -536,7 +536,7 @@ def test_default_defer_to_model_track(fabric_tagger, q, make_tag_args):
     class MultiTrackContainer(FakeTagContainer):
         def tags(self) -> list[ModelTag]:
             tags = []
-            finished_files = self.fileargs if self.is_stopped else self.fileargs[:-1]
+            finished_files = self.media_files if self.is_stopped else self.media_files[:-1]
             for i, filepath in enumerate(finished_files):
                 tags.append(ModelTag(
                     start_time=0,
@@ -548,7 +548,7 @@ def test_default_defer_to_model_track(fabric_tagger, q, make_tag_args):
             return tags
 
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
-        return MultiTrackContainer(req.media_input, req.model_id)
+        return MultiTrackContainer(req.media_dir, req.model_id)
 
     with patch.object(fabric_tagger.cregistry, "get", side_effect=get_side_effect):
         args = make_tag_args(feature="asr", stream="audio")
