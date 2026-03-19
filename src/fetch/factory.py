@@ -40,16 +40,15 @@ class FetchFactory:
 
         qapi = self.qfactory.create(q)
 
-        with timeit(f"Getting media metadata: qid={q.qid}, scope={req.scope}"):
-            meta = self._get_metadata(qapi, req.scope)
         with timeit(f"Getting already tagged sources so we can ignore them: qid={q.qid}, scope={req.scope}, track={req.preserve_track}"):
-            # TODO: the real tagstore doesn't have a great way to query for unique values yet. 
+            # TODO: needs to move outside FetchFactory
             ignore_sources = self._get_ignored_sources(q, req.preserve_track)
         log.info(
             f"Found {len(ignore_sources)} already tagged sources"
         )
+
         if isinstance(req.scope, VideoScope):
-            assert isinstance(meta, VideoMetadata)
+            meta = self._fetch_stream_metadata(qapi, req.scope.stream)
             return VodWorker(
                 qapi=qapi,
                 scope=req.scope,
@@ -60,7 +59,7 @@ class FetchFactory:
                 exit=exit
             )
         elif isinstance(req.scope, AssetScope):
-            assert isinstance(meta, AssetMetadata)
+            meta = self._fetch_asset_metadata(qapi, req.scope)
             return AssetWorker(
                 qapi=qapi,
                 scope=req.scope,
@@ -71,7 +70,8 @@ class FetchFactory:
                 exit=exit
             )
         elif isinstance(req.scope, LiveScope):
-            assert isinstance(meta, LiveMetadata)
+            # TODO: fix fps
+            meta = MediaMetadata(sources=[], fps=50)
             return LiveWorker(
                 qapi=qapi,
                 scope=req.scope,
@@ -82,7 +82,7 @@ class FetchFactory:
                 exit=exit
             )
         elif isinstance(req.scope, TimeRangeScope):
-            assert isinstance(meta, VideoMetadata)
+            meta = self._fetch_stream_metadata(qapi, req.scope.stream)
             return SkipWorker(
                 q=q, 
                 scope=req.scope,
@@ -105,16 +105,22 @@ class FetchFactory:
         )
         return list(set(tag.source for tag in existing_tags))
     
-    def _get_metadata(self, qapi: QAPI, scope: Scope) -> MediaMetadata:
-        if isinstance(scope, VideoScope) or isinstance(scope, TimeRangeScope):
-            return self._fetch_stream_metadata(qapi, scope.stream)
-        elif isinstance(scope, AssetScope):
-            # no important metadata for assets yet
-            return AssetMetadata()
-        elif isinstance(scope, LiveScope):
-            return LiveMetadata(fps=50.0)   ## TODO: fetch real fps
+    def _fetch_asset_metadata(self, qapi: QAPI, scope: AssetScope) -> MediaMetadata:
+        # Get list of assets to download
+        if scope.assets is None:
+            assets_meta = qapi.content_object_metadata(metadata_subtree='assets')
+            assert isinstance(assets_meta, dict)
+            assets_meta = list(assets_meta.values())
+            assets = []
+            for ameta in assets_meta:
+                filepath = ameta.get("file")["/"]
+                assert filepath.startswith("./files/")
+                # strip leading term
+                filepath = filepath[8:]
+                assets.append(filepath)
         else:
-            raise BadRequestError(f"Unknown scope type: {type(scope)}")
+            assets = scope.assets
+        return MediaMetadata(sources=assets, fps=None)
 
     @cache_by_qhash
     def _fetch_stream_metadata(self, qapi: QAPI, stream_name: str) -> VideoMetadata:

@@ -1,16 +1,10 @@
 
 from copy import deepcopy
 import os
-import shutil
-import tempfile
 import threading
-from requests.exceptions import HTTPError
 
-from common_ml.video_processing import unfrag_video
-
-from src.common.content import QAPI, Content, ContentConfig
-from src.common.errors import BadRequestError, MissingResourceError
-from src.fetch.model import DownloadResult, FetchSession, LiveMetadata, LiveScope, Source, VideoMetadata
+from src.common.content import QAPI
+from src.fetch.model import DownloadResult, FetchSession, LiveScope, Source, MediaMetadata
 from src.fetch.rate_limit import FetchRateLimiter
 from src.fetch.video_process import center_segment
 from src.common.logging import logger
@@ -26,7 +20,7 @@ class LiveWorker(FetchSession):
         qapi: QAPI,
         scope: LiveScope,
         rate_limiter: FetchRateLimiter,
-        meta: LiveMetadata,
+        meta: MediaMetadata,
         ignore_sources: list[str],
         output_dir: str,
         exit: threading.Event | None = None
@@ -40,7 +34,7 @@ class LiveWorker(FetchSession):
         self.next_idx = 0
         self.ignore_sources = set(ignore_sources)
     
-    def metadata(self) -> LiveMetadata:
+    def metadata(self) -> MediaMetadata:
         return deepcopy(self.meta)
     
     @property

@@ -24,7 +24,8 @@ class SkipWorker(FetchSession):
     ):
         self.q = q
         self.scope = scope
-        self.meta = meta
+        self.meta = MediaMetadata(sources=meta.parts, fps=meta.fps)
+        self.part_duration = meta.part_duration
         self.output_dir = output_dir
         self.ignore_sources = set(ignore_sources)
         self.exit = exit
@@ -33,7 +34,7 @@ class SkipWorker(FetchSession):
         return deepcopy(self.meta)
     
     def download(self) -> DownloadResult:
-        content_duration = self.meta.part_duration * len(self.meta.parts)
+        content_duration = self.part_duration * len(self.meta.sources)
 
         logger.debug(f"Live stream duration based on metadata: {content_duration} seconds")
         logger.debug(f"Requested time range: {self.scope.start_time} - {self.scope.end_time} seconds")

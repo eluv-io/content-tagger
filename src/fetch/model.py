@@ -45,24 +45,17 @@ class LiveScope(Scope):
     max_duration: int | None
     type: str = "livestream"
 
-class MediaMetadata: ...
-
-class EmptyMetadata(MediaMetadata): ...
-
 @dataclass
-class VideoMetadata(MediaMetadata):
+class VideoMetadata:
     parts: list[str]
-    # in seconds
-    part_duration: float
     fps: float | None
     codec_type: str
+    part_duration: float
 
 @dataclass
-class AssetMetadata(MediaMetadata): ...
-
-@dataclass
-class LiveMetadata(MediaMetadata):
-    fps: float
+class MediaMetadata:
+    sources: list[str]
+    fps: float | None
 
 @dataclass
 class DownloadRequest:

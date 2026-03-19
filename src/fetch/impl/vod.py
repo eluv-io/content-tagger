@@ -23,7 +23,7 @@ class VodWorker(FetchSession):
         qapi: QAPI,
         scope: VideoScope,
         rate_limiter: FetchRateLimiter,
-        meta: VideoMetadata, 
+        meta: VideoMetadata,
         ignore_sources: list[str],
         output_dir: str,
         exit: threading.Event | None = None
@@ -31,12 +31,14 @@ class VodWorker(FetchSession):
         self.qapi = qapi
         self.scope = scope
         self.rl = rate_limiter
-        self.meta = meta
+        self.meta = MediaMetadata(sources=meta.parts, fps=meta.fps)
+        self.codec_type = meta.codec_type
+        self.part_duration = meta.part_duration
         self.output_dir = output_dir
         self.ignore_sources = set(ignore_sources)
         self.exit = exit
 
-    def metadata(self) -> VideoMetadata:
+    def metadata(self) -> MediaMetadata:
         return deepcopy(self.meta)
 
     def download(self) -> DownloadResult:
@@ -57,9 +59,9 @@ class VodWorker(FetchSession):
             DownloadResult containing successful_sources and failed_part_hashes
         """
 
-        if self.meta.codec_type not in ["video", "audio"]:
+        if self.codec_type not in ["video", "audio"]:
             raise BadRequestError(
-                f"Invalid codec type for live: {self.meta.codec_type}. Must be 'video' or 'audio'."
+                f"Invalid codec type for live: {self.codec_type}. Must be 'video' or 'audio'."
             )
 
         if not os.path.exists(self.output_dir):
@@ -73,7 +75,7 @@ class VodWorker(FetchSession):
         scope = self.scope
         start_time, end_time = scope.start_time, scope.end_time
 
-        to_download = self.meta.parts
+        to_download = self.meta.sources
 
         logger.info(f"Downloading stream {self.scope.stream} with {len(to_download)} total parts.")
 
@@ -87,8 +89,8 @@ class VodWorker(FetchSession):
             if part_hash in self.ignore_sources:
                 continue
 
-            pstart = idx * self.meta.part_duration
-            pend = (idx + 1) * self.meta.part_duration
+            pstart = idx * self.part_duration
+            pend = (idx + 1) * self.part_duration
             idx_str = str(idx).zfill(4)
 
             # Check if part is within time range
@@ -97,7 +99,7 @@ class VodWorker(FetchSession):
             ) and not (start_time <= pend < end_time):
                 continue
 
-            filename = f"{idx_str}_{part_hash}{'.mp4' if self.meta.codec_type == 'video' else '.m4a'}"
+            filename = f"{idx_str}_{part_hash}{'.mp4' if self.codec_type == 'video' else '.m4a'}"
             save_path = os.path.join(self.output_dir, filename)
 
             if os.path.exists(save_path):
@@ -115,7 +117,7 @@ class VodWorker(FetchSession):
             try:
                 self.qapi.download_part(save_path=tmpfile, part_hash=part_hash)
 
-                if self.meta.codec_type == "video":
+                if self.codec_type == "video":
                     unfrag_video(tmpfile, save_path)
                 else:
                     shutil.move(tmpfile, save_path)
@@ -139,9 +141,9 @@ class VodWorker(FetchSession):
                 continue
 
             # check that length of the file is equal to the part length
-            # if not last_part and self.meta.codec_type == "video":
+            # if not last_part and self.codec_type == "video":
             #     actual_duration = get_video_length(save_path)
-            #     assert abs(actual_duration - self.meta.part_duration) < 1e-3
+            #     assert abs(actual_duration - self.part_duration) < 1e-3
 
             # TODO: check for audio as well. 
 

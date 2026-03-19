@@ -6,8 +6,8 @@ from copy import deepcopy
 from loguru import logger
 
 from common_ml.utils.files import get_file_type, encode_path
-from src.common.content import QAPI, Content
-from src.fetch.model import AssetMetadata, AssetScope, DownloadResult, FetchSession, Source
+from src.common.content import QAPI
+from src.fetch.model import MediaMetadata, AssetScope, DownloadResult, FetchSession, Source
 from src.fetch.rate_limit import FetchRateLimiter
 
 logger = logger.bind(module="fetch assets")
@@ -18,7 +18,7 @@ class AssetWorker(FetchSession):
         qapi: QAPI,
         scope: AssetScope,
         rate_limiter: FetchRateLimiter,
-        meta: AssetMetadata,
+        meta: MediaMetadata,
         ignore_assets: list[str],
         output_dir: str,
         exit: threading.Event | None = None
@@ -31,7 +31,7 @@ class AssetWorker(FetchSession):
         self.ignore_assets = set(ignore_assets)
         self.exit = exit
 
-    def metadata(self) -> AssetMetadata:
+    def metadata(self) -> MediaMetadata:
         return deepcopy(self.meta)
     
     def download(self) -> DownloadResult:
@@ -53,25 +53,8 @@ class AssetWorker(FetchSession):
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
 
-        scope = self.scope
-
-        # Get list of assets to download
-        if scope.assets is None:
-            assets_meta = self.qapi.content_object_metadata(metadata_subtree='assets')
-            assert isinstance(assets_meta, dict)
-            assets_meta = list(assets_meta.values())
-            assets = []
-            for ameta in assets_meta:
-                filepath = ameta.get("file")["/"]
-                assert filepath.startswith("./files/")
-                # strip leading term
-                filepath = filepath[8:]
-                assets.append(filepath)
-        else:
-            assets = scope.assets
-
-        total_assets = len(assets)
-        assets = [asset for asset in assets if get_file_type(asset) == "image"]
+        total_assets = len(self.meta.sources)
+        assets = [asset for asset in self.meta.sources if get_file_type(asset) == "image"]
         logger.info(f"Found {len(assets)} image assets out of {total_assets} assets for {self.qapi.id()}")
         
         if len(assets) == 0:
