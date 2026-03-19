@@ -34,7 +34,7 @@ def align_tags(tags: list[ModelTag], sources: list[Source], fps: float | None) -
                 frame_info = None
 
         # this step I feel a little weird about having in align_tags
-        src_name = source_by_filepath[tag.source_media].name
+        src_name = src.name
 
         aligned.append(
             ModelTag(

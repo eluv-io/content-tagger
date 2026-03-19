@@ -65,7 +65,7 @@ def test_live_worker_incremental_segments(
             assert source.offset >= 0, f"Offset should be non-negative, got {source.offset}"
 
             assert source.wall_clock is not None
-            assert source.wall_clock >= last_wall_clock
+            assert source.wall_clock > last_wall_clock
             last_wall_clock = source.wall_clock
             
             print(f"Call {call_count}: Got segment {seg_idx} at offset {source.offset}s")

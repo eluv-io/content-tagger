@@ -101,7 +101,7 @@ class TestQueueStop:
         args = make_tag_args(feature="caption", stream="video")
         queue_client.tag(q, args)
 
-        results = queue_client.stop(q.qid, "caption", None)
+        results = queue_client.stop(q.qid, "caption")
         assert len(results) == 1
         assert results[0].message == "Stop requested"
 
@@ -110,4 +110,4 @@ class TestQueueStop:
         queue_client.tag(q, args)
 
         with pytest.raises(MissingResourceError):
-            queue_client.stop(q.qid, "nonexistent", None)
+            queue_client.stop(q.qid, "nonexistent")

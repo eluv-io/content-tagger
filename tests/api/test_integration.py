@@ -275,7 +275,7 @@ def test_real_live_stream(app, q_live):
     jobid = tagstore.find_batches(q=q_live, qid=q_live.qid)[0]
     tags = tagstore.find_tags(batch_id=jobid, q=q_live)
     tags = sorted(tags, key=lambda x: x.start_time)
-    vtags = [ t for t in tags if t.frame_info is None ]
+    vtags = [ t for t in tags if t.frame_info is None and t.end_time > t.start_time]
     
     # Should have at least some tags from the segments
     assert len(vtags) >= 2
