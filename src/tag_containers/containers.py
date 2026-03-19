@@ -5,6 +5,7 @@ import os
 from copy import copy
 import socket
 from urllib.parse import unquote
+import threading
 import time
 
 from src.common.errors import BadRequestError
@@ -22,31 +23,18 @@ class TagContainer:
     ):
         self.cfg = cfg
 
-        if isinstance(self.cfg.media_input, str):
-            # single directory
-            if not os.path.exists(self.cfg.media_input):
-                raise FileNotFoundError(f"Directory {self.cfg.media_input} not found")
-            elif not os.path.isdir(self.cfg.media_input):
-                raise NotADirectoryError(f"{self.cfg.media_input} is not a directory")
-            self.media_files = [os.path.join(self.cfg.media_input, f) for f in os.listdir(self.cfg.media_input)]
-        else:
-            self.media_files = self.cfg.media_input
+        self.media_dir = cfg.media_dir
 
-        self.media_dir = self._find_common_root(self.media_files)
-
-        max_depth = self._calculate_max_depth(self.media_files, self.media_dir)
-        
-        if max_depth > 3:
-            raise BadRequestError(f"Files are too deeply nested ({max_depth} levels below common root). Maximum allowed depth is 3.\n {self.media_files}")
-
-        # check that no file has the same basename
-        self.basename_to_source = {os.path.basename(f): f for f in self.media_files}
-        if len(self.basename_to_source) != len(self.media_files):
-            raise BadRequestError("Files must have unique basenames")
         self.pclient = pclient
         self.container = None
         self.stdin_socket = None
         self.eof = False
+
+        # used for converting source_media field in model outputs back to the path on the host filesystem
+        self.basename_to_source = {}
+
+        self._media_buffer: list[str] = []
+        self._media_lock = threading.Lock()
 
     def start(self, gpuidx: int | None) -> None:
         if self.eof:
@@ -115,26 +103,20 @@ class TagContainer:
             raise RuntimeError(f"Container did not start in time: {self.name()}")
         
         self.stdin_socket = self._open_container_stdin(self.container)
-        if self.media_files:
-            self.add_media(self.media_files)
+
+        self._flush_media()
 
     def add_media(self, new_media: list[str]) -> None:
-        if not self.is_running():
-            logger.warning("Container is not running, cannot add media", extra={"handle": self.name()})
-            return
-        
+        """Buffer media files to be sent to the container on the next flush_media call."""
         if len(new_media) == 0:
             return
-        
-        for f in new_media:
-            self.basename_to_source[os.path.basename(f)] = f
+        with self._media_lock:
+            for f in new_media:
+                self.basename_to_source[os.path.basename(f)] = f
+            self._media_buffer.extend(new_media)
 
-        assert self.stdin_socket is not None
-        
-        media_files = self._get_relative_paths(new_media)
-        logger.info(f"Adding {len(media_files)} media files to container: {media_files[:2]}...")
-        msg = "\n".join(media_files) + "\n"
-        self.stdin_socket.sendall(msg.encode())
+        if self.is_running():
+            self._flush_media()
 
     def send_eof(self) -> None:
         self.eof = True
@@ -204,6 +186,19 @@ class TagContainer:
         image = self.pclient.images.get(self.cfg.model_config.image)
         annotations = image.attrs.get("Annotations", {})
         return ContainerInfo(image_name=self.cfg.model_config.image, annotations=annotations)
+    
+    def _flush_media(self) -> None:
+        """Send all buffered media files to the container's stdin."""
+        with self._media_lock:
+            buffered = self._media_buffer
+            self._media_buffer = []
+
+        assert self.stdin_socket is not None
+
+        media_files = self._get_relative_paths(buffered)
+        logger.info(f"Flushing {len(media_files)} media files to container: {media_files[:2]}...")
+        msg = "\n".join(media_files) + "\n"
+        self.stdin_socket.sendall(msg.encode())
 
     def _parse_output(self) -> ContainerOutput:
         """Parse the JSONL output file."""
@@ -233,8 +228,8 @@ class TagContainer:
                         raise ValueError("Missing source_media in container output tag")
                     full_source = self.basename_to_source[source_basename]
                     tags.append(ModelTag(
-                        start_time=round(data.get("start_time", 0) * 1000),
-                        end_time=round(data.get("end_time", 0) * 1000),
+                        start_time=data.get("start_time", 0),
+                        end_time=data.get("end_time", 0),
                         text=data.get("tag", ""),
                         source_media=full_source,
                         model_track=data.get("track", ""),
@@ -271,35 +266,6 @@ class TagContainer:
             "--output-path", f"/elv/output/{output_filename}",
             "--params", json.dumps(self.cfg.run_config),
         ]
-
-    def _find_common_root(self, filepaths: list[str]) -> str:
-        """Find the common root directory for all files"""
-        if not filepaths:
-            raise ValueError("No files provided")
-        
-        # Get absolute paths
-        abs_paths = [os.path.abspath(f) for f in filepaths]
-        
-        # Find common prefix
-        common_prefix = os.path.commonpath(abs_paths)
-        
-        # If common prefix is a file (only one file), use its directory
-        if os.path.isfile(common_prefix):
-            common_prefix = os.path.dirname(common_prefix)
-        
-        return common_prefix
-
-    def _calculate_max_depth(self, filepaths: list[str], root: str) -> int:
-        """Calculate maximum depth of files relative to root directory"""
-        max_depth = 0
-        
-        for filepath in filepaths:
-            rel_path = os.path.relpath(filepath, root)
-            # Count directory separators to determine depth
-            depth = rel_path.count(os.sep)
-            max_depth = max(max_depth, depth)
-        
-        return max_depth
 
     def _open_container_stdin(self, container):    
         ## assume podman is on the same machine via unix socket

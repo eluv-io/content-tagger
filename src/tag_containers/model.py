@@ -26,16 +26,14 @@ class ContainerSpec:
     Contains all information needed to run a container including static attributes
     and runtime parameters.
     """
-
     # handle 
     id: str
     # volume to cache stuff in, i.e model weights
     cache_dir: str
     logs_path: str
+    media_dir: str
     # path to the JSONL output file
     output_path: str
-    # media files to run the model on
-    media_input: MediaInput
     # runtime params passed to the model (unique schema per model)
     run_config: dict
     # static attributes of the container to run
@@ -43,17 +41,18 @@ class ContainerSpec:
 
 @dataclass
 class ContainerRequest:
+    """
+    Args struct for getting a TagContainer from the ContainerFactory
+    """
+
     # e.g: "caption", "asr" (same model handle used in the API)
     model_id: str
-    # Either a list of files or a single directory
-    media_input: MediaInput
+    # directory on host filesystem where media will arrive
+    media_dir: str
     # runtime params passed to the model
     run_config: dict
     # handle passed to the container for tracking
     job_id: str | None
-
-    def __str__(self) -> str:
-        return f"ContainerRequest(job_id={self.job_id}, model_id={self.model_id}, media_input={self.media_input}, run_config={self.run_config})"
 
 @dataclass
 class RegistryConfig:

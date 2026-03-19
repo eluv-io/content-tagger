@@ -42,7 +42,7 @@ class ContainerRegistry:
 
         ccfg = ContainerSpec(
             id=jobid,
-            media_input=req.media_input,
+            media_dir=req.media_dir,
             run_config=req.run_config,
             logs_path=logs_path,
             cache_dir=cache_path,
