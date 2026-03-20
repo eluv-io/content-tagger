@@ -243,7 +243,7 @@ def test_progress_from_output(tag_container):
     
     write_jsonl(output_path, [
         {"type": "tag", "data": {"start_time": 0, "end_time": 5.0, "tag": "person walking", "source_media": "video1.mp4"}},
-        {"type": "progress", "data": {"source_media": "media/video1.mp4"}},
+        {"type": "progress", "data": {"source_media": "video1.mp4"}},
     ])
     
     tags = tag_container.tags()
@@ -251,7 +251,7 @@ def test_progress_from_output(tag_container):
     
     assert len(tags) == 1
     assert len(progress) == 1
-    assert progress[0].source_media == "media/video1.mp4"
+    assert progress[0].source_media == "video1.mp4"
 
 
 def test_track_field(tag_container):

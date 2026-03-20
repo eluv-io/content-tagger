@@ -228,9 +228,10 @@ class TagContainer:
                 # get the source name if it exists
                 local_media_path = None
                 source_media = data.get("source_media")
+
                 if not source_media and msg_type != "error":
                     raise ValueError(f"Missing source_media in container output message: {msg}")
-                elif msg_type == "error":
+                elif msg_type == "error" and not source_media:
                     # allow source_media to be None
                     pass
                 else:

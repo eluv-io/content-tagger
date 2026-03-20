@@ -1,7 +1,7 @@
-"""Tests for TagRunner + QueueClient.
+"""Tests for TagRunner + QueueService.
 
 Mirrors the test_fabric_tagger.py tests but work is submitted through the
-QueueClient and processed asynchronously by the TagRunner.
+QueueService and processed asynchronously by the TagRunner.
 """
 
 import time
