@@ -20,7 +20,7 @@ def _job_status_from_report(report: TagStatusResult) -> job_status:
         "Failed": "failed",
         "Stopped": "cancelled",
     }
-    status: job_status = mapping.get(report.status, "running")
+    status: job_status = mapping.get(report.status.status, "running")
     return status
 
 
@@ -179,7 +179,7 @@ class TagRunner:
                 logger.opt(exception=True).warning("failed to get status", qid=qid)
                 continue
 
-            report_by_feature: dict[str, TagJobStatusReport] = {r.job_id.feature: r for r in reports}
+            report_by_feature: dict[str, TagStatusResult] = {r.model: r for r in reports}
 
             for item in job_items:
                 report = report_by_feature.get(item.feature)
@@ -190,7 +190,10 @@ class TagRunner:
                 queue_status = _job_status_from_report(report)
                 try:
                     self.jobstore.update_job(
-                        UpdateJobRequest(id=item.id, status=queue_status, status_details=JobStatus(
+                        UpdateJobRequest(
+                            id=item.id, 
+                            status=queue_status, 
+                            status_details=JobStatus(
                             error=None,
                             details=report,
                         )),

@@ -7,7 +7,7 @@ from flask import Response, request, current_app
 from dacite import from_dict
 
 from src.api.arg_resolver import ArgsResolver
-from src.service.abstract import TagAPI
+from src.service.abstract import TaggerService
 from src.api.tagging.response_format import StartStatus, StartTaggingResponse
 from src.api.tagging.response_format import StartStatus
 from src.common.logging import logger
@@ -43,7 +43,7 @@ def handle_tag(qid: str) -> Response:
 
 def _execute_tagging(q: Content, tag_args: list[TagArgs]) -> Response:
     """Execute tagging for multiple features and return start status response."""
-    tagger: TagAPI = current_app.config["state"]["service"]
+    tagger: TaggerService = current_app.config["state"]["service"]
     
     jobs: list[StartStatus] = []
     for tag_arg in tag_args:
@@ -88,7 +88,7 @@ def handle_status_content(qid: str) -> Response:
     else:
         authorize(qid, request)
 
-    service: TagAPI = current_app.config["state"]["service"]
+    service: TaggerService = current_app.config["state"]["service"]
 
     reports = service.status(StatusArgs(
         qid=qid,
@@ -116,7 +116,7 @@ def handle_status() -> Response:
     if not status_req.tenant:
         raise BadRequestError("The 'tenant' query parameter is required for /job-status")
 
-    service: TagAPI = current_app.config["state"]["service"]
+    service: TaggerService = current_app.config["state"]["service"]
 
     args = status_request_to_internal(status_req)
 
@@ -151,7 +151,7 @@ def handle_stop_model(
 ) -> Response:
     q = authorize(qid, request)
 
-    tagger: TagAPI = current_app.config["state"]["service"]
+    tagger: TaggerService = current_app.config["state"]["service"]
 
     stop_res = tagger.stop(q.qid, feature)
 
@@ -164,7 +164,7 @@ def handle_stop_content(
 ) -> Response:
     q = authorize(qid, request)
 
-    tagger: TagAPI = current_app.config["state"]["service"]
+    tagger: TaggerService = current_app.config["state"]["service"]
 
     stop_res = tagger.stop(q.qid, None)
 
