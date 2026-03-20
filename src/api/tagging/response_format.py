@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from src.service.model import TagDetails
+
 @dataclass(frozen=True)
 class StartStatus:
     job_id: str
@@ -13,23 +15,18 @@ class StartTaggingResponse:
     jobs: list[StartStatus]
 
 @dataclass(frozen=True)
-class TagDetails:
-    tag_status: str
-    stream: str
-    time_running: float
-    tagging_progress: str
-    failed: list[str]
-
-@dataclass(frozen=True)
-class JobStatus:
+class JobStatus: 
     qid: str
     job_id: str
     status: str
-    created_at: str
     model: str
+    stream: str
+    created_at: str
     params: dict
     tenant: str
     user: str
+    title: str
+    error: str | None
     tag_details: TagDetails | None
 
 @dataclass(frozen=True)

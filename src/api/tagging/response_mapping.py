@@ -8,14 +8,14 @@ from src.common.logging import logger
 
 _STATUS_SORT_ORDER = ["running", "queued", "failed", "succeeded", "cancelled"]
 
-def _status_sort_key(job: TagJobStatusReport) -> tuple:
+def _status_sort_key(job: TagJobStatusResult) -> tuple:
     try:
         return (_STATUS_SORT_ORDER.index(job.status), -job.created_at)
     except ValueError:
         return (len(_STATUS_SORT_ORDER), -job.created_at)
 
 def map_all_jobs_status_to_response(
-    all_jobs_status: list[TagJobStatusReport],
+    all_jobs_status: list[TagJobStatusResult],
     req: StatusRequest,
 ) -> StatusResponse:
     # filter
@@ -45,7 +45,7 @@ def map_all_jobs_status_to_response(
         ),
     )
 
-def map_job_status_to_response(js: TagJobStatusReport) -> JobStatus:
+def map_job_status_to_response(js: TagJobStatusResult) -> JobStatus:
     # convert float (seconds) to ISO string
     created_at = datetime.fromtimestamp(js.created_at).isoformat()
     return JobStatus(
@@ -54,16 +54,13 @@ def map_job_status_to_response(js: TagJobStatusReport) -> JobStatus:
         model=js.model,
         status=js.status,
         created_at=created_at,
+        stream=js.stream,
+        title=js.title,
         params=js.params,
         tenant=js.tenant,
         user=js.user,
-        tag_details=TagDetails(
-            tag_status=js.tagger_details.tag_status,
-            stream=js.tagger_details.stream,
-            time_running=js.tagger_details.time_running,
-            tagging_progress=js.tagger_details.tagging_progress,
-            failed=js.tagger_details.failed,
-        ) if js.tagger_details else None,
+        error=js.error,
+        tag_details=js.tagger_details,
     )
 
 def map_stop_results_to_response(stop_results: list[TagStopResult]) -> StopTaggingResponse:
