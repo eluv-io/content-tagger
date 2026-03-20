@@ -156,15 +156,22 @@ class FakeTagContainer:
 
         return tags
     
+    def progress(self) -> list[Progress]:
+        finished_files = self.media_files[:-1] if not self.is_stopped else self.media_files
+        return [Progress(source_media=filepath) for filepath in finished_files]
+    
+    def errors(self) -> list[Error]:
+        return []
+    
     def name(self) -> str:
         return f"FakeContainer-{self.feature}"
     
     def required_resources(self):
         return {}
 
-class PartialFailContainer(FakeTagContainer):
+class PartialResultContainer(FakeTagContainer):
     """
-    Always fails last tag
+    Don't return tag for last source
     """
 
     def tags(self) -> list[ModelTag]:
@@ -283,7 +290,7 @@ def fake_fetcher(media_dir):
             if req.preserve_track:
                 # assume we are testing replace functionality and just return noop
                 return NoopWorker()
-            return FakeWorker(output_dir=req.output_dir, timeout=0.1, )
+            return FakeWorker(output_dir=req.output_dir, timeout=0.1)
     
     return FakeFetcher()
 
