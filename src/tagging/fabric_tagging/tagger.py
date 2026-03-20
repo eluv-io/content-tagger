@@ -299,7 +299,7 @@ class FabricTagger:
                         lambda: self._submit_async(EnterFetchingPhase(job_id=jobid))
                     ).start()
                 else:
-                    self._end_job(jobid, "Failed", e)
+                    self._request_job_end(jobid, "Failed", e)
                 return
 
             if job.stop_event.is_set():
@@ -322,7 +322,7 @@ class FabricTagger:
             self._process_tagging_phase(job, dl_result)
             message.response_mailbox.put(Response(data=None, error=None))
         except Exception as e:
-            self._cleanup_job(job, "Failed", e)
+            self._request_job_end(job.get_id(), "Failed", e)
             raise TaggerRuntimeError("Tagging phase failed", jobid=jobid) from e
 
     def _process_tagging_phase(self, job: TagJob, dl_res: DownloadResult) -> None:
@@ -407,7 +407,7 @@ class FabricTagger:
 
         status = self.system_tagger.status(job.state.taghandle)
         if status.status != "Completed":
-            self._end_job(jobid, "Failed", RuntimeError(f"Tagging job ended with status: {status.status}"))
+            self._request_job_end(jobid, "Failed", RuntimeError(f"Tagging job ended with status: {status.status}"))
             return
 
         # Request transition to complete phase
@@ -434,7 +434,7 @@ class FabricTagger:
         # NOTE: this cannot error, so we will not get a stuck job
         self._run_upload(job)
 
-        self._set_stop_state(jobid, "Completed", "")
+        self._set_stop_state(job, "Completed", None)
 
         message.response_mailbox.put(Response(data=None, error=None))
 
@@ -517,12 +517,12 @@ class FabricTagger:
         res = []
         for jid in jobids:
             job = active_jobs.get(jid) or inactive_jobs[jid]
-            res.append(self._summarize_status(jid, job.state))
+            res.append(self._summarize_status(job))
 
         message.response_mailbox.put(Response(data=res, error=None))
 
-    def _summarize_status(self, jobid: JobID, state: JobState) -> TagStatusResult:
-
+    def _summarize_status(self, job: TagJob) -> TagStatusResult:
+        state = job.state
         
         tagged_sources = []
         if state.container is not None:
@@ -541,8 +541,10 @@ class FabricTagger:
             uploaded_sources=state.upload_session.get_uploaded_sources(),
             warnings=state.warnings,
             # TODO: should be populated
-            error=""
+            error=state.error
         )
+
+        jobid = job.get_id()
 
         return TagStatusResult(
             status=job_status,
@@ -553,8 +555,6 @@ class FabricTagger:
     def _handle_stop_request(self, message: Message):
         assert isinstance(message.data, StopRequest)
         request: StopRequest = message.data
-
-        log = logger.bind(request=message.data)
 
         def _job_filter(jobid: JobID) -> bool:
             if jobid.qid != request.qid:
@@ -578,19 +578,8 @@ class FabricTagger:
         jobs = [active_jobs[jid] for jid in jobids]
         results = []
         for job in jobs:
-            self._set_stop_state(job.get_id(), request.status, "")
+            self._set_stop_state(job, request.status, request.error)
             results.append(TagStopResult(job_id=job.get_id(), message="stopping job"))
-
-        # Stop system tagger jobs in background thread
-        def stop_system_jobs():
-            for job in jobs:
-                if job.state.container is not None:
-                    try:
-                        self.system_tagger.stop(job.state.taghandle)
-                    except Exception as e:
-                        log.opt(exception=e).error("error stopping job", job_id=job.get_id())
-
-        threading.Thread(target=stop_system_jobs, daemon=True).start()
 
         message.response_mailbox.put(Response(data=results, error=None))
 
@@ -598,9 +587,9 @@ class FabricTagger:
         logger.info("Shutting down fabric tagger...")
         
         # Stop all active jobs
-        active_jobs = list(self.jobstore.active_jobs.keys())
-        for job_id in active_jobs:
-            self._set_stop_state(job_id, "Stopped", "Shutdown requested")
+        active_jobs = list(self.jobstore.active_jobs.values())
+        for job in active_jobs:
+            self._set_stop_state(job, "Stopped", RuntimeError("Tagger worker was shutdown"))
         
         self.shutdown_signal = True
         self.system_tagger.cleanup()
@@ -635,40 +624,51 @@ class FabricTagger:
 
     def _set_stop_state(
         self, 
-        jobid: JobID, 
-        status: JobStateDescription,
-        message: str
+        job: TagJob,
+        status: Literal["Stopped", "Failed", "Completed"],
+        error: Exception | None = None
     ) -> None:
-        """Set job to stopped state (called from actor thread)
-        
-        Updates job state, and moves job to inactive jobs.
-
-        Also sets stop event to signal any asynchronous operations to stop.
+        """Sets all the necessary state and performs cleanup for a stopped/failed/completed job
         """
+
+        jobid = job.get_id()
 
         log = logger.bind(job_id=jobid)
 
-        if status not in ("Completed", "Failed", "Stopped"):
-            raise TaggerRuntimeError("Invalid stop status", jobid=jobid, status=status, msg=message)
+        if jobid not in self.jobstore.active_jobs:
+            log.warning("Trying to set stop state for inactive job")
+            return
+        
+        if error:
+            log.opt(exception=error).error(f"Job ended with error, setting status to {status}")
 
-        if jobid in self.jobstore.active_jobs:
-            job = self.jobstore.active_jobs[jobid]
+        job.state.error = str(error) if error else None
 
-            job.state.status = status
-            job.state.time_ended = time.time()
+        job = self.jobstore.active_jobs[jobid]
 
-            if job.stop_event:
-                # for signalling background threads to stop
-                job.stop_event.set()
+        job.state.status = status
+        job.state.time_ended = time.time()
 
-            self._update_batches_with_report(job, status=status)
+        if job.stop_event:
+            # for signalling background threads to stop
+            job.stop_event.set()
 
-            self.jobstore.inactive_jobs[jobid] = job
-            del self.jobstore.active_jobs[jobid]
-        else:
-            log.warning("Tried to stop an inactive job")
+        self._update_batches_with_report(job, status=status)
 
-    def _end_job(
+        self.jobstore.inactive_jobs[jobid] = job
+        del self.jobstore.active_jobs[jobid]
+
+        def cleanup():
+            try:
+                self.system_tagger.stop(job.state.taghandle)
+            except Exception as e:
+                log.opt(exception=e).error("error stopping job")
+
+        if job.state.taghandle is not None:
+            # run in background thread to avoid blocking the main thread
+            threading.Thread(target=cleanup, daemon=True).start()
+
+    def _request_job_end(
         self, 
         jobid: JobID, 
         status: Literal["Stopped", "Failed"], 
@@ -678,48 +678,23 @@ class FabricTagger:
         
         Asynchronously submits a StopRequest so that we go through the normal stop handler
         """
-        log = logger.bind(job_id=jobid)
-        # TODO: we need to propagate the error message
-        if error:
-            log.opt(exception=error).error("job ended with error", status=status)
-        request = StopRequest(qid=jobid.qid, feature=jobid.feature, status=status)
+        request = StopRequest(
+            qid=jobid.qid, 
+            feature=jobid.feature, 
+            status=status, 
+            error=error
+        )
         return self._submit_async(request)
-
 
     def _run_upload(self, job: TagJob) -> None:
         """Run upload for a job"""
-
-        log = logger.bind(job_id=job.get_id())
 
         # we lock because _handle_enter_complete_phase and a thread spawned by _handle_upload_tick can run concurrently
         with self._upload_lock:
             try:
                 self.__upload_tags(job)
             except Exception as e:
-                # TODO: reaping the job might be a bit aggressive
-                log.opt(exception=e).error("error uploading tags for job")
-                self._cleanup_job(job, "Failed", "Tag upload failed")
-
-    def _cleanup_job(
-        self, 
-        job: TagJob, 
-        status: JobStateDescription,
-        msg: str
-    ) -> None:
-        log = logger.bind(job_id=job.get_id())
-
-        self._set_stop_state(job.get_id(), status, msg)
-        
-        def cleanup():
-            try:
-                self.system_tagger.stop(job.state.taghandle)
-            except Exception as e:
-                log.opt(exception=e).error("error stopping job")
-
-        if job.state.taghandle is not None:
-            # run in background thread to avoid blocking the main thread
-            log.info("cleaning up job in background thread due to failed upload")
-            threading.Thread(target=cleanup, daemon=True).start()
+                self._request_job_end(job.get_id(), "Failed", e)
 
     def __upload_tags(self, job: TagJob) -> None:
         if job.state.container is None:

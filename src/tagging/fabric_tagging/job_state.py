@@ -20,6 +20,7 @@ class JobState:
     tagging_done: threading.Event
     fetch_retry_count: int
     warnings: list[str]
+    error: str | None
     time_started: float
     time_ended: float | None
 
@@ -37,6 +38,7 @@ class JobState:
             container=None,
             fetch_retry_count=0,
             warnings=[],
+            error=None,
         )
 
 @dataclass

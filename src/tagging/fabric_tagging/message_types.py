@@ -25,9 +25,10 @@ class StopRequest:
     qid: str
     feature: str | None
     status: Literal["Stopped", "Failed", "Completed"]
+    error: Exception | None = None
 
     def __str__(self):
-        return f"StopRequest(qid={self.qid}, feature={self.feature}, status={self.status})"
+        return f"StopRequest(qid={self.qid}, feature={self.feature}, status={self.status}, error={self.error})"
 
 @dataclass
 class EnterFetchingPhase:

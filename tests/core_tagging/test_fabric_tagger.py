@@ -349,10 +349,10 @@ def wait_tag(fabric_tagger, batch_id, timeout):
     start = time.time()
     while not timeout or time.time() - start < timeout:
         reports = fabric_tagger.status(batch_id)
-        if any(r.status == "Failed" for r in reports):
-            failed = next(r for r in reports if r.status == "Failed")
-            pytest.fail(f"Job failed: {failed.message or 'unknown error'}")
-        if reports and all(r.status in ("Completed", "Stopped") for r in reports):
+        if any(r.status.status == "Failed" for r in reports):
+            failed = next(r for r in reports if r.status.status == "Failed")
+            pytest.fail(f"Job failed: {failed.status.error or 'unknown error'}")
+        if reports and all(r.status.status in ("Completed", "Stopped") for r in reports):
             return
         time.sleep(0.1)
     pytest.fail("Job did not complete within timeout period")
@@ -454,7 +454,8 @@ def test_source_with_zero_tags_marked_as_missing(fabric_tagger, q, make_tag_args
     report = _status_for(status, "caption")
     assert report.status.status == "Completed"
     assert len(report.status.downloaded_sources) == 2
-    assert len(report.status.tagged_sources) == 1
+    assert len(report.status.tagged_sources) == 2
+    assert len(report.status.uploaded_sources) == 1
     assert report.status.error is None
 
 
@@ -547,8 +548,8 @@ def test_fetcher_returns_no_sources(fabric_tagger, q, make_tag_args):
     final_status = fabric_tagger.status(q.qid)
     report = _status_for(final_status, "caption")
     assert report.status.status == "Completed"
-    assert report.status.downloaded_sources == 0
-    assert report.status.tagged_sources == 0
+    assert len(report.status.downloaded_sources) == 0
+    assert len(report.status.tagged_sources) == 0
     assert report.status.error is None
     
     # Verify no tags were uploaded
