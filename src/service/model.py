@@ -17,23 +17,30 @@ class TagStartResult:
 @dataclass(frozen=True)
 class TagDetails:
     tag_status: str
-    stream: str
     time_running: float
+    # between 0 and 1
+    progress: float
+    # legacy
     tagging_progress: str
-    failed: list[str]
+
+    # extra detail
+    total_parts: int
+    downloaded_parts: int
+    tagged_parts: int
 
 @dataclass(frozen=True)
-class TagJobStatusReport:
+class TagJobStatusResult: 
     qid: str
     job_id: str
     status: str
     model: str
+    stream: str
     created_at: float
     params: dict
     tenant: str = ""
     user: str = ""
     title: str = ""
-    message: str | None = None
+    error: str | None = None
     tagger_details: TagDetails | None = None
 
 @dataclass(frozen=True)
