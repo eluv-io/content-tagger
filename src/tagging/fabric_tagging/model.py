@@ -1,5 +1,6 @@
     
 
+import time
 from dataclasses import dataclass
 from typing import Literal
 
@@ -32,6 +33,32 @@ JobStateDescription = Literal[
 ]
 
 @dataclass
+class JobStatus:
+    status: JobStateDescription
+    time_started: float
+    time_ended: float | None
+    total_sources: set[str]
+    downloaded_sources: set[str]
+    tagged_sources: set[str]
+    uploaded_sources: set[str]
+    warnings: list[str]
+    error: str | None
+
+    @staticmethod
+    def starting() -> 'JobStatus':
+        return JobStatus(
+            status="Fetching content",
+            time_started=time.time(),
+            time_ended=None,
+            total_sources=set(),
+            tagged_sources=set(),
+            downloaded_sources=set(),
+            uploaded_sources=set(),
+            warnings=[],
+            error=None,
+        )
+
+@dataclass
 class JobArgs(TagArgs):
     q: Content
     retry_upload: bool
@@ -59,18 +86,6 @@ class TagStartResult:
     message: str
 
 @dataclass(frozen=True)
-class TagJobStatusReport:
-    job_id: JobID
-    status: JobStateDescription
-    time_running: float
-    tagging_progress: str
-    missing_tags: list[str]
-    failed: list[str]
-    model: str
-    stream: str
-    message: str | None = None
-
-@dataclass(frozen=True)
 class TagStopResult:
     job_id: JobID
     message: str
@@ -80,6 +95,7 @@ class UploadStatus:
     all_sources: list[str]
     downloaded_sources: list[str]
     tagged_sources: list[str]
+    uploaded_sources: list[str]
 
 @dataclass(frozen=True)
 class JobRunStatus:
@@ -93,3 +109,9 @@ class TagContentStatusReport:
     container: ContainerInfo
     job_status: JobRunStatus
     upload_status: UploadStatus | None
+
+@dataclass(frozen=True)
+class TagStatusResult:
+    status: JobStatus
+    model: str
+    stream: str

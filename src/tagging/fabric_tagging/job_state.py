@@ -1,6 +1,5 @@
 import threading
 from dataclasses import dataclass, field
-import time
 
 from src.tagging.fabric_tagging.model import *
 from src.tag_containers.containers import TagContainer
@@ -9,32 +8,11 @@ from src.tagging.uploading.uploader import UploadSession
 from src.tagging.fabric_tagging.media_state import MediaState
 
 @dataclass
-class JobStatus:
-    status: JobStateDescription
-    time_started: float
-    time_ended: float | None
-    tagging_progress: str
-    failed: list[str]
-
-    @staticmethod
-    def starting() -> 'JobStatus':
-        return JobStatus(
-            status="Fetching content",
-            time_started=time.time(),
-            time_ended=None,
-            tagging_progress="0%",
-            failed=[]
-        )
-
-@dataclass
 class JobState:
     """Mutable state of the tagging job."""
     status: JobStatus
     # internal handle used in the ContainerScheduler to identify the job
     taghandle: str
-    # sources with no corresponding tags
-    missing_tags: set[str]
-    message: str
     media: MediaState
     upload_session: UploadSession
     container: TagContainer | None
@@ -48,8 +26,6 @@ class JobState:
         return JobState(
             status=JobStatus.starting(),
             taghandle="",
-            missing_tags=set(),
-            message="",
             media=media,
             upload_session=upload_session,
             tagging_done=threading.Event(),
