@@ -1,4 +1,5 @@
 from dataclasses import asdict
+from time import time
 
 from src.common.content import Content, QAPIFactory
 from src.common.errors import BadRequestError, MissingResourceError
@@ -7,27 +8,17 @@ from src.fetch.model import AssetScope, LiveScope, TimeRangeScope, VideoScope
 from src.service.model import *
 from src.tagging.fabric_tagging.model import TagArgs
 from src.tagging.fabric_tagging.queue.abstract import JobStore
-from src.tagging.fabric_tagging.queue.model import CreateQueueItem, JobStatus, ListJobArgs
-from src.service.abstract import TagAPI
+from src.tagging.fabric_tagging.queue.model import CreateQueueItem, ListJobArgs, QueueItem
+from src.service.abstract import TaggerService
 
-logger = logger.bind(name="Queue Client")
+logger = logger.bind(name="Queue Service")
 
+class QueueService(TaggerService):
+    """
+    Service implementation which sits in front of a job queue.
 
-def _stream_from_scope(scope) -> str:
-    """Derive the stream identifier from a scope, matching TagJob.get_id() logic."""
-    if isinstance(scope, AssetScope):
-        return "assets"
-    elif isinstance(scope, VideoScope):
-        return scope.stream
-    elif isinstance(scope, LiveScope):
-        return "video"
-    elif isinstance(scope, TimeRangeScope):
-        return "video"
-    else:
-        raise ValueError(f"unknown scope type: {type(scope)}")
-
-
-class QueueClient(TagAPI):
+    This is intended to be used in production.
+    """
 
     def __init__(
         self, 
@@ -53,7 +44,7 @@ class QueueClient(TagAPI):
                 )
 
         qapi = self.qfactory.create(q)
-            
+
         title = qapi.content_object_metadata(metadata_subtree="/public/name")
         if not isinstance(title, str):
             raise BadRequestError(f"Received non-string value at /meta/public/name for qid={q.qid}")
@@ -63,7 +54,7 @@ class QueueClient(TagAPI):
                 qid=q.qid,
                 params=args,
                 status="queued",
-                status_details=JobStatus(error=None, details=None),
+                status_details=None,
                 additional_info={"title": title},
             ),
             auth=auth,
@@ -72,7 +63,7 @@ class QueueClient(TagAPI):
         logger.info("enqueued tagging job", job_id=str(job.id), qid=q.qid)
         return TagStartResult(started=True, created_at=job.created_at, job_id=job.id, message="Job enqueued")
 
-    def status(self, req: StatusArgs) -> list[TagJobStatusReport]:
+    def status(self, req: StatusArgs) -> list[TagJobStatusResult]:
         """Return the latest status for all jobs targeting *qid*."""
         items = self.jobstore.list_jobs(
             ListJobArgs(qid=req.qid, user=req.user, tenant=req.tenant), 
@@ -82,51 +73,27 @@ class QueueClient(TagAPI):
 
         if req.title is not None:
             items = [item for item in items if item.additional_info.get("title") == req.title]
-
+    
         return self._items_to_reports(items)
 
-    def _items_to_reports(self, items: list) -> list[TagJobStatusReport]:
-        """Convert a list of QueueItems to TagJobStatusReport objects."""
-        reports: list[TagJobStatusReport] = []
+    def _items_to_reports(self, items: list[QueueItem]) -> list[TagJobStatusResult]:
+        """Convert a list of QueueItems to TagJobStatusResult objects."""
+        reports: list[TagJobStatusResult] = []
         for item in items:
-            # if the TagRunner has already posted back a full report, use it
-            if item.status_details.details is not None:
-                reports.append(TagJobStatusReport(
-                    qid=item.qid,
-                    job_id=item.id,
-                    status=item.status,
-                    message=item.status_details.error,
-                    created_at=item.created_at,
-                    model=item.params.feature,
-                    params=asdict(item.params),
-                    tenant=item.tenant,
-                    user=item.user,
-                    title=item.additional_info.get("title", ""),
-                    tagger_details=TagDetails(
-                        tag_status=item.status_details.details.status,
-                        stream=_stream_from_scope(item.params.scope),
-                        time_running=item.status_details.details.time_running,
-                        tagging_progress=item.status_details.details.tagging_progress,
-                        failed=item.status_details.details.failed,
-                    ),
-                ))
-            else:
-                # job is still queued / no report yet — synthesise a minimal one
-                stream = _stream_from_scope(item.params.scope)
-                reports.append(
-                    TagJobStatusReport(
-                        qid=item.qid,
-                        job_id=item.id,
-                        status=item.status,
-                        created_at=item.created_at,
-                        model=item.params.feature,
-                        params=asdict(item.params),
-                        tenant=item.tenant,
-                        user=item.user,
-                        tagger_details=None,
-                        message=None,
-                    )
-                )
+            reports.append(TagJobStatusResult(
+                qid=item.qid,
+                job_id=item.id,
+                status=item.status,
+                created_at=item.created_at,
+                model=item.params.feature,
+                stream=_stream_from_scope(item.params.scope),
+                params=asdict(item.params),
+                tagger_details=item.status_details,
+                tenant=item.tenant,
+                user=item.user,
+                title=item.additional_info.get("title", ""),
+                error=item.error,
+            ))
         return reports
 
     def stop(self, qid: str, feature: str | None) -> list[TagStopResult]:
@@ -148,3 +115,16 @@ class QueueClient(TagAPI):
             logger.info("stop requested", job_id=str(item.id))
 
         return results
+    
+def _stream_from_scope(scope) -> str:
+    """Derive the stream identifier from a scope, matching TagJob.get_id() logic."""
+    if isinstance(scope, AssetScope):
+        return "assets"
+    elif isinstance(scope, VideoScope):
+        return scope.stream
+    elif isinstance(scope, LiveScope):
+        return "video"
+    elif isinstance(scope, TimeRangeScope):
+        return "video"
+    else:
+        raise ValueError(f"unknown scope type: {type(scope)}")

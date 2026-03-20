@@ -7,16 +7,6 @@ from src.service.model import *
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.service.abstract import TaggerService
 
-def _tag_status_to_job_status(status: str) -> str:
-    mapping: dict[str, str] = {
-        "Fetching content": "running",
-        "Tagging content": "running",
-        "Completed": "succeeded",
-        "Failed": "failed",
-        "Stopped": "cancelled",
-    }
-    return mapping[status]
-
 class DirectAPI(TaggerService):
     """Service implementation that sits on top of the tagger worker and directly calls the tagger functions with no job queue"""
     def __init__(self, tagger: FabricTagger):
@@ -46,6 +36,9 @@ class DirectAPI(TaggerService):
                 model=r.model,
                 stream=r.stream,
                 params={},
+                tenant="",
+                user="",
+                title="",
                 tagger_details=TagDetails(
                     tag_status=r.status.status,
                     time_running=r.status.time_ended - r.status.time_started if r.status.time_ended else time.time() - r.status.time_started,
@@ -54,7 +47,8 @@ class DirectAPI(TaggerService):
                     total_parts=len(r.status.total_sources),
                     downloaded_parts=len(r.status.downloaded_sources),
                     tagged_parts=len(r.status.tagged_sources),
-                )
+                ),
+                error=r.status.error,
             ) for r in res
         ]
 
@@ -64,3 +58,13 @@ class DirectAPI(TaggerService):
             job_id=str(r.job_id),
             message=r.message,
         ) for r in res]
+    
+def _tag_status_to_job_status(status: str) -> str:
+    mapping: dict[str, str] = {
+        "Fetching content": "running",
+        "Tagging content": "running",
+        "Completed": "succeeded",
+        "Failed": "failed",
+        "Stopped": "cancelled",
+    }
+    return mapping[status]

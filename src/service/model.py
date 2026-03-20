@@ -37,11 +37,11 @@ class TagJobStatusResult:
     stream: str
     created_at: float
     params: dict
-    tenant: str = ""
-    user: str = ""
-    title: str = ""
-    error: str | None = None
-    tagger_details: TagDetails | None = None
+    tenant: str
+    user: str
+    title: str
+    error: str | None
+    tagger_details: TagDetails | None
 
 @dataclass(frozen=True)
 class TagStopResult:
