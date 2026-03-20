@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import Mock
 
-from src.service.impl.queue_based import QueueClient
+from src.service.impl.queue_based import QueueService
 from src.tagging.fabric_tagging.queue.model import ListJobArgs
 from src.common.content import Content
 
@@ -18,10 +18,10 @@ def fake_qfactory():
     return TestQAPIFactory()
 
 @pytest.fixture
-def queue_service(jobstore, fake_qfactory) -> QueueClient:
-    return QueueClient(jobstore, fake_qfactory)
+def queue_service(jobstore, fake_qfactory) -> QueueService:
+    return QueueService(jobstore, fake_qfactory)
 
-def test_start_job(queue_service: QueueClient, make_tag_args):
+def test_start_job(queue_service: QueueService, make_tag_args):
     args = make_tag_args()
     content = Content(qid="test", token="")
     result = queue_service.tag(content, args)

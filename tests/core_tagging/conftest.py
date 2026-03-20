@@ -13,7 +13,7 @@ from src.tagging.fabric_tagging.model import FabricTaggerConfig, TagArgs
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
 from src.tagging.tag_runner import TagRunner, TagRunnerConfig
-from src.service.impl.queue_based import QueueClient
+from src.service.impl.queue_based import QueueService
 from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.tagging.scheduling.model import SysConfig
 from src.tags.track_resolver import TrackArgs, TrackResolver, TrackResolverConfig
@@ -379,8 +379,8 @@ def fake_qapifactory():
 
 
 @pytest.fixture
-def queue_client(queue_jobstore, fake_qapifactory) -> QueueClient:
-    return QueueClient(jobstore=queue_jobstore, qfactory=fake_qapifactory)
+def queue_client(queue_jobstore, fake_qapifactory) -> QueueService:
+    return QueueService(jobstore=queue_jobstore, qfactory=fake_qapifactory)
 
 
 @pytest.fixture

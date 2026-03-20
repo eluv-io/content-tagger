@@ -8,16 +8,16 @@ import time
 import pytest
 
 from src.common.errors import MissingResourceError
-from src.service.impl.queue_based import QueueClient
+from src.service.impl.queue_based import QueueService
 from src.service.model import *
 
 def _wait_for_status(
-    client: QueueClient,
+    client: QueueService,
     qid: str,
     target_status: str,
     timeout: float = 10.0,
     interval: float = 0.15,
-) -> list[TagJobStatusReport]:
+) -> list[TagJobStatusResult]:
     """Poll until every report for *qid* reaches *target_status* or timeout."""
     deadline = time.time() + timeout
     req = StatusArgs(
@@ -40,10 +40,10 @@ def _wait_for_status(
 
 
 def _status_for(
-    reports: list[TagJobStatusReport],
+    reports: list[TagJobStatusResult],
     model: str,
     stream: str | None = None,
-) -> TagJobStatusReport:
+) -> TagJobStatusResult:
     matches = [r for r in reports if r.model == model]
     assert matches, f"Missing status for model={model}, stream={stream}"
     return matches[0]
