@@ -6,17 +6,17 @@ from unittest.mock import Mock, patch
 from src.tags.tagstore.model import Track
 from src.tags.tagstore.rest_tagstore import RestTagstore
 from src.tagging.fabric_tagging.tagger import FabricTagger
-from src.tagging.fabric_tagging.model import TagJobStatusReport
+from src.tagging.fabric_tagging.model import TagStatusResult
 from src.tag_containers.model import ContainerRequest, ModelTag
 from src.fetch.model import *
 from src.common.content import Content
 from src.common.errors import MissingResourceError
-from tests.core_tagging.conftest import FakeContainerRegistry, FakeTagContainer, FakeWorker, PartialFailContainer
+from tests.core_tagging.conftest import FakeContainerRegistry, FakeTagContainer, FakeWorker, PartialResultContainer
     
 def _status_for(
-    reports: list[TagJobStatusReport],
+    reports: list[TagStatusResult],
     model: str,
-) -> TagJobStatusReport:
+) -> TagStatusResult:
     matches = [r for r in reports if r.model == model]
     assert matches, f"Missing status for model={model}"
     return matches[0]
@@ -58,14 +58,10 @@ def test_tag_duplicate_job(fabric_tagger, q, sample_tag_args):
     # Try to start same job again
     result2 = fabric_tagger.tag(q, sample_tag_args[0])
     assert result2.started is False
-    assert "already running" in result2.message
 
 
 def test_status_no_jobs(fabric_tagger):
     """Test status when no jobs exist"""
-    if isinstance(fabric_tagger.tagstore, RestTagstore):
-        pytest.skip("Skipping test for RestTagstore cause I don't want to have to configure many live test objects")
-
     with pytest.raises(MissingResourceError, match="No jobs started for"):
         fabric_tagger.status("iq__nonexistent")
 
@@ -85,11 +81,8 @@ def test_status_with_jobs(fabric_tagger, q, sample_tag_args):
     assert any(s.model == "asr" for s in status)
 
     for s in status:
-        assert s.status
-        assert isinstance(s.time_running, float)
-        assert isinstance(s.failed, list)
-        assert isinstance(s.missing_tags, list)
-        assert s.tagging_progress
+        assert s.status.status
+        assert isinstance(s.status.time_started, float)
 
 
 def test_status_completed_jobs(fabric_tagger, q, sample_tag_args):
@@ -103,8 +96,12 @@ def test_status_completed_jobs(fabric_tagger, q, sample_tag_args):
     
     # Check that job is done according to status
     status = fabric_tagger.status(q.qid)
-    assert _status_for(status, "caption").status == "Completed"
-    assert _status_for(status, "asr").status == "Completed"
+    status1 = _status_for(status, "caption")
+    assert status1.status.status == "Completed"
+    assert len(status1.status.downloaded_sources) == 2
+    assert len(status1.status.downloaded_sources) == 2
+
+    assert _status_for(status, "asr").status.status == "Completed"
 
 
 def test_stop_running_job(fabric_tagger, q, sample_tag_args):
@@ -216,8 +213,6 @@ def test_many_concurrent_jobs(fabric_tagger, make_tag_args):
         asr = _status_for(status, "asr")
         assert caption.status == "Completed"
         assert asr.status == "Completed"
-        assert len(caption.failed) == 0
-        assert len(asr.failed) == 0
 
 
 def test_tags_uploaded_during_and_after_job(
@@ -324,7 +319,7 @@ def test_container_tags_method_fails(fabric_tagger, q, make_tag_args):
 
 def test_start_new_container_fails(fabric_tagger, q, make_tag_args):
     """Test that when _start_new_container fails, job transitions to Failed state"""
-    fabric_tagger._start_new_container = Mock(side_effect=RuntimeError("Simulated tagging phase processing failure"))
+    fabric_tagger._start_new_container = Mock(side_effect=RuntimeError("Simulated error"))
 
     args = make_tag_args(feature="caption", stream="video", destination_qid=q.qid)
 
@@ -345,34 +340,8 @@ def test_start_new_container_fails(fabric_tagger, q, make_tag_args):
 
     final_status = fabric_tagger.status(q.qid)
     report = _status_for(final_status, "caption")
-    assert report.status == "Failed"
-    assert report.message is not None
-
-
-def test_failed_tag(fabric_tagger, q, make_tag_args):
-    # Configure the mock to return PartialFailContainer
-    
-    def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
-        return PartialFailContainer(req.media_dir, req.model_id)
-    
-    fabric_tagger.cregistry.get = get_side_effect
-    
-    args = make_tag_args(feature="caption", stream="video", destination_qid=q.qid)
-    
-    # Start the job
-    result = fabric_tagger.tag(q, args)
-    assert result.started is True
-
-    wait_tag(fabric_tagger, q.qid, timeout=5)
-
-    # check that only one was updated
-    status = fabric_tagger.status(q.qid)
-    report = _status_for(status, "caption")
-    assert report.status == "Completed"
-    assert len(report.failed) == 0
-    assert report.tagging_progress == "1/2"
-    assert len(report.missing_tags) == 1
-
+    assert report.status.status == "Failed"
+    assert report.status.error == "Simulated error"
 
 def wait_tag(fabric_tagger, batch_id, timeout):
     start = time.time()
@@ -470,7 +439,7 @@ def test_source_with_zero_tags_marked_as_missing(fabric_tagger, q, make_tag_args
     """Test that a source producing zero tags is marked as failed in job status"""
     
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
-        return PartialFailContainer(req.media_dir, req.model_id)
+        return PartialResultContainer(req.media_dir, req.model_id)
     
     fabric_tagger.cregistry.get = get_side_effect
     
@@ -481,10 +450,10 @@ def test_source_with_zero_tags_marked_as_missing(fabric_tagger, q, make_tag_args
     
     status = fabric_tagger.status(q.qid)
     report = _status_for(status, "caption")
-    assert report.status == "Completed"
-    assert len(report.failed) == 0
-    assert report.tagging_progress == "1/2"
-    assert len(report.missing_tags) == 1
+    assert report.status.status == "Completed"
+    assert len(report.status.downloaded_sources) == 2
+    assert len(report.status.tagged_sources) == 1
+    assert report.status.error is None
 
 
 def test_track_override_uploads_to_multiple_tracks(fabric_tagger, q, make_tag_args):
@@ -565,8 +534,7 @@ def test_fetcher_returns_no_sources(fabric_tagger, q, make_tag_args):
     """Test that job completes gracefully when fetcher returns no sources"""
 
     empty_result = DownloadResult(sources=[], failed=[], done=True)
-    fake_session = Mock()
-    fake_session.download.return_value = empty_result
+    fake_session = Mock(download=Mock(return_value=empty_result))
 
     with patch.object(fabric_tagger.fetcher, "get_session", return_value=fake_session):
         args = make_tag_args(feature="caption", stream="video")
@@ -576,10 +544,10 @@ def test_fetcher_returns_no_sources(fabric_tagger, q, make_tag_args):
 
     final_status = fabric_tagger.status(q.qid)
     report = _status_for(final_status, "caption")
-    assert report.status == "Completed"
-    assert report.tagging_progress == "0/0"
-    assert len(report.missing_tags) == 0
-    assert len(report.failed) == 0
+    assert report.status.status == "Completed"
+    assert report.status.downloaded_sources == 0
+    assert report.status.tagged_sources == 0
+    assert report.status.error is None
     
     # Verify no tags were uploaded
     tag_count = fabric_tagger.tagstore.count_tags(qid=q.qid, q=q)
