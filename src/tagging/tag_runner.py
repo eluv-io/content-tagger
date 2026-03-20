@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 from src.common.content import Content
 from src.common.logging import logger
-from src.tagging.fabric_tagging.model import TagJobStatusReport, JobStateDescription
+from src.tagging.fabric_tagging.model import TagStatusResult, JobStateDescription
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tagging.fabric_tagging.queue.model import *
@@ -12,7 +12,7 @@ logger = logger.bind(name="Tag Runner")
 
 TERMINAL_STATUSES: set[JobStateDescription] = {"Completed", "Failed", "Stopped"}
 
-def _job_status_from_report(report: TagJobStatusReport) -> job_status:
+def _job_status_from_report(report: TagStatusResult) -> job_status:
     mapping: dict[str, job_status] = {
         "Fetching content": "running",
         "Tagging content": "running",

@@ -10,7 +10,7 @@ from src.tagging.fabric_tagging.media_state import MediaState
 @dataclass
 class JobState:
     """Mutable state of the tagging job."""
-    status: JobStatus
+    status: JobStateDescription
     # internal handle used in the ContainerScheduler to identify the job
     taghandle: str
     media: MediaState
@@ -19,18 +19,24 @@ class JobState:
     # callers can pass an event to be notified when tagging is done
     tagging_done: threading.Event
     fetch_retry_count: int
+    warnings: list[str]
+    time_started: float
+    time_ended: float | None
 
     @staticmethod
     def starting(media: MediaState, upload_session: UploadSession) -> "JobState":
         """Create a JobState in starting state."""
         return JobState(
-            status=JobStatus.starting(),
+            status="Queued",
             taghandle="",
             media=media,
             upload_session=upload_session,
+            time_started=time.time(),
+            time_ended=None,
             tagging_done=threading.Event(),
             container=None,
-            fetch_retry_count=0
+            fetch_retry_count=0,
+            warnings=[],
         )
 
 @dataclass
@@ -42,7 +48,7 @@ class TagJob:
     stop_event: threading.Event
 
     def get_id(self) -> JobID:
-        """Get the job ID. Used as unique identifier for the job."""
+        """Get a human-readable identifier for the job (qid, feature, stream)."""
         if isinstance(self.args.scope, AssetScope):
             stream = "assets"
         elif isinstance(self.args.scope, VideoScope):

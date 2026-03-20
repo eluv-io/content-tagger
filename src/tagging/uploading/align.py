@@ -1,5 +1,4 @@
 from copy import deepcopy
-from dataclasses import replace as dataclass_replace
 
 from src.tag_containers.model import ModelTag
 from src.fetch.model import Source

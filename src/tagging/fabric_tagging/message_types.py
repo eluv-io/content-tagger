@@ -39,11 +39,9 @@ class EnterFetchingPhase:
 
 @dataclass
 class EnterTaggingPhase:
-    """Request to enter tagging phase. 
-    
-    Passes along the fetched data to tag."""
+    """Request to enter tagging phase."""
     job_id: JobID
-    data: DownloadResult
+    dl_result: DownloadResult
 
     def __str__(self):
         return f"EnterTaggingPhase(job_id={self.job_id})"

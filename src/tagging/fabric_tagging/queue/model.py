@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Literal
 
-from src.tagging.fabric_tagging.model import TagArgs, TagJobStatusReport
+from src.tagging.fabric_tagging.model import TagArgs, TagStatusResult
 
 job_status = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 
@@ -12,7 +12,8 @@ class JobStoreConfig:
 @dataclass
 class JobStatus:
     error: str | None
-    details: TagJobStatusReport | None
+    # TODO: will need to change
+    details: TagStatusResult | None
 
 @dataclass
 class QueueItem:

@@ -6,7 +6,6 @@ from src.tags.tagstore.abstract import Tagstore
 from src.tag_containers.model import ModelTag
 from src.common.content import Content
 from src.common.logging import logger
-from src.tagging.fabric_tagging.media_state import MediaState
 from src.tagging.fabric_tagging.model import TagContentStatusReport
 from src.tags.track_resolver import TrackResolver
 
@@ -75,9 +74,9 @@ class UploadSession:
 
         self.tagstore.update_batch(batch_id=batch, additional_info={"tagger": asdict(report)}, q=self.dest_q)
 
-    def get_uploaded_sources(self) -> set[str]:
+    def get_uploaded_sources(self) -> list[str]:
         """Get the set of source media that have been tagged in this session."""
-        return set(t.source_media for t in self.uploaded_tags)
+        return list(set(t.source_media for t in self.uploaded_tags))
     
     def _get_batch(self, model_track: str) -> str | None:
         """Get or create a batch for the given model track."""

@@ -115,8 +115,8 @@ def test_stop_running_job(fabric_tagger, q, sample_tag_args):
     
     # Check that stop event was set
     status = fabric_tagger.status(q.qid)
-    assert _status_for(status, "caption").status == "Stopped"
-    assert _status_for(status, "asr").status != "Stopped"
+    assert _status_for(status, "caption").status.status == "Stopped"
+    assert _status_for(status, "asr").status.status != "Stopped"
 
 
 def test_stop_nonexistent_job(fabric_tagger):
@@ -136,8 +136,8 @@ def test_stop_finished_job(fabric_tagger, q, sample_tag_args):
         fabric_tagger.stop(q.qid, "caption")
     # check that both are Completed
     status = fabric_tagger.status(q.qid)
-    assert _status_for(status, "caption").status == "Completed"
-    assert _status_for(status, "asr").status == "Completed"
+    assert _status_for(status, "caption").status.status == "Completed"
+    assert _status_for(status, "asr").status.status == "Completed"
 
 
 def test_cleanup(fabric_tagger, q, sample_tag_args):
@@ -203,16 +203,16 @@ def test_many_concurrent_jobs(fabric_tagger, make_tag_args):
     for status in statuses:
         caption = _status_for(status, "caption")
         asr = _status_for(status, "asr")
-        assert caption.status in ["Starting", "Fetching content"]
-        assert asr.status in ["Starting", "Fetching content"]
+        assert caption.status.status in ["Queued", "Fetching content"]
+        assert asr.status.status in ["Queued", "Fetching content"]
 
     time.sleep(2)
     for content in contents:
         status = fabric_tagger.status(content.qid)
         caption = _status_for(status, "caption")
         asr = _status_for(status, "asr")
-        assert caption.status == "Completed"
-        assert asr.status == "Completed"
+        assert caption.status.status == "Completed"
+        assert asr.status.status == "Completed"
 
 
 def test_tags_uploaded_during_and_after_job(
@@ -243,6 +243,8 @@ def test_tags_uploaded_during_and_after_job(
             break
         time.sleep(0.01)
 
+    print(fabric_tagger.status(q.qid))
+
     assert end
 
     assert len(tag_counts) == 3
@@ -263,22 +265,22 @@ def test_tags_uploaded_during_and_after_job_through_status(
     timeout = 3
     start = time.time()
     end = False
-    percentages = set()
+    counts = set()
     while time.time() - start < timeout:
         reports = fabric_tagger.status(q.qid)
         end = True
         for r in reports:
-            percentages.add(r.tagging_progress)
-            if r.tagging_progress != "2/2":
+            counts.add(len(r.status.uploaded_sources))
+            if len(r.status.uploaded_sources) != 2:
                 end = False
         if end:
             break
         time.sleep(0.01)
 
     assert end
-    assert "0/2" in percentages
-    assert "1/2" in percentages
-    assert "2/2" in percentages
+    assert 0 in counts
+    assert 1 in counts
+    assert 2 in counts
 
 
 def test_container_tags_method_fails(fabric_tagger, q, make_tag_args):
@@ -303,16 +305,16 @@ def test_container_tags_method_fails(fabric_tagger, q, make_tag_args):
     while time.time() - start_time < timeout:
         status = fabric_tagger.status(q.qid)
         job_status = _status_for(status, "caption").status
-        if job_status == "Failed":
+        if job_status.status == "Failed":
             break
-        elif job_status in ["Completed", "Stopped"]:
-            pytest.fail(f"Expected job to fail, but got status: {job_status}")
+        elif job_status.status in ["Completed", "Stopped"]:
+            pytest.fail(f"Expected job to fail, but got status: {job_status.status}")
         time.sleep(0.25)
     else:
         pytest.fail("Job did not fail within timeout period")
 
     final_status = fabric_tagger.status(q.qid)
-    assert _status_for(final_status, "caption").status == "Failed"
+    assert _status_for(final_status, "caption").status.status == "Failed"
     assert len(fabric_tagger.jobstore.active_jobs) == 0
     assert len(fabric_tagger.jobstore.inactive_jobs) == 1
 
@@ -330,10 +332,10 @@ def test_start_new_container_fails(fabric_tagger, q, make_tag_args):
     while time.time() - start_time < timeout:
         status = fabric_tagger.status(q.qid)
         job_status = _status_for(status, "caption").status
-        if job_status == "Failed":
+        if job_status.status == "Failed":
             break
-        elif job_status in ["Completed", "Stopped"]:
-            pytest.fail(f"Expected job to fail, but got status: {job_status}")
+        elif job_status.status in ["Completed", "Stopped"]:
+            pytest.fail(f"Expected job to fail, but got status: {job_status.status}")
         time.sleep(0.25)
     else:
         pytest.fail("Job did not fail within timeout period")
@@ -380,16 +382,16 @@ def test_container_nonzero_exit_code(fabric_tagger, q, make_tag_args):
     while time.time() - start_time < timeout:
         status = fabric_tagger.status(q.qid)
         job_status = _status_for(status, "caption").status
-        if job_status == "Failed":
+        if job_status.status == "Failed":
             break
-        elif job_status in ["Completed", "Stopped"]:
-            pytest.fail(f"Expected job to fail due to exit code, but got: {job_status}")
+        elif job_status.status in ["Completed", "Stopped"]:
+            pytest.fail(f"Expected job to fail due to exit code, but got: {job_status.status}")
         time.sleep(0.25)
     else:
         pytest.fail("Job did not fail within timeout period")
 
     final_status = fabric_tagger.status(q.qid)
-    assert _status_for(final_status, "caption").status == "Failed"
+    assert _status_for(final_status, "caption").status.status == "Failed"
 
 
 def test_destination_qid_uploads_to_correct_qhit(sample_tag_args, fabric_tagger: FabricTagger, q, q_legacy):
@@ -405,7 +407,7 @@ def test_destination_qid_uploads_to_correct_qhit(sample_tag_args, fabric_tagger:
     wait_tag(fabric_tagger, q.qid, timeout=10)
     time.sleep(0.5)
     
-    # Verify tags were uploaded to destination_qhit
+    # Verify tags were uploaded to destination_qid
     tag_count_destination = fabric_tagger.tagstore.count_tags(qid=q2.qid, q=q2)
     assert tag_count_destination > 0
 

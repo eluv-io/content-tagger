@@ -32,15 +32,15 @@ JobStateDescription = Literal[
     "Stopped"
 ]
 
-@dataclass
+@dataclass(frozen=True)
 class JobStatus:
     status: JobStateDescription
     time_started: float
     time_ended: float | None
-    total_sources: set[str]
-    downloaded_sources: set[str]
-    tagged_sources: set[str]
-    uploaded_sources: set[str]
+    total_sources: list[str]
+    downloaded_sources: list[str]
+    tagged_sources: list[str]
+    uploaded_sources: list[str]
     warnings: list[str]
     error: str | None
 
@@ -50,10 +50,10 @@ class JobStatus:
             status="Fetching content",
             time_started=time.time(),
             time_ended=None,
-            total_sources=set(),
-            tagged_sources=set(),
-            downloaded_sources=set(),
-            uploaded_sources=set(),
+            total_sources=[],
+            tagged_sources=[],
+            downloaded_sources=[],
+            uploaded_sources=[],
             warnings=[],
             error=None,
         )
