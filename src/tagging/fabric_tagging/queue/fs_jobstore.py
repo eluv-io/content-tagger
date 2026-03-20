@@ -64,7 +64,8 @@ class FsJobStore:
             params=params,
             created_at=job["created_at"],
             status=job["status"],
-            status_details=from_dict(JobStatus, job["status_details"]),
+            status_details=from_dict(TagDetails, job["status_details"]) if job["status_details"] else None,
+            error=job.get("error"),
             stop_requested=job["stop_requested"],
             auth=job["auth"],
             user=job["user"],
@@ -81,7 +82,8 @@ class FsJobStore:
             "status": "queued",
             "created_at": time.time(),
             "params": asdict(args.params),
-            "status_details": asdict(args.status_details),
+            "status_details": asdict(args.status_details) if args.status_details else None,
+            "error": None,
             "stop_requested": False,
             "user": tenant,
             "tenant": tenant,
@@ -118,6 +120,8 @@ class FsJobStore:
         job["status"] = args.status
         if args.status_details is not None:
             job["status_details"] = asdict(args.status_details)
+        if args.error is not None:
+            job["error"] = args.error
         self._write_job(args.id, job)
 
     def stop_job(self, id: str, auth: str) -> None:

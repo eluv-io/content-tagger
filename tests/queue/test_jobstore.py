@@ -1,15 +1,13 @@
 """Tests for the JobStore interface, exercised via the jobstore fixture."""
 
-import pytest
-
 from src.fetch.model import VideoScope
 from src.tagging.fabric_tagging.model import TagArgs
 from src.tagging.fabric_tagging.queue.model import (
     CreateQueueItem,
-    JobStatus,
     ListJobArgs,
     UpdateJobRequest,
 )
+from src.service.model import TagDetails
 
 
 # ---------------------------------------------------------------------------
@@ -32,7 +30,7 @@ def _make_create_item(qid: str = "iq__test", feature: str = "test_feature", addi
         qid=qid,
         params=_make_tag_args(feature),
         status="queued",
-        status_details=JobStatus(error=None, details=None),
+        status_details=None,
         additional_info=additional_info,
     )
 
@@ -139,7 +137,7 @@ class TestUpdateJob:
             UpdateJobRequest(
                 id=job_id,
                 status="succeeded",
-                status_details=JobStatus(error=None, details=None),
+                status_details=None,
             ),
             auth="test-auth",
         )
@@ -156,14 +154,15 @@ class TestUpdateJob:
             UpdateJobRequest(
                 id=job_id,
                 status="failed",
-                status_details=JobStatus(error="something went wrong", details=None),
+                error="something went wrong",
+                status_details=None,
             ),
             auth="test-auth",
         )
 
         failed = jobstore.list_jobs(ListJobArgs(status="failed"), auth="test-auth")
         assert len(failed) == 1
-        assert failed[0].status_details.error == "something went wrong"
+        assert failed[0].error == "something went wrong"
 
 
 class TestStopJob:

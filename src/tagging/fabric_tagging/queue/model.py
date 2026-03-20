@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 from typing import Literal
 
-from src.tagging.fabric_tagging.model import TagArgs, TagStatusResult
+from src.service.model import TagDetails
+from src.tagging.fabric_tagging.model import TagArgs
 
 job_status = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 
@@ -10,19 +11,14 @@ class JobStoreConfig:
     base_url: str
 
 @dataclass
-class JobStatus:
-    error: str | None
-    # TODO: will need to change
-    details: TagStatusResult | None
-
-@dataclass
 class QueueItem:
     id: str
     qid: str
     created_at: float
     params: TagArgs
     status: job_status
-    status_details: JobStatus
+    status_details: TagDetails | None
+    error: str | None
     stop_requested: bool
     auth: str
     user: str
@@ -34,7 +30,7 @@ class CreateQueueItem:
     qid: str
     params: TagArgs
     status: job_status
-    status_details: JobStatus
+    status_details: TagDetails | None
     additional_info: dict
 
 @dataclass
@@ -48,4 +44,5 @@ class ListJobArgs:
 class UpdateJobRequest:
     id: str
     status: job_status
-    status_details: JobStatus | None = None
+    status_details: TagDetails | None = None
+    error: str | None = None
