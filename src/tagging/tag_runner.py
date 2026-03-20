@@ -1,5 +1,6 @@
 import threading
 from dataclasses import dataclass
+import time
 
 from src.common.content import Content
 from src.common.logging import logger
@@ -152,10 +153,7 @@ class TagRunner:
                 UpdateJobRequest(
                     id=item.id,
                     status="failed",
-                    status_details=JobStatus(
-                        error=str(error),
-                        details=None
-                    )
+                    error=str(error),
                 ),
                 auth=item.auth,
             )
@@ -182,28 +180,40 @@ class TagRunner:
             report_by_feature: dict[str, TagStatusResult] = {r.model: r for r in reports}
 
             for item in job_items:
-                report = report_by_feature.get(item.feature)
-                if report is None:
+                r = report_by_feature.get(item.feature)
+                if r is None:
                     continue
 
                 # push updated status back to the queue
-                queue_status = _job_status_from_report(report)
+                queue_status = _job_status_from_report(r)
+
+                error = r.status.error
+
+                details=TagDetails(
+                    tag_status=r.status.status,
+                    time_running=r.status.time_ended - r.status.time_started if r.status.time_ended else time.time() - r.status.time_started,
+                    progress=(0.3 * len(r.status.downloaded_sources) + 0.7 * len(r.status.tagged_sources)) / len(r.status.total_sources),
+                    tagging_progress=f"{len(r.status.tagged_sources)}/{len(r.status.downloaded_sources)}",
+                    total_parts=len(r.status.total_sources),
+                    downloaded_parts=len(r.status.downloaded_sources),
+                    tagged_parts=len(r.status.tagged_sources),
+                )
+
                 try:
                     self.jobstore.update_job(
                         UpdateJobRequest(
                             id=item.id, 
                             status=queue_status, 
-                            status_details=JobStatus(
-                            error=None,
-                            details=report,
-                        )),
+                            status_details=details,
+                            error=error,
+                        ),
                         auth=item.auth,
                     )
                 except Exception as e:
                     logger.opt(exception=e).warning("failed to update job", job_id=item.id)
 
                 # if the job reached a terminal state, clean it up
-                if report.status in TERMINAL_STATUSES:
+                if r.status.status in TERMINAL_STATUSES:
                     self._finish_job(item.id)
 
     def _finish_job(self, id: str) -> None:
@@ -212,10 +222,10 @@ class TagRunner:
     def _set_stopped(self, item: QueueItem) -> None:
         try:
             self.jobstore.update_job(
-                UpdateJobRequest(id=item.id, status="cancelled", status_details=JobStatus(
-                    error="Job was stopped before it was started",
-                    details=None,
-                )),
+                UpdateJobRequest(
+                    id=item.id, 
+                    status="cancelled",
+                ),
                 auth=item.auth,
             )
         except Exception as e:
