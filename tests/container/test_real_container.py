@@ -40,19 +40,29 @@ def create_test_video(filepath: str, duration: float = 2.0):
     
     subprocess.run(cmd, capture_output=True, check=True)
 
-def test_container(temp_dir):
-    # Create initial directory with one video
+@pytest.fixture
+def video_paths(temp_dir):
     videos_dir = os.path.join(temp_dir, "videos")
-    os.makedirs(videos_dir)
+    os.makedirs(videos_dir, exist_ok=True)
     
     video1 = os.path.join(videos_dir, "video1.mp4")
+    video2 = os.path.join(videos_dir, "video2.mp4")
+    
     create_test_video(video1)
+    create_test_video(video2)
+    
+    return video1, video2
+
+@pytest.fixture
+def container(temp_dir):
+    videos_dir = os.path.join(temp_dir, "videos")
+    os.makedirs(videos_dir, exist_ok=True)
     
     output_path = os.path.join(temp_dir, "output", "output.jsonl")
     cache_dir = os.path.join(temp_dir, "cache")
     logs_path = os.path.join(temp_dir, "container.log")
     os.makedirs(cache_dir, exist_ok=True)
-    
+
     container_spec = ContainerSpec(
         id="test_live_container",
         media_dir=videos_dir,
@@ -69,6 +79,12 @@ def test_container(temp_dir):
     
     pclient = podman.PodmanClient()
     container = TagContainer(pclient, container_spec)
+
+    yield container
+    container.stop()
+
+def test_container(container, video_paths):
+    video1, video2 = video_paths
     
     try:
         # add some media before it starts
@@ -88,8 +104,8 @@ def test_container(temp_dir):
         assert container.progress()[0].source_media == video1
         
         # Create new video files
-        video2 = os.path.join(videos_dir, "video2.mp4")
-        video3 = os.path.join(videos_dir, "video3.mp4")
+        video2 = os.path.join(container.cfg.media_dir, "video2.mp4")
+        video3 = os.path.join(container.cfg.media_dir, "video3.mp4")
         create_test_video(video2)
         create_test_video(video3)
         
@@ -106,7 +122,7 @@ def test_container(temp_dir):
         assert statuses[2].source_media == video3
 
         # create a file with no media, should error
-        bad_path = os.path.join(videos_dir, "bad")
+        bad_path = os.path.join(container.cfg.media_dir, "bad")
         open(bad_path, "a").close()
 
         # now add a bad file and check for error
@@ -122,8 +138,8 @@ def test_container(temp_dir):
         assert not container.is_running()
         
         # Check the container logs
-        assert os.path.exists(logs_path)
-        with open(logs_path, 'r') as f:
+        assert os.path.exists(container.cfg.logs_path)
+        with open(container.cfg.logs_path, 'r') as f:
             logs = f.read()
         
         assert "Got media/video1.mp4" in logs
@@ -137,3 +153,23 @@ def test_container(temp_dir):
         
         # Verify container stopped
         assert not container.is_running()
+
+def test_stop_container(container, video_paths):
+    container.start(gpuidx=None)
+    container.add_media(list(video_paths))
+    time.sleep(1)
+    assert container.is_running()
+    container.stop()
+    time.sleep(1)
+    assert not container.is_running()
+
+def test_stop_via_eof(container, video_paths):
+    container.start(gpuidx=None)
+    assert container.is_running()
+    container.add_media(list(video_paths))
+    container.send_eof()
+    time.sleep(1)
+
+    assert not container.is_running()
+    # make sure it processed the files before eof'ing
+    assert len(container.progress()) == 2

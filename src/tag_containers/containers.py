@@ -105,6 +105,9 @@ class TagContainer:
         self.stdin_socket = self._open_container_stdin(self.container)
 
         self._flush_media()
+        if self.eof:
+            # then we've already queued an eof and we need to 
+            self.send_eof()
 
     def add_media(self, new_media: list[str]) -> None:
         """Buffer media files to be sent to the container on the next flush_media call."""
@@ -132,9 +135,9 @@ class TagContainer:
                 finally:
                     self.stdin_socket.close()
             except Exception as e:
-                logger.opt(exception=e).error("Error closing stdin socket", extra={"handle": self.name()})
+                logger.opt(exception=e).error("Error closing stdin socket", handle=self.name())
         else:
-            logger.warning("No stdin socket to close", extra={"handle": self.name()})
+            logger.warning("No stdin socket to close", handle=self.name())
 
     def stop(self) -> None:
         self.send_eof()
