@@ -34,9 +34,57 @@ class TagContainer:
         self.basename_to_source = {}
 
         self._media_buffer: list[str] = []
-        self._media_lock = threading.Lock()
+        self._lock = threading.Lock()
 
     def start(self, gpuidx: int | None) -> None:
+        with self._lock:
+            self._start(gpuidx)
+
+    def add_media(self, new_media: list[str]) -> None:
+        with self._lock:
+            self._add_media(new_media)
+
+    def send_eof(self) -> None:
+        with self._lock:
+            self._send_eof()
+
+    def stop(self) -> None:
+        with self._lock:
+            self._stop()
+
+    def is_running(self) -> bool:
+        with self._lock:
+            return self._is_running()
+
+    def exit_code(self) -> int | None:
+        with self._lock:
+            return self._exit_code()
+
+    def tags(self) -> list[ModelTag]:
+        with self._lock:
+            return self._tags()
+
+    def errors(self) -> list[Error]:
+        with self._lock:
+            return self._errors()
+
+    def progress(self) -> list[Progress]:
+        with self._lock:
+            return self._progress()
+
+    def name(self) -> str:
+        with self._lock:
+            return self._name()
+
+    def required_resources(self) -> SystemResources:
+        with self._lock:
+            return self._required_resources()
+
+    def info(self) -> ContainerInfo:
+        with self._lock:
+            return self._info()
+
+    def _start(self, gpuidx: int | None) -> None:
         if self.eof:
             raise RuntimeError("Container has already received EOF, cannot start again.")
 
@@ -95,36 +143,35 @@ class TagContainer:
         start = time.time()
         has_started = False
         while time.time() - start < timeout:
-            if self.is_running():
+            if self._is_running():
                 has_started = True
                 break
             time.sleep(0.1)
         if not has_started:
-            raise RuntimeError(f"Container did not start in time: {self.name()}")
+            raise RuntimeError(f"Container did not start in time: {self._name()}")
         
         self.stdin_socket = self._open_container_stdin(self.container)
 
         self._flush_media()
         if self.eof:
             # then we've already queued an eof and we need to 
-            self.send_eof()
+            self._send_eof()
 
-    def add_media(self, new_media: list[str]) -> None:
+    def _add_media(self, new_media: list[str]) -> None:
         """Buffer media files to be sent to the container on the next flush_media call."""
         if len(new_media) == 0:
             return
         for fpath in new_media:
             assert os.path.dirname(fpath) == self.media_dir
 
-        with self._media_lock:
-            for f in new_media:
-                self.basename_to_source[os.path.basename(f)] = f
-            self._media_buffer.extend(new_media)
+        for f in new_media:
+            self.basename_to_source[os.path.basename(f)] = f
+        self._media_buffer.extend(new_media)
 
-        if self.is_running():
+        if self._is_running():
             self._flush_media()
 
-    def send_eof(self) -> None:
+    def _send_eof(self) -> None:
         self.eof = True
         if self.stdin_socket:
             try:
@@ -135,27 +182,27 @@ class TagContainer:
                 finally:
                     self.stdin_socket.close()
             except Exception as e:
-                logger.opt(exception=e).error("Error closing stdin socket", handle=self.name())
+                logger.opt(exception=e).error("Error closing stdin socket", handle=self._name())
         else:
-            logger.warning("No stdin socket to close", handle=self.name())
+            logger.warning("No stdin socket to close", handle=self._name())
 
-    def stop(self) -> None:
-        self.send_eof()
+    def _stop(self) -> None:
+        self._send_eof()
         if not self.container:
             return
         if self.container.status == "running":
             self.container.stop(timeout=5)
-        if self.is_running():
-            logger.warning("Container did not stop in time, killing it", extra={"container_id": self.container.id, "handle": self.name()})
+        if self._is_running():
+            logger.warning("Container did not stop in time, killing it", extra={"container_id": self.container.id, "handle": self._name()})
             self.container.kill()
 
-    def is_running(self) -> bool:
+    def _is_running(self) -> bool:
         if self.container is None:
             return False
         self.container.reload()
         return self.container.status == "running"
 
-    def exit_code(self) -> int | None:
+    def _exit_code(self) -> int | None:
         """Returns exit code if available, else None"""
         if self.container is None:
             return None
@@ -164,40 +211,39 @@ class TagContainer:
             return self.container.attrs["State"]["ExitCode"]
         return None
 
-    def tags(self) -> list[ModelTag]:
+    def _tags(self) -> list[ModelTag]:
         """
         Get output tags generated by the running container so far.
         Reads the JSONL output file and returns all "tag" type messages as ModelTag objects.
         """
         return self._parse_output().tags
 
-    def errors(self) -> list[Error]:
+    def _errors(self) -> list[Error]:
         """Get error messages reported by the container."""
         return self._parse_output().errors
 
-    def progress(self) -> list[Progress]:
+    def _progress(self) -> list[Progress]:
         """Get progress reports from the container (which files are fully processed)."""
         return self._parse_output().progress
-    
-    def name(self) -> str:
+
+    def _name(self) -> str:
         """A human friendly name for the container, useful for logging"""
         return f"{self.cfg.id}_{self.cfg.model_config.image}"
 
-    def required_resources(self) -> SystemResources:
+    def _required_resources(self) -> SystemResources:
         """Returns the system resources required by this container to run."""
         return copy(self.cfg.model_config.resources)
 
-    def info(self) -> ContainerInfo:
+    def _info(self) -> ContainerInfo:
         """Returns image annotations and the running container ID (if started)."""
         image = self.pclient.images.get(self.cfg.model_config.image)
         annotations = image.attrs.get("Annotations", {})
         return ContainerInfo(image_name=self.cfg.model_config.image, annotations=annotations)
-    
+
     def _flush_media(self) -> None:
         """Send all buffered media files to the container's stdin."""
-        with self._media_lock:
-            buffered = self._media_buffer
-            self._media_buffer = []
+        buffered = self._media_buffer
+        self._media_buffer = []
 
         assert self.stdin_socket is not None
 

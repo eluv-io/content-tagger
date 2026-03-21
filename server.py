@@ -13,7 +13,7 @@ import os
 from src.api.arg_resolver import ArgsResolver
 from src.api.auth import Authenticator
 from src.service.impl.direct_api import DirectAPI
-from src.service.impl.queue_based import QueueClient
+from src.service.impl.queue_based import QueueService
 from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tags.tagstore.factory import create_tagstore
@@ -126,7 +126,7 @@ def create_app_direct(config: AppConfig) -> Flask:
 
 
 def create_app_queue_based(config: AppConfig) -> Flask:
-    """Queue-based mode: API handlers enqueue via QueueClient; TagRunner drives FabricTagger."""
+    """Queue-based mode: API handlers enqueue via QueueService; TagRunner drives FabricTagger."""
     app = Flask(__name__)
 
     fabric_tagger = _build_fabric_tagger(config)
@@ -137,7 +137,7 @@ def create_app_queue_based(config: AppConfig) -> Flask:
 
     app.config["state"] = {
         "tagger": fabric_tagger,
-        "service": QueueClient(job_store, qfactory),
+        "service": QueueService(job_store, qfactory),
         "arg_resolver": arg_resolver,
         "authenticator": Authenticator(config.content.config_url),
         "job_store": job_store,

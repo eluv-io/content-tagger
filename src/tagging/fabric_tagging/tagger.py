@@ -387,12 +387,12 @@ class FabricTagger:
 
         # dumb waiter thread, just waits on the event and then runs an upload when it's done
         threading.Thread(
-            target=self._do_tagging, 
+            target=self._await_tagging, 
             args=(job,), 
             daemon=True
         ).start()
 
-    def _do_tagging(self, job: TagJob) -> None:
+    def _await_tagging(self, job: TagJob) -> None:
         """Waits for tagging to complete, then uploads tags and requests transition to complete phase"""
         jobid = job.get_id()
         log = logger.bind(job_id=jobid)
