@@ -115,6 +115,9 @@ class LiveWorker(FetchSession):
                 done=True
             )
 
+        # add to the total list of sources so we can track the total number of segments for status reporting
+        self.meta.sources.append(source_name)
+
         return DownloadResult(
             sources=[source],
             failed=[],
