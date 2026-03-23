@@ -13,11 +13,12 @@ from src.fetch.model import *
 from src.tag_containers.containers import TagContainer
 from src.tag_containers.model import ContainerRequest, Progress
 from src.tag_containers.registry import ContainerRegistry
+from src.tagging.fabric_tagging.source_resolver import SourceResolver
 from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.common.content import Content
 from src.common.errors import *
 from src.fetch.factory import FetchFactory
-from src.tagging.uploading.align import align_tags
+from src.tagging.uploading.align import adjust_progress_sources, align_tags
 from src.tags.tagstore.abstract import Tagstore
 from src.tagging.fabric_tagging.message_types import *
 from src.tagging.fabric_tagging.job_state import *
@@ -58,6 +59,7 @@ class FabricTagger:
         tagstore: Tagstore,
         fetcher: FetchFactory,
         track_resolver: TrackResolver,
+        source_resolver: SourceResolver,
         cfg: FabricTaggerConfig,
     ):
 
@@ -66,6 +68,7 @@ class FabricTagger:
         self.tagstore = tagstore
         self.fetcher = fetcher
         self.track_resolver = track_resolver
+        self.source_resolver = source_resolver
         self.cfg = cfg
 
         self.jobstore = JobStore()
@@ -203,16 +206,16 @@ class FabricTagger:
         # for user to stop the job
         stop_event = threading.Event()
 
-        # TODO: replace with the idea of a primary track
-        preserve_track = self.track_resolver.resolve(feature)
-
         output_dir = self._output_dir_from_q(q)
 
-        # TODO: instead of passing in preserve_track, we should read from the tagstore or jobstore and then pass in the sources to ignore directly.
+        ignore_sources = []
+        if not args.replace:
+            ignore_sources = self.source_resolver.resolve(q, feature)
+
         worker = self.fetcher.get_session(
             q, 
             DownloadRequest(
-                preserve_track=preserve_track.name if not args.replace else "",
+                ignore_sources=ignore_sources,
                 output_dir=output_dir,
                 scope=args.scope,
             ),
@@ -232,6 +235,7 @@ class FabricTagger:
             feature=feature,
             dest_q=dest_q,
             track_resolver=self.track_resolver,
+            do_retry=is_live,
         )
 
         job = TagJob(
@@ -708,7 +712,11 @@ class FabricTagger:
         # TODO: align_tags also corrects the source name which is ugly
         aligned_tags = align_tags(tags, job.state.media.downloaded, fps=stream_meta.fps)
 
-        job.state.upload_session.upload_tags(aligned_tags, job.args.retry_upload)
+        statuses = job.state.container.progress()
+
+        tagged_sources = adjust_progress_sources(statuses, job.state.media.downloaded)
+
+        job.state.upload_session.upload_tags(aligned_tags, [p.source_media for p in tagged_sources])
 
     def _output_dir_from_q(self, q: Content) -> str:
         out = os.path.join(self.cfg.media_dir, q.qid)
@@ -735,7 +743,8 @@ class FabricTagger:
                 )
             
     def _get_tagged_sources(self, sources: list[Source], statuses: list[Progress]) -> list[str]:
-        """Get the list of sources that have generated tags based on container progress messages"""
+        """Get the list of sources that have generated tags based on container progress messages""" # deduplicate sources just in case, container progress can be noisy and send duplicates
+        
         tagged_sources = []
         source_by_filepath = {s.filepath: s for s in sources}
 
@@ -746,4 +755,4 @@ class FabricTagger:
             else:
                 logger.warning("got progress update for unknown source media, ignoring", source_media=status.source_media)
 
-        return tagged_sources
+        return list(set(tagged_sources))

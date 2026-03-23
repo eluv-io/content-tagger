@@ -17,6 +17,7 @@ from src.service.impl.queue_based import QueueService
 from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tags.tagstore.factory import create_tagstore
+from src.tagging.fabric_tagging.source_resolver import SourceResolver
 from src.fetch.factory import FetchFactory
 from src.common.content import QAPIFactory
 from src.tag_containers.registry import ContainerRegistry
@@ -91,13 +92,16 @@ def configure_routes(app: Flask) -> None:
 
 def _build_fabric_tagger(cfg: AppConfig) -> FabricTagger:
     qfactory = QAPIFactory(cfg.content)
+    tagstore = create_tagstore(cfg.tagstore)
+    track_resolver = TrackResolver(cfg.track_resolver)
     return FabricTagger(
         system_tagger=ContainerScheduler(cfg.system),
         fetcher=FetchFactory(cfg.fetcher, create_tagstore(cfg.tagstore), qfactory),
         cregistry=ContainerRegistry(cfg.container_registry),
-        tagstore=create_tagstore(cfg.tagstore),
+        tagstore=tagstore,
         cfg=cfg.tagger,
-        track_resolver=TrackResolver(cfg.track_resolver),
+        track_resolver=track_resolver,
+        source_resolver=SourceResolver(create_tagstore(cfg.tagstore), track_resolver=track_resolver)
     )
 
 

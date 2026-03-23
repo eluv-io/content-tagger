@@ -10,6 +10,7 @@ from src.fetch.model import VideoScope
 from src.service.model import StatusArgs
 from src.tag_containers.model import *
 from src.tagging.fabric_tagging.model import FabricTaggerConfig, TagArgs
+from src.tagging.fabric_tagging.source_resolver import SourceResolver
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
 from src.tagging.tag_runner import TagRunner, TagRunnerConfig
@@ -287,7 +288,7 @@ def fake_fetcher(media_dir):
 
         def get_session(self, q: Content, req: DownloadRequest, exit_event=None):
             """Return a FakeWorker"""
-            if req.preserve_track:
+            if req.ignore_sources:
                 # assume we are testing replace functionality and just return noop
                 return NoopWorker()
             return FakeWorker(output_dir=req.output_dir, timeout=0.1)
@@ -306,9 +307,14 @@ def fake_container_registry():
     """Create a fake ContainerRegistry that returns mock containers with fake tags"""
     return FakeContainerRegistry()
 
+@pytest.fixture
+def source_resolver(tag_store, track_resolver):
+    """Create a SourceResolver using the provided tag store and track resolver."""
+    return SourceResolver(tagstore=tag_store, track_resolver=track_resolver)
+
 
 @pytest.fixture
-def fabric_tagger(system_tagger, fake_container_registry, tag_store, fake_fetcher, track_resolver, tagger_config):
+def fabric_tagger(system_tagger, fake_container_registry, tag_store, fake_fetcher, track_resolver, tagger_config, source_resolver):
     """Create a FabricTagger instance for testing"""
     tagger = FabricTagger(
         system_tagger=system_tagger,
@@ -316,7 +322,8 @@ def fabric_tagger(system_tagger, fake_container_registry, tag_store, fake_fetche
         tagstore=tag_store,
         fetcher=fake_fetcher,
         track_resolver=track_resolver,
-        cfg=tagger_config
+        cfg=tagger_config,
+        source_resolver=source_resolver
     )
     yield tagger
     if not tagger.shutdown_requested():

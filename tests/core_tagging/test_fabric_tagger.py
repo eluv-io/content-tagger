@@ -11,7 +11,7 @@ from src.tag_containers.model import ContainerRequest, ModelTag
 from src.fetch.model import *
 from src.common.content import Content
 from src.common.errors import MissingResourceError
-from tests.core_tagging.conftest import FakeContainerRegistry, FakeTagContainer, FakeWorker, PartialResultContainer
+from tests.core_tagging.conftest import FakeTagContainer, PartialResultContainer
     
 def _status_for(
     reports: list[TagStatusResult],
@@ -98,6 +98,8 @@ def test_status_completed_jobs(fabric_tagger, q, sample_tag_args):
     status = fabric_tagger.status(q.qid)
     status1 = _status_for(status, "caption")
     assert status1.status.status == "Completed"
+    assert status1.status.time_ended is not None
+    assert status1.status.time_ended > status1.status.time_started
     assert len(status1.status.downloaded_sources) == 2
     assert len(status1.status.downloaded_sources) == 2
 
@@ -437,7 +439,7 @@ def test_tags_have_timestamp_ms_field(fabric_tagger: FabricTagger, q: Content, s
         assert tag.additional_info["timestamp_ms"] > 0
 
 
-def test_source_with_zero_tags_marked_as_missing(fabric_tagger, q, make_tag_args):
+def test_uploaded_sources_respects_model_progress(fabric_tagger, q, make_tag_args):
     """Test that a source producing zero tags is marked as failed in job status"""
     
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
@@ -455,7 +457,7 @@ def test_source_with_zero_tags_marked_as_missing(fabric_tagger, q, make_tag_args
     assert report.status.status == "Completed"
     assert len(report.status.downloaded_sources) == 2
     assert len(report.status.tagged_sources) == 2
-    assert len(report.status.uploaded_sources) == 1
+    assert len(report.status.uploaded_sources) == 2
     assert report.status.error is None
 
 
@@ -617,3 +619,39 @@ def test_replace(
     batches = fabric_tagger.tagstore.find_batches(q=q, track="object_detection")
     
     assert len(batches) == 2
+
+def test_second_run_has_no_parts(fabric_tagger, q, make_tag_args):
+    """Test that second run of same job has no parts to download"""
+
+    args = make_tag_args(feature="caption", stream="video", replace=False)
+
+    fabric_tagger.tag(q, args)
+    wait_tag(fabric_tagger, q.qid, timeout=5)
+
+    status = fabric_tagger.status(q.qid)
+    status1 = _status_for(status, "caption")
+    assert status1.status.status == "Completed"
+    assert len(status1.status.total_sources) == 2
+    assert len(status1.status.downloaded_sources) == 2
+    assert len(status1.status.tagged_sources) == 2
+
+    # Start same job again
+    fabric_tagger.tag(q, args)
+    wait_tag(fabric_tagger, q.qid, timeout=5)
+
+    status = fabric_tagger.status(q.qid)
+    status1 = _status_for(status, "caption")
+    assert status1.status.status == "Completed"
+    assert len(status1.status.total_sources) == 0
+    assert len(status1.status.downloaded_sources) == 0
+    assert len(status1.status.tagged_sources) == 0
+
+    args.replace = True
+    fabric_tagger.tag(q, args)
+    wait_tag(fabric_tagger, q.qid, timeout=5)
+
+    status = fabric_tagger.status(q.qid)
+    status1 = _status_for(status, "caption")
+    assert len(status1.status.total_sources) == 2
+    assert len(status1.status.downloaded_sources) == 2
+    assert len(status1.status.tagged_sources) == 2

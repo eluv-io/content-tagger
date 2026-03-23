@@ -23,7 +23,7 @@ def test_live_worker_incremental_segments(
             max_duration=max_duration
         ),
         output_dir=temp_dir,
-        preserve_track=""
+        ignore_sources=[],
     )
     
     worker = fetcher.get_session(q_live, req)
@@ -120,7 +120,7 @@ def test_live_worker_respects_ignore_sources(
     req = DownloadRequest(
         scope=LiveScope(stream="video", chunk_size=chunk_size, max_duration=20),
         output_dir=temp_dir,
-        preserve_track="",
+        ignore_sources=ignored,
     )
 
     worker = fetcher.get_session(q_live, req)
@@ -158,7 +158,7 @@ def test_live_worker_all_ignored(
     req = DownloadRequest(
         scope=LiveScope(stream="video", chunk_size=chunk_size, max_duration=20),
         output_dir=temp_dir,
-        preserve_track="",
+        ignore_sources=ignored,
     )
 
     worker = fetcher.get_session(q_live, req)
