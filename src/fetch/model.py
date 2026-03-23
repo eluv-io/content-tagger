@@ -59,13 +59,10 @@ class MediaMetadata:
 
 @dataclass
 class DownloadRequest:
-    # used to avoid re-downloading parts if this track has already been tagged
-    preserve_track: str
     output_dir: str
     scope: Scope
-
-    def __str__(self):
-        return f"DownloadRequest(preserve_track={self.preserve_track}, scope={self.scope})"
+    # list of sources to ignore (for diff-based tagging)
+    ignore_sources: list[str]
     
 @dataclass
 class DownloadResult:

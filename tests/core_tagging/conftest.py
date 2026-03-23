@@ -322,34 +322,6 @@ def fabric_tagger(system_tagger, fake_container_registry, tag_store, fake_fetche
     if not tagger.shutdown_requested():
         tagger.cleanup()
 
-
-@pytest.fixture
-def make_tag_args():
-    """Factory for consistent TagArgs construction in tests."""
-    def _make(
-        feature: str = "caption",
-        stream: str | None = None,
-        destination_qid: str = "",
-        # default to true for testing, but in real prod it's false
-        replace: bool = True,
-        run_config: dict | None = None,
-        start_time: int = 0,
-        end_time: int = 30,
-        max_fetch_retries: int = 3
-    ) -> TagArgs:
-        if stream is None:
-            stream = "audio" if feature == "asr" else "video"
-        return TagArgs(
-            feature=feature,
-            run_config=run_config or {},
-            scope=VideoScope(stream=stream, start_time=start_time, end_time=end_time),
-            replace=replace,
-            destination_qid=destination_qid,
-            max_fetch_retries=max_fetch_retries
-        )
-    return _make
-
-
 @pytest.fixture
 def sample_tag_args(make_tag_args):
     """Create sample TagArgs for testing."""

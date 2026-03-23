@@ -11,30 +11,6 @@ from src.tagging.uploading.uploader import UploadSession
 from src.tags.track_resolver import TrackArgs, TrackResolver, TrackResolverConfig
 
 
-@pytest.fixture
-def mock_q():
-    return Content(qid="test_qid", token="")
-
-@pytest.fixture
-def track_resolver():
-    """Create a simple track resolver for testing"""
-    return TrackResolver(cfg=TrackResolverConfig(mapping={
-        "caption": TrackArgs(name="object_detection", label="Object Detection"),
-        "asr": TrackArgs(name="speech_to_text", label="Speech to Text"),
-        "pretty": TrackArgs(name="auto_captions", label="Pretty Speech")
-    }))
-
-@pytest.fixture
-def upload_session(track_resolver, mock_q, filesystem_tagstore):
-    """Create an upload session with the mock track resolver and a mock tagstore"""
-    return UploadSession(
-        feature="asr",
-        track_resolver=track_resolver,
-        tagstore=filesystem_tagstore,
-        dest_q=mock_q,
-        do_retry=False
-    )
-
 def test_upload_tags(upload_session, get_tag):
     tags = [
         get_tag(model_track="asr", text="hello world"),

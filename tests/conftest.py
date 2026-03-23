@@ -4,7 +4,8 @@ import tempfile
 import pytest
 import dotenv
 
-from src.fetch.model import FetcherConfig
+from src.fetch.model import FetcherConfig, VideoScope
+from src.tagging.fabric_tagging.model import TagArgs
 from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tags.tagstore.abstract import Tagstore
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
@@ -142,3 +143,29 @@ def jobstore(temp_dir) -> JobStore:
     if url:
         raise NotImplementedError("Remote jobstore (JOBSTORE_URL) is not yet implemented")
     return FsJobStore(store_dir=os.path.join(temp_dir, "jobstore"))
+
+@pytest.fixture
+def make_tag_args():
+    """Factory for consistent TagArgs construction in tests."""
+    def _make(
+        feature: str = "caption",
+        stream: str | None = None,
+        destination_qid: str = "",
+        # default to true for testing, but in real prod it's false
+        replace: bool = True,
+        run_config: dict | None = None,
+        start_time: int = 0,
+        end_time: int = 30,
+        max_fetch_retries: int = 3
+    ) -> TagArgs:
+        if stream is None:
+            stream = "audio" if feature == "asr" else "video"
+        return TagArgs(
+            feature=feature,
+            run_config=run_config or {},
+            scope=VideoScope(stream=stream, start_time=start_time, end_time=end_time),
+            replace=replace,
+            destination_qid=destination_qid,
+            max_fetch_retries=max_fetch_retries
+        )
+    return _make

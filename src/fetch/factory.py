@@ -36,16 +36,8 @@ class FetchFactory:
         req: DownloadRequest, 
         exit: threading.Event | None = None
     ) -> FetchSession:
-        log = logger.bind(qid=q.qid, scope=str(req.scope), preserve_track=req.preserve_track)
 
         qapi = self.qfactory.create(q)
-
-        with timeit(f"Getting already tagged sources so we can ignore them: qid={q.qid}, scope={req.scope}, track={req.preserve_track}"):
-            # TODO: needs to move outside FetchFactory
-            ignore_sources = self._get_ignored_sources(q, req.preserve_track)
-        log.info(
-            f"Found {len(ignore_sources)} already tagged sources"
-        )
 
         if isinstance(req.scope, VideoScope):
             meta = self._fetch_stream_metadata(qapi, req.scope.stream)
@@ -54,7 +46,7 @@ class FetchFactory:
                 scope=req.scope,
                 rate_limiter=self.rl,
                 meta=meta,
-                ignore_sources=ignore_sources,
+                ignore_sources=req.ignore_sources,
                 output_dir=req.output_dir,
                 exit=exit
             )
@@ -65,7 +57,7 @@ class FetchFactory:
                 scope=req.scope,
                 rate_limiter=self.rl,
                 meta=meta,
-                ignore_assets=ignore_sources,
+                ignore_assets=req.ignore_sources,
                 output_dir=req.output_dir,
                 exit=exit
             )
@@ -78,7 +70,7 @@ class FetchFactory:
                 rate_limiter=self.rl,
                 meta=meta,
                 output_dir=req.output_dir,
-                ignore_sources=ignore_sources,
+                ignore_sources=req.ignore_sources,
                 exit=exit
             )
         elif isinstance(req.scope, TimeRangeScope):
@@ -87,23 +79,13 @@ class FetchFactory:
                 q=q, 
                 scope=req.scope,
                 meta=meta,
-                ignore_sources=ignore_sources,
+                ignore_sources=req.ignore_sources,
                 output_dir=req.output_dir,
                 exit=exit
             )
         else:
             raise BadRequestError(f"Unknown scope type: {type(req.scope)}")
 
-    def _get_ignored_sources(self, q: Content, preserve_track: str) -> list[str]:
-        if not preserve_track:
-            return []
-        existing_tags = self.ts.find_tags(
-            author=self.config.author, 
-            qid=q.qid,
-            track=preserve_track,
-            q=q
-        )
-        return list(set(tag.source for tag in existing_tags))
     
     def _fetch_asset_metadata(self, qapi: QAPI, scope: AssetScope) -> MediaMetadata:
         # Get list of assets to download
