@@ -345,7 +345,6 @@ class FabricTagger:
         job.state.media.downloaded.extend(new_sources)
 
         for src in dl_res.failed:
-            # TODO: should propagate real error here
             job.state.warnings.append(f"Failed to download {src}")
 
         job.state.status = "Tagging content"
