@@ -32,8 +32,6 @@ def handle_tag(qid: str) -> Response:
 
     if args.options.destination_qid:
         authorize(args.options.destination_qid, request)
-    
-    tagger: FabricTagger = current_app.config["state"]["tagger"]
 
     arg_resolver: ArgsResolver = current_app.config["state"]["arg_resolver"]
 

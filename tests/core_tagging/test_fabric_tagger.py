@@ -697,3 +697,43 @@ def test_model_error_through_status(fabric_tagger, q, make_tag_args):
     report = _status_for(status, "caption")
     assert report.status.status == "Failed"
     assert report.status.error == "Simulated model error"
+
+def test_part_download_warnings(fabric_tagger, q, make_tag_args):
+    """Test that if some parts fail to download but job completes, the failed parts are reported in status"""
+
+    class PartialFailFetchWorker(FetchSession):
+        def download(self) -> DownloadResult:
+            return DownloadResult(
+                sources=[Source(
+                    name="video1",
+                    filepath="/path/to/video1",
+                    offset=0,
+                    wall_clock=None
+                )],
+                failed=["video2"],
+                done=True
+            )
+
+        def metadata(self) -> MediaMetadata:
+            return MediaMetadata(sources=["video1", "video2"], fps=30.0)
+        
+        @property
+        def path(self) -> str:
+            return "/fake/path"
+
+    fabric_tagger.fetcher.get_session = Mock(return_value=PartialFailFetchWorker())
+
+    args = make_tag_args(feature="caption", stream="video")
+
+    fabric_tagger.tag(q, args)
+
+    wait_tag(fabric_tagger, q.qid, timeout=5)
+
+    status = fabric_tagger.status(q.qid)
+    report = _status_for(status, "caption")
+    assert report.status.status == "Completed"
+    assert len(report.status.total_sources) == 2
+    assert len(report.status.downloaded_sources) == 1
+    assert len(report.status.tagged_sources) == 1
+    assert report.status.error is None
+    assert len(report.status.warnings) == 1
