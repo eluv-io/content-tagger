@@ -28,6 +28,7 @@ class TagContainer:
         self.container = None
         self.stdin_socket = None
         self.eof = False
+        self.started = False
 
         # used for converting source_media field in model outputs back to the path on the host filesystem
         self.basename_to_source = {}
@@ -84,8 +85,8 @@ class TagContainer:
             return self._info()
 
     def _start(self, gpuidx: int | None) -> None:
-        if self.eof:
-            raise RuntimeError("Container has already received EOF, cannot start again.")
+        if self.started:
+            raise RuntimeError("Can only call start once per container instance")
 
         output_dir = os.path.dirname(self.cfg.output_path)
         os.makedirs(output_dir, exist_ok=True)
@@ -155,6 +156,8 @@ class TagContainer:
         if self.eof:
             # then we've already queued an eof and we need to 
             self._send_eof()
+
+        self.started = True
 
     def _add_media(self, new_media: list[str]) -> None:
         """Buffer media files to be sent to the container on the next flush_media call."""
