@@ -32,6 +32,7 @@ def upload_session(track_resolver, mock_q, filesystem_tagstore):
         track_resolver=track_resolver,
         tagstore=filesystem_tagstore,
         dest_q=mock_q,
+        do_retry=False
     )
 
 def test_upload_tags(upload_session, get_tag):
@@ -40,7 +41,7 @@ def test_upload_tags(upload_session, get_tag):
         get_tag(model_track="caption", text="test tag", start_time=100, end_time=200)
     ]
 
-    upload_session.upload_tags(tags=tags, retry=False)
+    upload_session.upload_tags(tags=tags, tagged_sources=[t.source_media for t in tags])
 
     ts = upload_session.tagstore
     track = ts.get_track(name="speech_to_text", q=upload_session.dest_q)
@@ -71,7 +72,7 @@ def test_upload_report(upload_session, get_tag):
         get_tag(model_track="asr", text="hello world"),
     ]
 
-    upload_session.upload_tags(tags=tags, retry=False)
+    upload_session.upload_tags(tags=tags, tagged_sources=[t.source_media for t in tags])
 
     @dataclass
     class MockParams:
@@ -93,3 +94,17 @@ def test_upload_report(upload_session, get_tag):
     db_batch = ts.get_batch(batch_id=batch, q=upload_session.dest_q)
     assert db_batch is not None
     assert db_batch.additional_info == {"tagger": asdict(report)}
+
+def test_get_uploaded_sources(upload_session, get_tag):
+    tags = [
+        get_tag(model_track="asr", text="hello world", source_media="/path/to/source1.mp4"),
+        get_tag(model_track="caption", text="test tag", start_time=100, end_time=200, source_media="/path/to/source2.mp4")
+    ]
+
+    tagged_sources = ["source1", "source2"]
+
+    upload_session.upload_tags(tags=tags, tagged_sources=tagged_sources)
+
+    uploaded_sources = upload_session.get_uploaded_sources()
+
+    assert set(uploaded_sources) == {"source1", "source2"}

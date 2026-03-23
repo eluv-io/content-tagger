@@ -17,23 +17,31 @@ class UploadSession:
         track_resolver: TrackResolver,
         tagstore: Tagstore,
         dest_q: Content,
+        do_retry: bool,
     ):
 
         self.feature = feature
         self.track_resolver = track_resolver
         self.tagstore = tagstore
         self.dest_q = dest_q
-
+        self.retry = do_retry
         # Mutable state
         self.track_to_batch: dict[str, str] = {}
         self.uploaded_tags: set[ModelTag] = set()
+        self.uploaded_sources = set()
 
-    def upload_tags(self, tags: list[ModelTag], retry: bool) -> None:
+    def upload_tags(
+        self, 
+        tags: list[ModelTag], 
+        tagged_sources: list[str]
+    ) -> None:
         """Main upload method - formats and uploads tags to tagstore"""
         new_inputs = [t for t in tags if t not in self.uploaded_tags]
 
         if not new_inputs:
             return
+        
+        self.uploaded_sources.update(tagged_sources)
 
         logger.info(
             "uploading new tags",
@@ -58,7 +66,7 @@ class UploadSession:
         try:
             self._post_tags(tags2upload, q=self.dest_q)
         except Exception as e:
-            if retry:
+            if self.retry:
                 logger.opt(exception=e).error("error uploading tags, but retry is set to true, will retry on next upload tick", destination_qid=self.dest_q.qid, feature=self.feature)
             else:
                 raise
@@ -76,7 +84,7 @@ class UploadSession:
 
     def get_uploaded_sources(self) -> list[str]:
         """Get the set of source media that have been tagged in this session."""
-        return list(set(t.source_media for t in self.uploaded_tags))
+        return list(self.uploaded_sources)
     
     def _get_batch(self, model_track: str) -> str | None:
         """Get or create a batch for the given model track."""
