@@ -168,3 +168,21 @@ def test_live_worker_all_ignored(
     result = worker.download()
     assert len(result.sources) == 0
     assert result.done is True
+
+def test_live_worker_metadata(
+    fetcher: FetchFactory,
+    q_live: Content,
+    temp_dir: str
+):
+    req = DownloadRequest(
+        scope=LiveScope(stream="video", chunk_size=4, max_duration=20),
+        output_dir=temp_dir,
+        ignore_sources=[],
+    )
+
+    worker = fetcher.get_session(q_live, req)
+    assert len(worker.metadata().sources) == 0
+    worker.download()
+    assert len(worker.metadata().sources) == 1
+    worker.download()
+    assert len(worker.metadata().sources) == 2
