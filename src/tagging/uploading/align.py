@@ -1,7 +1,25 @@
 from copy import deepcopy
 
-from src.tag_containers.model import ModelTag
+from src.tag_containers.model import ModelTag, Progress
 from src.fetch.model import Source
+
+def adjust_progress_sources(statuses: list[Progress], sources: list[Source]) -> list[Progress]:
+    """Map the source_media field (the file-path that the container tagged) back to the original source name.
+    """
+
+    source_by_filepath = {s.filepath: s for s in sources}
+    adjusted_statuses: list[Progress] = []
+    for status in statuses:
+        src = source_by_filepath.get(status.source_media)
+        if src is None:
+            continue
+
+        adjusted_statuses.append(
+            Progress(
+                source_media=src.name
+            )
+        )
+    return adjusted_statuses
 
 def align_tags(tags: list[ModelTag], sources: list[Source], fps: float | None) -> list[ModelTag]:
     """Align ModelTag timestamps relative to the full content object.
