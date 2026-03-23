@@ -8,7 +8,6 @@ from urllib.parse import unquote
 import threading
 import time
 
-from src.common.errors import BadRequestError
 from src.tag_containers.model import *
 from src.tag_containers.model import ContainerInfo, ContainerOutput, Progress, Error
 

@@ -5,7 +5,7 @@ from copy import deepcopy
 from podman import PodmanClient
 from loguru import logger
 
-from src.common.errors import MissingResourceError
+from src.common.errors import MissingResourceError, BadRequestError
 from src.tag_containers.model import RegistryConfig, ContainerSpec, ModelConfig
 from src.tag_containers.containers import *
 from src.tag_containers.model import ContainerRequest
