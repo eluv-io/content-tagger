@@ -411,7 +411,14 @@ class FabricTagger:
 
         status = self.system_tagger.status(job.state.taghandle)
         if status.status != "Completed":
-            self._request_job_end(jobid, "Failed", RuntimeError(f"Tagging job ended with status: {status.status}"))
+            container_errors = []
+            if job.state.container is not None:
+                container_errors = job.state.container.errors()
+            if container_errors:
+                error = RuntimeError(container_errors[0].message)
+            else:
+                error = status.error or RuntimeError("Container exited unsuccessfully")
+            self._request_job_end(jobid, "Failed", error=error)
             return
 
         # Request transition to complete phase

@@ -7,7 +7,7 @@ from src.tags.tagstore.model import Track
 from src.tags.tagstore.rest_tagstore import RestTagstore
 from src.tagging.fabric_tagging.tagger import FabricTagger
 from src.tagging.fabric_tagging.model import TagStatusResult
-from src.tag_containers.model import ContainerRequest, ModelTag
+from src.tag_containers.model import ContainerRequest, Error, ModelTag
 from src.fetch.model import *
 from src.common.content import Content
 from src.common.errors import MissingResourceError
@@ -317,6 +317,7 @@ def test_container_tags_method_fails(fabric_tagger, q, make_tag_args):
 
     final_status = fabric_tagger.status(q.qid)
     assert _status_for(final_status, "caption").status.status == "Failed"
+    assert _status_for(final_status, "caption").status.error == "Simulated container tags() failure"
     assert len(fabric_tagger.jobstore.active_jobs) == 0
     assert len(fabric_tagger.jobstore.inactive_jobs) == 1
 
@@ -394,6 +395,7 @@ def test_container_nonzero_exit_code(fabric_tagger, q, make_tag_args):
 
     final_status = fabric_tagger.status(q.qid)
     assert _status_for(final_status, "caption").status.status == "Failed"
+    assert _status_for(final_status, "caption").status.error
 
 
 def test_destination_qid_uploads_to_correct_qhit(sample_tag_args, fabric_tagger: FabricTagger, q, q_legacy):
@@ -655,3 +657,43 @@ def test_second_run_has_no_parts(fabric_tagger, q, make_tag_args):
     assert len(status1.status.total_sources) == 2
     assert len(status1.status.downloaded_sources) == 2
     assert len(status1.status.tagged_sources) == 2
+
+def test_upload_fail_propagates(fabric_tagger, q, make_tag_args):
+    """Test that if upload_tags raises an exception, job transitions to Failed state"""
+
+    fabric_tagger.tagstore.upload_tags = Mock(side_effect=RuntimeError("Simulated upload failure"))
+
+    args = make_tag_args(feature="caption", stream="video")
+
+    fabric_tagger.tag(q, args)
+
+    time.sleep(1)
+
+    status = fabric_tagger.status(q.qid)
+    report = _status_for(status, "caption")
+    assert report.status.status == "Failed"
+    assert report.status.error == "Simulated upload failure"
+
+def test_model_error_through_status(fabric_tagger, q, make_tag_args):
+    class ErrorContainer(FakeTagContainer):
+        def errors(self) -> list[Error]:
+            return [Error(source_media=self.media_files[0], message="Simulated model error")]
+
+        def exit_code(self) -> int | None:
+            return 1
+
+    def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
+        return ErrorContainer(req.media_dir, req.model_id)
+
+    fabric_tagger.cregistry.get = get_side_effect
+
+    args = make_tag_args(feature="caption", stream="video")
+
+    fabric_tagger.tag(q, args)
+
+    time.sleep(1)
+
+    status = fabric_tagger.status(q.qid)
+    report = _status_for(status, "caption")
+    assert report.status.status == "Failed"
+    assert report.status.error == "Simulated model error"
