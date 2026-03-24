@@ -10,7 +10,7 @@ from src.tagging.fabric_tagging.model import TagStatusResult
 from src.tag_containers.model import ContainerRequest, Error, ModelTag
 from src.fetch.model import *
 from src.common.content import Content
-from src.common.errors import MissingResourceError
+from src.common.errors import BadRequestError, MissingResourceError
 from tests.core_tagging.conftest import FakeTagContainer, PartialResultContainer
     
 def _status_for(
@@ -322,31 +322,25 @@ def test_container_tags_method_fails(fabric_tagger, q, make_tag_args):
     assert len(fabric_tagger.jobstore.inactive_jobs) == 1
 
 
-def test_start_new_container_fails(fabric_tagger, q, make_tag_args):
-    """Test that when _start_new_container fails, job transitions to Failed state"""
-    fabric_tagger._start_new_container = Mock(side_effect=RuntimeError("Simulated error"))
+def test_container_initialization_fails(fabric_tagger, q, make_tag_args):
+    """Test that when container initialization fails, tag() raises the error directly"""
+
+    class FailContainer(FakeTagContainer):
+        def start(self, gpu_idx: int | None=None) -> None:
+            raise RuntimeError("Simulated container start failure")
+        
+    fabric_tagger.cregistry.get = Mock(return_value=FailContainer("/fake/media/dir", "model_id"))
 
     args = make_tag_args(feature="caption", stream="video", destination_qid=q.qid)
 
     fabric_tagger.tag(q, args)
 
-    timeout = 2
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        status = fabric_tagger.status(q.qid)
-        job_status = _status_for(status, "caption").status
-        if job_status.status == "Failed":
-            break
-        elif job_status.status in ["Completed", "Stopped"]:
-            pytest.fail(f"Expected job to fail, but got status: {job_status.status}")
-        time.sleep(0.25)
-    else:
-        pytest.fail("Job did not fail within timeout period")
+    time.sleep(1)
 
-    final_status = fabric_tagger.status(q.qid)
-    report = _status_for(final_status, "caption")
-    assert report.status.status == "Failed"
-    assert report.status.error == "Simulated error"
+    status = fabric_tagger.status(q.qid)
+    job_status = _status_for(status, "caption").status
+    assert job_status.status == "Failed"
+    assert job_status.error == "Simulated container start failure"
 
 def wait_tag(fabric_tagger, batch_id, timeout):
     start = time.time()
@@ -737,3 +731,11 @@ def test_part_download_warnings(fabric_tagger, q, make_tag_args):
     assert len(report.status.tagged_sources) == 1
     assert report.status.error is None
     assert len(report.status.warnings) == 1
+
+def test_unknown_container(fabric_tagger, q, make_tag_args):
+    """Test that if container registry returns a container that doesn't match the requested model, job fails gracefully"""
+
+    args = make_tag_args(feature="not exists", stream="video")
+    
+    with pytest.raises(MissingResourceError):
+        fabric_tagger.tag(q, args)
