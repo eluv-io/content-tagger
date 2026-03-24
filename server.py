@@ -14,6 +14,7 @@ from src.api.arg_resolver import ArgsResolver
 from src.api.auth import Authenticator
 from src.service.impl.direct_api import DirectAPI
 from src.service.impl.queue_based import QueueService
+from src.status.get_info import UserInfoResolver
 from src.status.service import TaggingStatusService
 from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.tagging.fabric_tagging.tagger import TaggerWorker
@@ -148,7 +149,8 @@ def create_app_queue_based(config: AppConfig) -> Flask:
     app = Flask(__name__)
 
     worker = _build_worker(config)
-    job_store: JobStore = FsJobStore(config.jobstore.base_url)
+    user_info_resolver = UserInfoResolver(config.user_info_resolver)
+    job_store: JobStore = FsJobStore(config.jobstore.base_url, user_info_resolver=user_info_resolver)
     qfactory = QAPIFactory(config.content)
     arg_resolver = ArgsResolver(worker.cregistry, api_factory=qfactory)
 
@@ -159,6 +161,7 @@ def create_app_queue_based(config: AppConfig) -> Flask:
             track_resolver=worker.track_resolver
         ),
         "arg_resolver": arg_resolver,
+        "user_info_resolver": user_info_resolver,
         "authenticator": Authenticator(config.content.config_url),
 
         "worker": worker,  # Expose worker for testing purposes

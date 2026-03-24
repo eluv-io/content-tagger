@@ -14,7 +14,7 @@ from src.api.tagging.request_format import StartJobsRequest
 from src.common.content import Content
 from src.fetch.model import DownloadResult, FetchSession, MediaMetadata, VideoScope
 from src.service.model import StatusArgs, TagDetails, TagJobStatusResult
-from src.status.get_info import UserInfo
+from src.status.get_info import UserInfoResolverConfig
 from src.tag_containers.model import ModelConfig, RegistryConfig
 from src.tagging.fabric_tagging.model import TaggerWorkerConfig, JobID, TagArgs, TagStartResult, TagStopResult
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
@@ -66,7 +66,11 @@ def app_config(static_dir, tagger_config, content_config, fetcher_config, contai
         container_registry=container_registry_config,
         tagger=tagger_config,
         track_resolver=TrackResolverConfig(mapping={"test_model": TrackArgs(name="test_model", label="TEST MODEL")}),
-        tag_runner=TagRunnerConfig(poll_interval=0.1)
+        tag_runner=TagRunnerConfig(poll_interval=0.1),
+        user_info_resolver=UserInfoResolverConfig(
+            fabric_url="https://main.net955305.contentfabric.io",
+            user_info_url="https://ai.contentfabric.io/ml/token_info"
+        )
     )
 
 
@@ -248,17 +252,6 @@ class MockArgsResolver:
                 max_fetch_retries=3,
             ))
         return results
-    
-@pytest.fixture
-def fake_user_info_resolver():
-    return Mock(
-        get_user_info=Mock(return_value=UserInfo(
-            user_adr="0x123",
-            is_tenant_admin=True,
-                is_content_admin=True
-            )),
-        get_tenant=Mock(return_value="tenant1")
-    )
     
 @pytest.fixture
 def mock_app(mock_tagger_service, mock_authenticator, fake_user_info_resolver):

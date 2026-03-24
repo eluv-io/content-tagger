@@ -107,13 +107,15 @@ def handle_status() -> Response:
     returned job's qid and confirming get_tenant(qid, auth) matches the
     requested tenant.
     """
+    auth = get_authorization(request)
+
     status_req = _parse_status_request()
 
     service: QueueService = current_app.config["state"]["service"]
     
     user_info_resolver: UserInfoResolver = current_app.config["state"]["user_info_resolver"]
 
-    user_info = user_info_resolver.get_user_info(request)
+    user_info = user_info_resolver.get_user_info(auth, tenant_id=status_req.tenant)
 
     if status_req.tenant and not user_info.is_tenant_admin:
         raise ForbiddenError("Only tenant admins can query by tenant")

@@ -222,3 +222,7 @@ track_resolver:
     delivery:
       name: delivery
       label: Delivery?
+
+user_info_resolver:
+  fabric_url: https://main.net955305.contentfabric.io
+  user_info_url: https://ai.contentfabric.io/ml/token_info

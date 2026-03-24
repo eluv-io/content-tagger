@@ -12,6 +12,7 @@ from src.tagging.fabric_tagging.queue.model import JobStoreConfig
 from src.tags.tagstore.model import TagstoreConfig
 from src.tagging.fabric_tagging.model import TaggerWorkerConfig
 from src.tags.track_resolver import TrackResolverConfig
+from src.status.get_info import UserInfoResolverConfig
 
 @dataclass
 class AppConfig:
@@ -25,6 +26,7 @@ class AppConfig:
     tagger: TaggerWorkerConfig
     track_resolver: TrackResolverConfig
     tag_runner: TagRunnerConfig
+    user_info_resolver: UserInfoResolverConfig
 
     @staticmethod
     def from_yaml(filename: str) -> 'AppConfig':

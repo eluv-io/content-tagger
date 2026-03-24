@@ -339,18 +339,6 @@ def sample_tag_args(make_tag_args):
     ]
 
 @pytest.fixture
-def fake_user_info_resolver():
-    return Mock(
-        get_user_info=Mock(return_value=UserInfo(
-            user_adr="0x123",
-            is_tenant_admin=True,
-            is_content_admin=True
-        )),
-        get_tenant=Mock(return_value="tenant1")
-    )
-
-
-@pytest.fixture
 def queue_jobstore(tmp_path, fake_user_info_resolver) -> FsJobStore:
     return FsJobStore(store_dir=str(tmp_path / "jobstore"), user_info_resolver=fake_user_info_resolver)
 
