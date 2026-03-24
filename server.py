@@ -14,6 +14,7 @@ from src.api.arg_resolver import ArgsResolver
 from src.api.auth import Authenticator
 from src.service.impl.direct_api import DirectAPI
 from src.service.impl.queue_based import QueueService
+from src.status.service import TaggingStatusService
 from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.tagging.fabric_tagging.tagger import TaggerWorker
 from src.tags.tagstore.factory import create_tagstore
@@ -25,8 +26,7 @@ from src.tags.track_resolver import TrackResolver
 from src.common.logging import logger
 
 from src.api.tagging.handlers import handle_tag, handle_status, handle_status_content, handle_stop_model, handle_stop_content
-from src.api.content_status.handlers import handle_content_status
-from src.api.model_status.handlers import handle_model_status
+from src.api.content_status.handlers import handle_content_status, handle_model_status
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
 from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tagging.tag_runner import TagRunner
@@ -90,7 +90,7 @@ def configure_routes(app: Flask) -> None:
     def docs_route():
         return send_from_directory('docs/api', 'openapi.html')
 
-def _build_fabric_tagger(cfg: AppConfig) -> TaggerWorker:
+def _build_worker(cfg: AppConfig) -> TaggerWorker:
     qfactory = QAPIFactory(cfg.content)
     tagstore = create_tagstore(cfg.tagstore)
     track_resolver = TrackResolver(cfg.track_resolver)
@@ -109,19 +109,23 @@ def create_app_direct(config: AppConfig) -> Flask:
     """Standalone mode: API handlers call TaggerWorker directly."""
     app = Flask(__name__)
 
-    fabric_tagger = _build_fabric_tagger(config)
-    arg_resolver = ArgsResolver(fabric_tagger.cregistry, QAPIFactory(config.content))
+    worker = _build_worker(config)
+    arg_resolver = ArgsResolver(worker.cregistry, QAPIFactory(config.content))
     app.config["state"] = {
-        "tagger": fabric_tagger,
-        "service": DirectAPI(fabric_tagger),
+        "service": DirectAPI(worker),
+        "status_service": TaggingStatusService(
+            tagstore=worker.tagstore, 
+            track_resolver=worker.track_resolver
+        ),
         "authenticator": Authenticator(config.content.config_url),
         "arg_resolver": arg_resolver,
+
+        "worker": worker,  # Expose worker for testing purposes
     }
 
     def shutdown():
-        tagger: TaggerWorker = app.config["state"]["tagger"]
-        if not tagger.shutdown_requested:
-            tagger.cleanup()
+        if not worker.shutdown_requested:
+            worker.cleanup()
 
     atexit.register(shutdown)
     configure_routes(app)
@@ -133,20 +137,24 @@ def create_app_queue_based(config: AppConfig) -> Flask:
     """Queue-based mode: API handlers enqueue via QueueService; TagRunner drives TaggerWorker."""
     app = Flask(__name__)
 
-    fabric_tagger = _build_fabric_tagger(config)
+    worker = _build_worker(config)
     job_store: JobStore = FsJobStore(config.jobstore.base_url)
     qfactory = QAPIFactory(config.content)
-    arg_resolver = ArgsResolver(fabric_tagger.cregistry, api_factory=qfactory)
-    loop = TagRunner(fabric_tagger, job_store, config.tag_runner)
+    arg_resolver = ArgsResolver(worker.cregistry, api_factory=qfactory)
 
     app.config["state"] = {
-        "tagger": fabric_tagger,
         "service": QueueService(job_store, qfactory),
+        "status_service": TaggingStatusService(
+            tagstore=worker.tagstore, 
+            track_resolver=worker.track_resolver
+        ),
         "arg_resolver": arg_resolver,
         "authenticator": Authenticator(config.content.config_url),
-        "job_store": job_store,
-        "loop": loop,
+
+        "worker": worker,  # Expose worker for testing purposes
     }
+
+    loop = TagRunner(worker, job_store, config.tag_runner)
 
     loop.start()
 

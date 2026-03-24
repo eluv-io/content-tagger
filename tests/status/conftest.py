@@ -2,6 +2,7 @@
 from unittest.mock import Mock
 import pytest
 
+from src.status.service import TaggingStatusService
 from src.tags.tagstore.abstract import Tagstore
 from src.tags.tagstore.model import Batch
 from src.tags.track_resolver import TrackResolver, TrackResolverConfig, TrackArgs
@@ -31,3 +32,12 @@ def track_resolver() -> TrackResolver:
             }
         )
     )
+
+@pytest.fixture
+def get_status_service(mock_tagstore, track_resolver):
+    def fn(batches: list[Batch]) -> TaggingStatusService:
+        return TaggingStatusService(
+            tagstore=mock_tagstore(batches),
+            track_resolver=track_resolver,
+        )
+    return fn

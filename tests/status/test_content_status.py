@@ -1,7 +1,6 @@
 import pytest
 from unittest.mock import Mock
 
-from src.status.content_status import get_content_summary
 from src.tags.tagstore.model import Batch
 
 
@@ -24,12 +23,12 @@ def make_batch(id: str, track: str, timestamp: float, all_sources: list, tagged_
     )
 
 
-def test_single_batch_full_completion(track_resolver, mock_tagstore):
+def test_single_batch_full_completion(get_status_service):
     sources = ["s1", "s2", "s3"]
     batches = [make_batch("b1", "llava_track", 1000.0, sources, sources)]
-    tagstore = mock_tagstore(batches)
+    service = get_status_service(batches)
 
-    result = get_content_summary(Mock(qid="iq__test"), tagstore, track_resolver)
+    result = service.get_content_summary(Mock(qid="iq__test"))
 
     assert len(result.models) == 1
     m = result.models[0]
@@ -39,24 +38,24 @@ def test_single_batch_full_completion(track_resolver, mock_tagstore):
     assert m.percent_completion == 1.0
 
 
-def test_single_batch_partial_completion(track_resolver, mock_tagstore):
+def test_single_batch_partial_completion(get_status_service):
     batches = [make_batch("b1", "llava_track", 1000.0, ["s1", "s2", "s3", "s4"], ["s1", "s2"])]
-    tagstore = mock_tagstore(batches)
+    service = get_status_service(batches)
 
-    result = get_content_summary(Mock(qid="iq__test"), tagstore, track_resolver)
+    result = service.get_content_summary(Mock(qid="iq__test"))
 
     assert result.models[0].percent_completion == pytest.approx(0.5)
 
 
-def test_multiple_batches_union_sources(track_resolver, mock_tagstore):
+def test_multiple_batches_union_sources(get_status_service):
     """Completion is computed by unioning sources across all batches for a track."""
     batches = [
         make_batch("b1", "llava_track", 1000.0, ["s1", "s2"], ["s1"]),
         make_batch("b2", "llava_track", 2000.0, ["s3", "s4"], ["s3", "s4"]),
     ]
-    tagstore = mock_tagstore(batches)
+    service = get_status_service(batches)
 
-    result = get_content_summary(Mock(qid="iq__test"), tagstore, track_resolver)
+    result = service.get_content_summary(Mock(qid="iq__test"))
 
     assert len(result.models) == 1
     m = result.models[0]
@@ -65,14 +64,14 @@ def test_multiple_batches_union_sources(track_resolver, mock_tagstore):
     assert m.last_run.startswith('1970')
 
 
-def test_multiple_tracks(track_resolver, mock_tagstore):
+def test_multiple_tracks(get_status_service):
     batches = [
         make_batch("b1", "llava_track", 1000.0, ["s1", "s2"], ["s1", "s2"]),
         make_batch("b2", "whisper_track", 500.0, ["s1", "s2"], ["s1"]),
     ]
-    tagstore = mock_tagstore(batches)
+    service = get_status_service(batches)
 
-    result = get_content_summary(Mock(qid="iq__test"), tagstore, track_resolver)
+    result = service.get_content_summary(Mock(qid="iq__test"))
 
     by_model = {m.model: m for m in result.models}
     assert set(by_model.keys()) == {"llava", "whisper"}
@@ -80,7 +79,7 @@ def test_multiple_tracks(track_resolver, mock_tagstore):
     assert by_model["whisper"].percent_completion == pytest.approx(0.5)
 
 
-def test_no_upload_status(track_resolver, mock_tagstore):
+def test_no_upload_status(get_status_service):
     """Batches without upload_status should yield 0% completion."""
     batch = Batch(
         id="b1",
@@ -90,26 +89,26 @@ def test_no_upload_status(track_resolver, mock_tagstore):
         author="tagger",
         additional_info={"tagger": {}},
     )
-    tagstore = mock_tagstore([batch])
+    service = get_status_service([batch])
 
-    result = get_content_summary(Mock(qid="iq__test"), tagstore, track_resolver)
+    result = service.get_content_summary(Mock(qid="iq__test"))
 
     assert result.models[0].percent_completion == 0.0
 
 
-def test_unmapped_track_falls_back_to_track_name(track_resolver, mock_tagstore):
+def test_unmapped_track_falls_back_to_track_name(get_status_service):
     """A track with no mapping in the resolver should use the track name as the model name."""
     batches = [make_batch("b1", "unknown_model", 1000.0, ["s1"], ["s1"])]
-    tagstore = mock_tagstore(batches)
+    service = get_status_service(batches)
 
-    result = get_content_summary(Mock(qid="iq__test"), tagstore, track_resolver)
+    result = service.get_content_summary(Mock(qid="iq__test"))
 
     assert result.models[0].model == "unknown_model"
 
 
-def test_no_batches_returns_empty(track_resolver, mock_tagstore):
-    tagstore = mock_tagstore([])
+def test_no_batches_returns_empty(get_status_service):
+    service = get_status_service([])
 
-    result = get_content_summary(Mock(qid="iq__test"), tagstore, track_resolver)
+    result = service.get_content_summary(Mock(qid="iq__test"))
 
     assert result.models == []

@@ -12,7 +12,9 @@ from src.api.arg_resolver import ArgsResolver
 from src.fetch.model import DownloadRequest, FetchSession, VideoScope
 from src.tagging.fabric_tagging.model import TagArgs, TagStartResult
 from src.tagging.fabric_tagging.tagger import TaggerWorker
+from src.tags.tagstore.abstract import Tagstore
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
+from src.service.abstract import TaggerService
 from tests.api.conftest import FakeLiveWorker
 
 def is_queue_mode():
@@ -98,7 +100,7 @@ def test_video_model(client, q):
     assert response.status_code == 200
     completed = wait_for_jobs_completion(client, [q], timeout=30)
     assert completed
-    tagstore: FilesystemTagStore = client.application.config["state"]["tagger"].tagstore
+    tagstore: Tagstore = client.application.config["state"]["worker"].tagstore
     jobid = tagstore.find_batches(q=q)[0]
     tags = tagstore.find_tags(batch_id=jobid, q=q)
     tags = sorted(tags, key=lambda x: x.start_time)
@@ -122,7 +124,7 @@ def test_live_video_model(app, last_res_has_media, q):
     arg_resolver.is_live_content = Mock(return_value=True)
     
     # Replace the real fetcher with FakeLiveFetcher
-    tagger: TaggerWorker = app.config["state"]["tagger"]
+    tagger: TaggerWorker = app.config["state"]["worker"]
     tagstore = tagger.tagstore
     
     # Create FakeLiveFetcher with the same config
@@ -207,7 +209,7 @@ def test_real_live_stream(app, q_live):
     qid = q_live.qid
     auth = q_live.token
     
-    tagger: TaggerWorker = app.config["state"]["tagger"]
+    tagger: TaggerWorker = app.config["state"]["worker"]
     tagstore = tagger.tagstore
     
     # Create test client
@@ -317,7 +319,7 @@ def test_asset_tag(client, q_assets):
     status = client.get(f"/{qid}/job-status?authorization={auth}")
     print('got status')
     print(status.get_json())
-    tagstore: FilesystemTagStore = client.application.config["state"]["tagger"].tagstore
+    tagstore: FilesystemTagStore = client.application.config["state"]["worker"].tagstore
     jobid = tagstore.find_batches(q=q_assets)[0]
     print('got batches')
     tags = tagstore.find_tags(q=q_assets, batch_id=jobid)
@@ -429,8 +431,8 @@ def test_stop_live_job(app, q_live):
     qid = q_live.qid
     auth = q_live.token
     
-    tagger: TaggerWorker = app.config["state"]["tagger"]
-    tagstore = tagger.tagstore
+    worker: TaggerWorker = app.config["state"]["worker"]
+    tagstore = worker.tagstore
     client = app.test_client()
     
     # Start live tagging with long duration
@@ -581,7 +583,7 @@ def test_start_two_jobs_one_fails_partial_failure_response(client, q):
 
     auth = q.token
 
-    tagger: TaggerWorker = client.application.config["state"]["tagger"]
+    tagger: TaggerWorker = client.application.config["state"]["worker"]
     original_tag = tagger.tag
 
     def tag_wrapper(q: Content, args: TagArgs) -> TagStartResult:

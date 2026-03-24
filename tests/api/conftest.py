@@ -81,7 +81,7 @@ def app(static_dir, app_config):
     if "loop" in state:
         state["loop"].stop()
         return
-    tagger: TaggerWorker = state["tagger"]
+    tagger: TaggerWorker = state["worker"]
     if not tagger.shutdown_requested:
         tagger.cleanup()
 

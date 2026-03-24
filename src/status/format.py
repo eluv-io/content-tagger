@@ -1,7 +1,23 @@
+
 from dataclasses import dataclass
 
-from src.tagging.fabric_tagging.model import TagArgs, JobRunStatus
+from src.tagging.fabric_tagging.model import JobRunStatus, TagArgs
 
+"""structs for get status by content"""
+
+@dataclass(frozen=True)
+class ModelStatus:
+    model: str
+    track: str
+    last_run: str
+    percent_completion: float
+
+
+@dataclass(frozen=True)
+class ContentStatusResponse:
+    models: list[ModelStatus]
+
+"""structs for get status by content + model"""
 
 @dataclass(frozen=True)
 class JobUploadStatusSummary:

@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import Mock
 
-from src.status.model_status import get_model_status
+from src.common.content import Content
 from src.tags.tagstore.abstract import Tagstore
 from src.tags.tagstore.model import Batch
 from src.tags.track_resolver import TrackResolver, TrackResolverConfig, TrackArgs
@@ -38,12 +38,12 @@ def make_batch(
         },
     )
 
-def test_single_batch_full_completion(track_resolver, mock_tagstore):
+def test_single_batch_full_completion(get_status_service):
     sources = ["s1", "s2", "s3"]
     batches = [make_batch("b1", "llava_track", 1000.0, sources, sources, sources)]
-    tagstore = mock_tagstore(batches)
+    service = get_status_service(batches)
 
-    result = get_model_status(Mock(qid="iq__test"), "llava", tagstore, track_resolver)
+    result = service.get_model_status(Content(qid="iq__test", token=""), "llava")
 
     assert result.summary.model == "llava"
     assert result.summary.track == "llava_track"
@@ -51,49 +51,49 @@ def test_single_batch_full_completion(track_resolver, mock_tagstore):
     assert result.summary.num_content_parts == 3
 
 
-def test_single_batch_partial_completion(track_resolver, mock_tagstore):
+def test_single_batch_partial_completion(get_status_service):
     batches = [make_batch("b1", "llava_track", 1000.0, ["s1", "s2", "s3", "s4"], ["s1", "s2"], ["s1"])]
-    tagstore = mock_tagstore(batches)
+    service = get_status_service(batches)
 
-    result = get_model_status(Mock(qid="iq__test"), "llava", tagstore, track_resolver)
+    result = service.get_model_status(Content(qid="iq__test", token=""), "llava")
 
     assert result.summary.tagging_progress == pytest.approx(0.25)
     assert result.summary.num_content_parts == 4
 
 
-def test_multiple_batches_union_sources(track_resolver, mock_tagstore):
+def test_multiple_batches_union_sources(get_status_service):
     """tagging_progress and num_content_parts are computed across all batches."""
     batches = [
         make_batch("b1", "llava_track", 1000.0, ["s1", "s2", "s3", "s4"], ["s1", "s2"], ["s1"]),
         make_batch("b2", "llava_track", 2000.0, ["s1", "s2", "s3"], ["s3"], ["s3", "s4"]),
     ]
-    tagstore = mock_tagstore(batches)
+    service = get_status_service(batches)
 
-    result = get_model_status(Mock(qid="iq__test"), "llava", tagstore, track_resolver)
+    result = service.get_model_status(Content(qid="iq__test", token=""), "llava")
 
     assert result.summary.num_content_parts == 4
     assert result.summary.tagging_progress == pytest.approx(0.75)
     assert len(result.jobs) == 2
 
 
-def test_num_content_parts_is_max_not_union(track_resolver, mock_tagstore):
+def test_num_content_parts_is_max_not_union(get_status_service):
     """num_content_parts takes the max batch size, not the union count."""
     batches = [
         make_batch("b1", "llava_track", 1000.0, ["s1", "s2", "s3"], [], []),
         make_batch("b2", "llava_track", 2000.0, ["s1", "s2"], [], []),
     ]
-    tagstore = mock_tagstore(batches)
+    service = get_status_service(batches)
 
-    result = get_model_status(Mock(qid="iq__test"), "llava", tagstore, track_resolver)
+    result = service.get_model_status(Content(qid="iq__test", token=""), "llava")
 
     assert result.summary.num_content_parts == 3
 
 
-def test_job_detail_fields(track_resolver, mock_tagstore):
+def test_job_detail_fields(get_status_service):
     batches = [make_batch("b1", "llava_track", 1000.0, ["s1", "s2"], ["s1", "s2"], ["s1"], source_qid="iq__src1", job_status="Completed")]
-    tagstore = mock_tagstore(batches)
+    service = get_status_service(batches)
 
-    result = get_model_status(Mock(qid="iq__test"), "llava", tagstore, track_resolver)
+    result = service.get_model_status(Content(qid="iq__test", token=""), "llava")
 
     assert len(result.jobs) == 1
     job = result.jobs[0]
@@ -104,11 +104,11 @@ def test_job_detail_fields(track_resolver, mock_tagstore):
     assert job.upload_status.num_tagged_parts == 1
 
 
-def test_job_upload_status_shows_counts_not_lists(track_resolver, mock_tagstore):
+def test_job_upload_status_shows_counts_not_lists(get_status_service):
     batches = [make_batch("b1", "llava_track", 1000.0, ["s1", "s2", "s3"], ["s1", "s2"], ["s1"])]
-    tagstore = mock_tagstore(batches)
+    service = get_status_service(batches)
 
-    result = get_model_status(Mock(qid="iq__test"), "llava", tagstore, track_resolver)
+    result = service.get_model_status(Content(qid="iq__test", token=""), "llava")
 
     upload = result.jobs[0].upload_status
     assert upload is not None
@@ -118,22 +118,22 @@ def test_job_upload_status_shows_counts_not_lists(track_resolver, mock_tagstore)
     assert upload.num_tagged_parts == 1
 
 
-def test_no_batches_raises_missing_resource(track_resolver, mock_tagstore):
-    tagstore = mock_tagstore([])
+def test_no_batches_raises_missing_resource(get_status_service):
+    service = get_status_service([])
 
     with pytest.raises(MissingResourceError):
-        get_model_status(Mock(qid="iq__test"), "llava", tagstore, track_resolver)
+        service.get_model_status(Content(qid="iq__test", token=""), "llava")
 
 
-def test_only_other_track_batches_raises_missing_resource(track_resolver, mock_tagstore):
+def test_only_other_track_batches_raises_missing_resource(get_status_service):
     batches = [make_batch("b1", "whisper_track", 1000.0, ["s1"], ["s1"], ["s1"])]
-    tagstore = mock_tagstore(batches)
+    service = get_status_service(batches)
 
     with pytest.raises(MissingResourceError):
-        get_model_status(Mock(qid="iq__test"), "llava", tagstore, track_resolver)
+        service.get_model_status(Content(qid="iq__test", token=""), "llava")
 
 
-def test_no_upload_status_in_batch(track_resolver, mock_tagstore):
+def test_no_upload_status_in_batch(get_status_service):
     """Batches without upload_status should still appear as jobs with zero counts."""
     batch = Batch(
         id="b1",
@@ -149,7 +149,7 @@ def test_no_upload_status_in_batch(track_resolver, mock_tagstore):
             }
         },
     )
-    tagstore = mock_tagstore([batch])
+    service = get_status_service([batch])
 
     with pytest.raises(BadRequestError):
-        get_model_status(Mock(qid="iq__test"), "llava", tagstore, track_resolver)
+        service.get_model_status(Content(qid="iq__test", token=""), "llava")
