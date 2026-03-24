@@ -36,3 +36,12 @@ class ExternalServiceError(Exception):
 
     def __init__(self, message):
         self.message = message
+
+class ForbiddenError(Exception):
+    """Exception raised when the user is authenticated but does not have permission to access the resource.
+
+    NOTE: throwing this will result in a 403 response with the given error message.
+    """
+
+    def __init__(self, message):
+        self.message = message

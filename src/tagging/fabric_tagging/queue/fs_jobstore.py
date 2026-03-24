@@ -5,11 +5,10 @@ import uuid
 from dataclasses import asdict
 from dacite import from_dict
 
+from src.status.get_info import UserInfoResolver
 from src.tagging.fabric_tagging.model import TagArgs
 from src.tagging.fabric_tagging.queue.model import *
 from src.fetch.model import *
-from src.common.logging import logger
-from src.common.tenant import get_tenant
 
 def _convert_scope(data: dict) -> Scope:
     type = data.get("type")
@@ -25,8 +24,13 @@ def _convert_scope(data: dict) -> Scope:
         raise ValueError(f"Unknown scope type: {type}")
 
 class FsJobStore:
-    def __init__(self, store_dir: str):
+    def __init__(
+        self, 
+        store_dir: str,
+        user_info_resolver: UserInfoResolver,
+    ):
         self.store_dir = store_dir
+        self.user_info_resolver = user_info_resolver
         os.makedirs(store_dir, exist_ok=True)
 
     def _job_path(self, id: str) -> str:
@@ -75,7 +79,8 @@ class FsJobStore:
 
     def create_job(self, args: CreateQueueItem, auth: str) -> QueueItem:
         id = str(uuid.uuid4())
-        tenant = get_tenant(args.qid, auth)
+        tenant = self.user_info_resolver.get_tenant(args.qid, auth)
+        user_info = self.user_info_resolver.get_user_info(auth=auth, tenant_id=None)
         self._write_job(id, {
             "id": id,
             "qid": args.qid,
@@ -85,7 +90,7 @@ class FsJobStore:
             "status_details": asdict(args.status_details) if args.status_details else None,
             "error": None,
             "stop_requested": False,
-            "user": tenant,
+            "user": user_info.user_adr,
             "tenant": tenant,
             "auth": auth,
             "additional_info": args.additional_info,

@@ -10,8 +10,7 @@ from src.common.errors import ExternalServiceError
 from src.tags.tagstore.abstract import Tagstore
 
 @dataclass(frozen=True)
-class UserInfo:
-    tenant_id: str
+class UserInfo: 
     user_adr: str
     is_tenant_admin: bool
     is_content_admin: bool
@@ -38,16 +37,18 @@ class UserInfoResolver:
         return resp["content_profile"]["tenant_id"]
 
     @lru_cache(maxsize=128)
-    def get_user_info(self, tenant_id: str) -> UserInfo:
+    def get_user_info(self, auth: str, tenant_id: str | None) -> UserInfo:
         """Get user info for a given tenant ID using the user info endpoint."""
         resp = requests.get(self.user_info_url, params={"tenant_id": tenant_id}).json()
         if "token_data" not in resp or "adr" not in resp["token_data"]:
             raise ExternalServiceError("Failed to get user address from token_info service")
-        if "is_tenant_admin" not in resp or "is_content_admin" not in resp:
+        if tenant_id is not None and "is_tenant_admin" not in resp or "is_content_admin" not in resp:
             raise ExternalServiceError("Failed to get admin status from token_info service")
+        else:
+            is_content_admin = resp["is_tenant_admin"]
+            is_tenant_admin = resp["is_content_admin"]
         return UserInfo(
-            tenant_id=tenant_id,
             user_adr=resp["token_data"]["adr"],
-            is_tenant_admin=resp["is_tenant_admin"],
-            is_content_admin=resp["is_content_admin"]
+            is_tenant_admin=is_tenant_admin,
+            is_content_admin=is_content_admin
         )
