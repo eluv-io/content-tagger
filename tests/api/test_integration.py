@@ -11,7 +11,7 @@ import podman
 from src.api.arg_resolver import ArgsResolver
 from src.fetch.model import DownloadRequest, FetchSession, VideoScope
 from src.tagging.fabric_tagging.model import TagArgs, TagStartResult
-from src.tagging.fabric_tagging.tagger import FabricTagger
+from src.tagging.fabric_tagging.tagger import TaggerWorker
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from tests.api.conftest import FakeLiveWorker
 
@@ -122,7 +122,7 @@ def test_live_video_model(app, last_res_has_media, q):
     arg_resolver.is_live_content = Mock(return_value=True)
     
     # Replace the real fetcher with FakeLiveFetcher
-    tagger: FabricTagger = app.config["state"]["tagger"]
+    tagger: TaggerWorker = app.config["state"]["tagger"]
     tagstore = tagger.tagstore
     
     # Create FakeLiveFetcher with the same config
@@ -207,7 +207,7 @@ def test_real_live_stream(app, q_live):
     qid = q_live.qid
     auth = q_live.token
     
-    tagger: FabricTagger = app.config["state"]["tagger"]
+    tagger: TaggerWorker = app.config["state"]["tagger"]
     tagstore = tagger.tagstore
     
     # Create test client
@@ -310,12 +310,16 @@ def test_asset_tag(client, q_assets):
         }
     )
     assert response.status_code == 200
+    print('waiting')
     completed = wait_for_jobs_completion(client, [q_assets], timeout=25)
+    print('tagging finished')
     assert completed
     status = client.get(f"/{qid}/job-status?authorization={auth}")
+    print('got status')
     print(status.get_json())
     tagstore: FilesystemTagStore = client.application.config["state"]["tagger"].tagstore
     jobid = tagstore.find_batches(q=q_assets)[0]
+    print('got batches')
     tags = tagstore.find_tags(q=q_assets, batch_id=jobid)
     tags = sorted(tags, key=lambda x: x.start_time)
     assert len(tags) > 0
@@ -425,7 +429,7 @@ def test_stop_live_job(app, q_live):
     qid = q_live.qid
     auth = q_live.token
     
-    tagger: FabricTagger = app.config["state"]["tagger"]
+    tagger: TaggerWorker = app.config["state"]["tagger"]
     tagstore = tagger.tagstore
     client = app.test_client()
     
@@ -577,7 +581,7 @@ def test_start_two_jobs_one_fails_partial_failure_response(client, q):
 
     auth = q.token
 
-    tagger: FabricTagger = client.application.config["state"]["tagger"]
+    tagger: TaggerWorker = client.application.config["state"]["tagger"]
     original_tag = tagger.tag
 
     def tag_wrapper(q: Content, args: TagArgs) -> TagStartResult:

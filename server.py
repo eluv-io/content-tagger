@@ -15,7 +15,7 @@ from src.api.auth import Authenticator
 from src.service.impl.direct_api import DirectAPI
 from src.service.impl.queue_based import QueueService
 from src.tagging.scheduling.scheduler import ContainerScheduler
-from src.tagging.fabric_tagging.tagger import FabricTagger
+from src.tagging.fabric_tagging.tagger import TaggerWorker
 from src.tags.tagstore.factory import create_tagstore
 from src.tagging.fabric_tagging.source_resolver import SourceResolver
 from src.fetch.factory import FetchFactory
@@ -90,11 +90,11 @@ def configure_routes(app: Flask) -> None:
     def docs_route():
         return send_from_directory('docs/api', 'openapi.html')
 
-def _build_fabric_tagger(cfg: AppConfig) -> FabricTagger:
+def _build_fabric_tagger(cfg: AppConfig) -> TaggerWorker:
     qfactory = QAPIFactory(cfg.content)
     tagstore = create_tagstore(cfg.tagstore)
     track_resolver = TrackResolver(cfg.track_resolver)
-    return FabricTagger(
+    return TaggerWorker(
         system_tagger=ContainerScheduler(cfg.system),
         fetcher=FetchFactory(cfg.fetcher, create_tagstore(cfg.tagstore), qfactory),
         cregistry=ContainerRegistry(cfg.container_registry),
@@ -106,7 +106,7 @@ def _build_fabric_tagger(cfg: AppConfig) -> FabricTagger:
 
 
 def create_app_direct(config: AppConfig) -> Flask:
-    """Standalone mode: API handlers call FabricTagger directly."""
+    """Standalone mode: API handlers call TaggerWorker directly."""
     app = Flask(__name__)
 
     fabric_tagger = _build_fabric_tagger(config)
@@ -119,7 +119,7 @@ def create_app_direct(config: AppConfig) -> Flask:
     }
 
     def shutdown():
-        tagger: FabricTagger = app.config["state"]["tagger"]
+        tagger: TaggerWorker = app.config["state"]["tagger"]
         if not tagger.shutdown_requested:
             tagger.cleanup()
 
@@ -130,7 +130,7 @@ def create_app_direct(config: AppConfig) -> Flask:
 
 
 def create_app_queue_based(config: AppConfig) -> Flask:
-    """Queue-based mode: API handlers enqueue via QueueService; TagRunner drives FabricTagger."""
+    """Queue-based mode: API handlers enqueue via QueueService; TagRunner drives TaggerWorker."""
     app = Flask(__name__)
 
     fabric_tagger = _build_fabric_tagger(config)

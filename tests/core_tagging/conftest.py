@@ -9,9 +9,9 @@ from src.fetch.model import DownloadRequest, DownloadResult, FetchSession, Media
 from src.fetch.model import VideoScope
 from src.service.model import StatusArgs
 from src.tag_containers.model import *
-from src.tagging.fabric_tagging.model import FabricTaggerConfig, TagArgs
+from src.tagging.fabric_tagging.model import TaggerWorkerConfig, TagArgs
 from src.tagging.fabric_tagging.source_resolver import SourceResolver
-from src.tagging.fabric_tagging.tagger import FabricTagger
+from src.tagging.fabric_tagging.tagger import TaggerWorker
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
 from src.tagging.tag_runner import TagRunner, TagRunnerConfig
 from src.service.impl.queue_based import QueueService
@@ -37,8 +37,8 @@ def track_resolver():
     }))
     
 @pytest.fixture
-def tagger_config(media_dir) -> FabricTaggerConfig:
-    return FabricTaggerConfig(
+def tagger_config(media_dir) -> TaggerWorkerConfig:
+    return TaggerWorkerConfig(
         media_dir=media_dir,
     )
 
@@ -315,8 +315,8 @@ def source_resolver(tag_store, track_resolver):
 
 @pytest.fixture
 def fabric_tagger(system_tagger, fake_container_registry, tag_store, fake_fetcher, track_resolver, tagger_config, source_resolver):
-    """Create a FabricTagger instance for testing"""
-    tagger = FabricTagger(
+    """Create a TaggerWorker instance for testing"""
+    tagger = TaggerWorker(
         system_tagger=system_tagger,
         cregistry=fake_container_registry,
         tagstore=tag_store,

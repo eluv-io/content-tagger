@@ -5,7 +5,7 @@ import time
 from src.common.content import Content
 from src.common.logging import logger
 from src.tagging.fabric_tagging.model import TagStatusResult, JobStateDescription
-from src.tagging.fabric_tagging.tagger import FabricTagger
+from src.tagging.fabric_tagging.tagger import TaggerWorker
 from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tagging.fabric_tagging.queue.model import *
 
@@ -37,16 +37,16 @@ class JobInfo:
     auth: str
 
 class TagRunner:
-    """Bridges the job queue and FabricTagger.
+    """Bridges the job queue and TaggerWorker.
 
     Periodically polls the JobStore for queued jobs, claims them, and runs them
-    through FabricTagger.  While jobs are running it polls for status updates
+    through TaggerWorker.  While jobs are running it polls for status updates
     and forwards them back to the queue, and checks for stop requests.
     """
 
     def __init__(
         self,
-        tagger: FabricTagger,
+        tagger: TaggerWorker,
         jobstore: JobStore,
         cfg: TagRunnerConfig,
     ):

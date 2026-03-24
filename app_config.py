@@ -10,7 +10,7 @@ from src.tagging.scheduling.model import SysConfig
 from src.tagging.tag_runner import TagRunnerConfig
 from src.tagging.fabric_tagging.queue.model import JobStoreConfig
 from src.tags.tagstore.model import TagstoreConfig
-from src.tagging.fabric_tagging.model import FabricTaggerConfig
+from src.tagging.fabric_tagging.model import TaggerWorkerConfig
 from src.tags.track_resolver import TrackResolverConfig
 
 @dataclass
@@ -22,7 +22,7 @@ class AppConfig:
     system: SysConfig
     fetcher: FetcherConfig
     container_registry: RegistryConfig
-    tagger: FabricTaggerConfig
+    tagger: TaggerWorkerConfig
     track_resolver: TrackResolverConfig
     tag_runner: TagRunnerConfig
 

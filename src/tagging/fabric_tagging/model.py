@@ -9,7 +9,7 @@ from src.fetch.model import Scope
 from src.tag_containers.model import ContainerInfo
 
 @dataclass
-class FabricTaggerConfig:
+class TaggerWorkerConfig:
     media_dir: str
 
 @dataclass

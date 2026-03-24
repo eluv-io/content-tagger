@@ -5,13 +5,13 @@ from flask import Response, current_app, request
 
 from src.api.auth import authorize
 from src.status.model_status import get_model_status
-from src.tagging.fabric_tagging.tagger import FabricTagger
+from src.tagging.fabric_tagging.tagger import TaggerWorker
 
 
 def handle_model_status(qid: str, model: str) -> Response:
     q = authorize(qid, request)
 
-    tagger: FabricTagger = current_app.config["state"]["tagger"]
+    tagger: TaggerWorker = current_app.config["state"]["tagger"]
 
     payload = get_model_status(
         q=q,

@@ -14,20 +14,20 @@ from src.common.content import Content
 from src.fetch.model import DownloadResult, FetchSession, MediaMetadata, VideoScope
 from src.service.model import StatusArgs, TagDetails, TagJobStatusResult
 from src.tag_containers.model import ModelConfig, RegistryConfig
-from src.tagging.fabric_tagging.model import FabricTaggerConfig, JobID, TagArgs, TagStartResult, TagStopResult
+from src.tagging.fabric_tagging.model import TaggerWorkerConfig, JobID, TagArgs, TagStartResult, TagStopResult
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
 from src.tagging.fabric_tagging.queue.model import JobStoreConfig
-from src.tagging.fabric_tagging.tagger import FabricTagger
+from src.tagging.fabric_tagging.tagger import TaggerWorker
 from src.tagging.scheduling.model import SysConfig
 from src.tagging.tag_runner import TagRunner, TagRunnerConfig
 from src.tags.track_resolver import TrackArgs, TrackResolverConfig
 from src.tags.tagstore.model import TagstoreConfig
 
 @pytest.fixture()
-def tagger_config(static_dir) -> FabricTaggerConfig:
+def tagger_config(static_dir) -> TaggerWorkerConfig:
     media_path = os.path.join(static_dir, "media")
     os.makedirs(media_path, exist_ok=True)
-    return FabricTaggerConfig(media_dir=media_path)    
+    return TaggerWorkerConfig(media_dir=media_path)    
 
     
 @pytest.fixture()
@@ -81,7 +81,7 @@ def app(static_dir, app_config):
     if "loop" in state:
         state["loop"].stop()
         return
-    tagger: FabricTagger = state["tagger"]
+    tagger: TaggerWorker = state["tagger"]
     if not tagger.shutdown_requested:
         tagger.cleanup()
 

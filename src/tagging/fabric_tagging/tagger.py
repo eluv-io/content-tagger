@@ -43,7 +43,7 @@ class Response:
     error: Exception | None
 
 
-class FabricTagger:
+class TaggerWorker:
     """
     Handles the flow of downloading data from fabric, tagging, and uploading
 
@@ -60,7 +60,7 @@ class FabricTagger:
         fetcher: FetchFactory,
         track_resolver: TrackResolver,
         source_resolver: SourceResolver,
-        cfg: FabricTaggerConfig,
+        cfg: TaggerWorkerConfig,
     ):
 
         self.system_tagger = system_tagger
@@ -105,7 +105,7 @@ class FabricTagger:
         """synchronous request - adds a message to the mailbox and blocks till it gets a response"""
         logger.info("submitting synchronous request", extra={"request": req, "queue_size": self.mailbox.qsize()})
         if self.shutdown_requested():
-            raise RuntimeError("FabricTagger received shutdown signal, cannot accept new requests")
+            raise RuntimeError("TaggerWorker received shutdown signal, cannot accept new requests")
         caller_mailbox = queue.Queue()
         message = Message(req, caller_mailbox)
         self.mailbox.put(message)
@@ -129,7 +129,7 @@ class FabricTagger:
 
     def _actor_loop(self):
         """Main actor loop - processes all messages sequentially"""
-        logger.info("FabricTagger actor started")
+        logger.info("TaggerWorker actor started")
 
         while not self.shutdown_requested():
             try:
@@ -142,7 +142,7 @@ class FabricTagger:
                 logger.opt(exception=e).error("error in actor loop", extra={"message": message.data})
                 time.sleep(0.2)
 
-        logger.info("FabricTagger actor shutting down")
+        logger.info("TaggerWorker actor shutting down")
 
     def _handle_message(self, message: Message):
         try:

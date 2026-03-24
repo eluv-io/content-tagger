@@ -4,12 +4,12 @@ from src.common.content import Content
 from src.common.errors import BadRequestError
 from src.tagging.fabric_tagging.model import TagArgs
 from src.service.model import *
-from src.tagging.fabric_tagging.tagger import FabricTagger
+from src.tagging.fabric_tagging.tagger import TaggerWorker
 from src.service.abstract import TaggerService
 
 class DirectAPI(TaggerService):
     """Service implementation that sits on top of the tagger worker and directly calls the tagger functions with no job queue"""
-    def __init__(self, tagger: FabricTagger):
+    def __init__(self, tagger: TaggerWorker):
         self.tagger = tagger
 
     def tag(self, q: Content, args: TagArgs) -> TagStartResult:

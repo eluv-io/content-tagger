@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 from src.fetch.model import MediaMetadata
 from src.tags.tagstore.model import Track
 from src.tags.tagstore.rest_tagstore import RestTagstore
-from src.tagging.fabric_tagging.tagger import FabricTagger
+from src.tagging.fabric_tagging.tagger import TaggerWorker
 from src.tagging.fabric_tagging.model import TagStatusResult
 from src.tag_containers.model import ContainerRequest, Error, ModelTag
 from src.fetch.model import *
@@ -393,7 +393,7 @@ def test_container_nonzero_exit_code(fabric_tagger, q, make_tag_args):
     assert _status_for(final_status, "caption").status.error
 
 
-def test_destination_qid_uploads_to_correct_qhit(sample_tag_args, fabric_tagger: FabricTagger, q, q_legacy):
+def test_destination_qid_uploads_to_correct_qhit(sample_tag_args, fabric_tagger: TaggerWorker, q, q_legacy):
     """Test that when destination_qid is set, tags are uploaded to that qid instead of source"""
 
     # doesn't really matter what the other content is as long as it's in same tenant
@@ -414,7 +414,7 @@ def test_destination_qid_uploads_to_correct_qhit(sample_tag_args, fabric_tagger:
     tag_count_source = fabric_tagger.tagstore.count_tags(qid=q.qid, q=q)
     assert tag_count_source == 0
 
-def test_tags_have_timestamp_ms_field(fabric_tagger: FabricTagger, q: Content, sample_tag_args):
+def test_tags_have_timestamp_ms_field(fabric_tagger: TaggerWorker, q: Content, sample_tag_args):
     """Test that uploaded tags include timestamp_ms in additional_info"""
     
     for args in sample_tag_args:
@@ -484,7 +484,7 @@ def test_track_override_uploads_to_multiple_tracks(fabric_tagger, q, make_tag_ar
     assert len(default_tags) == 2
     assert len(override_tags) == 2
 
-def test_uploaded_track_label(fabric_tagger: FabricTagger, q, make_tag_args):
+def test_uploaded_track_label(fabric_tagger: TaggerWorker, q, make_tag_args):
     """Test that uploaded tags have correct track labels based on model params"""
     
     args = make_tag_args(feature="caption", stream="video")
@@ -578,7 +578,7 @@ def test_batch_report_on_success(fabric_tagger, q, make_tag_args):
 
 
 def test_replace(
-    fabric_tagger: FabricTagger,
+    fabric_tagger: TaggerWorker,
     q: Content,
     make_tag_args,
 ):

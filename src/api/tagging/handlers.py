@@ -16,7 +16,7 @@ from src.common.errors import *
 from src.api.auth import *
 from src.common.content import Content
 from src.common.tenant import get_tenant
-from src.tagging.fabric_tagging.tagger import FabricTagger
+from src.tagging.fabric_tagging.tagger import TaggerWorker
 from src.api.tagging.request_mapping import *
 from src.api.tagging.response_mapping import *
 
