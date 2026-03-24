@@ -3,6 +3,7 @@ import time
 from dataclasses import replace as dc_replace
 from unittest.mock import Mock, patch
 
+from src.fetch.model import MediaMetadata
 from src.tags.tagstore.model import Track
 from src.tags.tagstore.rest_tagstore import RestTagstore
 from src.tagging.fabric_tagging.tagger import FabricTagger
@@ -11,7 +12,7 @@ from src.tag_containers.model import ContainerRequest, Error, ModelTag
 from src.fetch.model import *
 from src.common.content import Content
 from src.common.errors import BadRequestError, MissingResourceError
-from tests.core_tagging.conftest import FakeTagContainer, PartialResultContainer
+from tests.core_tagging.conftest import FakeTagContainer, FakeWorker, PartialResultContainer
     
 def _status_for(
     reports: list[TagStatusResult],
@@ -739,3 +740,23 @@ def test_unknown_container(fabric_tagger, q, make_tag_args):
     
     with pytest.raises(MissingResourceError):
         fabric_tagger.tag(q, args)
+
+def test_download_fails(fabric_tagger, q, make_tag_args, temp_dir):
+    """Test that if the fetcher fails to download sources, the job fails gracefully"""
+
+    class FailingFetchWorker(FakeWorker):
+        def download(self) -> DownloadResult:
+            raise RuntimeError("Simulated download failure")
+
+    fabric_tagger.fetcher.get_session = Mock(return_value=FailingFetchWorker(temp_dir))
+
+    args = make_tag_args(feature="caption", stream="video", max_fetch_retries=0)
+
+    fabric_tagger.tag(q, args)
+
+    time.sleep(1)
+
+    status = fabric_tagger.status(q.qid)
+    report = _status_for(status, "caption")
+    assert report.status.status == "Failed"
+    assert report.status.error == "Simulated download failure"
