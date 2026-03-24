@@ -238,14 +238,25 @@ class FabricTagger:
             do_retry=is_live,
         )
 
+        container = self.cregistry.get(ContainerRequest(
+            model_id=feature,
+            media_dir=output_dir,
+            run_config=args.run_config,
+            job_id=q.qid + "-" + datetime.now().strftime("%Y%m%d%H%M") + "-" + str(uuid())[0:6]
+        ))
+
         job = TagJob(
-            state=JobState.starting(media_state, upload_session),
+            state=JobState.starting(
+                media_state,
+                upload_session,
+                container=container,
+            ),
             args=JobArgs(
                 **args.__dict__,
                 q=q,
                 retry_upload=is_live,
             ),
-            stop_event=stop_event,   
+            stop_event=stop_event,
         )
 
         return job
@@ -349,23 +360,30 @@ class FabricTagger:
 
         job.state.status = "Tagging content"
 
-        if not job.state.container and dl_res.done and not new_sources:
+        if not job.state.taghandle and dl_res.done and not new_sources:
             # end early
             log.info("Fetcher finished with no media, aborting the job.")
             self._submit_async(EnterCompletePhase(job_id=jobid))
             return
 
+        if not job.state.taghandle:
+            # schedule tagging
+            uid = self.system_tagger.start(job.state.container, job.state.tagging_done)
+            job.state.taghandle = uid
+
+            # spawn thread to wait for tagging to finish
+            threading.Thread(
+                target=self._await_tagging,
+                args=(job,),
+                daemon=True
+            ).start()
+
         if new_sources:
-            # TODO: should start the container at the start and then just add media only
-            if not job.state.container:
-                self._start_new_container(job)
-            assert job.state.container is not None
             self._send_media(job.state.container, new_sources)
 
         if dl_res.done:
-            # signal to container to stop accepting new media and shut down when done
-            if job.state.container:
-                job.state.container.send_eof()
+            # signal to the container to stop accepting new media and shut down when done
+            job.state.container.send_eof()
         else:
             self._submit_async(EnterFetchingPhase(job_id=jobid))
 
@@ -374,26 +392,6 @@ class FabricTagger:
         Send the new media to the container for tagging via stdin
         """
         container.add_media([s.filepath for s in new_media])
-
-    def _start_new_container(self, job: TagJob) -> None:
-        media_dir = job.state.media.output_dir
-        container = self.cregistry.get(ContainerRequest(
-            model_id=job.args.feature,
-            media_dir=media_dir,
-            run_config=job.args.run_config,
-            job_id=job.args.q.qid + "-" + datetime.now().strftime("%Y%m%d%H%M") + "-" + str(uuid())[0:6]
-        ))
-        
-        uid = self.system_tagger.start(container, job.state.tagging_done)
-        job.state.container = container
-        job.state.taghandle = uid
-
-        # dumb waiter thread, just waits on the event and then runs an upload when it's done
-        threading.Thread(
-            target=self._await_tagging, 
-            args=(job,), 
-            daemon=True
-        ).start()
 
     def _await_tagging(self, job: TagJob) -> None:
         """Waits for tagging to complete, then uploads tags and requests transition to complete phase"""
@@ -410,11 +408,9 @@ class FabricTagger:
 
         status = self.system_tagger.status(job.state.taghandle)
         if status.status != "Completed":
-            container_errors = []
-            if job.state.container is not None:
-                container_errors = job.state.container.errors()
+            container_errors = job.state.container.errors()
             if container_errors:
-                error = RuntimeError(container_errors[0].message)
+                error = RuntimeError(container_errors[-1].message)
             else:
                 error = status.error or RuntimeError("Container exited unsuccessfully")
             self._request_job_end(jobid, "Failed", error=error)
@@ -457,10 +453,7 @@ class FabricTagger:
         all_sources = metadata.sources
         downloaded_sources = [s.name for s in job.state.media.downloaded]
 
-        # TODO: container should always be non-None
-        statuses = []
-        if job.state.container:
-            statuses = job.state.container.progress()
+        statuses = job.state.container.progress()
 
         tagged_sources = self._get_tagged_sources(job.state.media.downloaded, statuses)
 
@@ -474,16 +467,10 @@ class FabricTagger:
             uploaded_sources=uploaded_sources
         )
 
-        # Container info
-        # TODO: again, container should always be non-None, we should enforce this invariant better
-        container_info = None
-        if job.state.container is not None:
-            try:
-                container_info = job.state.container.info()
-            except Exception as e:
-                log.opt(exception=e).warning("failed to get container info")
-                container_info = ContainerInfo(image_name="", annotations={})
-        else:
+        try:
+            container_info = job.state.container.info()
+        except Exception as e:
+            log.opt(exception=e).warning("failed to get container info")
             container_info = ContainerInfo(image_name="", annotations={})
 
 
@@ -533,11 +520,8 @@ class FabricTagger:
 
     def _summarize_status(self, job: TagJob) -> TagStatusResult:
         state = job.state
-        
-        tagged_sources = []
-        if state.container is not None:
-            tagged_sources = state.container.progress()
-            tagged_sources = self._get_tagged_sources(state.media.downloaded, tagged_sources)
+
+        tagged_sources = self._get_tagged_sources(state.media.downloaded, state.container.progress())
 
         downloaded_sources = [s.name for s in state.media.downloaded]
 
@@ -674,8 +658,7 @@ class FabricTagger:
             except Exception as e:
                 log.opt(exception=e).error("error stopping job")
 
-        if job.state.taghandle is not None:
-            # run in background thread to avoid blocking the main thread
+        if job.state.taghandle:
             threading.Thread(target=cleanup, daemon=True).start()
 
     def _request_job_end(
@@ -707,9 +690,8 @@ class FabricTagger:
                 self._request_job_end(job.get_id(), "Failed", e)
 
     def __upload_tags(self, job: TagJob) -> None:
-        if job.state.container is None:
+        if not job.state.taghandle:
             return
-
         with timeit("getting tags from container", min_duration=0.5):
             tags = job.state.container.tags()
 

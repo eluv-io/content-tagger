@@ -15,7 +15,7 @@ class JobState:
     taghandle: str
     media: MediaState
     upload_session: UploadSession
-    container: TagContainer | None
+    container: TagContainer
     # callers can pass an event to be notified when tagging is done
     tagging_done: threading.Event
     fetch_retry_count: int
@@ -25,7 +25,11 @@ class JobState:
     time_ended: float | None
 
     @staticmethod
-    def starting(media: MediaState, upload_session: UploadSession) -> "JobState":
+    def starting(
+        media: MediaState,
+        upload_session: UploadSession,
+        container: TagContainer,
+    ) -> "JobState":
         """Create a JobState in starting state."""
         return JobState(
             status="Queued",
@@ -35,7 +39,7 @@ class JobState:
             time_started=time.time(),
             time_ended=None,
             tagging_done=threading.Event(),
-            container=None,
+            container=container,
             fetch_retry_count=0,
             warnings=[],
             error=None,
