@@ -26,8 +26,7 @@ def test_tenant_status(mock_app, make_tag_args):
     )
 
     assert response.status_code == 200
-    with patch("src.api.tagging.handlers.get_tenant", return_value="test tenant"):
-        response = client.get("/job-status?tenant=test%20tenant&authorization=fake")
+    response = client.get("/job-status?tenant=test%20tenant&authorization=fake")
     assert response.status_code == 200
     jobs = response.get_json()["jobs"]
     assert len(jobs) == 1

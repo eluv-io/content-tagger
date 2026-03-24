@@ -8,6 +8,7 @@ from src.common.content import Content
 from src.fetch.model import DownloadRequest, DownloadResult, FetchSession, MediaMetadata, Source, VideoMetadata, VideoScope
 from src.fetch.model import VideoScope
 from src.service.model import StatusArgs
+from src.status.get_info import UserInfo
 from src.tag_containers.model import *
 from src.tagging.fabric_tagging.model import TaggerWorkerConfig, TagArgs
 from src.tagging.fabric_tagging.source_resolver import SourceResolver
@@ -337,11 +338,21 @@ def sample_tag_args(make_tag_args):
         make_tag_args(feature="asr", stream="audio"),
     ]
 
+@pytest.fixture
+def fake_user_info_resolver():
+    return Mock(
+        get_user_info=Mock(return_value=UserInfo(
+            user_adr="0x123",
+            is_tenant_admin=True,
+            is_content_admin=True
+        )),
+        get_tenant=Mock(return_value="tenant1")
+    )
 
 
 @pytest.fixture
-def queue_jobstore(tmp_path) -> FsJobStore:
-    return FsJobStore(store_dir=str(tmp_path / "jobstore"))
+def queue_jobstore(tmp_path, fake_user_info_resolver) -> FsJobStore:
+    return FsJobStore(store_dir=str(tmp_path / "jobstore"), user_info_resolver=fake_user_info_resolver)
 
 @pytest.fixture
 def fake_qapifactory():
@@ -358,7 +369,7 @@ def fake_qapifactory():
 
 
 @pytest.fixture
-def queue_client(queue_jobstore, fake_qapifactory) -> QueueService:
+def queue_client(queue_jobstore, fake_qapifactory, fake_user_info_resolver) -> QueueService:
     return QueueService(jobstore=queue_jobstore, qfactory=fake_qapifactory)
 
 

@@ -12,6 +12,7 @@ from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.tags.tagstore.rest_tagstore import RestTagstore
 from src.common.content import Content, ContentConfig, QAPIFactory
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
+from src.status.get_info import UserInfoResolver
 
 dotenv.load_dotenv()
 
@@ -132,7 +133,14 @@ def fetcher_config() -> FetcherConfig:
     )
 
 @pytest.fixture
-def jobstore(temp_dir) -> JobStore:
+def user_info_resolver():
+    return UserInfoResolver(
+        fabric_url="https://main.net955305.contentfabric.io",
+        user_info_url="https://ai.contentfabric.io/ml/token_info"
+    )
+
+@pytest.fixture
+def jobstore(temp_dir, user_info_resolver) -> JobStore:
     """Create a JobStore for testing.
     
     If JOBSTORE_URL is set, a remote jobstore would be used — but that is not
@@ -142,7 +150,7 @@ def jobstore(temp_dir) -> JobStore:
     url = os.getenv("JOBSTORE_URL")
     if url:
         raise NotImplementedError("Remote jobstore (JOBSTORE_URL) is not yet implemented")
-    return FsJobStore(store_dir=os.path.join(temp_dir, "jobstore"))
+    return FsJobStore(store_dir=os.path.join(temp_dir, "jobstore"), user_info_resolver=user_info_resolver)
 
 @pytest.fixture
 def make_tag_args():

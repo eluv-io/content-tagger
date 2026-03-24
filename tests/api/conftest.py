@@ -2,6 +2,7 @@
 import os
 import shutil
 import time
+from unittest.mock import Mock
 import uuid
 
 from flask import Flask
@@ -13,6 +14,7 @@ from src.api.tagging.request_format import StartJobsRequest
 from src.common.content import Content
 from src.fetch.model import DownloadResult, FetchSession, MediaMetadata, VideoScope
 from src.service.model import StatusArgs, TagDetails, TagJobStatusResult
+from src.status.get_info import UserInfo
 from src.tag_containers.model import ModelConfig, RegistryConfig
 from src.tagging.fabric_tagging.model import TaggerWorkerConfig, JobID, TagArgs, TagStartResult, TagStopResult
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
@@ -248,12 +250,24 @@ class MockArgsResolver:
         return results
     
 @pytest.fixture
-def mock_app(mock_tagger_service, mock_authenticator):
+def fake_user_info_resolver():
+    return Mock(
+        get_user_info=Mock(return_value=UserInfo(
+            user_adr="0x123",
+            is_tenant_admin=True,
+                is_content_admin=True
+            )),
+        get_tenant=Mock(return_value="tenant1")
+    )
+    
+@pytest.fixture
+def mock_app(mock_tagger_service, mock_authenticator, fake_user_info_resolver):
     app = Flask(__name__)
     app.config["state"] = {
         "service": mock_tagger_service,
         "authenticator": mock_authenticator,
-        "arg_resolver": MockArgsResolver()
+        "arg_resolver": MockArgsResolver(),
+        "user_info_resolver": fake_user_info_resolver
     }
     configure_routes(app)
     return app

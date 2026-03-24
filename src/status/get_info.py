@@ -40,6 +40,7 @@ class UserInfoResolver:
     def get_user_info(self, auth: str, tenant_id: str | None) -> UserInfo:
         """Get user info for a given tenant ID using the user info endpoint."""
         resp = requests.get(self.user_info_url, params={"tenant_id": tenant_id}).json()
+        is_content_admin, is_tenant_admin = False, False
         if "token_data" not in resp or "adr" not in resp["token_data"]:
             raise ExternalServiceError("Failed to get user address from token_info service")
         if tenant_id is not None and "is_tenant_admin" not in resp or "is_content_admin" not in resp:

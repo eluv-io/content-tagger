@@ -9,16 +9,15 @@ from dacite import from_dict
 from src.api.arg_resolver import ArgsResolver
 from src.service.abstract import TaggerService
 from src.api.tagging.response_format import StartStatus, StartTaggingResponse
-from src.api.tagging.response_format import StartStatus
 from src.common.logging import logger
 
 from src.common.errors import *
 from src.api.auth import *
 from src.common.content import Content
-from src.common.tenant import get_tenant
-from src.tagging.fabric_tagging.tagger import TaggerWorker
 from src.api.tagging.request_mapping import *
 from src.api.tagging.response_mapping import *
+from src.service.impl.queue_based import QueueService
+from src.status.get_info import UserInfoResolver
 
 def handle_tag(qid: str) -> Response:
     q = authorize(qid, request)
@@ -108,26 +107,25 @@ def handle_status() -> Response:
     returned job's qid and confirming get_tenant(qid, auth) matches the
     requested tenant.
     """
-    auth = get_authorization(request)
     status_req = _parse_status_request()
 
-    if not status_req.tenant:
-        raise BadRequestError("The 'tenant' query parameter is required for /job-status")
+    service: QueueService = current_app.config["state"]["service"]
+    
+    user_info_resolver: UserInfoResolver = current_app.config["state"]["user_info_resolver"]
 
-    service: TaggerService = current_app.config["state"]["service"]
+    user_info = user_info_resolver.get_user_info(request)
+
+    if status_req.tenant and not user_info.is_tenant_admin:
+        raise ForbiddenError("Only tenant admins can query by tenant")
+    elif status_req.user and not status_req.user == user_info.user_adr:
+        raise ForbiddenError(f"Tried to query for user_id={status_req.user} but authenticated user_id={user_info.user_adr}")
+    elif not status_req.tenant and not status_req.user:
+        # fill in the user
+        status_req.user = user_info.user_adr
 
     args = status_request_to_internal(status_req)
 
     reports = service.status(args)
-
-    # Authenticate: resolve tenant from the first result's qid and verify it matches
-    if reports:
-        first_qid = reports[0].qid
-        resolved_tenant = get_tenant(first_qid, auth)
-        if resolved_tenant != status_req.tenant:
-            raise BadRequestError(
-                f"Authorization failed: the provided token does not belong to tenant '{status_req.tenant}'"
-            )
 
     response = map_all_jobs_status_to_response(reports, status_req)
 
