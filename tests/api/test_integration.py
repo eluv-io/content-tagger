@@ -615,3 +615,47 @@ def test_start_two_jobs_one_fails_partial_failure_response(client, q):
     assert data["jobs"][0]["started"] is True
     assert data["jobs"][1]["started"] is False
     assert data["jobs"][1]["error"] == 'boom'
+
+def test_status(client, q):
+    """Test the job status endpoint with no jobs."""
+    if not is_queue_mode():
+        pytest.skip()
+
+    response = client.get(f"/job-status?authorization={q.token}")
+    assert response.status_code == 404
+
+    response = client.post(
+        f"/{q.qid}/tag?authorization={q.token}",
+        json={
+            "options": {
+                "replace": True,
+            },
+            "jobs": [
+                {
+                    "model": "test_model",
+                    "model_params": {"tags": ["ok1", "ok2"]},
+                },
+                {
+                    "model": "test_model2",
+                    "model_params": {"tags": ["nope"]},
+                }
+            ]
+        },
+    )
+    assert response.status_code == 200
+
+    response = client.get(f"/job-status?authorization={q.token}")
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data["jobs"]) == 2
+
+    response = client.get(f"/job-status?authorization={q.token}&tenant=iten2aYr2mCUKsJ6zL9e5kAXZ2mvDXom")
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data["jobs"]) == 2
+
+    response = client.get(f"/job-status?authorization=invalid_token&tenant=another_tenant")
+    assert response.status_code == 400
+
+    response = client.get(f"/job-status?authorization={q.token}&tenant=another_tenant")
+    assert response.status_code == 403
