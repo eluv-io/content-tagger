@@ -56,7 +56,7 @@ def configure_routes(app: Flask) -> None:
     @app.errorhandler(ExternalServiceError)
     def handle_external_service_error(e):
         logger.opt(exception=e).error("External service error")
-        return jsonify({'error': "An upstream service that tagging depends on is not available"}), 502
+        return jsonify({'message': "An upstream service failed", 'error': str(e)}), 502
 
     @app.route('/<qid>/tag', methods=['POST'])
     def tag(qid: str) -> Response:
