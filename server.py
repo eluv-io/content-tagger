@@ -52,11 +52,21 @@ def configure_routes(app: Flask) -> None:
     def handle_missing_resource(e):
         logger.opt(exception=e).error("Missing resource error")
         return jsonify({'code': 404, 'message': e.message}), 404
+
+    @app.errorhandler(ForbiddenError)
+    def handle_forbidden(e):
+        logger.opt(exception=e).error("Forbidden error")
+        return jsonify({'code': 403, 'message': e.message}), 403
     
     @app.errorhandler(ExternalServiceError)
     def handle_external_service_error(e):
         logger.opt(exception=e).error("External service error")
         return jsonify({'message': "An upstream service failed", 'error': str(e)}), 502
+    
+    @app.errorhandler(Exception)
+    def handle_generic_exception(e):
+        logger.opt(exception=e).error("Unhandled exception in API")
+        return jsonify({'message': "An unexpected error occurred", 'error': str(e)}), 500
 
     @app.route('/<qid>/tag', methods=['POST'])
     def tag(qid: str) -> Response:
