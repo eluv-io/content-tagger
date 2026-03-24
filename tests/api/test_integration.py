@@ -463,7 +463,11 @@ def test_stop_live_job(app, q_live):
             test_model_reports = [r for r in reports if r['model'] == 'test_model']
             
             if test_model_reports:
-                progress = test_model_reports[0].get('tag_details', {})['progress']
+                tag_details = test_model_reports[0]['tag_details']
+                if tag_details is None:
+                    progress = 0
+                else:
+                    progress = tag_details.get('progress', 0)
                 # Wait until we have some progress but not complete
                 if progress > 0:
                     # Check we actually have some tags

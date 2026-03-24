@@ -5,11 +5,13 @@ QueueService and processed asynchronously by the TagRunner.
 """
 
 import time
+from unittest.mock import Mock
 import pytest
 
 from src.common.errors import MissingResourceError
 from src.service.impl.queue_based import QueueService
 from src.service.model import *
+from src.tagging.fabric_tagging.queue.model import ListJobArgs
 
 def _wait_for_status(
     client: QueueService,
@@ -97,13 +99,17 @@ class TestQueueStatus:
 
 
 class TestQueueStop:
-    def test_stop_returns_result(self, queue_client, q, make_tag_args, tag_runner):
+    def test_stop_marks_cancelled(self, queue_client, q, make_tag_args, tag_runner):
         args = make_tag_args(feature="caption", stream="video")
         queue_client.tag(q, args)
 
         results = queue_client.stop(q.qid, "caption")
         assert len(results) == 1
         assert results[0].message == "Stop requested"
+        time.sleep(0.25)
+        # check that job is marked cancelled in jobstore
+        jobstore = tag_runner.jobstore
+        assert jobstore.list_jobs(ListJobArgs(status="cancelled"), auth="")
 
     def test_stop_wrong_feature_raises_exception(self, queue_client, q, make_tag_args, tag_runner):
         args = make_tag_args(feature="caption", stream="video")
@@ -111,3 +117,36 @@ class TestQueueStop:
 
         with pytest.raises(MissingResourceError):
             queue_client.stop(q.qid, "nonexistent")
+
+
+def test_stop_runner(queue_client, q, make_tag_args, tag_runner):
+    args = make_tag_args(feature="caption", stream="video")
+    queue_client.tag(q, args)
+    time.sleep(0.25)
+    tag_runner.stop()
+    # check that job is marked cancelled in jobstore
+    jobstore = tag_runner.jobstore
+    assert jobstore.list_jobs(ListJobArgs(status="cancelled"), auth="")
+
+def test_stop_running_job(queue_client, q, make_tag_args, tag_runner):
+    args = make_tag_args(feature="caption", stream="video")
+    queue_client.tag(q, args)
+    time.sleep(0.25)
+    queue_client.stop(q.qid, "caption")
+    time.sleep(0.25)
+    # check that job is marked cancelled in jobstore
+    jobstore = tag_runner.jobstore
+    assert jobstore.list_jobs(ListJobArgs(status="cancelled"), auth="")
+
+def test_worker_tag_fails(queue_client, q, make_tag_args, tag_runner):
+    tag_runner.tagger.tag = Mock(side_effect=Exception("Tagging failed"))
+
+    args = make_tag_args(feature="caption", stream="video")
+    queue_client.tag(q, args)
+    time.sleep(0.25)
+
+    # check that job is marked failed in jobstore
+    jobstore = tag_runner.jobstore
+    failed_jobs = jobstore.list_jobs(ListJobArgs(status="failed"), auth="")
+    assert len(failed_jobs) == 1
+    assert failed_jobs[0].error == "Tagging failed"

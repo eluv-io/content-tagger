@@ -372,7 +372,8 @@ def tag_runner(fabric_tagger, queue_jobstore, qfactory):
     )
     runner.start()
     yield runner
-    runner.stop()
+    if not runner._shutdown.is_set():
+        runner.stop()
 
 @pytest.fixture
 def make_status_args():
