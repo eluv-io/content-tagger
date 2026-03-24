@@ -10,7 +10,6 @@ from src.tagging.fabric_tagging.model import TagArgs, TagContentStatusReport
 from src.tagging.uploading.uploader import UploadSession
 from src.tags.track_resolver import TrackArgs, TrackResolver, TrackResolverConfig
 
-
 def test_upload_tags(upload_session, get_tag):
     tags = [
         get_tag(model_track="asr", text="hello world"),
@@ -80,6 +79,30 @@ def test_get_uploaded_sources(upload_session, get_tag):
     tagged_sources = ["source1", "source2"]
 
     upload_session.upload_tags(tags=tags, tagged_sources=tagged_sources)
+
+    uploaded_sources = upload_session.get_uploaded_sources()
+
+    assert set(uploaded_sources) == {"source1", "source2"}
+
+def test_get_uploaded_sources_upload_fails(upload_session, get_tag):
+    tags = [
+        get_tag(model_track="asr", text="hello world", source_media="/path/to/source1.mp4"),
+    ]
+
+    tagged_sources = ["source1"]
+
+    upload_session.tagstore.create_track = Mock(side_effect=Exception("upload failed"))
+
+    with pytest.raises(Exception):
+        upload_session.upload_tags(tags=tags, tagged_sources=tagged_sources)
+    
+    uploaded_sources = upload_session.get_uploaded_sources()
+    assert not uploaded_sources
+
+def test_upload_empty_tags_get_sources(upload_session):
+    tagged_sources = ["source1", "source2"]
+
+    upload_session.upload_tags(tags=[], tagged_sources=tagged_sources)
 
     uploaded_sources = upload_session.get_uploaded_sources()
 

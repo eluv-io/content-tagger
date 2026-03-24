@@ -39,9 +39,8 @@ class UploadSession:
         new_inputs = [t for t in tags if t not in self.uploaded_tags]
 
         if not new_inputs:
+            self.uploaded_sources.update(tagged_sources)
             return
-        
-        self.uploaded_sources.update(tagged_sources)
 
         logger.info(
             "uploading new tags",
@@ -70,6 +69,8 @@ class UploadSession:
                 logger.opt(exception=e).error("error uploading tags, but retry is set to true, will retry on next upload tick", destination_qid=self.dest_q.qid, feature=self.feature)
             else:
                 raise
+
+        self.uploaded_sources.update(tagged_sources)
 
         self.uploaded_tags.update(new_inputs)
 
