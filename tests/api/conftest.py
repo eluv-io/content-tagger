@@ -2,14 +2,19 @@
 import os
 import shutil
 import time
+import uuid
 
+from flask import Flask
 import pytest
 
 from app_config import AppConfig
-from server import create_app_direct, create_app_queue_based
-from src.fetch.model import DownloadResult, FetchSession, MediaMetadata
+from server import configure_routes, create_app_direct, create_app_queue_based
+from src.api.tagging.request_format import StartJobsRequest
+from src.common.content import Content
+from src.fetch.model import DownloadResult, FetchSession, MediaMetadata, VideoScope
+from src.service.model import StatusArgs, TagDetails, TagJobStatusResult
 from src.tag_containers.model import ModelConfig, RegistryConfig
-from src.tagging.fabric_tagging.model import FabricTaggerConfig
+from src.tagging.fabric_tagging.model import FabricTaggerConfig, JobID, TagArgs, TagStartResult, TagStopResult
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
 from src.tagging.fabric_tagging.queue.model import JobStoreConfig
 from src.tagging.fabric_tagging.tagger import FabricTagger
@@ -138,3 +143,117 @@ class FakeLiveWorker(FetchSession):
                 failed=self._failed,
                 done=True
             )
+        
+class MockTaggerService:
+    """In-memory mock implementation of TaggerService for use in tests."""
+
+    def __init__(self):
+        # job_id -> dict with job info
+        self._jobs: dict[str, dict] = {}
+
+    def tag(self, q: Content, args: TagArgs) -> TagStartResult:
+        job_id = str(uuid.uuid4())
+        self._jobs[job_id] = {
+            "job_id": job_id,
+            "qid": q.qid,
+            "status": "Tagging content",
+            "model": args.feature,
+            "stream": "",
+            "created_at": time.time(),
+            "params": args.run_config,
+            "tenant": "test tenant",
+            "user": "test user",
+            "title": q.qid,
+            "error": None,
+        }
+        return TagStartResult(
+            job_id=JobID(qid=q.qid, feature=args.feature, stream=""),
+            started=True,
+            message="Mock job started",
+        )
+
+    def status(self, req: StatusArgs) -> list[TagJobStatusResult]:
+        results = []
+        for job in self._jobs.values():
+            if req.qid and job["qid"] != req.qid:
+                continue
+            if req.tenant and job["tenant"] != req.tenant:
+                continue
+            if req.user and job["user"] != req.user:
+                continue
+            if req.title and job["title"] != req.title:
+                continue
+            details = TagDetails(
+                tag_status=job["status"],
+                time_running=time.time() - job["created_at"],
+                progress=1.0 if job["status"] == "Completed" else 0.5,
+                tagging_progress=job["status"],
+                total_parts=1,
+                downloaded_parts=1,
+                tagged_parts=1 if job["status"] == "Completed" else 0,
+            )
+            results.append(TagJobStatusResult(
+                qid=job["qid"],
+                job_id=job["job_id"],
+                status=job["status"],
+                model=job["model"],
+                stream=job["stream"],
+                created_at=job["created_at"],
+                params=job["params"],
+                tenant=job["tenant"],
+                user=job["user"],
+                title=job["title"],
+                error=job["error"],
+                tagger_details=details,
+            ))
+        return results
+
+    def stop(self, qid: str, feature: str | None) -> list[TagStopResult]:
+        results = []
+        for job in self._jobs.values():
+            if job["qid"] != qid:
+                continue
+            if feature and job["model"] != feature:
+                continue
+            job["status"] = "Stopped"
+            results.append(TagStopResult(job_id=job["job_id"], message="Mock job stopped"))
+        return results
+
+@pytest.fixture
+def mock_tagger_service():
+    return MockTaggerService()
+
+@pytest.fixture
+def mock_authenticator():
+    class MockAuthenticator:
+        def authenticate(self, q: Content) -> bool:
+            return True
+    return MockAuthenticator()
+
+class MockArgsResolver:
+    """Mock ArgsResolver with no external dependencies. Returns one TagArgs per job
+    using a default VideoScope and the values directly from the request."""
+
+    def resolve(self, args: StartJobsRequest, q: Content) -> list[TagArgs]:
+        results = []
+        for job in args.jobs:
+            results.append(TagArgs(
+                feature=job.model,
+                run_config=job.model_params,
+                scope=VideoScope(stream="video", start_time=0, end_time=10**16),
+                replace=False,
+                destination_qid="",
+                max_fetch_retries=3,
+            ))
+        return results
+    
+@pytest.fixture
+def mock_app(mock_tagger_service, mock_authenticator):
+    app = Flask(__name__)
+    app.config["state"] = {
+        "service": mock_tagger_service,
+        "authenticator": mock_authenticator,
+        "arg_resolver": MockArgsResolver()
+    }
+    configure_routes(app)
+    return app
