@@ -96,7 +96,8 @@ class TaggerWorker:
 
     def cleanup(self) -> None:
         request = CleanupRequest()
-        return self._submit(request)
+        self._submit(request)
+        self.actor_thread.join(timeout=5.0)
 
     def shutdown_requested(self) -> bool:
         return self.shutdown_signal

@@ -31,7 +31,7 @@ class VodWorker(FetchSession):
         self.qapi = qapi
         self.scope = scope
         self.rl = rate_limiter
-        self.meta = MediaMetadata(sources=meta.parts, fps=meta.fps)
+        self.full_meta = meta
         self.codec_type = meta.codec_type
         self.part_duration = meta.part_duration
         self.output_dir = output_dir
@@ -39,7 +39,18 @@ class VodWorker(FetchSession):
         self.exit = exit
 
     def metadata(self) -> MediaMetadata:
-        return deepcopy(self.meta)
+        start_time, end_time = self.scope.start_time, self.scope.end_time
+        filtered = [
+            part_hash
+            for idx, part_hash in enumerate(self.full_meta.parts)
+            if part_hash not in self.ignore_sources
+            and (
+                start_time <= idx * self.part_duration < end_time
+                or start_time <= (idx + 1) * self.part_duration < end_time
+            )
+        ]
+
+        return MediaMetadata(sources=filtered, fps=self.full_meta.fps)
 
     def download(self) -> DownloadResult:
         with self.rl.permit((self.qapi.id(), str(self.scope.stream))):
@@ -75,7 +86,7 @@ class VodWorker(FetchSession):
         scope = self.scope
         start_time, end_time = scope.start_time, scope.end_time
 
-        to_download = self.meta.sources
+        to_download = self.full_meta.parts
 
         logger.info(f"Downloading stream {self.scope.stream} with {len(to_download)} total parts.")
 
