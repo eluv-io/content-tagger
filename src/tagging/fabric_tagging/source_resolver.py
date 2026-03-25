@@ -3,7 +3,6 @@ from dacite import from_dict
 from src.common.content import Content
 from src.tags.tagstore.abstract import Tagstore
 from src.tags.track_resolver import TrackResolver
-from src.tagging.fabric_tagging.model import TagContentStatusReport
 
 class SourceResolver:
     def __init__(

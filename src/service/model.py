@@ -15,6 +15,11 @@ class TagStartResult:
     created_at: float
 
 @dataclass(frozen=True)
+class WarningResponse:
+    num_warnings: int
+    last_warning: str
+
+@dataclass(frozen=True)
 class TagDetails:
     tag_status: str
     time_running: float
@@ -27,6 +32,7 @@ class TagDetails:
     total_parts: int
     downloaded_parts: int
     tagged_parts: int
+    warnings: WarningResponse | None
 
 @dataclass(frozen=True)
 class TagJobStatusResult: 

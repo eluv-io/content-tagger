@@ -2,6 +2,7 @@ import time
 
 from src.common.content import Content
 from src.common.errors import BadRequestError
+from src.service.common import get_warning_response
 from src.tagging.fabric_tagging.model import TagArgs
 from src.service.model import *
 from src.tagging.fabric_tagging.tagger import TaggerWorker
@@ -26,9 +27,10 @@ class DirectAPI(TaggerService):
         if not req.qid:
             raise BadRequestError("qid parameter must be specified for direct api")
         
-        res = self.tagger.status(req.qid)
-        return [
-            TagJobStatusResult(
+        worker_statuis = self.tagger.status(req.qid)
+        res = []
+        for r in worker_statuis:
+            tr = TagJobStatusResult(
                 qid=req.qid,
                 job_id=f"<{req.qid}, {r.model}, {r.stream}>",
                 status=_tag_status_to_job_status(r.status.status),
@@ -47,10 +49,12 @@ class DirectAPI(TaggerService):
                     total_parts=len(r.status.total_sources),
                     downloaded_parts=len(r.status.downloaded_sources),
                     tagged_parts=len(r.status.tagged_sources),
+                    warnings=get_warning_response(r.status.warnings),
                 ),
                 error=r.status.error,
-            ) for r in res
-        ]
+            )
+            res.append(tr)
+        return res
 
     def stop(self, qid: str, feature: str | None) -> list[TagStopResult]:
         res = self.tagger.stop(qid, feature)

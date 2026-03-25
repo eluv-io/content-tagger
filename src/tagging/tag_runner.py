@@ -4,6 +4,7 @@ import time
 
 from src.common.content import Content
 from src.common.logging import logger
+from src.service.common import get_warning_response
 from src.tagging.fabric_tagging.model import TagStatusResult, JobStateDescription
 from src.tagging.fabric_tagging.tagger import TaggerWorker
 from src.tagging.fabric_tagging.queue.abstract import JobStore
@@ -198,6 +199,7 @@ class TagRunner:
                     total_parts=len(r.status.total_sources),
                     downloaded_parts=len(r.status.downloaded_sources),
                     tagged_parts=len(r.status.tagged_sources),
+                    warnings=get_warning_response(r.status.warnings) if r.status.warnings else None,
                 )
 
                 try:

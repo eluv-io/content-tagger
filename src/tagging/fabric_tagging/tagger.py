@@ -367,7 +367,7 @@ class TaggerWorker:
             self._submit_async(EnterCompletePhase(job_id=jobid))
             return
 
-        if not job.state.taghandle:
+        if not job.state.taghandle and new_sources:
             # schedule tagging
             uid = self.system_tagger.start(job.state.container, job.state.tagging_done)
             job.state.taghandle = uid
