@@ -26,31 +26,39 @@ class VodWorker(FetchSession):
         meta: VideoMetadata,
         ignore_sources: list[str],
         output_dir: str,
-        exit: threading.Event | None = None
+        exit: threading.Event | None = None,
+        batch_size: int = 25
     ):
         self.qapi = qapi
         self.scope = scope
         self.rl = rate_limiter
-        self.full_meta = meta
         self.codec_type = meta.codec_type
         self.part_duration = meta.part_duration
         self.output_dir = output_dir
         self.ignore_sources = set(ignore_sources)
         self.exit = exit
+        self._fps = meta.fps
+        self.batch_size = batch_size
 
-    def metadata(self) -> MediaMetadata:
-        start_time, end_time = self.scope.start_time, self.scope.end_time
-        filtered = [
-            part_hash
-            for idx, part_hash in enumerate(self.full_meta.parts)
+        start_time, end_time = scope.start_time, scope.end_time
+        # Pre-compute (original_idx, part_hash) for parts that pass all filters.
+        # original_idx is preserved so _download can compute correct offsets.
+        self._filtered_parts: list[tuple[int, str]] = [
+            (idx, part_hash)
+            for idx, part_hash in enumerate(meta.parts)
             if part_hash not in self.ignore_sources
             and (
                 start_time <= idx * self.part_duration < end_time
                 or start_time <= (idx + 1) * self.part_duration < end_time
             )
         ]
+        self._cursor = 0
 
-        return MediaMetadata(sources=filtered, fps=self.full_meta.fps)
+    def metadata(self) -> MediaMetadata:
+        return MediaMetadata(
+            sources=[part_hash for _, part_hash in self._filtered_parts],
+            fps=self._fps
+        )
 
     def download(self) -> DownloadResult:
         with self.rl.permit((self.qapi.id(), str(self.scope.stream))):
@@ -83,32 +91,21 @@ class VodWorker(FetchSession):
         successful_sources = []
         failed_parts = []
 
-        scope = self.scope
-        start_time, end_time = scope.start_time, scope.end_time
+        batch = self._filtered_parts[self._cursor:self._cursor + self.batch_size]
 
-        to_download = self.full_meta.parts
+        logger.info(
+            f"Downloading stream {self.scope.stream}: "
+            f"batch {self._cursor // self.batch_size + 1}, {len(batch)} parts "
+            f"(of {len(self._filtered_parts)} filtered)."
+        )
 
-        logger.info(f"Downloading stream {self.scope.stream} with {len(to_download)} total parts.")
-
-        if self.ignore_sources:
-            logger.info(f"Filtering {len(self.ignore_sources)} already tagged sources")
-
-        for idx, part_hash in enumerate(to_download):
+        for idx, part_hash in batch:
             if self.exit and self.exit.is_set():
                 break
-
-            if part_hash in self.ignore_sources:
-                continue
 
             pstart = idx * self.part_duration
             pend = (idx + 1) * self.part_duration
             idx_str = str(idx).zfill(4)
-
-            # Check if part is within time range
-            if not (
-                start_time <= pstart < end_time
-            ) and not (start_time <= pend < end_time):
-                continue
 
             filename = f"{idx_str}_{part_hash}{'.mp4' if self.codec_type == 'video' else '.m4a'}"
             save_path = os.path.join(self.output_dir, filename)
@@ -158,10 +155,11 @@ class VodWorker(FetchSession):
 
             # TODO: check for audio as well. 
 
+        self._cursor += len(batch)
         shutil.rmtree(tmp_path, ignore_errors=True)
 
         return DownloadResult(
-            sources=successful_sources, 
+            sources=successful_sources,
             failed=failed_parts,
-            done=True
+            done=self._cursor >= len(self._filtered_parts)
         )

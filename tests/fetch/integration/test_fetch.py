@@ -177,3 +177,30 @@ def test_metadata(
 
     worker3 = fetcher.get_session(q, req3)
     assert len(worker3.metadata().sources) == 2
+
+def test_incremental(fetcher: FetchFactory, q, temp_dir):
+    req = DownloadRequest(
+        scope=VideoScope(
+            stream="video",
+            start_time=0,
+            end_time=1e10
+        ),
+        output_dir=temp_dir,
+        ignore_sources=[],
+    )
+
+    worker = fetcher.get_session(q, req)
+
+    assert isinstance(worker, VodWorker)
+    worker.batch_size = 2
+
+    result1 = worker.download()
+    assert len(result1.sources) == 2
+    assert not result1.done
+
+    result2 = worker.download()
+    assert len(result2.sources) == 2
+    assert not result2.done
+
+    for part in result1.sources:
+        assert part not in result2.sources
