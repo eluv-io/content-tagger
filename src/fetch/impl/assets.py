@@ -32,7 +32,13 @@ class AssetWorker(FetchSession):
         self.exit = exit
 
     def metadata(self) -> MediaMetadata:
-        return deepcopy(self.meta)
+        full_meta = deepcopy(self.meta)
+
+        sources = [s for s in full_meta.sources if s not in self.ignore_assets]
+
+        full_meta.sources = sources
+
+        return full_meta
     
     def download(self) -> DownloadResult:
         with self.rl.permit((self.qapi.id(), "assets")):
