@@ -89,6 +89,8 @@ def test_fetch_assets(
     result1 = worker1.download()
     assert len(result1.sources) > 0, "Should have downloaded some assets"
     assert len(result1.failed) == 0, "Should have no failed downloads initially"
+
+    num_total_assets = len(worker1.metadata().sources)
     
     all_asset_names = [source.name for source in result1.sources]
     selected_assets = all_asset_names[:3]
@@ -102,6 +104,8 @@ def test_fetch_assets(
     )
 
     worker2 = fetcher.get_session(assets_content_with_tags_clean, req2)
+    assert len(worker2.metadata().sources) == len(selected_assets)
+
     result2 = worker2.download()
     assert len(result2.sources) == len(selected_assets), "Should return all requested assets"
     assert len(result2.failed) == 0, "Should have no failed downloads"
@@ -122,5 +126,54 @@ def test_fetch_assets(
 
     worker3 = fetcher.get_session(assets_content_with_tags_clean, req3)
     result3 = worker3.download()
+
+    assert len(worker3.metadata().sources) == len(selected_assets) - 2
     
     assert len(result3.sources) == 1, "Should return only one asset after ignoring two"
+
+def test_metadata(
+    fetcher: FetchFactory, 
+    q,
+    temp_dir: str
+):
+
+    req = DownloadRequest(
+        scope=VideoScope(
+            stream="video",
+            start_time=0,
+            end_time=1e10
+        ),
+        output_dir=temp_dir,
+        ignore_sources=[],
+    )
+    
+    # Download once
+    worker = fetcher.get_session(q, req)
+    all_parts = worker.metadata().sources
+    assert len(all_parts) > 0
+
+    req2 = DownloadRequest(
+        scope=VideoScope(
+            stream="video",
+            start_time=0,
+            end_time=1e9
+        ),
+        output_dir=temp_dir,
+        ignore_sources=[all_parts[0]],
+    )
+    
+    worker2 = fetcher.get_session(q, req2)
+    assert len(worker2.metadata().sources) == len(all_parts) - 1
+
+    req3 = DownloadRequest(
+        scope=VideoScope(
+            stream="video",
+            start_time=0,
+            end_time=60
+        ),
+        output_dir=os.path.join(temp_dir, "video"),
+        ignore_sources=[],
+    )
+
+    worker3 = fetcher.get_session(q, req3)
+    assert len(worker3.metadata().sources) == 2
