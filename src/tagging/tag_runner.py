@@ -72,8 +72,9 @@ class TagRunner:
             try:
                 self.jobstore.update_job(
                     UpdateJobRequest(
-                        id=job.id,
+                        id=job.id, 
                         status="cancelled",
+                        error="tagger worker service was shut down or restarted"
                     ),
                     auth=job.auth,
                 )

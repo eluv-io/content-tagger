@@ -54,7 +54,7 @@ def video_paths(temp_dir):
     return video1, video2
 
 @pytest.fixture
-def container(temp_dir):
+def container_spec(temp_dir):
     videos_dir = os.path.join(temp_dir, "videos")
     os.makedirs(videos_dir, exist_ok=True)
     
@@ -63,7 +63,7 @@ def container(temp_dir):
     logs_path = os.path.join(temp_dir, "container.log")
     os.makedirs(cache_dir, exist_ok=True)
 
-    container_spec = ContainerSpec(
+    return ContainerSpec(
         id="test_live_container",
         media_dir=videos_dir,
         run_config={},
@@ -76,7 +76,9 @@ def container(temp_dir):
             resources=SystemResources()
         )
     )
-    
+
+@pytest.fixture
+def container(container_spec):
     pclient = podman.PodmanClient()
     container = TagContainer(pclient, container_spec)
 
@@ -173,3 +175,19 @@ def test_stop_via_eof(container, video_paths):
     assert not container.is_running()
     # make sure it processed the files before eof'ing
     assert len(container.progress()) == 2
+
+def test_generates_tags(container_spec, video_paths):
+    container_spec.run_config = {"delay": 0.7}
+    container = TagContainer(podman.PodmanClient(), container_spec)
+    try:
+        start = time.time()
+        container.start(gpuidx=None)
+        container.add_media(list(video_paths))
+        assert container.is_running()
+        counts = set()
+        while time.time() - start < 10 and len(counts) < 3:
+            counts.add(len(container.progress()))
+        assert counts == {0, 1, 2}
+    finally:
+        if container.is_running():
+            container.stop()
