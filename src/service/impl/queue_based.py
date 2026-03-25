@@ -1,5 +1,7 @@
 from dataclasses import asdict
+from functools import lru_cache
 from time import time
+from common_ml.utils.metrics import timeit
 
 from src.common.content import Content, QAPIFactory
 from src.common.errors import BadRequestError, MissingResourceError
@@ -32,7 +34,8 @@ class QueueService(TaggerService):
         """Enqueue a tagging job and return immediately."""
         auth = q.token
 
-        existing = self.jobstore.list_jobs(ListJobArgs(qid=q.qid), auth=auth)
+        with timeit("listing jobs"):
+            existing = self.jobstore.list_jobs(ListJobArgs(qid=q.qid), auth=auth)
         for item in existing:
             if item.status in ("queued", "running") and item.params.feature == args.feature:
                 logger.info("duplicate job rejected", qid=q.qid, feature=args.feature, existing_job_id=str(item.id))
@@ -43,22 +46,20 @@ class QueueService(TaggerService):
                     created_at=item.created_at,
                 )
 
-        qapi = self.qfactory.create(q)
+        with timeit("getting display title"):
+            title = self._get_display_title(q)
 
-        title = qapi.content_object_metadata(metadata_subtree="/public/name")
-        if not isinstance(title, str):
-            raise BadRequestError(f"Received non-string value at /meta/public/name for qid={q.qid}")
-
-        job = self.jobstore.create_job(
-            CreateQueueItem(
-                qid=q.qid,
-                params=args,
-                status="queued",
-                status_details=None,
-                additional_info={"title": title},
-            ),
-            auth=auth,
-        )
+        with timeit("creating job"):
+            job = self.jobstore.create_job(
+                CreateQueueItem(
+                    qid=q.qid,
+                    params=args,
+                    status="queued",
+                    status_details=None,
+                    additional_info={"title": title},
+                ),
+                auth=auth,
+            )
 
         logger.info("enqueued tagging job", job_id=str(job.id), qid=q.qid)
         return TagStartResult(started=True, created_at=job.created_at, job_id=job.id, message="Job enqueued")
@@ -75,26 +76,6 @@ class QueueService(TaggerService):
             items = [item for item in items if item.additional_info.get("title") == req.title]
     
         return self._items_to_reports(items)
-
-    def _items_to_reports(self, items: list[QueueItem]) -> list[TagJobStatusResult]:
-        """Convert a list of QueueItems to TagJobStatusResult objects."""
-        reports: list[TagJobStatusResult] = []
-        for item in items:
-            reports.append(TagJobStatusResult(
-                qid=item.qid,
-                job_id=item.id,
-                status=item.status,
-                created_at=item.created_at,
-                model=item.params.feature,
-                stream=_stream_from_scope(item.params.scope),
-                params=asdict(item.params),
-                tagger_details=item.status_details,
-                tenant=item.tenant,
-                user=item.user,
-                title=item.additional_info.get("title", ""),
-                error=item.error,
-            ))
-        return reports
 
     def stop(self, qid: str, feature: str | None) -> list[TagStopResult]:
         """Request a stop for matching jobs in the queue."""
@@ -115,6 +96,34 @@ class QueueService(TaggerService):
             logger.info("stop requested", job_id=str(item.id))
 
         return results
+    
+    @lru_cache(maxsize=1024)
+    def _get_display_title(self, q: Content) -> str:
+        qapi = self.qfactory.create(q)
+        title = qapi.content_object_metadata(metadata_subtree="/public/name")
+        if not isinstance(title, str):
+            return ""
+        return title
+    
+    def _items_to_reports(self, items: list[QueueItem]) -> list[TagJobStatusResult]:
+        """Convert a list of QueueItems to TagJobStatusResult objects."""
+        reports: list[TagJobStatusResult] = []
+        for item in items:
+            reports.append(TagJobStatusResult(
+                qid=item.qid,
+                job_id=item.id,
+                status=item.status,
+                created_at=item.created_at,
+                model=item.params.feature,
+                stream=_stream_from_scope(item.params.scope),
+                params=asdict(item.params),
+                tagger_details=item.status_details,
+                tenant=item.tenant,
+                user=item.user,
+                title=item.additional_info.get("title", ""),
+                error=item.error,
+            ))
+        return reports
     
 def _stream_from_scope(scope) -> str:
     """Derive the stream identifier from a scope, matching TagJob.get_id() logic."""

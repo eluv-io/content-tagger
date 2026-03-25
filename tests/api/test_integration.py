@@ -415,16 +415,14 @@ def test_double_run(client, q):
 
 def test_find_default_audio_stream(q, app):
     resolver: ArgsResolver = app.config["state"]["arg_resolver"]
-    qapi = resolver.api_factory.create(q)
-    result = resolver.find_default_audio_stream(qapi)
+    result = resolver.find_default_audio_stream(q)
 
     assert result == "stereo"
 
 def test_is_live_content(q_live, app):
     """Test the _is_live_content function."""
     resolver: ArgsResolver = app.config["state"]["arg_resolver"]
-    qapi = resolver.api_factory.create(q_live)
-    assert resolver.is_live_content(qapi) == True
+    assert resolver.is_live_content(q_live) == True
 
 def test_stop_live_job(app, q_live):
     """Test that live jobs can be stopped cleanly mid-stream."""

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 import base64
 import dacite
@@ -154,6 +155,7 @@ class QAPIFactory:
     def __init__(self, cfg: ContentConfig):
         self.cfg = cfg
 
+    @lru_cache(maxsize=1024)
     def create(self, q: Content) -> QAPI:
         return QAPI(q, self.cfg)
 

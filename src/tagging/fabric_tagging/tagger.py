@@ -181,7 +181,7 @@ class TaggerWorker:
         args = request.args
     
         self._validate_args(args)
-        logger.info("processing tag request", qid=q.qid, args=args)
+        logger.info("processing tag request", qid=q.qid)
 
         job = self._initialize_job(q, args.feature, args)
 

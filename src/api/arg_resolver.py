@@ -1,4 +1,6 @@
 
+from functools import lru_cache
+
 from common_ml.utils.dictionary import nested_update
 from requests import HTTPError
 
@@ -29,7 +31,9 @@ class ArgsResolver:
             res.append(tag_arg)
         return res
     
-    def find_default_audio_stream(self, qapi: QAPI) -> str:
+    @lru_cache(maxsize=1024)
+    def find_default_audio_stream(self, q: Content) -> str:
+        qapi = self.api_factory.create(q)
         streams = qapi.content_object_metadata(
             metadata_subtree="offerings/default/media_struct/streams",
             resolve_links=False,
@@ -60,7 +64,9 @@ class ArgsResolver:
         
         return list(audio_streams.keys())[0]
 
-    def is_live_content(self, qapi: QAPI) -> bool:
+    @lru_cache(maxsize=1024)
+    def is_live_content(self, q: Content) -> bool:
+        qapi = self.api_factory.create(q)
         try:
             edge_write_token = qapi.content_object_metadata(
                 metadata_subtree="live_recording/status/edge_write_token",
@@ -159,9 +165,8 @@ class ArgsResolver:
             raise BadRequestError(f"Invalid scope type: {type(scope)}")
 
     def _get_default_scope_dict(self, model_type: str, q: Content) -> dict[str, Any]:
-        qapi = self.api_factory.create(q)
         res = {}
-        is_live = self.is_live_content(qapi)
+        is_live = self.is_live_content(q)
         if is_live and model_type == "processor":
             raise BadRequestError("Processor models are not currently supported for live content.")
 
@@ -173,7 +178,7 @@ class ArgsResolver:
             res["type"] = "video"
 
         if model_type == "audio" and not is_live:
-            res["stream"] = self.find_default_audio_stream(qapi)
+            res["stream"] = self.find_default_audio_stream(q)
         else:
             res["stream"] = "video"
 

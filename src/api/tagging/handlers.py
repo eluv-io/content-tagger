@@ -2,6 +2,7 @@ from dataclasses import asdict
 from dacite import from_dict, Config
 import json
 import os
+from common_ml.utils.metrics import timeit
 
 from flask import Response, request, current_app
 from dacite import from_dict
@@ -34,7 +35,8 @@ def handle_tag(qid: str) -> Response:
 
     arg_resolver: ArgsResolver = current_app.config["state"]["arg_resolver"]
 
-    tag_args = arg_resolver.resolve(args, q)
+    with timeit("resolving tag args"):
+        tag_args = arg_resolver.resolve(args, q)
 
     return _execute_tagging(q, tag_args)
 
@@ -45,7 +47,8 @@ def _execute_tagging(q: Content, tag_args: list[TagArgs]) -> Response:
     jobs: list[StartStatus] = []
     for tag_arg in tag_args:
         try:
-            result = tagger.tag(q, tag_arg)
+            with timeit(f"tagging for feature {tag_arg.feature}"):
+                result = tagger.tag(q, tag_arg)
         except Exception as e:
             logger.opt(exception=e).error("Failed to start tagging", feature=tag_arg.feature, qid=q.qid)
             jobs.append(
