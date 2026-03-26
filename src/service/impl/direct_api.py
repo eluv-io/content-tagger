@@ -45,7 +45,7 @@ class DirectAPI(TaggerService):
                     tag_status=r.status.status,
                     time_running=r.status.time_ended - r.status.time_started if r.status.time_ended else time.time() - r.status.time_started,
                     progress=(0.3 * len(r.status.downloaded_sources) + 0.7 * len(r.status.uploaded_sources)) / len(r.status.total_sources) if r.status.total_sources else 1.0,
-                    tagging_progress=f"{len(r.status.tagged_sources)}/{len(r.status.downloaded_sources)}",
+                    tagging_progress=f"{len(r.status.uploaded_sources)}/{len(r.status.total_sources)}",
                     total_parts=len(r.status.total_sources),
                     downloaded_parts=len(r.status.downloaded_sources),
                     tagged_parts=len(r.status.tagged_sources),

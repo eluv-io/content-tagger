@@ -27,7 +27,7 @@ class VodWorker(FetchSession):
         ignore_sources: list[str],
         output_dir: str,
         exit: threading.Event | None = None,
-        batch_size: int = 25
+        batch_size: int = 10
     ):
         self.qapi = qapi
         self.scope = scope

@@ -168,6 +168,7 @@ def create_app_queue_based(config: AppConfig) -> Flask:
     }
 
     loop = TagRunner(worker, job_store, config.tag_runner)
+    app.config["state"]["loop"] = loop
 
     loop.start()
 
