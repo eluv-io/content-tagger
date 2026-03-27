@@ -5,6 +5,9 @@ content:
 
 tagstore:
   base_url: https://ai.contentfabric.io/tagstore
+  
+tag_runner:
+  poll_interval: 5.0
 
 tag_converter:
   name_mapping:
@@ -36,6 +39,9 @@ fetcher:
 
 tagger:
   media_dir: data/parts
+
+jobstore:
+  base_url: data/jobstore
 
 container_registry:
   base_dir: data/containers
