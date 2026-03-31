@@ -27,6 +27,8 @@ class JobStatus:
     user: str
     title: str
     tagging_progress: str
+    # between 0 and 1
+    progress: float
     error: str | None
     tag_details: TagDetails | None
 
