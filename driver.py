@@ -86,7 +86,10 @@ assets_params = {
 
 video_params = {
     "jobs": [
-        {"model": "logo"}
+        {"model": "euro_asr"},
+        {"model": "ocr", "model_params": {"fps": 0.25}},
+        {"model": "asr"},
+        {"model": "llava"}
     ]
 }
     
@@ -118,15 +121,9 @@ def get_status(qid: str, auth: str):
             model = report['model']
             if stream not in status:
                 status[stream] = {}
-            status[stream][model] = {
-                'status': report['status'],
-                'tagging_progress': report['tagging_progress'],
-                'time_running': report['time_running'],
-                'failed': report['failed'],
-                'missing_tags': report['missing_tags']
-            }
-            if report.get('message'):
-                status[stream][model]['message'] = report['message']
+            status[stream][model] = report.get('tag_details', {})
+            if report.get('error'):
+                status[stream][model]['error'] = report.get('error')
         return status
     elif isinstance(response_data, dict) and "error" in response_data:
         return response_data
@@ -136,13 +133,15 @@ def get_status(qid: str, auth: str):
 
 def tag(contents: list, auth: str, assets: bool, params: dict, start_time: float = None, end_time: float = None):
     
-    llama_models = ["elv-llamavision:1"]
+    llama_models = ["llava:13b"]
     for i, qid in enumerate(contents):
         url = f"{server}/{qid}/tag"
         
         # Update llava model params if present
         for job in params["jobs"]:
             if job["model"] == "llava":
+                if not job.get("model_params"):
+                    job["model_params"] = {}
                 job["model_params"]["model"] = llama_models[i % len(llama_models)]
         
         # Update scope with time range if specified
@@ -527,7 +526,7 @@ def quick_status(auth, qid, filter = None):
         for report in reports:
             model = report['model']
             stream = report['stream']
-            progress = report.get('tagging_progress', '')
+            progress = report.get('tag_details', {}).get('progress', '')
             status = report.get('status', '??')
             line = "[%9s] %-32s / %s: %s" % (progress, qid, f"({stream}) {model}", status)
             if filter is None or re.search(filter, line):
@@ -539,7 +538,7 @@ def quick_status(auth, qid, filter = None):
         if imgorvid == "error":  # Skip error key
             continue
         for model, stat in models.items():
-            line = "[%9s] %-32s / %s: %s" % (stat.get("tagging_progress", ""), qid, f"({imgorvid}) {model}", stat.get("status", "??"))
+            line = "[%9s] %-32s / %s: %s" % (stat.get('tag_details', {}).get('progress', ''), qid, f"({imgorvid}) {model}", stat.get("status", "??"))
             if filter is None or re.search(filter, line):
                 print(line)
 
