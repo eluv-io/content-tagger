@@ -48,6 +48,9 @@ def map_all_jobs_status_to_response(
 def map_job_status_to_response(js: TagJobStatusResult) -> JobStatus:
     # convert float (seconds) to ISO string
     created_at = datetime.fromtimestamp(js.created_at).isoformat()
+
+    # legacy compatibility
+    tagging_progress = js.tagger_details.tagging_progress if js.tagger_details else "0/0"
     return JobStatus(
         qid=js.qid,
         job_id=str(js.job_id),
@@ -60,6 +63,7 @@ def map_job_status_to_response(js: TagJobStatusResult) -> JobStatus:
         tenant=js.tenant,
         user=js.user,
         error=js.error,
+        tagging_progress=tagging_progress,
         tag_details=js.tagger_details,
     )
 

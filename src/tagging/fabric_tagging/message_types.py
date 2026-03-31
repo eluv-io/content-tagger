@@ -46,6 +46,10 @@ class EnterTaggingPhase:
 
     def __str__(self):
         return f"EnterTaggingPhase(job_id={self.job_id})"
+    
+    def __repr__(self):
+        # not including full dl_result cause it's too much to log
+        return f"EnterTaggingPhase(job_id={self.job_id}, num_sources={len(self.dl_result.sources)}, done={self.dl_result.done})"
 
 @dataclass
 class EnterCompletePhase:

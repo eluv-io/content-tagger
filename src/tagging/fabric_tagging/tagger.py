@@ -119,7 +119,7 @@ class TaggerWorker:
     def _submit_async(self, req: Request) -> None:
         """asynchronous request - adds a message to the mailbox and returns immediately."""
         if not isinstance(req, UploadTick):
-            logger.info("submitting async request", extra={"request": req, "queue_size": self.mailbox.qsize()})
+            logger.info("submitting async request", request=req, queue_size=self.mailbox.qsize())
         message = Message(req, queue.Queue())
         self.mailbox.put(message)
 

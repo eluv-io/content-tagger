@@ -26,6 +26,7 @@ class JobStatus:
     tenant: str
     user: str
     title: str
+    tagging_progress: str
     error: str | None
     tag_details: TagDetails | None
 

@@ -312,16 +312,14 @@ def test_asset_tag(client, q_assets):
         }
     )
     assert response.status_code == 200
-    print('waiting')
     completed = wait_for_jobs_completion(client, [q_assets], timeout=25)
-    print('tagging finished')
     assert completed
-    status = client.get(f"/{qid}/job-status?authorization={auth}")
-    print('got status')
-    print(status.get_json())
+    response = client.get(f"/{qid}/job-status?authorization={auth}")
+    status = response.get_json()
+    print(status)
+    assert status.get("jobs")[0].get("tagging_progress") and not status.get("jobs")[0].get("tagging_progress").startswith("0")
     tagstore: FilesystemTagStore = client.application.config["state"]["worker"].tagstore
     jobid = tagstore.find_batches(q=q_assets)[0]
-    print('got batches')
     tags = tagstore.find_tags(q=q_assets, batch_id=jobid)
     tags = sorted(tags, key=lambda x: x.start_time)
     assert len(tags) > 0
@@ -646,6 +644,8 @@ def test_status(client, q):
     assert response.status_code == 200
     data = response.get_json()
     assert len(data["jobs"]) == 2
+    for job in data["jobs"]:
+        assert job.get("tagging_progress")
 
     response = client.get(f"/job-status?authorization={q.token}&tenant=iten2aYr2mCUKsJ6zL9e5kAXZ2mvDXom")
     assert response.status_code == 200
