@@ -394,12 +394,46 @@ components:
           items:
             $ref: '#/components/schemas/JobStatus'
           description: Individual job statuses
+        meta:
+          $ref: '#/components/schemas/StatusMeta'
+          description: Pagination metadata
       required:
         - jobs
+        - meta
+
+    StatusMeta:
+      type: object
+      properties:
+        total:
+          type: integer
+          description: Total number of jobs matching the query
+          example: 42
+        start:
+          type: integer
+          description: Offset of the first job returned
+          example: 0
+        limit:
+          type: integer
+          nullable: true
+          description: Maximum number of jobs requested, or null if no limit was set
+          example: 20
+        count:
+          type: integer
+          description: Number of jobs returned in this response
+          example: 20
+      required:
+        - total
+        - start
+        - limit
+        - count
 
     JobStatus:
       type: object
       properties:
+        qid:
+          type: string
+          example: "iq__3C58dDYxsn5KKSWGYrfYr44ykJRm"
+          description: Content object id being tagged
         job_id:
           type: string
           example: "1234"
@@ -408,26 +442,6 @@ components:
           type: string
           example: "Fetching Content"
           description: Concise description of what the job is currently doing
-        time_running:
-          type: number
-          example: 1234
-          description: How long the job has been running (in seconds)
-        tagging_progress:
-          type: string
-          example: "120/305"
-          description: Measurement of job progress. Currently this is expressed as a ratio of parts tagged to parts fetched. In the case of livestream tag jobs, both the numerator and the denominator will go up. 
-        missing_tags:
-          type: array
-          description: List of sources which have no tags. Could be due to a partial failure or the model just didn't output anything.
-          example: ["assets/hello.jpg", "assets/hello2.jpg"]
-          items:
-            type: string
-        failed:
-          type: array
-          description: List of sources which failed to process
-          items:
-            type: string
-          example: ["assets/bad.jpg"]
         model:
           type: string
           example: "asr"
@@ -436,15 +450,119 @@ components:
           type: string
           example: "audio_1"
           description: Stream name
+        created_at:
+          type: string
+          example: "2026-02-25T18:30:00Z"
+          description: ISO 8601 timestamp of when the job was created
+        params:
+          type: object
+          additionalProperties: true
+          description: Parameters that were used to run the tagging job
+        tenant:
+          type: string
+          description: Tenant identifier
+          example: "iten_abc123..."
+        user:
+          type: string
+          description: User who initiated the job
+          example: "0x1234abcd..."
+        title:
+          type: string
+          description: Title of the content being tagged
+          example: "My Video"
+        tagging_progress:
+          type: string
+          example: "120/305"
+          description: Measurement of job progress expressed as a ratio of parts tagged to parts fetched.
+        progress:
+          type: number
+          format: float
+          description: Job progress estimate as a fraction between 0.0 and 1.0
+          example: 0.39
+        error:
+          type: string
+          nullable: true
+          description: Error message if the job failed
+          example: null
+        tag_details:
+          nullable: true
+          description: Detailed tagging progress information. Null if the job has not started tagging.
+          allOf:
+            - $ref: '#/components/schemas/TagDetails'
       required:
+        - qid
         - job_id
         - status
-        - time_running
-        - tagging_progress
-        - missing_tags
-        - failed
         - model
         - stream
+        - created_at
+        - params
+        - tenant
+        - user
+        - title
+        - tagging_progress
+        - progress
+
+    TagDetails:
+      type: object
+      properties:
+        tag_status:
+          type: string
+          description: Current status of tagging
+          example: "Tagging"
+        time_running:
+          type: number
+          description: How long the job has been running (in seconds)
+          example: 1234
+        progress:
+          type: number
+          format: float
+          description: Tagging progress as a fraction between 0.0 and 1.0
+          example: 0.39
+        tagging_progress:
+          type: string
+          description: Legacy progress string
+          example: "120/305"
+        total_parts:
+          type: integer
+          description: Total number of content parts to tag
+          example: 305
+        downloaded_parts:
+          type: integer
+          description: Number of parts downloaded so far
+          example: 200
+        tagged_parts:
+          type: integer
+          description: Number of parts tagged so far
+          example: 120
+        warnings:
+          nullable: true
+          description: Warning information if any warnings occurred during tagging
+          allOf:
+            - $ref: '#/components/schemas/WarningResponse'
+      required:
+        - tag_status
+        - time_running
+        - progress
+        - tagging_progress
+        - total_parts
+        - downloaded_parts
+        - tagged_parts
+
+    WarningResponse:
+      type: object
+      properties:
+        num_warnings:
+          type: integer
+          description: Total number of warnings encountered
+          example: 3
+        last_warning:
+          type: string
+          description: Most recent warning message
+          example: "Low confidence detection"
+      required:
+        - num_warnings
+        - last_warning
 
     StopTaggingResponse:
       type: object
