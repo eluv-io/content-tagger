@@ -760,3 +760,25 @@ def test_download_fails(fabric_tagger, q, make_tag_args, temp_dir):
     report = _status_for(status, "caption")
     assert report.status.status == "Failed"
     assert report.status.error == "Simulated download failure"
+
+def test_content_aligned(fabric_tagger, q, make_tag_args, temp_dir):
+
+    class ContentAlignedContainer(FakeTagContainer):
+        def is_content_aligned(self):
+            return True
+        
+    def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
+        return ContentAlignedContainer(req.media_dir, req.model_id)
+    
+    fabric_tagger.cregistry.get = get_side_effect
+
+    args = make_tag_args(feature="caption", stream="video", max_fetch_retries=0)
+
+    fabric_tagger.tag(q, args)
+
+    time.sleep(0.75)
+
+    job = list(fabric_tagger.jobstore.inactive_jobs.values())[0]
+
+    for source in job.state.media.downloaded:
+        assert source.offset == 0

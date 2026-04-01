@@ -170,6 +170,9 @@ class FakeTagContainer:
     
     def required_resources(self):
         return {}
+    
+    def is_content_aligned(self) -> bool:
+        return False
 
 class PartialResultContainer(FakeTagContainer):
     """
