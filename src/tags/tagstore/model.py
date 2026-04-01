@@ -14,6 +14,8 @@ class TagstoreConfig:
 
 @dataclass
 class Tag:
+    # if empty string means it doesn't exist yet
+    id: str
     start_time: int
     end_time: int
     text: str

@@ -51,6 +51,8 @@ class UploadSession:
 
         tags2upload: list[Tag] = [
             Tag(
+                # empty -> not created yet
+                id="",
                 start_time=t.start_time,
                 end_time=t.end_time,
                 text=t.text,

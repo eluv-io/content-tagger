@@ -101,6 +101,7 @@ class FilesystemTagStore(Tagstore):
         # Group tags by source
         tags_by_source = {}
         for tag in tags:
+            tag.id = str(uuid.uuid4())
             if tag.source not in tags_by_source:
                 tags_by_source[tag.source] = []
             tags_by_source[tag.source].append(tag)

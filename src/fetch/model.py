@@ -46,6 +46,14 @@ class LiveScope(Scope):
     type: str = "livestream"
 
 @dataclass
+class TagAlignedScope(Scope):
+    stream: str
+    start_time: int
+    end_time: int
+    track: str
+    type: str = "tag aligned"
+
+@dataclass
 class VideoMetadata:
     parts: list[str]
     fps: float | None
