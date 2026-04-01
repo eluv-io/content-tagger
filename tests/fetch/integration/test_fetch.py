@@ -1,12 +1,17 @@
 
+from unittest.mock import Mock
+
 import pytest
 import os
 
 from src.fetch.factory import *
+from src.fetch.impl.tag_aligned import TagAlignedFetcher
 from src.fetch.model import *
+from src.tags.reader.impl import TagReaderImpl
 from src.tags.tagstore.filesystem_tagstore import Tag
 from src.common.content import Content
 from src.common.errors import MissingResourceError
+from src.tags.tagstore.rest_tagstore import RestTagstore
 
 
 @pytest.mark.parametrize("content_fixture", ["vod_content_with_tags_clean", "legacy_vod_content_with_tags_clean"])
@@ -204,3 +209,60 @@ def test_incremental(fetcher: FetchFactory, q, temp_dir):
 
     for part in result1.sources:
         assert part not in result2.sources
+
+def test_tag_aligned(fetcher: FetchFactory, q_legacy, temp_dir):
+    # these are sentence aligned tags - 
+    # can also check temp_dir and listen to the files and make sure they match the audio
+    tags = [
+        Tag(
+            id='1', 
+            start_time=243400, 
+            end_time=247320, 
+            text="That's what kitty said chas told her salesmen: make their own wins.", 
+            additional_info=None, 
+            source='', 
+            batch_id='', 
+        ), 
+        Tag(
+            id='2', 
+            start_time=248360, 
+            end_time=249200, 
+            text='You gotta try harder.', 
+            additional_info=None, 
+            source='', 
+            batch_id='', 
+        ),
+        # out of range
+        Tag(id='3', 
+            start_time=418000, 
+            end_time=420050, 
+            text='TESTING 123.', 
+            additional_info=None, 
+            source='', 
+            batch_id='', 
+        )
+    ]
+    fake_tag_reader = Mock(read=Mock(return_value=tags))
+
+    req = DownloadRequest(
+        scope=VideoScope(
+            stream="audio",
+            start_time=240,
+            end_time=390
+        ),
+        output_dir=temp_dir,
+        ignore_sources=[],
+    )
+
+    worker = fetcher.get_session(q_legacy, req)
+    assert isinstance(worker, VodWorker)
+    tag_aligned = TagAlignedFetcher(fake_tag_reader, worker)
+
+    meta = tag_aligned.metadata()
+
+    assert meta.fps is None and len(meta.sources) == 3
+
+    dl = tag_aligned.download()
+    assert len(dl.failed) == 0
+    assert len(dl.sources) == 2
+    assert set(s.name for s in dl.sources) == {"1", "2"}
