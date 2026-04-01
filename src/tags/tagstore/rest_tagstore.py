@@ -237,6 +237,7 @@ class RestTagstore(Tagstore):
         tags = []
         for api_tag in api_tags:
             tag = Tag(
+                id=api_tag['id'],
                 start_time=api_tag['start_time'],
                 end_time=api_tag['end_time'],
                 text=api_tag['tag'],
