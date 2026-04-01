@@ -19,6 +19,7 @@ class ModelConfig:
     image: str
     type: Literal["audio", "video", "frame", "processor"]
     resources: SystemResources
+    content_aligned: bool = False
 
 @dataclass
 class ContainerSpec:

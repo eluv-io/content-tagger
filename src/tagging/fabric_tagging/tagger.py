@@ -321,6 +321,10 @@ class TaggerWorker:
             if job.stop_event.is_set():
                 return
 
+            if job.state.container.is_content_aligned():
+                for source in dl_res.sources:
+                    source.offset = 0
+
             self._submit_async(EnterTaggingPhase(job_id=jobid, dl_result=dl_res))
 
     def _handle_enter_tagging_phase(self, message: Message):
@@ -535,7 +539,6 @@ class TaggerWorker:
             tagged_sources=tagged_sources,
             uploaded_sources=state.upload_session.get_uploaded_sources(),
             warnings=state.warnings,
-            # TODO: should be populated
             error=state.error
         )
 
@@ -722,7 +725,7 @@ class TaggerWorker:
             raise MissingResourceError(
                 f"Invalid feature: {feature}. Available features: {', '.join(services)}"
             )
-
+            
         if isinstance(args.scope, AssetScope):
             modeltype = modconfigs[feature].type
 

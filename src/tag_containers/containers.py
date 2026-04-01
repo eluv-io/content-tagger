@@ -83,6 +83,10 @@ class TagContainer:
     def info(self) -> ContainerInfo:
         with self._lock:
             return self._info()
+        
+    def is_content_aligned(self) -> bool:
+        with self._lock:
+            return self.cfg.model_config.content_aligned
 
     def _start(self, gpuidx: int | None) -> None:
         if self.started:
