@@ -37,6 +37,8 @@ class ContainerSpec:
     output_path: str
     # runtime params passed to the model (unique schema per model)
     run_config: dict
+    # we mount this in an env file in case the model needs to make API calls
+    auth: str
     # static attributes of the container to run
     model_config: ModelConfig
 
@@ -52,6 +54,8 @@ class ContainerRequest:
     media_dir: str
     # runtime params passed to the model
     run_config: dict
+    # we mount this in an env file in case the model needs to make API calls
+    auth: str
     # handle passed to the container for tracking
     job_id: str | None
 

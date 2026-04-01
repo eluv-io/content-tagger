@@ -74,7 +74,8 @@ def container_spec(temp_dir):
             type="video",
             image="localhost/test_model:latest",
             resources=SystemResources()
-        )
+        ),
+        auth="auth12345"
     )
 
 @pytest.fixture
@@ -147,6 +148,9 @@ def test_container(container, video_paths):
         assert "Got media/video1.mp4" in logs
         assert "Got media/video2.mp4" in logs
         assert "Got media/video3.mp4" in logs
+
+        # check that the model can read the auth environment variable
+        assert "GOT AUTH: auth12345" in logs
         
     finally:
         # Cleanup

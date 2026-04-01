@@ -128,6 +128,9 @@ class TagContainer:
             "pids_limit": -1,
             "stdin_open": True,
             "tty": False,
+            "environment": {
+                "ELV_AUTH": self.cfg.auth
+            },
             "log_config": {
                 "Type": "k8s-file",
                 "Config": {

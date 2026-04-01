@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 from typing import List
 import time
 
@@ -51,5 +52,7 @@ if __name__ == '__main__':
     params = get_runtime_config(args.params)
 
     model = DummyModel(params)
+
+    print(f"GOT AUTH: {os.getenv('ELV_AUTH')}")
     
     start_loop_from_frame_model(model, args.output_path)
