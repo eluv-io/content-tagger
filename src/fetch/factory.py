@@ -3,7 +3,6 @@ from requests.exceptions import HTTPError
 from fractions import Fraction
 import threading
 
-from src.common.logging.timing import timeit
 from src.common.logging import logger
 
 from src.common.content import QAPI, Content, QAPIFactory
@@ -11,16 +10,19 @@ from src.common.errors import MissingResourceError, BadRequestError
 from src.fetch.impl.assets import AssetWorker
 from src.fetch.impl.live import LiveWorker
 from src.fetch.impl.processors import SkipWorker
+from src.fetch.impl.tag_aligned import TagAlignedFetcher
 from src.fetch.impl.vod import VodWorker
 from src.fetch.model import *
 from src.fetch.cache import cache_by_qhash
 from src.fetch.rate_limit import FetchRateLimiter
+from src.tags.reader.impl import TagReaderImpl
 from src.tags.tagstore.abstract import Tagstore
 
 class FetchFactory:
     def __init__(
         self,
         config: FetcherConfig,
+        # we need this dependency for the tag-aligned fetcher
         ts: Tagstore,
         qfactory: QAPIFactory
     ):
@@ -82,6 +84,32 @@ class FetchFactory:
                 ignore_sources=req.ignore_sources,
                 output_dir=req.output_dir,
                 exit=exit
+            )
+        elif isinstance(req.scope, TagAlignedScope):
+            meta = self._fetch_stream_metadata(qapi, req.scope.stream)
+            # create a normal Vodworker which is called to generate the tag-aligned media
+            video_scope = VideoScope(
+                stream=req.scope.stream,
+                start_time=req.scope.start_time,
+                end_time=req.scope.end_time,
+            )
+            vod_worker = VodWorker(
+                qapi=qapi,
+                scope=video_scope,
+                rate_limiter=self.rl,
+                meta=meta,
+                ignore_sources=req.ignore_sources,
+                output_dir=req.output_dir,
+                exit=exit
+            )
+            tr = TagReaderImpl(
+                q=q,
+                tagstore=self.ts,
+                track=req.scope.track
+            )
+            return TagAlignedFetcher(
+                tr=tr,
+                vod=vod_worker
             )
         else:
             raise BadRequestError(f"Unknown scope type: {type(req.scope)}")
