@@ -92,6 +92,6 @@ def test_job_filter(queue_service: QueueService, make_tag_args):
         qid=None,
         user=None,
         tenant=None,
-        title="ang"
+        title="ANG"
     ))[0].title == "12 Angry Men"
 

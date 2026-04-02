@@ -73,7 +73,7 @@ class QueueService(TaggerService):
             raise MissingResourceError(f"No tagging jobs found for qid: {req.qid}")
 
         if req.title is not None:
-            items = [item for item in items if req.title in item.additional_info.get("title", "").lower()]
+            items = [item for item in items if req.title.lower() in item.additional_info.get("title", "").lower()]
     
         return self._items_to_reports(items)
 
