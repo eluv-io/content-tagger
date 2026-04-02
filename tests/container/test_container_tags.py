@@ -50,7 +50,8 @@ def container_spec(temp_dir):
             type="video",
             image="test/model:latest",
             resources={}
-        )
+        ),
+        auth=""
     )
 
 

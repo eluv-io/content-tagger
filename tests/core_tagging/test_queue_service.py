@@ -4,13 +4,16 @@ from unittest.mock import Mock
 from src.common.errors import MissingResourceError
 from src.service.impl.queue_based import QueueService
 from src.service.model import StatusArgs
-from src.tagging.fabric_tagging.queue.model import ListJobArgs
+from src.tagging.fabric_tagging.queue.model import CreateQueueItem, ListJobArgs
 from src.common.content import Content
 
 class TestQAPIFactory:
+    def __init__(self):
+        self.title = "Test Content Name"
+
     def create(self, q: Content):
         return Mock(
-            content_object_metadata=Mock(return_value="Test Content Name"),
+            content_object_metadata=Mock(return_value=self.title),
             id=Mock(return_value=q.qid),
             token=Mock(return_value=q.token)
         )
@@ -65,4 +68,30 @@ def test_status(queue_service: QueueService, make_tag_args):
 
     assert len(status_results) == 1
 
+def test_job_filter(queue_service: QueueService, make_tag_args):
+    assert isinstance(queue_service.qfactory, TestQAPIFactory)
+    queue_service.qfactory.title = "12 Angry Men"
+
+    args = make_tag_args()
+    content = Content(qid="test", token="")
+    res = queue_service.tag(content, args)
+    assert res.started
+
+    content = Content(qid="test2", token="")
+    queue_service.qfactory.title = "King Kong"
+    res = queue_service.tag(content, args)
+    assert res.started
+    assert queue_service.status(StatusArgs(
+        qid=None,
+        user=None,
+        tenant=None,
+        title="kin"
+    ))[0].title == "King Kong"
+
+    assert queue_service.status(StatusArgs(
+        qid=None,
+        user=None,
+        tenant=None,
+        title="ang"
+    ))[0].title == "12 Angry Men"
 

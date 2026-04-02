@@ -41,8 +41,11 @@ class FsJobStore:
             return json.load(f)
 
     def _write_job(self, id: str, data: dict) -> None:
-        with open(self._job_path(id), "w") as f:
+        path = self._job_path(id)
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
             json.dump(data, f, indent=2)
+        os.replace(tmp, path)  # atomic on Linux
 
     def _all_jobs(self) -> list[dict]:
         jobs = []
