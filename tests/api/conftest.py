@@ -10,6 +10,7 @@ import pytest
 
 from app_config import AppConfig
 from server import configure_routes, create_app_direct, create_app_queue_based
+from src.api.auth import Authenticator
 from src.api.tagging.request_format import StartJobsRequest
 from src.common.content import Content
 from src.fetch.model import DownloadResult, FetchSession, MediaMetadata, VideoScope
@@ -90,6 +91,10 @@ def app(static_dir, app_config):
     tagger: TaggerWorker = state["worker"]
     if not tagger.shutdown_requested:
         tagger.cleanup()
+
+@pytest.fixture
+def authenticator(app_config):
+    return Authenticator(app_config.content.config_url)
 
 @pytest.fixture()
 def client(app):

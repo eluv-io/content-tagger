@@ -13,12 +13,8 @@ class Authenticator:
 
     def authenticate(self, q: Content) -> None:
         """Basic authentication against the content. Returns None if successful, raises HTTPError if authentication fails."""
-        try:
-            client = ElvClient.from_configuration_url(config_url=self.config_url, static_token=q.token)
-            client.content_object(**parse_qhit(q.qid))
-        except HTTPError as e:
-            raise HTTPError(
-                f"Failed to access the requested content with the provided authorization: {q.qid}") from e
+        client = ElvClient.from_configuration_url(config_url=self.config_url, static_token=q.token)
+        client.content_object(**parse_qhit(q.qid))
 
 def authorize(qid: str, request: Request) -> Content:
     token = get_authorization(request)
