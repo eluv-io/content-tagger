@@ -44,20 +44,90 @@ paths:
         '502':
           description: Bad Gateway
 
+  /job-status:
+    get:
+      tags:
+        - Operate tagging
+      summary:
+        Query job statuses
+      description: |
+        Returns jobs matching the given filters. If no tenant or user filter is provided,
+        the endpoint automatically scopes results to the authenticated user.
+        Querying by tenant requires tenant admin privileges.
+      parameters:
+        - name: authorization
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: qid
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by content id.
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [queued, running, completed, failed, stopped]
+          description: Filter by job status.
+        - name: tenant
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by tenant. Requires tenant admin privileges.
+        - name: user
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by user address. Must match the authenticated user unless querying as tenant admin.
+        - name: model
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by model name (e.g. "asr", "celeb").
+        - name: title
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by content title (case-insensitive substring match).
+        - name: start
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+          description: Pagination offset.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            nullable: true
+          description: Maximum number of jobs to return. Null for no limit.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '403':
+          description: Forbidden — insufficient privileges for the requested filter
+
   /{qid}/job-status:
     get:
       tags:
         - Operate tagging
       summary:
-        Check status of running jobs
+        Query job statuses for a single content
       parameters:
-        - name: qid
-          in: path
-          required: true
-          schema:
-            type: string
-          description:
-            Content to check tagging status of. 
         - name: authorization
           in: query
           required: true

@@ -2092,7 +2092,12 @@ var n=this.pipeline.run(e.tokenizer(t)),r=new e.Vector,i=[],o=this._fields.reduc
                   </li>
                 
                   <li>
-                    <a href="#check-status-of-running-jobs" class="toc-h2 toc-link" data-title="Check status of running jobs">Check status of running jobs</a>
+                    <a href="#query-job-statuses" class="toc-h2 toc-link" data-title="Query job statuses">Query job statuses</a>
+                    
+                  </li>
+                
+                  <li>
+                    <a href="#query-job-statuses-for-a-single-content" class="toc-h2 toc-link" data-title="Query job statuses for a single content">Query job statuses for a single content</a>
                     
                   </li>
                 
@@ -2606,7 +2611,341 @@ $request_body = <span class="hljs-keyword">array</span>();
 To perform this operation, you must be authenticated by means of one of the following methods:
 TokenAuth
 </aside>
-<h2 id="check-status-of-running-jobs">Check status of running jobs</h2>
+<h2 id="query-job-statuses">Query job statuses</h2>
+<blockquote>
+<p>Code samples</p>
+</blockquote>
+<pre class="highlight tab tab-shell"><code><span class="hljs-comment"># You can also use wget</span>
+curl -X GET /job-status?authorization=string \
+  -H <span class="hljs-string">'Accept: application/json'</span> \
+  -H <span class="hljs-string">'Authorization: Bearer {access-token}'</span>
+
+</code></pre>
+<pre class="highlight tab tab-http"><code><span class="hljs-keyword">GET</span> <span class="hljs-string">/job-status?authorization=string</span> HTTP/1.1
+
+<span class="http"><span class="hljs-attribute">Accept</span>: application/json
+
+<span class="undefined"></span></span></code></pre>
+<pre class="highlight tab tab-javascript"><code><span class="hljs-keyword">var</span> headers = {
+  <span class="hljs-string">'Accept'</span>:<span class="hljs-string">'application/json'</span>,
+  <span class="hljs-string">'Authorization'</span>:<span class="hljs-string">'Bearer {access-token}'</span>
+
+};
+
+$.ajax({
+  <span class="hljs-attr">url</span>: <span class="hljs-string">'/job-status'</span>,
+  <span class="hljs-attr">method</span>: <span class="hljs-string">'get'</span>,
+  <span class="hljs-attr">data</span>: <span class="hljs-string">'?authorization=string'</span>,
+  <span class="hljs-attr">headers</span>: headers,
+  <span class="hljs-attr">success</span>: <span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">data</span>) </span>{
+    <span class="hljs-built_in">console</span>.log(<span class="hljs-built_in">JSON</span>.stringify(data));
+  }
+})
+
+</code></pre>
+<pre class="highlight tab tab-javascript--nodejs"><code><span class="hljs-keyword">const</span> fetch = <span class="hljs-built_in">require</span>(<span class="hljs-string">'node-fetch'</span>);
+
+<span class="hljs-keyword">const</span> headers = {
+  <span class="hljs-string">'Accept'</span>:<span class="hljs-string">'application/json'</span>,
+  <span class="hljs-string">'Authorization'</span>:<span class="hljs-string">'Bearer {access-token}'</span>
+
+};
+
+fetch(<span class="hljs-string">'/job-status?authorization=string'</span>,
+{
+  <span class="hljs-attr">method</span>: <span class="hljs-string">'GET'</span>,
+
+  <span class="hljs-attr">headers</span>: headers
+})
+.then(<span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">res</span>) </span>{
+    <span class="hljs-keyword">return</span> res.json();
+}).then(<span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">body</span>) </span>{
+    <span class="hljs-built_in">console</span>.log(body);
+});
+
+</code></pre>
+<pre class="highlight tab tab-ruby"><code><span class="hljs-keyword">require</span> <span class="hljs-string">'rest-client'</span>
+<span class="hljs-keyword">require</span> <span class="hljs-string">'json'</span>
+
+headers = {
+  <span class="hljs-string">'Accept'</span> =&gt; <span class="hljs-string">'application/json'</span>,
+  <span class="hljs-string">'Authorization'</span> =&gt; <span class="hljs-string">'Bearer {access-token}'</span>
+}
+
+result = RestClient.get <span class="hljs-string">'/job-status'</span>,
+  <span class="hljs-symbol">params:</span> {
+  <span class="hljs-string">'authorization'</span> =&gt; <span class="hljs-string">'string'</span>
+}, <span class="hljs-symbol">headers:</span> headers
+
+p JSON.parse(result)
+
+</code></pre>
+<pre class="highlight tab tab-python"><code><span class="hljs-keyword">import</span> requests
+headers = {
+  <span class="hljs-string">'Accept'</span>: <span class="hljs-string">'application/json'</span>,
+  <span class="hljs-string">'Authorization'</span>: <span class="hljs-string">'Bearer {access-token}'</span>
+}
+
+r = requests.get(<span class="hljs-string">'/job-status'</span>, params={
+  <span class="hljs-string">'authorization'</span>: <span class="hljs-string">'string'</span>
+}, headers = headers)
+
+<span class="hljs-keyword">print</span> r.json()
+
+</code></pre>
+<pre class="highlight tab tab-java"><code>URL obj = <span class="hljs-keyword">new</span> URL(<span class="hljs-string">"/job-status?authorization=string"</span>);
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod(<span class="hljs-string">"GET"</span>);
+<span class="hljs-keyword">int</span> responseCode = con.getResponseCode();
+BufferedReader in = <span class="hljs-keyword">new</span> BufferedReader(
+    <span class="hljs-keyword">new</span> InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = <span class="hljs-keyword">new</span> StringBuffer();
+<span class="hljs-keyword">while</span> ((inputLine = in.readLine()) != <span class="hljs-keyword">null</span>) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+</code></pre>
+<pre class="highlight tab tab-go"><code><span class="hljs-keyword">package</span> main
+
+<span class="hljs-keyword">import</span> (
+       <span class="hljs-string">"bytes"</span>
+       <span class="hljs-string">"net/http"</span>
+)
+
+<span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">main</span><span class="hljs-params">()</span></span> {
+
+    headers := <span class="hljs-keyword">map</span>[<span class="hljs-keyword">string</span>][]<span class="hljs-keyword">string</span>{
+        <span class="hljs-string">"Accept"</span>: []<span class="hljs-keyword">string</span>{<span class="hljs-string">"application/json"</span>},
+        <span class="hljs-string">"Authorization"</span>: []<span class="hljs-keyword">string</span>{<span class="hljs-string">"Bearer {access-token}"</span>},
+        
+    }
+
+    data := bytes.NewBuffer([]<span class="hljs-keyword">byte</span>{jsonReq})
+    req, err := http.NewRequest(<span class="hljs-string">"GET"</span>, <span class="hljs-string">"/job-status"</span>, data)
+    req.Header = headers
+
+    client := &amp;http.Client{}
+    resp, err := client.Do(req)
+    <span class="hljs-comment">// ...</span>
+}
+
+</code></pre>
+<pre class="highlight tab tab-php"><code> <span class="hljs-string">'application/json'</span>,
+    <span class="hljs-string">'Authorization'</span> =&gt; <span class="hljs-string">'Bearer {access-token}'</span>,
+    
+    );
+
+$client = <span class="hljs-keyword">new</span> \GuzzleHttp\Client();
+
+<span class="hljs-comment">// Define array of request body.</span>
+$request_body = <span class="hljs-keyword">array</span>();
+
+<span class="hljs-keyword">try</span> {
+    $response = $client-&gt;request(<span class="hljs-string">'GET'</span>,<span class="hljs-string">'/job-status'</span>, <span class="hljs-keyword">array</span>(
+        <span class="hljs-string">'headers'</span> =&gt; $headers,
+        <span class="hljs-string">'json'</span> =&gt; $request_body,
+       )
+    );
+    print_r($response-&gt;getBody()-&gt;getContents());
+ }
+ <span class="hljs-keyword">catch</span> (\GuzzleHttp\<span class="hljs-keyword">Exception</span>\BadResponseException $e) {
+    <span class="hljs-comment">// handle exception or api errors.</span>
+    print_r($e-&gt;getMessage());
+ }
+
+ <span class="hljs-comment">// ...</span>
+
+</code></pre>
+<p><code>GET /job-status</code></p>
+<p>Returns jobs matching the given filters. If no tenant or user filter is provided,
+the endpoint automatically scopes results to the authenticated user.
+Querying by tenant requires tenant admin privileges.</p>
+<h3 id="query-job-statuses-parameters">Parameters</h3>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>authorization</td>
+<td>query</td>
+<td>string</td>
+<td>true</td>
+<td>none</td>
+</tr>
+<tr>
+<td>qid</td>
+<td>query</td>
+<td>string</td>
+<td>false</td>
+<td>Filter by content id.</td>
+</tr>
+<tr>
+<td>status</td>
+<td>query</td>
+<td>string</td>
+<td>false</td>
+<td>Filter by job status.</td>
+</tr>
+<tr>
+<td>tenant</td>
+<td>query</td>
+<td>string</td>
+<td>false</td>
+<td>Filter by tenant. Requires tenant admin privileges.</td>
+</tr>
+<tr>
+<td>user</td>
+<td>query</td>
+<td>string</td>
+<td>false</td>
+<td>Filter by user address. Must match the authenticated user unless querying as tenant admin.</td>
+</tr>
+<tr>
+<td>model</td>
+<td>query</td>
+<td>string</td>
+<td>false</td>
+<td>Filter by model name (e.g. &quot;asr&quot;, &quot;celeb&quot;).</td>
+</tr>
+<tr>
+<td>title</td>
+<td>query</td>
+<td>string</td>
+<td>false</td>
+<td>Filter by content title (case-insensitive substring match).</td>
+</tr>
+<tr>
+<td>start</td>
+<td>query</td>
+<td>integer</td>
+<td>false</td>
+<td>Pagination offset.</td>
+</tr>
+<tr>
+<td>limit</td>
+<td>query</td>
+<td>integer</td>
+<td>false</td>
+<td>Maximum number of jobs to return. Null for no limit.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="enumerated-values">Enumerated Values</h4>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>status</td>
+<td>queued</td>
+</tr>
+<tr>
+<td>status</td>
+<td>running</td>
+</tr>
+<tr>
+<td>status</td>
+<td>completed</td>
+</tr>
+<tr>
+<td>status</td>
+<td>failed</td>
+</tr>
+<tr>
+<td>status</td>
+<td>stopped</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>Example responses</p>
+</blockquote>
+<blockquote>
+<p>200 Response</p>
+</blockquote>
+<pre class="highlight tab tab-json"><code>{
+  <span class="hljs-attr">"jobs"</span>: [
+    {
+      <span class="hljs-attr">"qid"</span>: <span class="hljs-string">"iq__3C58dDYxsn5KKSWGYrfYr44ykJRm"</span>,
+      <span class="hljs-attr">"job_id"</span>: <span class="hljs-string">"1234"</span>,
+      <span class="hljs-attr">"status"</span>: <span class="hljs-string">"Fetching Content"</span>,
+      <span class="hljs-attr">"model"</span>: <span class="hljs-string">"asr"</span>,
+      <span class="hljs-attr">"stream"</span>: <span class="hljs-string">"audio_1"</span>,
+      <span class="hljs-attr">"created_at"</span>: <span class="hljs-string">"2026-02-25T18:30:00Z"</span>,
+      <span class="hljs-attr">"params"</span>: {},
+      <span class="hljs-attr">"tenant"</span>: <span class="hljs-string">"iten_abc123..."</span>,
+      <span class="hljs-attr">"user"</span>: <span class="hljs-string">"0x1234abcd..."</span>,
+      <span class="hljs-attr">"title"</span>: <span class="hljs-string">"My Video"</span>,
+      <span class="hljs-attr">"tagging_progress"</span>: <span class="hljs-string">"120/305"</span>,
+      <span class="hljs-attr">"progress"</span>: <span class="hljs-number">0.39</span>,
+      <span class="hljs-attr">"error"</span>: <span class="hljs-literal">null</span>,
+      <span class="hljs-attr">"tag_details"</span>: {
+        <span class="hljs-attr">"tag_status"</span>: <span class="hljs-string">"Tagging"</span>,
+        <span class="hljs-attr">"time_running"</span>: <span class="hljs-number">1234</span>,
+        <span class="hljs-attr">"progress"</span>: <span class="hljs-number">0.39</span>,
+        <span class="hljs-attr">"tagging_progress"</span>: <span class="hljs-string">"120/305"</span>,
+        <span class="hljs-attr">"total_parts"</span>: <span class="hljs-number">305</span>,
+        <span class="hljs-attr">"downloaded_parts"</span>: <span class="hljs-number">200</span>,
+        <span class="hljs-attr">"tagged_parts"</span>: <span class="hljs-number">120</span>,
+        <span class="hljs-attr">"warnings"</span>: {
+          <span class="hljs-attr">"num_warnings"</span>: <span class="hljs-number">3</span>,
+          <span class="hljs-attr">"last_warning"</span>: <span class="hljs-string">"Low confidence detection"</span>
+        }
+      }
+    }
+  ],
+  <span class="hljs-attr">"meta"</span>: {
+    <span class="hljs-attr">"total"</span>: <span class="hljs-number">42</span>,
+    <span class="hljs-attr">"start"</span>: <span class="hljs-number">0</span>,
+    <span class="hljs-attr">"limit"</span>: <span class="hljs-number">20</span>,
+    <span class="hljs-attr">"count"</span>: <span class="hljs-number">20</span>
+  }
+}
+</code></pre>
+<h3 id="query-job-statuses-responses">Responses</h3>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Meaning</th>
+<th>Description</th>
+<th>Schema</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>200</td>
+<td><a href="https://tools.ietf.org/html/rfc7231#section-6.3.1">OK</a></td>
+<td>Success</td>
+<td><a href="#schemastatusresponse">StatusResponse</a></td>
+</tr>
+<tr>
+<td>403</td>
+<td><a href="https://tools.ietf.org/html/rfc7231#section-6.5.3">Forbidden</a></td>
+<td>Forbidden — insufficient privileges for the requested filter</td>
+<td>None</td>
+</tr>
+</tbody>
+</table>
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+TokenAuth
+</aside>
+<h2 id="query-job-statuses-for-a-single-content">Query job statuses for a single content</h2>
 <blockquote>
 <p>Code samples</p>
 </blockquote>
@@ -2755,7 +3094,7 @@ $request_body = <span class="hljs-keyword">array</span>();
 
 </code></pre>
 <p><code>GET /{qid}/job-status</code></p>
-<h3 id="check-status-of-running-jobs-parameters">Parameters</h3>
+<h3 id="query-job-statuses-for-a-single-content-parameters">Parameters</h3>
 <table>
 <thead>
 <tr>
@@ -2767,13 +3106,6 @@ $request_body = <span class="hljs-keyword">array</span>();
 </tr>
 </thead>
 <tbody>
-<tr>
-<td>qid</td>
-<td>path</td>
-<td>string</td>
-<td>true</td>
-<td>Content to check tagging status of.</td>
-</tr>
 <tr>
 <td>authorization</td>
 <td>query</td>
@@ -2828,7 +3160,7 @@ $request_body = <span class="hljs-keyword">array</span>();
   }
 }
 </code></pre>
-<h3 id="check-status-of-running-jobs-responses">Responses</h3>
+<h3 id="query-job-statuses-for-a-single-content-responses">Responses</h3>
 <table>
 <thead>
 <tr>
