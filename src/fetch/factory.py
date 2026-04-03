@@ -141,7 +141,12 @@ class FetchFactory:
         if self._is_legacy_vod(qapi):
             return self._fetch_legacy_vod_metadata(qapi, stream_name)
         else:
-            return self._fetch_vod_metadata(qapi, stream_name)
+            try:
+                return self._fetch_vod_metadata(qapi, stream_name)
+            except MissingResourceError as e:
+                # sometimes vod metadata is a mix of legacy and modern format - this is a quick fix
+                logger.error(f"fetching modern format vod metadata failed, trying legacy format", error=str(e))
+                return self._fetch_legacy_vod_metadata(qapi, stream_name)
 
     def _fetch_vod_metadata(self, qapi: QAPI, stream_name: str) -> VideoMetadata:
         """Fetches metadata for modern VOD content."""
