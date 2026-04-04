@@ -4,35 +4,51 @@ const fs = require('fs');
 const path = require("path")
 
 /**
- * Converts normalized x-coordinates into a packed binary Buffer of 
- * 4-byte little-endian fixed-point integers (4 decimal places).
- * @param {Object} data - The JSON object structure provided.
- * @returns {Buffer} - The packed binary data.
+ * Sorts tags, validates frame continuity, and packs x-coordinates into a binary Buffer.
+ * @param {Object} data 
+ * @returns {Buffer}
  */
 function packXCoordinates(data) {
-    const xValues = [];
-
-    // 1. Flatten all x-coordinates from the tags in order
-    // Note: Assuming the tags are already sorted by frame_idx if order matters
-    if (data.tags && Array.isArray(data.tags)) {
-        data.tags.forEach(tag => {
-            const coords = tag.additional_info?.['x-coordinates'];
-            if (Array.isArray(coords)) {
-                coords.forEach(x => {
-                    // Convert to fixed point: 0.264327 -> 2643
-                    const fixedPointValue = Math.round(x * 10000);
-                    xValues.push(fixedPointValue);
-                });
-            }
-        });
+    if (!data.tags || !Array.isArray(data.tags)) {
+        return Buffer.alloc(0);
     }
 
-    // 2. Allocate a buffer: 4 bytes per integer
-    const buffer = Buffer.alloc(xValues.length * 4);
+    // 1. Sort the tags by frame_idx to ensure chronological processing
+    const sortedTags = [...data.tags].sort((a, b) => {
+        return (a.frame_info?.frame_idx || 0) - (b.frame_info?.frame_idx || 0);
+    });
 
-    // 3. Pack integers as 32-bit Little Endian (Int32LE)
-    xValues.forEach((value, index) => {
-        buffer.writeInt32LE(value, index * 4);
+    const xValues = [];
+    let expectedNextFrame = sortedTags.length > 0 ? sortedTags[0].frame_info.frame_idx : 0;
+
+    // 2. Iterate and validate
+    sortedTags.forEach((tag, index) => {
+        const currentFrameIdx = tag.frame_info?.frame_idx ?? 0;
+        const coords = tag.additional_info?.['x-coordinates'] || [];
+
+        // Emit warning if there is a gap or overlap in frame indices
+        if (currentFrameIdx !== expectedNextFrame) {
+            console.warn(
+                `[Warning] Continuity break at Tag ID: ${tag.id}. ` +
+                `Expected frame_idx ${expectedNextFrame}, but found ${currentFrameIdx}.`
+            );
+        }
+
+        // Add coordinates to our list
+        coords.forEach(x => {
+            // Fixed point with 4 decimal places
+            xValues.push(Math.round(x * 10000));
+        });
+
+        // Calculate what the next frame_idx should be
+        // (Current index + number of samples provided in this tag)
+        expectedNextFrame = currentFrameIdx + coords.length;
+    });
+
+    // 3. Pack into Buffer as 4-byte Little Endian integers
+    const buffer = Buffer.alloc(xValues.length * 4);
+    xValues.forEach((value, i) => {
+        buffer.writeInt32LE(value, i * 4);
     });
 
     return buffer;
