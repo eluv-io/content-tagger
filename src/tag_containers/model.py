@@ -75,6 +75,14 @@ class Error:
     message: str
     source_media: str | None = None
 
+## possible candidate for common_ml
+def make_hashable(obj):
+    if isinstance(obj, dict):
+        return frozenset((k, make_hashable(v)) for k, v in obj.items())
+    elif isinstance(obj, list):
+        return tuple(make_hashable(i) for i in obj)
+    return obj
+
 @dataclass(frozen=True)
 class ModelTag:
     """
@@ -89,8 +97,7 @@ class ModelTag:
     additional_info: dict | None = None
 
     def __hash__(self) -> int:
-        fi_hash = self.frame_info.get("frame_idx") if self.frame_info else None
-        return hash((self.start_time, self.end_time, self.text, self.source_media, self.model_track, fi_hash, frozenset(self.additional_info.items()) if self.additional_info else None))
+        return hash((self.start_time, self.end_time, self.text, self.source_media, self.model_track, make_hashable(self.frame_info), make_hashable(self.additional_info)))
     
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, ModelTag):
