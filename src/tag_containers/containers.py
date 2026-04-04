@@ -143,6 +143,8 @@ class TagContainer:
             kwargs["devices"] = [f"nvidia.com/gpu={gpuidx}"]
 
         container = self.pclient.containers.create(**kwargs)
+
+        logger.debug("starting container:", extra=kwargs)
         container.start()
         self.container = container
 
