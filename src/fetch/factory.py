@@ -153,7 +153,7 @@ class FetchFactory:
 
         streams = qapi.content_object_metadata(
             metadata_subtree="offerings/default/playout/streams",
-            resolve_links=False,
+            resolve_links=True,
         )
         
         assert isinstance(streams, dict)
