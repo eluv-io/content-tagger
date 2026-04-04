@@ -6,6 +6,10 @@ const fs = require('fs');
 const path = require('path');
 const yargs = require('yargs');
 const { hideBin } = require('yargs/helpers');
+const fraction = require('fraction.js');
+const { default: Fraction } = require('fraction.js');
+
+const JOB_STATUS = process.env.JOB_STATUS || "status"
 
 // Configuration
 const server = process.env.TAGGERV2_URL || "http://localhost:8086";
@@ -283,6 +287,9 @@ async function fetch_dict_with_status(...args) {
     }
   }
 
+  //console.log(...args)
+  //console.log(text)
+  
   try {
     const res = JSON.parse(text)
     if (Array.isArray(res) || typeof res != "object") {
@@ -332,7 +339,7 @@ function get_write_token(qid, config) {
 }
 
 async function get_status(qid, auth) {
-    const url = new URL(`${server}/${qid}/job-status`);
+    const url = new URL(`${server}/${qid}/${JOB_STATUS}`);
     url.searchParams.append("authorization", auth);
 
     const response_data = await fetch_dict_with_status(url);
@@ -369,15 +376,15 @@ async function getState(contents, auth, tag_config, maxInProgress = 0) {
         for (const model of models) {
             if (!stat[model]) stat[model] = { status: "Not started" }
             const status = stat[model].status
-            if (status == "Completed") {
+            if (status == "Completed" || status == "succeeded") {
                 console.debug(`Marking ${qid} ${model} as done on tagger since status is ${status}`);
                 dones += 1
             }
-            else if (status == "Failed") {
+            else if (status == "Failed" || status == "failed") {
                 console.debug(`Marking ${qid} ${model} as "done" even though status is ${status}`);
                 dones += 1
             }
-            else if (status.toLowerCase().includes("fetch") || status.toLowerCase().includes("tagging")) {
+            else if (status.toLowerCase().includes("fetch") || status.toLowerCase().includes("tagging") || status.toLowerCase().includes("running")) {
                 console.debug(`${qid} ${model} fetching, waiting to tag, or tagging`);
                 inProgressCount += 1;
                 break;
@@ -410,17 +417,20 @@ async function tag(contents, auth, assets, params, startTime = null, endTime = n
                     console.debug(`In progress count ${inProgressCount} -- can start (another) content`)
                     break;
                 }
-            }7
+            }
         }
         
         let qid = contents[i];
 
-        while (stateMap[qid] == "done" && i < contents.length) {
-            console.log(`${qid} has "Completed" job, skipping...`);
-            i++;
-            qid = contents[i];
+        if (inProgressLimit > 0) {
+            while (stateMap[qid] == "done" && i < contents.length) {
+                console.log(`${qid} has "Completed" job, skipping...`);
+                i++;
+                qid = contents[i];
+            }
         }
 
+        if (qid == null) break
         let url;
         if (assets) {
             url = `${server}/${qid}/image_tag`;
@@ -587,9 +597,21 @@ function get_available_models(tag_config) {
     return [];
 }
 
+function computePercentage(progress) {
+    if (typeof progress === "string") {
+        try {
+            const fraction = new Fraction(progress);
+            return `${Math.round(fraction.valueOf() * 100)}%`;
+        } catch (e) {
+            return "--";
+        }
+    }
+    return "--";
+}
+
 async function quick_status(auth, qid, filter = null) {
     if (filter === "") filter = null;
-    const url = new URL(`${server}/${qid}/job-status`);
+    const url = new URL(`${server}/${qid}/${JOB_STATUS}`);
     url.searchParams.append("authorization", auth);
 
     const status_data = await fetch_dict_with_status(url);
@@ -597,21 +619,24 @@ async function quick_status(auth, qid, filter = null) {
     if (status_data.status != 200 && !status_data.error) status_data.error = `http ${status_data.status}`
   
     if (status_data && (status_data.error || status_data.status != 200)) {
-        const line = `[${"".padStart(9)}] ${qid.padEnd(32)} / err: ${status_data.error}`;
+        const line = `${"".padStart(5)} [${"".padStart(9)}] ${qid.padEnd(32)} / err: ${status_data.error}`;
         if (filter === null || (new RegExp(filter)).test(line)) {
             console.log(line);
         }
         return;
     }
 
+
+    //{"jobs": [{"qid": "iq__2hyWoctwMqcyFCrfveXASaBjUePC", "job_id": "7f51a504-73df-4be7-943d-decb90cab650", "status": "succeeded", "created_at": "2026-03-23T17:34:29.925371", "model": "french_asr", "params": {"feature": "french_asr", "run_config": {"pretty_trail": true}, "scope": {"stream": "audio", "start_time": 0, "end_time": 10000000000000000, "type": "video"}, "replace": false, "destination_qid": "", "max_fetch_retries": 3}, "tenant": "itenG5KagBD4397RRJhZE4Bka6nZ5w8", "user": "itenG5KagBD4397RRJhZE4Bka6nZ5w8", "tag_details": {"tag_status": "Completed", "stream": "audio", "time_running": 146.1237940788269, "tagging_progress": "10/10", "failed": []}}], "meta": {"total": 1, "start": 0, "limit": null, "count": 1}}
     if (status_data && status_data.jobs) {
         const reports = status_data.jobs;
         for (const report of reports) {
             const model = report.model;
-            const stream = report.stream;
-            const progress = report.tagging_progress || '';
-            const status = report.status || '??';
-            const line = `[${String(progress).padStart(9)}] ${qid.padEnd(32)} / (${stream}) ${model}: ${status}`;
+            const stream = report.stream || report.tag_details?.stream
+            const progress = report.tagging_progress || report.tag_details?.tagging_progress || ''
+            const percentage = computePercentage(progress)
+            const status = report.status || report.tagging_progress?.tag_status || '??';
+            const line = `${percentage.padStart(5)} [${String(progress).padStart(9)}] ${qid.padEnd(32)} / (${stream}) ${model}: ${status}`;
             if (filter === null || (new RegExp(filter)).test(line)) {
                 console.log(line);
             }
@@ -625,8 +650,9 @@ async function quick_status(auth, qid, filter = null) {
             if (imgorvid === "error") continue;
             for (const [model, stat] of Object.entries(models)) {
                 const progress = stat.tagging_progress || "";
+                const percentage = computePercentage(progress)
                 const status = stat.status || "??";
-                const line = `[${String(progress).padStart(9)}] ${qid.padEnd(32)} / (${imgorvid}) ${model}: ${status}`;
+                const line = `${percentage.padStart(5)} [${String(progress).padStart(9)}] ${qid.padEnd(32)} / (${imgorvid}) ${model}: ${status}`;
                 if (filter === null || (new RegExp(filter)).test(line)) {
                     console.log(line);
                 }
@@ -727,8 +753,8 @@ async function main() {
     }
 
     if (argv.replace) {
-        if (!tag_config.defaults) tag_config.defaults = {};
-        tag_config.defaults.replace = true;
+        if (!tag_config.options) tag_config.options = {};
+        tag_config.options.replace = true;
     }
 
     let contents = [];

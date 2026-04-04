@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "description": "JavaScript driver for content tagging",
   "main": "driver.js",
-
   "dependencies": {
+    "fraction.js": "^5.3.4",
     "yargs": "^17.7.2"
   },
   "engines": {
