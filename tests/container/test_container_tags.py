@@ -3,6 +3,7 @@ import json
 import os
 from unittest.mock import Mock, patch
 
+from src.common.content import Content
 from src.tag_containers.containers import TagContainer
 from src.tag_containers.model import ContainerSpec, ModelConfig
 from src.common.model import SystemResources
@@ -51,7 +52,7 @@ def container_spec(temp_dir):
             image="test/model:latest",
             resources={}
         ),
-        auth=""
+        q=Content(qid="", token="")
     )
 
 

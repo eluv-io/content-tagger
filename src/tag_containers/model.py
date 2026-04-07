@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing_extensions import Literal
 
+from src.common.content import Content
 from src.tags.tagstore.model import Tag
 from src.common.model import SystemResources
 
@@ -37,8 +38,8 @@ class ContainerSpec:
     output_path: str
     # runtime params passed to the model (unique schema per model)
     run_config: dict
-    # we mount this in an env file in case the model needs to make API calls
-    auth: str
+    # mount the qid+auth in case the container needs API calls
+    q: Content
     # static attributes of the container to run
     model_config: ModelConfig
 
@@ -54,8 +55,8 @@ class ContainerRequest:
     media_dir: str
     # runtime params passed to the model
     run_config: dict
-    # we mount this in an env file in case the model needs to make API calls
-    auth: str
+    # mount the qid+auth in case the container needs API calls
+    q: Content
     # handle passed to the container for tracking
     job_id: str | None
 

@@ -244,8 +244,8 @@ class TaggerWorker:
             media_dir=output_dir,
             run_config=args.run_config,
             job_id=q.qid + "-" + datetime.now().strftime("%Y%m%d%H%M") + "-" + str(uuid())[0:6],
-            # pass the token in case it's needed for specialized use cases
-            auth=q.token,
+            # pass the token and qid in case they're needed for specialized use cases
+            q=q,
         ))
 
         job = TagJob(

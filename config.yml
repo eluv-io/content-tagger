@@ -102,6 +102,13 @@ container_registry:
       resources: {
         "cpu_juice": 8
       }
+    speaker:
+      image: "localhost/speaker:latest"
+      type: "audio"
+      resources: {
+        "gpu": 1
+      }
+      content_aligned: True
     breakdance:
       image: "localhost/breakdance"
       type: "video"
@@ -177,6 +184,9 @@ container_registry:
 
 track_resolver:
   mapping:
+    speaker:
+      name: speaker_detection
+      label: Speaker Detection
     llava:
       name: llava_caption
       label: LLAVA Caption

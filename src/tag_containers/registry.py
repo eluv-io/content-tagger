@@ -48,7 +48,7 @@ class ContainerRegistry:
             cache_dir=cache_path,
             output_path=output_path,
             model_config=modelcfg,
-            auth=req.auth
+            q=req.q,
         )
 
         return TagContainer(self.pclient, ccfg)

@@ -53,6 +53,6 @@ if __name__ == '__main__':
 
     model = DummyModel(params)
 
-    print(f"GOT AUTH: {os.getenv('ELV_AUTH')}")
+    print(f"GOT AUTH: {os.getenv('ELV_TOKEN')}")
     
     start_loop_from_frame_model(model, args.output_path)

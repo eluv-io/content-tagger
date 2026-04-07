@@ -6,6 +6,7 @@ from loguru import logger
 import time
 import subprocess
 
+from src.common.content import Content
 from src.tag_containers.containers import TagContainer
 from src.tag_containers.model import ContainerSpec, ModelConfig
 from src.common.model import SystemResources
@@ -75,7 +76,7 @@ def container_spec(temp_dir):
             image="localhost/test_model:latest",
             resources=SystemResources()
         ),
-        auth="auth12345"
+        q=Content(qid="q123", token="auth12345")
     )
 
 @pytest.fixture

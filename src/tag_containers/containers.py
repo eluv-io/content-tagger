@@ -129,7 +129,8 @@ class TagContainer:
             "stdin_open": True,
             "tty": False,
             "environment": {
-                "ELV_AUTH": self.cfg.auth
+                "ELV_TOKEN": self.cfg.q.token,
+                "ELV_CONTENT": self.cfg.q.qid
             },
             "log_config": {
                 "Type": "k8s-file",
