@@ -23,6 +23,35 @@ paths:
               schema:
                 $ref: '#/components/schemas/ModelsResponse'
 
+  /jobs/{job_id}:
+    delete:
+      tags:
+        - Operate tagging
+      summary: Delete a job
+      description: |
+        Soft-deletes a job by id. Deleted jobs are excluded from all list and status responses.
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ID of the job to delete
+        - name: authorization
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Job deleted successfully
+        '400':
+          description: Bad Request
+        '403':
+          description: Unauthorized
+        '404':
+          description: Job not found
+
   /{qid}/tag:
     post:
       tags:
