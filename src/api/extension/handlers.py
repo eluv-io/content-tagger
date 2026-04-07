@@ -1,11 +1,14 @@
 from dataclasses import asdict
+from dacite import from_dict
 import json
 
 from flask import Response, current_app, request
 
-from src.api.auth import authorize
+from src.api.auth import authorize, get_authorization
+from src.api_extensions.jobs import DeleteJobRequest
 from src.api_extensions.jobs import delete_job
 from src.api_extensions.models import list_models
+from src.status.get_info import UserInfoResolver
 from src.tag_containers.registry import ContainerRegistry
 from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tags.track_resolver import TrackResolver
@@ -24,10 +27,14 @@ def handle_list_models() -> Response:
     )
 
 
-def handle_delete_job(qid: str, job_id: str) -> Response:
-    q = authorize(qid, request)
+def handle_delete_job(job_id: str) -> Response:
+    token = get_authorization(request)
+
+    req = from_dict(data_class=DeleteJobRequest, data=request.args)
+
+    user_info_resolver: UserInfoResolver = current_app.config["state"]["user_info_resolver"]
     js: JobStore = current_app.config["state"]["jobstore"]
 
-    delete_job(job_id, auth=q.token, js=js)
+    delete_job(req, user_info_resolver=user_info_resolver, js=js)
 
     return Response(status=204)

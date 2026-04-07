@@ -102,9 +102,9 @@ def configure_routes(app: Flask) -> None:
     def list_models_route() -> Response:
         return handle_list_models()
 
-    @app.route('/<qid>/jobs/<job_id>', methods=['DELETE'])
-    def delete_job_route(qid: str, job_id: str) -> Response:
-        return handle_delete_job(qid, job_id)
+    @app.route('/jobs/<job_id>', methods=['DELETE'])
+    def delete_job_route(job_id: str) -> Response:
+        return handle_delete_job(job_id)
 
     @app.route('/docs', strict_slashes=False)
     def docs_route():

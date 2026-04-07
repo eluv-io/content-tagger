@@ -5,6 +5,7 @@ import uuid
 from dataclasses import asdict
 from dacite import from_dict
 
+from src.common.errors import MissingResourceError
 from src.status.get_info import UserInfoResolver
 from src.tagging.fabric_tagging.model import TagArgs
 from src.tagging.fabric_tagging.queue.model import *
@@ -37,7 +38,10 @@ class FsJobStore:
         return os.path.join(self.store_dir, f"{id}.json")
 
     def _read_job(self, id: str) -> dict:
-        with open(self._job_path(id), "r") as f:
+        path = self._job_path(id)
+        if not os.path.exists(path):
+            raise MissingResourceError(f"Job {id} not found")
+        with open(path, "r") as f:
             return json.load(f)
 
     def _write_job(self, id: str, data: dict) -> None:
@@ -108,6 +112,9 @@ class FsJobStore:
             self._write_job(id, job)
             return True
         return False
+
+    def get_job(self, id: str) -> QueueItem:
+        return self._convert_job_dict(self._read_job(id))
 
     def list_jobs(self, args: ListJobArgs, auth: str) -> list[QueueItem]:
         results = []
