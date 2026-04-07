@@ -112,6 +112,8 @@ class FsJobStore:
     def list_jobs(self, args: ListJobArgs, auth: str) -> list[QueueItem]:
         results = []
         for job in self._all_jobs():
+            if args.status != "deleted" and job["status"] == "deleted":
+                continue
             if args.qid and job["qid"] != args.qid:
                 continue
             if args.user and job["user"] != args.user:

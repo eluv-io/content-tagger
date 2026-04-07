@@ -54,7 +54,6 @@ class QueueService(TaggerService):
                 CreateQueueItem(
                     qid=q.qid,
                     params=args,
-                    status="queued",
                     status_details=None,
                     additional_info={"title": title},
                 ),

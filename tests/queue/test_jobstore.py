@@ -29,7 +29,6 @@ def _make_create_item(qid: str = "iq__test", feature: str = "test_feature", addi
     return CreateQueueItem(
         qid=qid,
         params=_make_tag_args(feature),
-        status="queued",
         status_details=None,
         additional_info=additional_info,
     )
