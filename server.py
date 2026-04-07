@@ -28,6 +28,7 @@ from src.common.logging import logger
 
 from src.api.tagging.handlers import handle_tag, handle_status, handle_status_content, handle_stop_model, handle_stop_content
 from src.api.content_status.handlers import handle_content_status, handle_model_status
+from src.api.extension.handlers import handle_list_models
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
 from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tagging.tag_runner import TagRunner
@@ -96,6 +97,10 @@ def configure_routes(app: Flask) -> None:
     @app.route('/<qid>/tag-status/<model>', methods=['GET'])
     def model_status(qid: str, model: str) -> Response:
         return handle_model_status(qid, model)
+
+    @app.route('/models', methods=['GET'])
+    def list_models_route() -> Response:
+        return handle_list_models()
 
     @app.route('/docs', strict_slashes=False)
     def docs_route():
