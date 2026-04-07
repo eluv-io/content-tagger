@@ -117,7 +117,10 @@ def _build_worker(cfg: AppConfig) -> TaggerWorker:
 
 
 def create_app_direct(config: AppConfig) -> Flask:
-    """Standalone mode: API handlers call TaggerWorker directly."""
+    """
+    Development tagger API - this does not support all handlers.
+
+    Standalone mode: API handlers call TaggerWorker directly."""
     app = Flask(__name__)
 
     worker = _build_worker(config)
@@ -130,7 +133,6 @@ def create_app_direct(config: AppConfig) -> Flask:
         ),
         "authenticator": Authenticator(config.content.config_url),
         "arg_resolver": arg_resolver,
-
         "worker": worker,  # Expose worker for testing purposes
     }
 
@@ -145,7 +147,10 @@ def create_app_direct(config: AppConfig) -> Flask:
 
 
 def create_app_queue_based(config: AppConfig) -> Flask:
-    """Queue-based mode: API handlers enqueue via QueueService; TagRunner drives TaggerWorker."""
+    """
+    Production tagger API
+    
+    Queue-based mode: API handlers enqueue via QueueService; TagRunner drives TaggerWorker."""
     app = Flask(__name__)
 
     worker = _build_worker(config)
@@ -163,7 +168,10 @@ def create_app_queue_based(config: AppConfig) -> Flask:
         "arg_resolver": arg_resolver,
         "user_info_resolver": user_info_resolver,
         "authenticator": Authenticator(config.content.config_url),
-
+        # for delete jobs endpoint
+        "jobstore": job_store,
+        # for listing API
+        "container_registry": worker.cregistry,
         "worker": worker,  # Expose worker for testing purposes
     }
 
