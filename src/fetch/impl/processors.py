@@ -15,66 +15,67 @@ class SkipWorker(FetchSession):
     """
     def __init__(
         self,
-        q: Content,
         scope: TimeRangeScope,
         meta: VideoMetadata,
         ignore_sources: list[str],
         output_dir: str,
         exit: threading.Event | None = None
     ):
-        self.q = q
         self.scope = scope
-        self.meta = MediaMetadata(sources=meta.parts, fps=meta.fps)
+        self.meta = meta
         self.part_duration = meta.part_duration
         self.output_dir = output_dir
         self.ignore_sources = set(ignore_sources)
         self.exit = exit
 
-    def metadata(self) -> MediaMetadata:
-        return deepcopy(self.meta)
-    
-    def download(self) -> DownloadResult:
-        content_duration = self.part_duration * len(self.meta.sources)
-
-        logger.debug(f"Live stream duration based on metadata: {content_duration} seconds")
-        logger.debug(f"Requested time range: {self.scope.start_time} - {self.scope.end_time} seconds")
-        
+    def _intervals(self) -> list[tuple[int, int, str]]:
+        """Return (start_ms, end_ms, name) for each chunk in the time range."""
+        content_duration = self.part_duration * len(self.meta.parts)
         start_time = self.scope.start_time or 0
         end_time = min(self.scope.end_time or math.ceil(content_duration), math.ceil(content_duration))
 
-        # clamp to chunk_size boundaries, but don't go beyond content duration
+        # clamp to chunk_size boundaries
         start_time = (start_time // self.scope.chunk_size) * self.scope.chunk_size
         end_time = math.ceil(end_time / self.scope.chunk_size) * self.scope.chunk_size
 
-        logger.debug(f"Padded time range: {start_time} - {end_time} seconds")
+        intervals = []
+        t = start_time
+        while t < end_time:
+            this_start = int(t * 1000)
+            this_end = int((t + self.scope.chunk_size) * 1000)
+            name = f'{"%010d" % this_start}_{"%010d" % this_end}'
+            if name not in self.ignore_sources:
+                intervals.append((this_start, this_end, name))
+            t += self.scope.chunk_size
+        return intervals
+
+    def metadata(self) -> MediaMetadata:
+        return MediaMetadata(
+            sources=[name for _, _, name in self._intervals()],
+            fps=None
+        )
+    
+    def download(self) -> DownloadResult:
+        logger.debug(f"Live stream duration based on metadata: {self.part_duration * len(self.meta.parts)} seconds")
+        logger.debug(f"Requested time range: {self.scope.start_time} - {self.scope.end_time} seconds")
 
         sources = []
-        t_iterator = start_time
-        while t_iterator < end_time:
-            t = t_iterator
-            t_iterator += self.scope.chunk_size
-            this_start = t * 1000
-            this_end = (t + self.scope.chunk_size) * 1000
-
-            intv = f'{"%010d" % this_start}_{"%010d" % this_end}'
+        for this_start, this_end, intv in self._intervals():
             output_path = os.path.join(self.output_dir, f'{intv}.json')
 
-            if intv not in self.ignore_sources:
-                sources.append(Source(
-                    name=intv,
-                    filepath=output_path,
-                    offset=0,
-                    wall_clock=None
-                ))
+            sources.append(Source(
+                name=intv,
+                filepath=output_path,
+                offset=0,
+                wall_clock=None
+            ))
 
-                with open(output_path, 'w') as f:
-                    content = {
-                        "iq": self.q.qid,
-                        "token": self.q.token,
-                        "start_time": this_start,
-                        "end_time": this_end
-                    }
-                    json.dump(content, f)
+            with open(output_path, 'w') as f:
+                content = {
+                    "start_time": this_start,
+                    "end_time": this_end
+                }
+                json.dump(content, f)
         
         
         return DownloadResult(

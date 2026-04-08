@@ -78,7 +78,6 @@ class FetchFactory:
         elif isinstance(req.scope, TimeRangeScope):
             meta = self._fetch_stream_metadata(qapi, req.scope.stream)
             return SkipWorker(
-                q=q, 
                 scope=req.scope,
                 meta=meta,
                 ignore_sources=req.ignore_sources,

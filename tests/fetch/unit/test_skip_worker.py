@@ -13,10 +13,7 @@ def test_skip_worker(temp_dir: str) -> None:
     start_time = 35
     chunk_size = 10
 
-    fake_q = MagicMock(qid="test_qhit", token="test_token")
-
     worker = SkipWorker(
-        q=fake_q,
         scope=TimeRangeScope(
             start_time=start_time,
             end_time=None,
@@ -33,7 +30,11 @@ def test_skip_worker(temp_dir: str) -> None:
         output_dir=temp_dir
     )
 
+    meta = worker.metadata()
+
     result = worker.download()
+
+    assert len(meta.sources) == len(result.sources)
 
     assert len(result.sources) == math.ceil(part_duration * num_parts / chunk_size) - 4 # 2 from ignored list, 3 from before start_time, minus intersection
     assert len(result.failed) == 0
