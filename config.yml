@@ -61,10 +61,10 @@ container_registry:
       resources: {
         "gpu": 1
       }
-    multilingual:
+    euro_asr:
       image: "localhost/multilingual:latest"
       type: "audio"
-      description: Speech to Text
+      description: Multilingual European Speech to Text
       resources: {
         "gpu": 1
       }
@@ -138,9 +138,9 @@ track_resolver:
     asr:
       name: speech_to_text
       label: Speech to Text
-    french_asr:
-      name: french_asr
-      label: French ASR
+    euro_asr:
+      name: euro_asr
+      label: Euro ASR
     caption:
       name: object_detection
       label: Object Detection
