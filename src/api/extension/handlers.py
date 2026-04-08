@@ -8,6 +8,7 @@ from src.api.auth import authorize, get_authorization
 from src.api_extensions.jobs import DeleteJobRequest
 from src.api_extensions.jobs import delete_job
 from src.api_extensions.models import list_models
+from src.common.errors import BadRequestError
 from src.status.get_info import UserInfoResolver
 from src.tag_containers.registry import ContainerRegistry
 from src.tagging.fabric_tagging.queue.abstract import JobStore
@@ -30,7 +31,13 @@ def handle_list_models() -> Response:
 def handle_delete_job(job_id: str) -> Response:
     token = get_authorization(request)
 
-    req = from_dict(data_class=DeleteJobRequest, data=request.args)
+    args = request.args.to_dict()
+
+    req = DeleteJobRequest(
+        job_id=job_id,
+        tenant=args.get("tenant"),
+        authorization=token
+    )
 
     user_info_resolver: UserInfoResolver = current_app.config["state"]["user_info_resolver"]
     js: JobStore = current_app.config["state"]["jobstore"]

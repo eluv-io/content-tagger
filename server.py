@@ -142,6 +142,9 @@ def create_app_direct(config: AppConfig) -> Flask:
         ),
         "authenticator": Authenticator(config.content.config_url),
         "arg_resolver": arg_resolver,
+        # for listing API
+        "container_registry": worker.cregistry,
+        "track_resolver": worker.track_resolver,
         "worker": worker,  # Expose worker for testing purposes
     }
 
@@ -181,6 +184,7 @@ def create_app_queue_based(config: AppConfig) -> Flask:
         "jobstore": job_store,
         # for listing API
         "container_registry": worker.cregistry,
+        "track_resolver": worker.track_resolver,
         "worker": worker,  # Expose worker for testing purposes
     }
 

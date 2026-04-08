@@ -20,7 +20,7 @@ def delete_job(
 ) -> None:
     user_info = user_info_resolver.get_user_info(
         auth=req.authorization,
-        tenant=req.tenant
+        tenant_id=req.tenant
     )
     if req.tenant and not user_info.is_tenant_admin:
         raise ForbiddenError("Only tenant admins can query by tenant")
