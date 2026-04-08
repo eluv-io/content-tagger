@@ -657,3 +657,37 @@ def test_status(client, q):
 
     response = client.get(f"/job-status?authorization={q.token}&tenant=another_tenant")
     assert response.status_code == 403
+
+def test_listing(client):
+    """Test the listing endpoint."""
+    response = client.get("/models")
+    assert response.status_code == 200
+    data = response.get_json()
+    assert "models" in data
+    assert len(data["models"]) > 0
+
+def test_delete_job(client, q):
+    response = client.post(
+        f"/{q.qid}/tag?authorization={q.token}", 
+        json={
+            "jobs": [
+                {
+                    "model": "test_model",
+                }
+            ]
+        }
+    )
+    assert response.status_code == 200
+    response = client.post(f"/{q.qid}/stop/test_model?authorization={q.token}")
+    assert response.status_code == 200
+    time.sleep(1)
+    response = client.get(f"/{q.qid}/job-status?authorization={q.token}")
+    assert response.status_code == 200
+    data = response.get_json()
+    jobid = data["jobs"][0]["job_id"]
+    assert data["jobs"][0]["status"] == "cancelled"
+    delete_response = client.delete(f"/jobs/{jobid}?authorization={q.token}")
+    assert delete_response.status_code == 204
+    # Verify job is deleted
+    response = client.get(f"/{q.qid}/job-status?authorization={q.token}")
+    assert response.status_code == 404
