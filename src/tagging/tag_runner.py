@@ -1,3 +1,5 @@
+import os
+import signal
 import threading
 from dataclasses import dataclass
 import time
@@ -57,6 +59,7 @@ class TagRunner:
 
         self._running_jobs: dict[str, JobInfo] = {}
         self._shutdown = threading.Event()
+        self._quiescing = threading.Event()
 
     def start(self) -> None:
         """Start the background polling loops."""
@@ -65,22 +68,33 @@ class TagRunner:
         self._poll_thread.start()
         logger.info("TagRunner started")
 
+    def quiesce(self) -> None:
+        """Enter quiesce mode: stop accepting new jobs."""
+        if self._quiescing.is_set():
+            logger.info("Already quiescing")
+            return
+        n = len(self._running_jobs)
+        logger.info(f"Quiesce requested — draining {n} running job(s) before exit")
+        self._quiescing.set()
+
     def stop(self) -> None:
         """Signal both loops to stop and wait for them to finish."""
         self._shutdown.set()
         self._poll_thread.join()
-        for job in list(self._running_jobs.values()):
-            try:
-                self.jobstore.update_job(
-                    UpdateJobRequest(
-                        id=job.id, 
-                        status="cancelled",
-                        error="tagger worker service was shut down or restarted"
-                    ),
-                    auth=job.auth,
-                )
-            except Exception as e:
-                logger.opt(exception=e).warning("failed to cancel job on shutdown", job_id=job.id)
+        if not self._quiescing.is_set():
+            # Hard stop: cancel any jobs still tracked
+            for job in list(self._running_jobs.values()):
+                try:
+                    self.jobstore.update_job(
+                        UpdateJobRequest(
+                            id=job.id, 
+                            status="cancelled",
+                            error="tagger worker service was shut down or restarted"
+                        ),
+                        auth=job.auth,
+                    )
+                except Exception as e:
+                    logger.opt(exception=e).warning("failed to cancel job on shutdown", job_id=job.id)
         self._running_jobs.clear()
         self.tagger.cleanup()
 
@@ -97,10 +111,21 @@ class TagRunner:
                 self._status_tick()
             except Exception as e:
                 logger.opt(exception=e).error("error during status tick")
+
+            if self._quiescing.is_set() and not self._running_jobs:
+                logger.info("Quiesce complete — all jobs drained, triggering shutdown")
+                os.kill(os.getpid(), signal.SIGTERM)
+                return
+
             self._shutdown.wait(self.cfg.poll_interval)
 
     def _poll_once(self) -> None:
         """Check for queued jobs and start them. Also checks for stop requests on running jobs."""
+
+        if self._quiescing.is_set():
+            # In quiesce mode only service stop requests — don't claim new work
+            self._check_stop_requests()
+            return
 
         # start queued jobs
         queued = self.jobstore.list_jobs(ListJobArgs(status="queued"), auth="")
@@ -124,7 +149,10 @@ class TagRunner:
 
             self._run_job(item)
 
-        # check for stop requests
+        self._check_stop_requests()
+
+    def _check_stop_requests(self) -> None:
+        """Check for stop requests on running jobs."""
         stop_requested = self.jobstore.list_jobs(ListJobArgs(status="running"), auth="")
         for item in stop_requested:
             if not item.stop_requested:

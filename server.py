@@ -7,7 +7,7 @@ import atexit
 import signal
 import setproctitle
 import sys
-from waitress import serve
+from waitress.server import create_server
 import os
 
 from src.api.arg_resolver import ArgsResolver
@@ -218,14 +218,27 @@ def main():
         logger.info("starting in queue-based mode")
         app = create_app_queue_based(cfg)
 
-    def _handle_signal(signum, frame):
-        logger.info(f"Received signal {signum}, shutting down")
-        sys.exit(0)  # raises SystemExit, which triggers atexit handlers
+    server = create_server(app, host=args.host, port=args.port)
 
-    signal.signal(signal.SIGTERM, _handle_signal)
-    signal.signal(signal.SIGINT, _handle_signal)
+    def _handle_exit_signal(signum, frame):
+        logger.info(f"Received signal {signum}, shutting down gracefully")
+        server.close()  # finishes in-flight requests
+        sys.exit(0) # raises SystemExit, which triggers atexit handlers
 
-    serve(app, host=args.host, port=args.port)
+    signal.signal(signal.SIGTERM, _handle_exit_signal)
+    signal.signal(signal.SIGINT, _handle_exit_signal)
+
+    if not args.standalone:
+        loop = app.config["state"]["loop"]
+        def _handle_sighup(signum, frame):
+            logger.info("Received SIGHUP, entering quiesce mode")
+            loop.quiesce()
+        signal.signal(signal.SIGHUP, _handle_sighup)
+    else:
+        # In standalone mode, SIGHUP behaves like SIGTERM
+        signal.signal(signal.SIGHUP, _handle_exit_signal)
+
+    server.run()
 
 if __name__ == '__main__':
     setproctitle.setproctitle("content-tagger")
