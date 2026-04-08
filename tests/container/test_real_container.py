@@ -73,6 +73,7 @@ def container_spec(temp_dir):
         output_path=output_path,
         model_config=ModelConfig(
             type="video",
+            description="Test model",
             image="localhost/test_model:latest",
             resources=SystemResources()
         ),

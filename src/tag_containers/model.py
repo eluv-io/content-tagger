@@ -18,6 +18,7 @@ class ModelConfig:
     Describes static attributes of a model
     """
     image: str
+    description: str
     type: Literal["audio", "video", "frame", "processor"]
     resources: SystemResources
     content_aligned: bool = False

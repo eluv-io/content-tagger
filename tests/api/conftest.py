@@ -41,11 +41,13 @@ def container_registry_config(static_dir) -> RegistryConfig:
             model_configs={
                 "test_model": ModelConfig(
                     type="frame",
+                    description="Test model",
                     resources={"gpu": 1},
                     image="localhost/test_model:latest"
                 ),
                 "test_model2": ModelConfig(
                     type="frame",
+                    description="Test model 2",
                     resources={"gpu": 1},
                     image="localhost/test_model:latest"
                 )

@@ -6,6 +6,7 @@ from src.tags.track_resolver import TrackArgs, TrackResolver
 @dataclass
 class ModelSpec:
     name: str
+    description: str
     type: str
     tag_tracks: list[TrackArgs]
 
@@ -27,6 +28,7 @@ def list_models(
         specs.append(
             ModelSpec(
                 name=m,
+                description=cfg.description,
                 type=cfg.type,
                 tag_tracks=[track]
             )

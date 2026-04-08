@@ -50,36 +50,42 @@ container_registry:
     llava:
       image: "localhost/llava:latest"
       type: "frame"
+      description: Scene Description
       resources: {
         "ollama": 1
       }
-    asr: 
+    asr:
       image: "localhost/asr:latest"
       type: "audio"
+      description: Speech to Text
       resources: {
         "gpu": 1
       }
-    french_asr: 
+    multilingual:
       image: "localhost/multilingual:latest"
       type: "audio"
+      description: Speech to Text
       resources: {
         "gpu": 1
       }
     caption:
       image: "localhost/caption:latest"
       type: "frame"
+      description: Object Identification
       resources: {
         "gpu": 1
       }
     shot:
       image: "localhost/shot:latest"
       type: "video"
+      description: Shot Detection
       resources: {
         "gpu": 1
       }
     celeb:
       image: "localhost/celeb:latest"
       type: "frame"
+      description: Celebrity Identification
       resources: {
         "gpu": 1,
         "cpu_juice": 35
@@ -87,100 +93,39 @@ container_registry:
     ocr:
       image: "localhost/ocr:latest"
       type: "frame"
+      description: OCR
       resources: {
         "gpu": 1
       }
     logo:
       image: "localhost/logo:latest"
       type: "frame"
+      description: Logo Identification
       resources: {
         "gpu": 1
+      }
+    vertical_video:
+      image: "localhost/verticalvideo:latest"
+      type: "video"
+      description: Vertical Video Generation
+      resources: {
+        "cpu_juice": 40
       }
     music:
       image: "localhost/music:latest"
       type: "audio"
+      description: Music Identification
       resources: {
         "cpu_juice": 8
       }
     speaker:
       image: "localhost/speaker:latest"
       type: "audio"
+      description: Speaker Identification
       resources: {
         "gpu": 1
       }
       content_aligned: True
-    breakdance:
-      image: "localhost/breakdance"
-      type: "video"
-      resources: {
-        "gpu": 1
-      }
-    test_model:
-      image: "localhost/test_model:latest"
-      type: "video"
-      resources: {
-        "gpu": 1
-      }
-    qwen:
-      image: "localhost/qwen:latest"
-      type: "video"
-      resources: {
-        "gpu": 1
-      }
-    llava_brief:
-      image: "localhost/llava:latest"
-      type: "frame"
-      resources: {
-        "ollama": 1
-      }
-    player:
-      image: "localhost/player:latest"
-      type: "frame"
-      resources: {
-        "ollama": 1
-      }
-    helmet:
-      image: "localhost/llava:latest"
-      type: "frame"
-      resources: {
-        "ollama": 1
-      }
-    hungarian: 
-      image: "localhost/hungarian:latest"
-      type: "audio"
-      resources: {
-        "gpu": 1
-      }
-    run:
-      image: "localhost/qwenjoe:latest"
-      type: "video"
-      resources: {
-        "gpu": 1
-      }
-    hit:
-      image: "localhost/qwenjoe:latest"
-      type: "video"
-      resources: {
-        "gpu": 1
-      }
-    hit2s:
-      image: "localhost/qwenjoe:latest"
-      type: "video"
-      resources: {
-        "gpu": 1
-      }
-    celebrate:
-      image: "localhost/qwenjoe:latest"
-      type: "video"
-      resources: {
-        "gpu": 1
-      }
-    delivery:
-      image: "localhost/qwenjoe:latest"
-      type: "video"
-      resources: {
-        "gpu": 1
-      }
 
 track_resolver:
   mapping:
