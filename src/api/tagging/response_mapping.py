@@ -6,13 +6,6 @@ from src.api.tagging.request_format import StatusRequest
 from src.api.tagging.response_format import StatusResponse, StatusMeta, JobStatus, StopStatus, StopTaggingResponse, TagDetails
 from src.common.logging import logger
 
-_STATUS_SORT_ORDER = ["running", "queued", "failed", "succeeded", "cancelled"]
-
-def _status_sort_key(job: TagJobStatusResult) -> tuple:
-    try:
-        return (_STATUS_SORT_ORDER.index(job.status), -job.created_at)
-    except ValueError:
-        return (len(_STATUS_SORT_ORDER), -job.created_at)
 
 def map_all_jobs_status_to_response(
     all_jobs_status: list[TagJobStatusResult],
@@ -28,7 +21,7 @@ def map_all_jobs_status_to_response(
     logger.debug(f"Filtered jobs status from {len(all_jobs_status)} to {len(filtered)} based on query parameters", feature="status_filtering", total=len(all_jobs_status), filtered=len(filtered), status=req.status, tenant=req.tenant, user=req.user)
 
     # sort
-    filtered.sort(key=_status_sort_key)
+    filtered.sort(key=lambda j: j.created_at, reverse=True)
 
     total = len(filtered)
 
