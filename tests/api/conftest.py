@@ -69,7 +69,7 @@ def app_config(static_dir, tagger_config, content_config, fetcher_config, contai
         container_registry=container_registry_config,
         tagger=tagger_config,
         track_resolver=TrackResolverConfig(mapping={"test_model": TrackArgs(name="test_model", label="TEST MODEL")}),
-        tag_runner=TagRunnerConfig(poll_interval=0.1),
+        tag_runner=TagRunnerConfig(poll_interval=0.1, max_jobs=2),
         user_info_resolver=UserInfoResolverConfig(
             fabric_url="https://main.net955305.contentfabric.io",
             user_info_url="https://ai.contentfabric.io/ml/token_info"

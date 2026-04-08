@@ -12,6 +12,7 @@ from src.common.errors import MissingResourceError
 from src.service.impl.queue_based import QueueService
 from src.service.model import *
 from src.tagging.fabric_tagging.queue.model import ListJobArgs
+from src.common.content import Content
 
 def _wait_for_status(
     client: QueueService,
@@ -150,3 +151,23 @@ def test_worker_tag_fails(queue_client, q, make_tag_args, tag_runner):
     failed_jobs = jobstore.list_jobs(ListJobArgs(status="failed"), auth="")
     assert len(failed_jobs) == 1
     assert failed_jobs[0].error == "Tagging failed"
+
+
+def test_max_jobs_limits_concurrency(queue_client, make_tag_args, tag_runner):
+    """TagRunner should not claim more than max_jobs (=2) jobs concurrently."""
+
+    # Enqueue 3 jobs against distinct content IDs (jobs take ~0.35s to complete)
+    contents = [Content(qid=f"iq__maxjobs_{i}", token="tok") for i in range(3)]
+    args = make_tag_args(feature="caption", stream="video")
+    for c in contents:
+        queue_client.tag(c, args)
+
+    # Wait for the runner to poll once but not long enough for jobs to finish
+    time.sleep(0.15)
+
+    jobstore = tag_runner.jobstore
+    running = jobstore.list_jobs(ListJobArgs(status="running"), auth="")
+    queued = jobstore.list_jobs(ListJobArgs(status="queued"), auth="")
+
+    assert len(running) <= 2, f"Expected at most 2 running jobs (max_jobs=2), got {len(running)}"
+    assert len(queued) >= 1, f"Expected at least 1 job still queued, got {len(queued)}"

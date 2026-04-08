@@ -31,6 +31,7 @@ def _job_status_from_report(report: TagStatusResult) -> job_status:
 @dataclass(frozen=True)
 class TagRunnerConfig:
     poll_interval: float
+    max_jobs: int
 
 @dataclass(frozen=True)
 class JobInfo:
@@ -136,6 +137,10 @@ class TagRunner:
             if item.stop_requested:
                 logger.info("skipping job with stop requested", job_id=item.id)
                 self._set_stopped(item)
+                continue
+
+            if len(self._running_jobs) >= self.cfg.max_jobs:
+                # don't pull any more jobs
                 continue
 
             claimed = self.jobstore.claim_job(item.id, item.auth)

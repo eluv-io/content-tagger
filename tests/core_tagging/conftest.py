@@ -370,7 +370,7 @@ def tag_runner(fabric_tagger, queue_jobstore, qfactory):
     runner = TagRunner(
         tagger=fabric_tagger,
         jobstore=queue_jobstore,
-        cfg=TagRunnerConfig(poll_interval=0.1),
+        cfg=TagRunnerConfig(poll_interval=0.1, max_jobs=2),
     )
     runner.start()
     yield runner
