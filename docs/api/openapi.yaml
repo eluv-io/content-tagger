@@ -37,6 +37,11 @@ paths:
           schema:
             type: string
           description: ID of the job to delete
+        - name: tenant
+          in: query
+          schema:
+            type: string
+          description: Tenant id. If the provided token has admin authority for the tenant than this allows you to delete jobs from other users.
         - name: authorization
           in: query
           required: true
@@ -336,7 +341,7 @@ components:
           type: boolean
           default: false
           description:
-            Replace already existing tagstore tags. Set to false to retag, set to true to enbable diff-based tagging.
+            Replace already existing tagstore tags. Set to true to retag, set to false to enbable diff-based tagging.
         max_fetch_retries:
           type: integer
           default: 3
