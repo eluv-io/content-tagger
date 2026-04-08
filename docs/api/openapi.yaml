@@ -703,6 +703,10 @@ components:
           type: string
           example: celeb
           description: Model identifier
+        description:
+          type: string
+          example: Celebrity Identification
+          description: Human readable description of what the model does
         type:
           type: string
           example: frame

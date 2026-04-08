@@ -2496,6 +2496,7 @@ each model's type and the tag track it writes to.</p>
   <span class="hljs-attr">"models"</span>: [
     {
       <span class="hljs-attr">"name"</span>: <span class="hljs-string">"celeb"</span>,
+      <span class="hljs-attr">"description"</span>: <span class="hljs-string">"Celebrity Identification"</span>,
       <span class="hljs-attr">"type"</span>: <span class="hljs-string">"frame"</span>,
       <span class="hljs-attr">"tag_tracks"</span>: [
         {
@@ -4666,7 +4667,7 @@ TokenAuth
 <td>replace</td>
 <td>boolean</td>
 <td>false</td>
-<td>Replace already existing tagstore tags. Set to false to retag, set to true to enbable diff-based tagging.</td>
+<td>Replace already existing tagstore tags. Set to true to retag, set to false to enbable diff-based tagging.</td>
 </tr>
 <tr>
 <td>max_fetch_retries</td>
@@ -5479,6 +5480,7 @@ TokenAuth
   <span class="hljs-attr">"models"</span>: [
     {
       <span class="hljs-attr">"name"</span>: <span class="hljs-string">"celeb"</span>,
+      <span class="hljs-attr">"description"</span>: <span class="hljs-string">"Celebrity Identification"</span>,
       <span class="hljs-attr">"type"</span>: <span class="hljs-string">"frame"</span>,
       <span class="hljs-attr">"tag_tracks"</span>: [
         {
@@ -5513,6 +5515,7 @@ TokenAuth
 <p><a id="schemamodelspec"></a></p>
 <pre class="highlight tab tab-json"><code>{
   <span class="hljs-attr">"name"</span>: <span class="hljs-string">"celeb"</span>,
+  <span class="hljs-attr">"description"</span>: <span class="hljs-string">"Celebrity Identification"</span>,
   <span class="hljs-attr">"type"</span>: <span class="hljs-string">"frame"</span>,
   <span class="hljs-attr">"tag_tracks"</span>: [
     {
@@ -5538,6 +5541,12 @@ TokenAuth
 <td>string</td>
 <td>true</td>
 <td>Model identifier</td>
+</tr>
+<tr>
+<td>description</td>
+<td>string</td>
+<td>false</td>
+<td>Human readable description of what the model does</td>
 </tr>
 <tr>
 <td>type</td>
