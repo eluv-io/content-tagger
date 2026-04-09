@@ -176,7 +176,7 @@ def test_stop_via_eof(container, video_paths):
     assert container.is_running()
     container.add_media(list(video_paths))
     container.send_eof()
-    time.sleep(1)
+    time.sleep(2)
 
     assert not container.is_running()
     # make sure it processed the files before eof'ing

@@ -1,3 +1,4 @@
+from copy import deepcopy
 from dataclasses import asdict
 from dacite import from_dict, Config
 import json
@@ -118,10 +119,20 @@ def handle_status() -> Response:
     
     user_info_resolver: UserInfoResolver = current_app.config["state"]["user_info_resolver"]
 
+    args = _get_status_args_and_authorize(status_req, auth, user_info_resolver)
+
+    reports = service.status(args)
+
+    response = map_all_jobs_status_to_response(reports, status_req)
+
+    return Response(response=json.dumps(asdict(response)), status=200, mimetype='application/json')
+
+def _get_status_args_and_authorize(status_req: StatusRequest, auth: str, user_info_resolver: UserInfoResolver) -> StatusArgs:
+    status_req = deepcopy(status_req)
     user_info = user_info_resolver.get_user_info(auth, tenant_id=status_req.tenant)
 
     if status_req.tenant and not user_info.is_tenant_admin:
-        raise ForbiddenError("Only tenant admins can query by tenant")
+        status_req.tenant = None
     elif status_req.user and not status_req.user == user_info.user_adr:
         raise ForbiddenError(f"Tried to query for user_id={status_req.user} but authenticated user_id={user_info.user_adr}")
     elif not status_req.tenant and not status_req.user:
@@ -130,11 +141,7 @@ def handle_status() -> Response:
 
     args = status_request_to_internal(status_req)
 
-    reports = service.status(args)
-
-    response = map_all_jobs_status_to_response(reports, status_req)
-
-    return Response(response=json.dumps(asdict(response)), status=200, mimetype='application/json')
+    return args
 
 def _parse_status_request() -> StatusRequest:
     """Parse status query parameters into a StatusRequest."""
