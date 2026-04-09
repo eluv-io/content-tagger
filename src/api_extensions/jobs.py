@@ -22,8 +22,6 @@ def delete_job(
         auth=req.authorization,
         tenant_id=req.tenant
     )
-    if req.tenant and not user_info.is_tenant_admin:
-        raise ForbiddenError("Only tenant admins can query by tenant")
     
     item = js.get_job(req.job_id)
 
@@ -33,6 +31,11 @@ def delete_job(
     if not user_info.is_tenant_admin and user_info.user_adr != item.user:
         raise ForbiddenError(
             f"Tried to delete job for user_id={item.user} but authenticated user_id={user_info.user_adr}. Please specify a tenant id if you are a tenant admin."
+        )
+    
+    if req.tenant and item.tenant != req.tenant:
+        raise ForbiddenError(
+            f"Tried to delete job for tenant={item.tenant} but specified tenant={req.tenant}."
         )
 
     js.update_job(UpdateJobRequest(id=req.job_id, status="deleted"), req.authorization)
