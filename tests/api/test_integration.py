@@ -655,7 +655,7 @@ def test_status(client, q):
     response = client.get(f"/job-status?authorization=invalid_token&tenant=another_tenant")
     assert response.status_code == 400
 
-    response = client.get(f"/job-status?authorization={q.token}&tenant=another_tenant")
+    response = client.get(f"/job-status?authorization={q.token}&user=another_user")
     assert response.status_code == 403
 
 def test_listing(client):
