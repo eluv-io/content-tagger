@@ -37,12 +37,13 @@ def test_get_status_args_passes_tenant_for_tenant_admin():
 
 
 def test_get_status_args_clears_tenant_for_non_admin():
-    """Non-admins requesting a tenant filter have it silently cleared."""
+    """Non-admins requesting a tenant filter have it silently cleared and replaced with user."""
     resolver = _make_resolver(user_adr="0x123", is_tenant_admin=False)
     args = _get_status_args_and_authorize(
         StatusRequest(tenant="my_tenant"), auth="token", user_info_resolver=resolver
     )
     assert args.tenant is None
+    assert args.user == "0x123"
 
 
 def test_get_status_args_allows_own_user_filter():

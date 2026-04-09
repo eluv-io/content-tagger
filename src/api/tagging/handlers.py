@@ -133,6 +133,7 @@ def _get_status_args_and_authorize(status_req: StatusRequest, auth: str, user_in
 
     if status_req.tenant and not user_info.is_tenant_admin:
         status_req.tenant = None
+        status_req.user = user_info.user_adr
     elif status_req.user and not status_req.user == user_info.user_adr:
         raise ForbiddenError(f"Tried to query for user_id={status_req.user} but authenticated user_id={user_info.user_adr}")
     elif not status_req.tenant and not status_req.user:
