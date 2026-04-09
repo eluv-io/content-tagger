@@ -1,5 +1,5 @@
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.service.model import *
 from src.api.tagging.request_format import StatusRequest
@@ -40,7 +40,11 @@ def map_all_jobs_status_to_response(
 
 def map_job_status_to_response(js: TagJobStatusResult) -> JobStatus:
     # convert float (seconds) to ISO string
-    created_at = datetime.fromtimestamp(js.created_at).isoformat()
+    created_at = (
+        datetime.fromtimestamp(js.created_at, tz=timezone.utc)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
 
     # good to have top-level progress status even before job starts
     progress = js.tagger_details.progress if js.tagger_details else 0
