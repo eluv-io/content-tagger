@@ -2,6 +2,86 @@
 
 const fs = require('fs');
 const path = require("path")
+const { ElvClient } = require("@eluvio/elv-client-js");
+
+async function makeFabricClient() {
+  const network = process.env.FABRIC_NETWORK || "main"
+  console.debug(`makeFabricClient -- network ${network}`)
+  
+  const client = await ElvClient.FromNetworkName({networkName: network})
+  const wallet = client.GenerateWallet();
+  const signer = wallet.AddAccount({
+    privateKey: process.env.PRIVATE_KEY,
+  });
+  client.SetSigner({ signer });
+  return client
+}
+
+const TAGSTORE_BASE = process.env.TAGSTORE_URL || "https://ai.contentfabric.io/tagstore"
+
+async function readTagstoreData(client, contentId) {
+  const tagData = {}
+  
+  const scToken = await client.GenerateStateChannelToken({ objectId: contentId }).catch((err) => { console.error(contentId, err) })
+  
+  if (scToken) {
+    const params = new URLSearchParams({
+      track: "vertical_video",
+      limit: 10000,
+      has_frame_info: true,
+    })
+    
+    const response = await fetch(`${TAGSTORE_BASE}/${contentId}/tags?${params}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${scToken}`
+      }
+    })
+    
+    if (response.status !== 200) {
+      throw new Error(`Error fetching tags for ${contentId}: ${response.status} ${response.statusText} ${await response.text()}`)
+    }
+    
+    return await response.json()
+  }
+
+  return { "tags": {} }
+}
+
+async function writeBinaryFile(client, iq, bufferData) {
+
+  const libraryId = await client.ContentObjectLibraryId({objectId: iq});
+  
+  const editResponse = await client.EditContentObject({
+    libraryId,
+    objectId: iq
+  })
+                                                     
+  console.debug(`iq:${iq} write_token:${editResponse.write_token}`)  
+  await client.UploadFiles({
+    libraryId,
+    objectId: iq,
+    writeToken: editResponse.write_token,
+    fileInfo: [
+      {
+        path: `vertical.bin`,
+        // mime_type: "application/octet-stream",
+        size: bufferData.length,
+        data: bufferData,
+      },
+    ],
+  })
+
+  const resp = await client.FinalizeContentObject({
+    libraryId,
+    objectId: iq,
+    writeToken: editResponse.write_token,
+    commitMessage: process.env.COMMIT_MESSAGE || `${path.basename(__filename)}: Upload vertical video information file (${process.env.USER})`,
+  });
+  console.log(`iq::${iq} UPLOAD COMPLETE hash:${resp.hash}`)
+
+}
 
 /**
  * Sorts tags, validates frame continuity, and packs x-coordinates into a binary Buffer.
@@ -54,27 +134,25 @@ function packXCoordinates(data) {
     return buffer;
 }
 
-/**
- * Main driver to read JSON, process, and write binary output.
- * @param {string} inputPath 
- * @param {string} outputPath 
- */
-function main(inputPath, outputPath) {
-    try {
-        // Read and parse the JSON file
-        const rawData = fs.readFileSync(inputPath, 'utf8');
-        const jsonData = JSON.parse(rawData);
+async function main(inputIq) {
+  try {
+    
+    const client = await makeFabricClient()
+    
+    const jsonData = await readTagstoreData(client, inputIq)
 
-        // Process the data
-        const packedBuffer = packXCoordinates(jsonData);
-
-        // Write the binary file
-        fs.writeFileSync(outputPath, packedBuffer);
-
-        console.log(`Successfully packed ${packedBuffer.length / 4} integers into ${outputPath}`);
-    } catch (err) {
-        console.error("Error processing files:", err.message);
+    if (jsonData.tags.length < 1) {
+      console.log(`${inputIq}:: no vertical data, not writing to fabric`)
     }
+    
+    const packedBuffer = packXCoordinates(jsonData);
+    console.log(`Successfully packed ${packedBuffer.length / 4} integers`)
+    
+    await writeBinaryFile(client, inputIq, packedBuffer);
+    
+  } catch (err) {
+    console.error("Error processing files:", err.message);
+  }
 }
 
 if (require.main === module) {
@@ -86,5 +164,5 @@ if (require.main === module) {
     if (arg.endsWith(path.basename(__filename))) break
   }
   
-  main(args[0], args[1])
+  main(args[0])
 }
