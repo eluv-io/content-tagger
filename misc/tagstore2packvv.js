@@ -66,7 +66,7 @@ async function writeBinaryFile(client, iq, bufferData) {
     fileInfo: [
       {
         path: `vertical.bin`,
-        // mime_type: "application/octet-stream",
+        mime_type: "application/octet-stream",
         size: bufferData.length,
         data: bufferData,
       },
@@ -101,6 +101,7 @@ function packXCoordinates(data) {
     const xValues = [];
     let expectedNextFrame = sortedTags.length > 0 ? sortedTags[0].frame_info.frame_idx : 0;
 
+    let breaks = 0
     // 2. Iterate and validate
     sortedTags.forEach((tag, index) => {
         const currentFrameIdx = tag.frame_info?.frame_idx ?? 0;
@@ -108,7 +109,8 @@ function packXCoordinates(data) {
 
         // Emit warning if there is a gap or overlap in frame indices
         if (currentFrameIdx !== expectedNextFrame) {
-            console.warn(
+            breaks++
+            if (breaks < 4) console.warn(
                 `[Warning] Continuity break at Tag ID: ${tag.id}. ` +
                 `Expected frame_idx ${expectedNextFrame}, but found ${currentFrameIdx}.`
             );
@@ -131,14 +133,24 @@ function packXCoordinates(data) {
         buffer.writeInt32LE(value, i * 4);
     });
 
+    if (breaks > 0) {
+      console.error(`There were ${breaks} breaks in continuity. Err`)
+      return null
+    }
     return buffer;
 }
 
-async function main(inputIq) {
-  try {
-    
-    const client = await makeFabricClient()
-    
+async function main(iqs) {
+  const client = await makeFabricClient()
+  
+  for (const iq of iqs) {
+    console.log(`------------- ${iq} -------------`)
+    await processVV(client, iq)
+  }
+}
+  
+async function processVV(client, inputIq) {
+  try {        
     const jsonData = await readTagstoreData(client, inputIq)
 
     if (jsonData.tags.length < 1) {
@@ -146,8 +158,8 @@ async function main(inputIq) {
     }
     
     const packedBuffer = packXCoordinates(jsonData);
-    console.log(`Successfully packed ${packedBuffer.length / 4} integers`)
-    
+    if (packedBuffer == null) console.error(`${inputIq}:: failed to pack`)
+
     await writeBinaryFile(client, inputIq, packedBuffer);
     
   } catch (err) {
@@ -163,6 +175,6 @@ if (require.main === module) {
     let arg = args.shift()
     if (arg.endsWith(path.basename(__filename))) break
   }
-  
-  main(args[0])
+
+  main(args)
 }
