@@ -161,8 +161,15 @@ async function processVV(client, inputIq) {
     }
     
     const packedBuffer = packXCoordinates(jsonData);
-    if (packedBuffer == null) console.error(`${inputIq}:: failed to pack`)
-
+    if (packedBuffer == null) {
+      console.error(`${inputIq}:: failed to pack`)
+      return
+    }
+    else {
+      console.log(`${inputIq}:: packed size ${packedBuffer.length}`)
+    }
+    
+     
     await writeBinaryFile(client, inputIq, packedBuffer);
     
   } catch (err) {
