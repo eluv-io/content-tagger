@@ -156,6 +156,9 @@ async function processVV(client, inputIq) {
     if (jsonData.tags.length < 1) {
       console.log(`${inputIq}:: no vertical data, not writing to fabric`)
     }
+    else {
+      console.log(`${inputIq}:: read ${jsonData.tags.length} tags`)
+    }
     
     const packedBuffer = packXCoordinates(jsonData);
     if (packedBuffer == null) console.error(`${inputIq}:: failed to pack`)
