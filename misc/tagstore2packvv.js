@@ -19,16 +19,16 @@ async function makeFabricClient() {
 
 const TAGSTORE_BASE = process.env.TAGSTORE_URL || "https://ai.contentfabric.io/tagstore"
 
-async function readTagstoreData(client, contentId) {
+async function readTagstoreData(client, contentId, track = "vertical_video", frame = true) {
   const tagData = {}
-  
+
   const scToken = await client.GenerateStateChannelToken({ objectId: contentId }).catch((err) => { console.error(contentId, err) })
   
   if (scToken) {
     const params = new URLSearchParams({
-      track: "vertical_video",
+      track,
       limit: 10000,
-      has_frame_info: true,
+      has_frame_info: frame,
     })
     
     const response = await fetch(`${TAGSTORE_BASE}/${contentId}/tags?${params}`, {
@@ -49,16 +49,14 @@ async function readTagstoreData(client, contentId) {
   return { "tags": {} }
 }
 
-async function writeBinaryFile(client, iq, bufferData) {
-
-  const libraryId = await client.ContentObjectLibraryId({objectId: iq});
+async function writeBinaryFile(client, iq, libraryId, bufferData) {
   
   const editResponse = await client.EditContentObject({
     libraryId,
     objectId: iq
   })
                                                      
-  console.debug(`iq:${iq} write_token:${editResponse.write_token}`)  
+  console.debug(`iq::${iq} write_token:${editResponse.write_token}`)  
   await client.UploadFiles({
     libraryId,
     objectId: iq,
@@ -79,7 +77,7 @@ async function writeBinaryFile(client, iq, bufferData) {
     writeToken: editResponse.write_token,
     commitMessage: process.env.COMMIT_MESSAGE || `${path.basename(__filename)}: Upload vertical video information file (${process.env.USER})`,
   });
-  console.log(`iq::${iq} UPLOAD COMPLETE hash:${resp.hash}`)
+  console.debug(`iq::${iq} UPLOAD COMPLETE hash:${resp.hash}`)
 
 }
 
@@ -150,14 +148,33 @@ async function main(iqs) {
 }
   
 async function processVV(client, inputIq) {
-  try {        
+  try {
+
+    const libraryId = await client.ContentObjectLibraryId({objectId: inputIq});
+
+    const metadata = await client.ContentObjectMetadata({
+      objectId: inputIq,
+      libraryId,
+      select: [ "public/name" ]
+    })
+    const name = metadata.public.name
+        
     const jsonData = await readTagstoreData(client, inputIq)
 
     if (jsonData.tags.length < 1) {
-      console.log(`${inputIq}:: no vertical data, not writing to fabric`)
+      console.log(`${inputIq}:: ERROR:no_vertical_data packed_size:-1 shots:${shotData.tags.length} vertical_shots:? name:${name}`)
+      return
     }
     else {
-      console.log(`${inputIq}:: read ${jsonData.tags.length} tags`)
+      console.debug(`${inputIq}:: read ${jsonData.tags.length} tags`)
+    }
+
+    const shotData = await readTagstoreData(client, inputIq, "shot_detection", false)
+    console.debug(`${inputIq}:: read ${shotData.tags.length} shot tags`)
+
+    if (jsonData.tags.length != shotData.tags.length) {
+      console.log(`${inputIq}:: ERROR:missing_shots packed_size:-1 shots:${shotData.tags.length} vertical_shots:${jsonData.tags.length} name:${name}`)
+      return
     }
     
     const packedBuffer = packXCoordinates(jsonData);
@@ -166,11 +183,11 @@ async function processVV(client, inputIq) {
       return
     }
     else {
-      console.log(`${inputIq}:: packed size ${packedBuffer.length}`)
+      console.debug(`${inputIq}:: packed size ${packedBuffer.length}`)
     }
-    
-     
-    await writeBinaryFile(client, inputIq, packedBuffer);
+         
+    await writeBinaryFile(client, inputIq, libraryId, packedBuffer);
+    console.log(`${inputIq}:: RESULT:posted packed_size:${packedBuffer.length} shots:${jsonData.tags.length} vertical_shots:${jsonData.tags.length} name:${name}`)
     
   } catch (err) {
     console.error("Error processing files:", err.message);
