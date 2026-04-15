@@ -653,7 +653,11 @@ class TaggerWorker:
             # for signalling background threads to stop
             job.stop_event.set()
 
-        self._update_batches_with_report(job, status=status)
+        try:
+            self._update_batches_with_report(job, status=status)
+        except Exception as e:
+            logger.opt(exception=e).error("Failed to post job report")
+            job.state.warnings.append("Failed to post job report")
 
         self.jobstore.inactive_jobs[jobid] = job
         del self.jobstore.active_jobs[jobid]

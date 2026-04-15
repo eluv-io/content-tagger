@@ -63,6 +63,14 @@ def test_get_status_args_raises_forbidden_for_other_user():
             StatusRequest(user="0x456"), auth="token", user_info_resolver=resolver
         )
 
+def test_no_args_gives_user():
+    resolver = _make_resolver(user_adr="0x123")
+    args = _get_status_args_and_authorize(
+        StatusRequest(), auth="token", user_info_resolver=resolver
+    )
+    assert args.user == "0x123"
+    assert args.tenant is None
+
 
 def test_tenant_status(mock_app, make_tag_args):
     client = mock_app.test_client()

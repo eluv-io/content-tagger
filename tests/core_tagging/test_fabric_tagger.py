@@ -782,3 +782,19 @@ def test_content_aligned(fabric_tagger, q, make_tag_args, temp_dir):
 
     for source in job.state.media.downloaded:
         assert source.offset == 0
+
+def test_upload_batch_fails(fabric_tagger: TaggerWorker, q, make_tag_args):
+    args = make_tag_args(feature="caption", stream="video", max_fetch_retries=0)
+
+    fabric_tagger.tagstore.update_batch = Mock(side_effect=RuntimeError("Failed upload"))
+
+    fabric_tagger.tag(q, args)
+
+    wait_tag(fabric_tagger, q.qid, timeout=10)
+
+    status = fabric_tagger.status(q.qid)[0]
+
+    assert len(status.status.warnings) == 1
+    
+    assert len(list(fabric_tagger.jobstore.inactive_jobs.values())) == 1
+    assert len(list(fabric_tagger.jobstore.active_jobs.values())) == 0
