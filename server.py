@@ -45,14 +45,14 @@ def configure_routes(app: Flask) -> None:
 
     @app.errorhandler(HTTPError)
     def handle_http_error(e):
-        logger.opt(exception=e).error("Got HTTP error")
+        logger.error(f"Got HTTP error: {e}")
         status_code = e.response.status_code
         error_resp = json.loads(e.response.text)
         return jsonify({'code': status_code, 'error': error_resp}), status_code
 
     @app.errorhandler(MissingResourceError)
     def handle_missing_resource(e):
-        logger.opt(exception=e).error("Missing resource error")
+        logger.error(f"Missing resource error: {e}")
         return jsonify({'code': 404, 'message': e.message}), 404
 
     @app.errorhandler(ForbiddenError)
