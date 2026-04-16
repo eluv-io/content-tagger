@@ -146,7 +146,21 @@ class UploadSession:
 
         for batch, tags in batch_to_tags.items():
             try:
-                self.tagstore.upload_tags(tags, batch, q=q)
+                self._upload_tags_with_batch(batch, tags, q)
             except Exception as e:
                 logger.opt(exception=e).error("error uploading tags", destination_qid=q.qid)
+                raise
+
+    def _upload_tags_with_batch(self, batch_id: str, tags: list[Tag], q: Content) -> None:
+        """
+        Uploads a list of tags to the tagstore under the specified batch ID.
+        Uploads in small increments to avoid sending too many tags in a single request.
+        """
+        chunk_size = 5000
+        for i in range(0, len(tags), chunk_size):
+            chunk = tags[i:i + chunk_size]
+            try:
+                self.tagstore.upload_tags(chunk, batch_id, q=q)
+            except Exception as e:
+                logger.opt(exception=e).error("error uploading tags chunk", destination_qid=q.qid, batch_id=batch_id)
                 raise
