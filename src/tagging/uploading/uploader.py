@@ -1,6 +1,7 @@
 
 from dataclasses import asdict
 
+from src.common.logging.timing import timeit
 from src.tags.tagstore.model import Tag
 from src.tags.tagstore.abstract import Tagstore
 from src.tag_containers.model import ModelTag
@@ -36,11 +37,12 @@ class UploadSession:
         tagged_sources: list[str]
     ) -> None:
         """Main upload method - formats and uploads tags to tagstore"""
-        new_inputs = [t for t in tags if t not in self.uploaded_tags]
+        with timeit("deduplicating tags", min_duration=1):
+            new_inputs = [t for t in tags if t not in self.uploaded_tags]
 
-        if not new_inputs:
-            self.uploaded_sources.update(tagged_sources)
-            return
+            if not new_inputs:
+                self.uploaded_sources.update(tagged_sources)
+                return
 
         logger.info(
             "uploading new tags",

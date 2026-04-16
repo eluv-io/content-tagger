@@ -708,13 +708,15 @@ class TaggerWorker:
         stream_meta = job.state.media.worker.metadata()
 
         # TODO: align_tags also corrects the source name which is ugly
-        aligned_tags = align_tags(tags, job.state.media.downloaded, fps=stream_meta.fps)
+        with timeit("aligning tags", min_duration=0.5):
+            aligned_tags = align_tags(tags, job.state.media.downloaded, fps=stream_meta.fps)
 
         statuses = job.state.container.progress()
 
         tagged_sources = adjust_progress_sources(statuses, job.state.media.downloaded)
 
-        job.state.upload_session.upload_tags(aligned_tags, [p.source_media for p in tagged_sources])
+        with timeit("uploading tags", min_duration=5):
+            job.state.upload_session.upload_tags(aligned_tags, [p.source_media for p in tagged_sources])
 
     def _output_dir_from_q(self, q: Content) -> str:
         out = os.path.join(self.cfg.media_dir, q.qid)
