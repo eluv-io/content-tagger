@@ -65,6 +65,7 @@ class FakeTagContainer:
         self.tag_call_count = 0
         self.media_files = []
         self.worker_thread = None
+        self._tag_cursor = 0
 
     def start(self, gpu_idx: int | None = None) -> None:
         """
@@ -120,7 +121,13 @@ class FakeTagContainer:
     def add_media(self, new_media: list[str]) -> None:
         self.media_files += new_media
 
-    def tags(self) -> list[ModelTag]:
+    def new_tags(self) -> list[ModelTag]:
+        all_tags = self._tags()
+        start = self._tag_cursor
+        self._tag_cursor = len(all_tags)
+        return all_tags[start:]
+
+    def _tags(self) -> list[ModelTag]:
         """
         Return fake tags for the media files.
 
@@ -180,7 +187,7 @@ class PartialResultContainer(FakeTagContainer):
     """
 
     def tags(self) -> list[ModelTag]:
-        tags = super().tags()
+        tags = super().new_tags()
         sources = [t.source_media for t in tags]
         if len(sources) > 1:
             return [t for t in tags if t.source_media != sources[-1]]

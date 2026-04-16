@@ -87,7 +87,7 @@ def test_tags_basic(tag_container):
         {"type": "tag", "data": {"start_time": 10000, "end_time": 15500, "tag": "car driving", "source_media": "video1.mp4"}},
     ])
     
-    outputs = tag_container.tags()
+    outputs = tag_container.new_tags()
     
     assert len(outputs) == 2
     
@@ -102,6 +102,9 @@ def test_tags_basic(tag_container):
     assert tag2.start_time == 10000
     assert tag2.end_time == 15500
     assert tag2.text == "car driving"
+
+    # second call should return nothing
+    assert len(tag_container.new_tags()) == 0
 
 
 def test_tags_with_frame_info(tag_container):
@@ -123,7 +126,7 @@ def test_tags_with_frame_info(tag_container):
         }},
     ])
     
-    outputs = tag_container.tags()
+    outputs = tag_container.new_tags()
     
     assert len(outputs) == 3
     
@@ -149,7 +152,7 @@ def test_tags_multiple_sources(tag_container):
         {"type": "tag", "data": {"start_time": 0, "end_time": 3.0, "tag": "scene2", "source_media": "video2.mp4"}},
     ])
     
-    outputs = tag_container.tags()
+    outputs = tag_container.new_tags()
     
     assert len(outputs) == 2
     
@@ -179,7 +182,7 @@ def test_tags_image_files(tag_container):
         }},
     ])
     
-    outputs = tag_container.tags()
+    outputs = tag_container.new_tags()
     
     assert len(outputs) == 2
     
@@ -198,7 +201,7 @@ def test_tags_image_files(tag_container):
 
 
 def test_tags_no_output_file(tag_container):
-    outputs = tag_container.tags()
+    outputs = tag_container.new_tags()
     assert outputs == []
 
 
@@ -207,7 +210,7 @@ def test_tags_empty_output_file(tag_container):
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, 'w') as f:
         pass
-    outputs = tag_container.tags()
+    outputs = tag_container.new_tags()
     assert outputs == []
 
 
@@ -219,7 +222,7 @@ def test_tags_incomplete_json_line_skipped(tag_container):
         f.write(json.dumps({"type": "tag", "data": {"start_time": 0, "end_time": 5.0, "tag": "person walking", "source_media": "video1.mp4"}}) + "\n")
         f.write('{"type": "tag", "data": {"start_time": 10, "end_time": 15, "tag": "incomplete')  # incomplete
     
-    outputs = tag_container.tags()
+    outputs = tag_container.new_tags()
     assert len(outputs) == 1
     assert outputs[0].text == "person walking"
 
@@ -232,7 +235,7 @@ def test_errors_from_output(tag_container):
         {"type": "error", "data": {"message": "unsupported format", "source_media": "video2.mp4"}},
     ])
     
-    tags = tag_container.tags()
+    tags = tag_container.new_tags()
     errors = tag_container.errors()
     
     assert len(tags) == 1
@@ -249,7 +252,7 @@ def test_progress_from_output(tag_container):
         {"type": "progress", "data": {"source_media": "video1.mp4"}},
     ])
     
-    tags = tag_container.tags()
+    tags = tag_container.new_tags()
     progress = tag_container.progress()
     
     assert len(tags) == 1
@@ -265,7 +268,7 @@ def test_track_field(tag_container):
         {"type": "tag", "data": {"start_time": 10.0, "end_time": 15.0, "tag": "car driving", "track": "track2", "source_media": "video1.mp4"}},
     ])
     
-    tags = tag_container.tags()
+    tags = tag_container.new_tags()
     
     assert len(tags) == 2
     assert tags[0].model_track == "track1"
@@ -283,7 +286,7 @@ def test_mixed_message_types(tag_container):
         {"type": "progress", "data": {"source_media": "media/video2.mp4"}},
     ])
     
-    tags = tag_container.tags()
+    tags = tag_container.new_tags()
     errors = tag_container.errors()
     progress = tag_container.progress()
     

@@ -703,7 +703,7 @@ class TaggerWorker:
         if not job.state.taghandle:
             return
         with timeit("getting tags from container", min_duration=0.5):
-            tags = job.state.container.tags()
+            tags = job.state.container.new_tags()
 
         stream_meta = job.state.media.worker.metadata()
 

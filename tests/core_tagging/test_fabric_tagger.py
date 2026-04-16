@@ -287,10 +287,10 @@ def test_tags_uploaded_during_and_after_job_through_status(
 
 
 def test_container_tags_method_fails(fabric_tagger, q, make_tag_args):
-    """Test that when container.tags() fails, the job fails gracefully and stops the container"""
+    """Test that when container.new_tags() fails, the job fails gracefully and stops the container"""
 
     class BrokenTagsContainer(FakeTagContainer):
-        def tags(self) -> list[ModelTag]:
+        def new_tags(self) -> list[ModelTag]:
             raise RuntimeError("Simulated container tags() failure")
 
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
@@ -462,7 +462,7 @@ def test_track_override_uploads_to_multiple_tracks(fabric_tagger, q, make_tag_ar
     """Test that model tags with different tracks are uploaded to different tagstore tracks"""
 
     class MultiTrackContainer(FakeTagContainer):
-        def tags(self) -> list[ModelTag]:
+        def new_tags(self) -> list[ModelTag]:
             tags = []
             finished_files = self.media_files if self.is_stopped else self.media_files[:-1]
             for i, filepath in enumerate(finished_files):
@@ -505,7 +505,7 @@ def test_uploaded_track_label(fabric_tagger: TaggerWorker, q, make_tag_args):
 
 def test_default_defer_to_model_track(fabric_tagger, q, make_tag_args):
     class MultiTrackContainer(FakeTagContainer):
-        def tags(self) -> list[ModelTag]:
+        def new_tags(self) -> list[ModelTag]:
             tags = []
             finished_files = self.media_files if self.is_stopped else self.media_files[:-1]
             for i, filepath in enumerate(finished_files):

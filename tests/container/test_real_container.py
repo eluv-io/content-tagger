@@ -103,7 +103,7 @@ def test_container(container, video_paths):
         assert container.is_running()
 
         # check that we have tags for the first video
-        assert len(container.tags()) > 0
+        assert len(container.new_tags()) > 0
         assert container.errors() == []
         assert len(container.progress()) == 1
         assert container.progress()[0].source_media == video1
