@@ -225,10 +225,18 @@ class FetchFactory:
         if len(stream) == 0:
             raise MissingResourceError(f"Stream {stream_name} is empty")
 
-        parts = [part["source"] for part in stream]
+        parts = []
+        ## i don't know how we get in here as the legacy path when the parts are new array type parts, but we do, ARGH
+        ## content IQ: iq__4UBY9nXgAk1CafznDyAoWpgxEe9S
+        for part in stream:
+            if type(part) is dict:
+                parts.append(part["source"])
+                part_duration = stream[0]["duration"]["float"]
+            else:
+                parts.append(part[0])
+                part_duration = int(stream[0][1]) * float(Fraction(streams[stream_name]["duration"]["time_base"]))
 
         codec_type = streams[stream_name].get("codec_type", None)
-        part_duration = stream[0]["duration"]["float"]
 
         if codec_type is None:
             raise MissingResourceError(
