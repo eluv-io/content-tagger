@@ -615,7 +615,19 @@ def test_replace(
     # doing this weird stuff for now cause prod tagstore does shadowing and local one doesn't
     batches = fabric_tagger.tagstore.find_batches(q=q, track="object_detection")
     
-    assert len(batches) == 2
+    batches.remove(first_batch)
+    batches.remove(second_batch)
+
+    last_batch = fabric_tagger.tagstore.get_batch(batches[0], q=q)
+    assert last_batch is not None
+    report = last_batch.additional_info.get("tagger")
+    assert report is not None
+    assert report["job_status"]["status"] == "Completed"
+    assert report["upload_status"] is not None
+    # make sure last batch has no uploaded sources
+    assert len(report["upload_status"]["tagged_sources"]) == 0
+    assert len(report["upload_status"]["downloaded_sources"]) == 0
+    assert len(report["upload_status"]["uploaded_sources"]) == 0
 
 def test_second_run_has_no_parts(fabric_tagger, q, make_tag_args):
     """Test that second run of same job has no parts to download"""
@@ -798,3 +810,34 @@ def test_upload_batch_fails(fabric_tagger: TaggerWorker, q, make_tag_args):
     
     assert len(list(fabric_tagger.jobstore.inactive_jobs.values())) == 1
     assert len(list(fabric_tagger.jobstore.active_jobs.values())) == 0
+
+def test_no_tags_still_creates_batch(fabric_tagger, q, make_tag_args):
+    """Test that even if no tags are produced, a batch is still created and upload_report is called with empty tags"""
+
+    class NoTagsContainer(FakeTagContainer):
+        def new_tags(self) -> list[ModelTag]:
+            return []
+
+    def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
+        return NoTagsContainer(req.media_dir, req.model_id)
+
+    fabric_tagger.cregistry.get = get_side_effect
+
+    args = make_tag_args(feature="caption", stream="video", max_fetch_retries=0)
+
+    fabric_tagger.tag(q, args)
+
+    wait_tag(fabric_tagger, q.qid, timeout=5)
+
+    batches = fabric_tagger.tagstore.find_batches(q=q)
+    assert len(batches) == 1
+
+    batch = fabric_tagger.tagstore.get_batch(batches[0], q=q)
+    assert batch is not None
+
+    report = batch.additional_info.get("tagger")
+    assert report is not None
+    assert report["job_status"]["status"] == "Completed"
+    assert report["upload_status"] is not None
+    # even though we have no tags we still mark the sources tagged
+    assert len(report["upload_status"]["tagged_sources"]) > 0

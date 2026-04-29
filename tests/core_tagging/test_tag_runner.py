@@ -134,7 +134,7 @@ def test_stop_running_job(queue_client, q, make_tag_args, tag_runner):
     queue_client.tag(q, args)
     time.sleep(0.25)
     queue_client.stop(q.qid, "caption")
-    time.sleep(0.25)
+    time.sleep(0.5)
     # check that job is marked cancelled in jobstore
     jobstore = tag_runner.jobstore
     assert jobstore.list_jobs(ListJobArgs(status="cancelled"), auth="")

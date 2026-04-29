@@ -80,7 +80,7 @@ class UploadSession:
 
     def upload_report(self, report: TagContentStatusReport) -> None:
         """Upload a tagging report to the tagstore as a tag on the content object."""
-        batch = self._get_batch(report.params.feature)
+        batch = self._get_or_create_batch(report.params.feature)
         if batch is None:
             logger.error("no batch found for report, skipping upload", feature=report.params.feature, destination_qid=self.dest_q.qid)
             return
