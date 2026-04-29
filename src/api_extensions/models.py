@@ -25,6 +25,9 @@ def list_models(
     specs = []
     for m in models:
         cfg = registry.get_model_config(m)
+        if not cfg.description:
+            # hide models without description from public listing to be used for internal purposes
+            continue
         track = track_resolver.resolve(m)
         specs.append(
             ModelSpec(

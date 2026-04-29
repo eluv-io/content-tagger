@@ -29,6 +29,14 @@ def fake_registry(temp_dir):
                     resources={"gpu": 1},
                     image="localhost/test_model:latest",
                     dependencies=["test_model"]
+                ),
+                # should be hidden from listing API due to empty description
+                "hidden_model": ModelConfig(
+                    type="processor",
+                    description="",
+                    resources={"gpu": 1},
+                    image="localhost/test_model:latest",
+                    dependencies=["test_model"]
                 )
             }
         )
