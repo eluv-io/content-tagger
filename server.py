@@ -2,25 +2,37 @@ import argparse
 from flask import Flask, Response, jsonify, send_from_directory
 from flask_cors import CORS
 import json
-from src.common.logging import logger
 from requests.exceptions import HTTPError
 import atexit
+import signal
 import setproctitle
 import sys
-from waitress import serve
+from waitress.server import create_server
 import os
 
+from src.api.arg_resolver import ArgsResolver
+from src.api.auth import Authenticator
+from src.service.impl.direct_api import DirectAPI
+from src.service.impl.queue_based import QueueService
+from src.status.get_info import UserInfoResolver
+from src.status.service import TaggingStatusService
 from src.tagging.scheduling.scheduler import ContainerScheduler
-from src.tagging.fabric_tagging.tagger import FabricTagger
+from src.tagging.fabric_tagging.tagger import TaggerWorker
 from src.tags.tagstore.factory import create_tagstore
+from src.tagging.fabric_tagging.source_resolver import SourceResolver
 from src.fetch.factory import FetchFactory
-from src.common.content import ContentFactory
+from src.common.content import QAPIFactory
 from src.tag_containers.registry import ContainerRegistry
-from src.tags.conversion import TagConverter
+from src.tags.track_resolver import TrackResolver
+from src.common.logging import logger
 
-from src.api.tagging.handlers import handle_tag, handle_image_tag, handle_status, handle_stop
-from src.api.upload.handlers import handle_commit
-from src.common.errors import BadRequestError, MissingResourceError
+from src.api.tagging.handlers import handle_tag, handle_status, handle_status_content, handle_stop_model, handle_stop_content
+from src.api.content_status.handlers import handle_content_status, handle_model_status
+from src.api.extension.handlers import handle_list_models, handle_delete_job
+from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
+from src.tagging.fabric_tagging.queue.abstract import JobStore
+from src.tagging.tag_runner import TagRunner
+from src.common.errors import *
 from app_config import AppConfig
 
 def configure_routes(app: Flask) -> None:
@@ -28,83 +40,165 @@ def configure_routes(app: Flask) -> None:
 
     @app.errorhandler(BadRequestError)
     def handle_bad_request(e):
-        logger.exception(f"Bad request: {e}")
+        logger.opt(exception=e).error("Got bad request error")
         return jsonify({'error': e.message}), 400
 
     @app.errorhandler(HTTPError)
     def handle_http_error(e):
-        logger.exception(f"HTTP error: {e}")
+        logger.error(f"Got HTTP error: {e}")
         status_code = e.response.status_code
         error_resp = json.loads(e.response.text)
         return jsonify({'code': status_code, 'error': error_resp}), status_code
 
     @app.errorhandler(MissingResourceError)
     def handle_missing_resource(e):
-        logger.exception(f"Missing resource: {e}")
+        logger.error(f"Missing resource error: {e}")
         return jsonify({'code': 404, 'message': e.message}), 404
 
-    @app.route('/<qhit>/tag', methods=['POST'])
-    def tag(qhit: str) -> Response:
-        return handle_tag(qhit)
+    @app.errorhandler(ForbiddenError)
+    def handle_forbidden(e):
+        logger.opt(exception=e).error("Forbidden error")
+        return jsonify({'code': 403, 'message': e.message}), 403
     
-    @app.route('/<qhit>/image_tag', methods=['POST'])
-    def image_tag(qhit: str) -> Response:
-        return handle_image_tag(qhit)
+    @app.errorhandler(ExternalServiceError)
+    def handle_external_service_error(e):
+        logger.opt(exception=e).error("External service error")
+        return jsonify({'message': "An upstream service failed", 'error': str(e)}), 502
     
-    @app.route('/<qhit>/status', methods=['GET'])
-    def status(qhit: str) -> Response:
-        return handle_status(qhit)
-    
-    @app.route('/<qhit>/stop/<feature>', methods=['POST'])
-    def stop(qhit: str, feature: str) -> Response:
-        return handle_stop(qhit, feature)
+    @app.errorhandler(Exception)
+    def handle_generic_exception(e):
+        logger.opt(exception=e).error("Unhandled exception in API")
+        return jsonify({'message': "An unexpected error occurred", 'error': str(e)}), 500
 
-    @app.route('/<qhit>/commit', methods=['POST'])
-    def commit(qhit: str) -> Response:
-        return handle_commit(qhit)
+    @app.route('/<qid>/tag', methods=['POST'])
+    def tag(qid: str) -> Response:
+        return handle_tag(qid)
+    
+    @app.route('/<qid>/job-status', methods=['GET'])
+    def status(qid: str) -> Response:
+        return handle_status_content(qid)
+
+    @app.route('/job-status', methods=['GET'])
+    def status_all() -> Response:
+        return handle_status()
+    
+    @app.route('/<qid>/stop/<feature>', methods=['POST'])
+    def stop_model(qid: str, feature: str) -> Response:
+        return handle_stop_model(qid, feature)
+
+    @app.route('/<qid>/stop', methods=['POST'])
+    def stop_content(qid: str) -> Response:
+        return handle_stop_content(qid)
+
+    @app.route('/<qid>/tag-status', methods=['GET'])
+    def content_status(qid: str) -> Response:
+        return handle_content_status(qid)
+
+    @app.route('/<qid>/tag-status/<model>', methods=['GET'])
+    def model_status(qid: str, model: str) -> Response:
+        return handle_model_status(qid, model)
+
+    @app.route('/models', methods=['GET'])
+    def list_models_route() -> Response:
+        return handle_list_models()
+
+    @app.route('/jobs/<job_id>', methods=['DELETE'])
+    def delete_job_route(job_id: str) -> Response:
+        return handle_delete_job(job_id)
 
     @app.route('/docs', strict_slashes=False)
     def docs_route():
         return send_from_directory('docs/api', 'openapi.html')
 
-def boot_state(app: Flask, cfg: AppConfig) -> None:
-    app_state = {}
-
-    system_tagger = ContainerScheduler(cfg.system)
+def _build_worker(cfg: AppConfig) -> TaggerWorker:
+    qfactory = QAPIFactory(cfg.content)
     tagstore = create_tagstore(cfg.tagstore)
-    fetcher = FetchFactory(cfg.fetcher, tagstore)
-    container_registry = ContainerRegistry(cfg.container_registry)
-
-    app_state["tagger"] = FabricTagger(
-        system_tagger=system_tagger,
-        fetcher=fetcher,
-        cregistry=container_registry,
+    track_resolver = TrackResolver(cfg.track_resolver)
+    return TaggerWorker(
+        system_tagger=ContainerScheduler(cfg.system),
+        fetcher=FetchFactory(cfg.fetcher, create_tagstore(cfg.tagstore), qfactory),
+        cregistry=ContainerRegistry(cfg.container_registry),
         tagstore=tagstore,
         cfg=cfg.tagger,
+        track_resolver=track_resolver,
+        source_resolver=SourceResolver(create_tagstore(cfg.tagstore), track_resolver=track_resolver)
     )
 
-    app_state["content_factory"] = ContentFactory(cfg.content)
 
-    app_state["tag_converter"] = TagConverter(cfg.tag_converter)
+def create_app_direct(config: AppConfig) -> Flask:
+    """
+    Development tagger API - this does not support all handlers.
 
-    app.config["state"] = app_state
+    Standalone mode: API handlers call TaggerWorker directly."""
+    app = Flask(__name__)
 
-def configure_lifecycle(app: Flask) -> None:
+    worker = _build_worker(config)
+    arg_resolver = ArgsResolver(worker.cregistry, QAPIFactory(config.content))
+    app.config["state"] = {
+        "service": DirectAPI(worker),
+        "status_service": TaggingStatusService(
+            tagstore=worker.tagstore, 
+            track_resolver=worker.track_resolver
+        ),
+        "authenticator": Authenticator(config.content.config_url),
+        "arg_resolver": arg_resolver,
+        # for listing API
+        "container_registry": worker.cregistry,
+        "track_resolver": worker.track_resolver,
+        "worker": worker,  # Expose worker for testing purposes
+    }
 
     def shutdown():
-        app_state = app.config["state"]
-        tagger: FabricTagger = app_state["tagger"]
-        if tagger.shutdown_requested is False:
-            tagger.cleanup()
+        if not worker.shutdown_requested:
+            worker.cleanup()
 
     atexit.register(shutdown)
-
-def create_app(config: AppConfig) -> Flask:
-    """Main entry point for the server."""
-    app = Flask(__name__)
-    boot_state(app, config)
     configure_routes(app)
-    configure_lifecycle(app)
+    CORS(app)
+    return app
+
+
+def create_app_queue_based(config: AppConfig) -> Flask:
+    """
+    Production tagger API
+    
+    Queue-based mode: API handlers enqueue via QueueService; TagRunner drives TaggerWorker."""
+    app = Flask(__name__)
+
+    worker = _build_worker(config)
+    user_info_resolver = UserInfoResolver(config.user_info_resolver)
+    job_store: JobStore = FsJobStore(config.jobstore.base_url, user_info_resolver=user_info_resolver)
+    qfactory = QAPIFactory(config.content)
+    arg_resolver = ArgsResolver(worker.cregistry, api_factory=qfactory)
+
+    app.config["state"] = {
+        "service": QueueService(job_store, qfactory),
+        "status_service": TaggingStatusService(
+            tagstore=worker.tagstore, 
+            track_resolver=worker.track_resolver
+        ),
+        "arg_resolver": arg_resolver,
+        "user_info_resolver": user_info_resolver,
+        "authenticator": Authenticator(config.content.config_url),
+        # for delete jobs endpoint
+        "jobstore": job_store,
+        # for listing API
+        "container_registry": worker.cregistry,
+        "track_resolver": worker.track_resolver,
+        "worker": worker,  # Expose worker for testing purposes
+    }
+
+    loop = TagRunner(worker, job_store, config.tag_runner)
+    app.config["state"]["loop"] = loop
+
+    loop.start()
+
+    def shutdown():
+        if not loop._shutdown.is_set():
+            loop.stop()
+
+    atexit.register(shutdown)
+    configure_routes(app)
     CORS(app)
     return app
 
@@ -116,9 +210,35 @@ def main():
         logger.info(f"changed directory to {args.directory}")
 
     cfg = AppConfig.from_yaml(args.config)
-    app = create_app(cfg)
 
-    serve(app, host=args.host, port=args.port)
+    if args.standalone:
+        logger.info("starting in standalone mode")
+        app = create_app_direct(cfg)
+    else:
+        logger.info("starting in queue-based mode")
+        app = create_app_queue_based(cfg)
+
+    server = create_server(app, host=args.host, port=args.port)
+
+    def _handle_exit_signal(signum, frame):
+        logger.info(f"Received signal {signum}, shutting down gracefully")
+        server.close()  # finishes in-flight requests
+        sys.exit(0) # raises SystemExit, which triggers atexit handlers
+
+    signal.signal(signal.SIGTERM, _handle_exit_signal)
+    signal.signal(signal.SIGINT, _handle_exit_signal)
+
+    if not args.standalone:
+        loop = app.config["state"]["loop"]
+        def _handle_sighup(signum, frame):
+            logger.info("Received SIGHUP, entering quiesce mode")
+            loop.quiesce()
+        signal.signal(signal.SIGHUP, _handle_sighup)
+    else:
+        # In standalone mode, SIGHUP behaves like SIGTERM
+        signal.signal(signal.SIGHUP, _handle_exit_signal)
+
+    server.run()
 
 if __name__ == '__main__':
     setproctitle.setproctitle("content-tagger")
@@ -127,5 +247,6 @@ if __name__ == '__main__':
     parser.add_argument('--host', type=str, default="127.0.0.1")
     parser.add_argument('--config', type=str, default="config.yml")
     parser.add_argument('--directory', type=str)
+    parser.add_argument('--standalone', action='store_true', help='Run in standalone mode')
     args = parser.parse_args()
     main()

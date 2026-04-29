@@ -62,66 +62,98 @@ from common_ml.utils.dictionary import nested_update
 """Convenience script for driving the tagger on bulk content."""
 
 server = os.environ.get("TAGGERV2_URL", "http://localhost:8086")
+tagstore = os.environ.get("TAGSTORE_URL", "https://ai.contentfabric.io/tagstore")
+
 written = {}
 
 llava_prompt = "This is an image from a rugby match broadcast. Do not describe what people are wearing. Focus on the action and play depicted in the image. Describe the image in 2 sentences."
 # will round robin between these models
-llava_models = ["elv-llamavision:1"]
 
-assets_params = {"features": {"logo":{}, "ocr": {}, "llava": {"model":{"model":"elv-llamavision:1"}}, "caption": {}, "asr": {}, "shot": {}}, "replace": True}
+# Updated to new format
+assets_params = {
+    "options": {
+        "destination_qid": "",
+        "replace": True,
+        "max_fetch_retries": 3,
+        "scope": {"type": "assets"}
+    },
+    "jobs": [
+        {"model": "ocr"},
+        {"model": "caption"},
+        {"model": "celeb"}
+    ]
+}
 
 video_params = {
-    "replace": False,
-    "features": {
-        "asr": {"stream": "stereo"},
-        #"ocr": {},
-        "shot": {},
-        "llava": {"model": {"fps": 0.5, "prompt": "WHAT IS GOING ON"} },
-        "caption": {"model": {"fps": 0.33}},
-        #"celeb": {},
-        #"logo": {}
-    }
+    "jobs": [
+        {"model": "euro_asr"},
+        {"model": "ocr", "model_params": {"fps": 0.25}},
+        {"model": "asr"},
+        {"model": "llava"}
+    ]
 }
     
-def get_auth(config: str, qhit: str) -> str:
-    cmd = f"qfab_cli content token create {qhit} --update --config {config}"
+def get_auth(config: str, qid: str) -> str:
+    cmd = f"qfab_cli content token create {qid} --update --config {config}"
     out = subprocess.run(cmd, shell=True, check=True, capture_output=True).stdout.decode("utf-8")
     token = json.loads(out)["bearer"]
     return token
 
-def get_write_token(qhit: str, config: str) -> str:
-    if qhit.startswith("tqw"):
-        return qhit
+def get_write_token(qid: str, config: str) -> str:
+    if qid.startswith("tqw"):
+        return qid
     
-    cmd = f"qfab_cli content edit {qhit} --config {config}"
+    cmd = f"qfab_cli content edit {qid} --config {config}"
     out = subprocess.run(cmd, shell=True, check=True, capture_output=True).stdout.decode("utf-8")
     write_token = json.loads(out)["q"]["write_token"]
     return write_token
 
-def get_status(qhit: str, auth: str):
-    res = requests.get(f"{server}/{qhit}/status", params={"authorization": auth})
-    status = response_force_dict(res)
-    if "message" in status:
-        status['error'] = status['message']
-        del status['message']
-    return status
+def get_status(qid: str, auth: str):
+    res = requests.get(f"{server}/{qid}/job-status", params={"authorization": auth})
+    response_data = response_force_dict(res)
+    
+    # Handle new {"jobs": [...]} format
+    if isinstance(response_data, dict) and "jobs" in response_data:
+        reports = response_data["jobs"]
+        status = {}
+        for report in reports:
+            stream = report['stream']
+            model = report['model']
+            if stream not in status:
+                status[stream] = {}
+            status[stream][model] = report.get('tag_details', {})
+            if report.get('error'):
+                status[stream][model]['error'] = report.get('error')
+        return status
+    elif isinstance(response_data, dict) and "error" in response_data:
+        return response_data
+    else:
+        # Fallback for unexpected format
+        return response_data
 
 def tag(contents: list, auth: str, assets: bool, params: dict, start_time: float = None, end_time: float = None):
     
-    llama_models = ["elv-llamavision:1"]
-    for i, qhit in enumerate(contents):
-        if assets:
-            url = f"{server}/{qhit}/image_tag"
-        else:
-            url = f"{server}/{qhit}/tag"
-        if "llava" in params["features"]:
-            params["features"]["llava"]["model"]["model"] = llama_models[i % len(llama_models)]
+    llama_models = ["llava:13b"]
+    for i, qid in enumerate(contents):
+        url = f"{server}/{qid}/tag"
         
-        if start_time is not None:
-            params["start_time"] = start_time
-
-        if end_time is not None:
-            params["end_time"] = end_time
+        # Update llava model params if present
+        for job in params["jobs"]:
+            if job["model"] == "llava":
+                if not job.get("model_params"):
+                    job["model_params"] = {}
+                job["model_params"]["model"] = llama_models[i % len(llama_models)]
+        
+        # Update scope with time range if specified
+        if not assets and (start_time is not None or end_time is not None):
+            scope_updates = {}
+            if start_time is not None:
+                scope_updates["start_time"] = int(start_time)
+            if end_time is not None:
+                scope_updates["end_time"] = int(end_time)
+            
+            if scope_updates:
+                params.setdefault("options", {}).setdefault("scope", {}).update(scope_updates)
 
         print(json.dumps(params, indent=2))
         res = requests.post(url, params={"authorization": auth}, json=params)
@@ -129,12 +161,22 @@ def tag(contents: list, auth: str, assets: bool, params: dict, start_time: float
 
         time.sleep(float(os.environ.get("TAGGERV2_START_SLEEP", 0)))
 
-def is_running(qhit: str, auth: str):
-    res = requests.get(f"{server}/{qhit}/status", params={"authorization": auth})
+def is_running(qid: str, auth: str):
+    res = requests.get(f"{server}/{qid}/job-status", params={"authorization": auth})
     resdict = response_force_dict(res)
-    if "error" in resdict:
-        # No jobs started
+    
+    # Handle new {"jobs": [...]} format
+    if isinstance(resdict, dict) and "jobs" in resdict:
+        reports = resdict["jobs"]
+        if not reports:  # Empty list means no jobs
+            return False
+        return any(r['status'] not in ['Completed', 'Stopped', 'Failed'] for r in reports)
+    
+    # Handle error
+    if isinstance(resdict, dict) and "error" in resdict:
         return False
+    
+    # Handle old dict format (backward compatibility)
     for stream, features in resdict.items():
         for feature, status in features.items():
             if status != "Completed":
@@ -156,22 +198,34 @@ def response_force_dict(resp):
             "content": resp.content
         }
 
-def write(qhit: str, config: str, do_commit: bool, force = False, leave_open = False):
-    auth_token = get_auth(config, qhit)
-    write_token = get_write_token(qhit, config)
-    write_url = f"{server}/{qhit}/commit?authorization={auth_token}"
-    resp = requests.post(write_url, params={"write_token": write_token})
+def write(qid: str, config: str, do_commit: bool, force = False, leave_open = False):
+    auth_token = get_auth(config, qid)
+    write_token = get_write_token(qid, config)
+    write_url = f"{tagstore}/{qid}/write"
+    resp = requests.post(write_url, params={"write_token": write_token}, headers={"Authorization": f"Bearer {auth_token}"})
     respdict = response_force_dict(resp)
     print(respdict)
-    if do_commit and "error" not in respdict:
+    if do_commit and resp.status_code == 200:
         commit(write_token, config)
 
     return write_token
 
-def aggregate(qhit: str, config: str, do_commit: bool):
-    auth_token = get_auth(config, qhit)
-    write_token = get_write_token(qhit, config)
-    aggregate_url = f"{server}/{qhit}/aggregate?authorization={auth_token}"
+def aggregate(qid: str, config: str, do_commit: bool):
+
+    print("")
+    print("****************************")
+    print("Aggregating is not necessary (tagstore does it on write)")
+    print("")
+    print("Pausing 5 seconds so you can ctrl-c if you want to.")
+    print("****************************")
+    print("")
+    
+    if os.environ.get("TAGGERV3_AGG_NODELAY", None) is not None:
+        time.sleep(5)
+
+    auth_token = get_auth(config, qid)
+    write_token = get_write_token(qid, config)
+    aggregate_url = f"https://ai.contentfabric.io/tagging/{qid}/aggregate?authorization={auth_token}"
     resp = requests.post(aggregate_url, params={"write_token": write_token, "replace": "true"})
     respdict = response_force_dict(resp)
     print(respdict)
@@ -181,45 +235,45 @@ def aggregate(qhit: str, config: str, do_commit: bool):
     return write_token
 
 def write_all(contents: list, config: str, do_commit: bool, force = False):
-    for qhit in contents:
-        if qhit in written:
-            print(f"{qhit} already written, clearwritten to clear list")
+    for qid in contents:
+        if qid in written:
+            print(f"{qid} already written, clearwritten to clear list")
             continue
 
-        print(f"Finalizing {qhit} force = {force}")
+        print(f"Finalizing {qid} force = {force}")
         try:
             leave_open = False
-            if qhit.startswith("tqw"):
+            if qid.startswith("tqw"):
                 leave_open = True
                 do_commit = False
             
-            write(qhit, config, do_commit, force, leave_open)
-            written[qhit] = True ### xxx store a hash of written job IDs
+            write(qid, config, do_commit, force, leave_open)
+            written[qid] = True ### xxx store a hash of written job IDs
             
         except Exception as e:
-            print(f"{e} while finalizing {qhit}")
+            print(f"{e} while finalizing {qid}")
 
-def stop(qhit: str, auth: str, features: list[str]):
+def stop(qid: str, auth: str, models: list[str]):
     """
-    Stops the tagging process for a specific track of a given content (iq).
+    Stops the tagging process for specific models of a given content (iq).
 
     Args:
-        iq (str): The content identifier.
+        qid (str): The content identifier.
         auth (str): Authorization token.
-        features (list): The tracks to stop tagging for.
+        models (list): The models to stop tagging for.
     """
 
     params = {"authorization": auth}
-    for feature in features:
-        url = f"{server}/{qhit}/stop/{feature}"
+    for model in models:
+        url = f"{server}/{qid}/stop/{model}"
         try:
             res = requests.post(url, params=params)
             if res.status_code == 200:
-                print(f"Successfully stopped tagging for {qhit} on track {feature}.")
+                print(f"Successfully stopped tagging for {qid} on model {model}.")
             else:
-                print(f"Failed to stop tagging for {qhit} on track {feature}: {res.status_code} {res.text}")
+                print(f"Failed to stop tagging for {qid} on model {model}: {res.status_code} {res.text}")
         except Exception as e:
-            print(f"Error while stopping tagging for {qhit} on track {feature}: {e}")
+            print(f"Error while stopping tagging for {qid} on model {model}: {e}")
 
 def list_models():
     print("getting model list:")
@@ -241,11 +295,17 @@ list                            list models tagger knows about
 cw,clearwritten                 clear the "written" state to allow re-writing
 h,help                          this help""")
     
+def get_available_models(tag_config):
+    """Extract available model names from the tag config."""
+    if "jobs" in tag_config:
+        return [job["model"] for job in tag_config["jobs"]]
+    return []
+
 def main():
     global written
     
     if args.tag_config != "":
-            tag_config = args.tag_config
+        tag_config = args.tag_config
     else:
         if args.assets:
             tag_config = assets_params
@@ -258,6 +318,11 @@ def main():
         with open(conffile, "r") as conf:
            tag_config = json.load(conf)
 
+    if args.replace:
+        if "options" not in tag_config:
+            tag_config["options"] = {}
+        tag_config['options']['replace'] = True
+
     if args.contents:
         print("reading contents...")
         with open(args.contents, 'r') as f:
@@ -265,21 +330,19 @@ def main():
             if len(contents) == 0:
                 raise ValueError("No contents found in file.")
     else:
-        contents = [] #args.iq]
+        contents = [] 
 
     contents = contents + args.iq
         
-    #models = list_models()
-    #print("models:" , models)
-    
     print("getting auth...")
     auth = get_auth(args.config, contents[0])
 
     end_time = None
     if args.end_time is not None: end_time = int(args.end_time)
     start_time = int(args.start_time)
-    
+
     quickstatus_watch = None
+    models = get_available_models(tag_config)
 
     tty = sys.stdin.isatty()
     if tty:
@@ -310,20 +373,21 @@ def main():
             if user_input in [ "status", "s"]:
                 reset_quickstatus = False
                 statuses = {}
-                for qhit in contents:
-                    if len(user_input) > 1:
-                        if not re.search(user_input[1], qhit): continue                        
-                    status = get_status(qhit, auth)
-                    statuses[qhit] = status
-                    print(qhit, json.dumps(status, indent=2))
+                for qid in contents:
+                    if len(user_split) > 1:
+                        if not re.search(user_split[1], qid): continue                        
+                    status = get_status(qid, auth)
+                    statuses[qid] = status
+                    print(qid, json.dumps(status, indent=2))
                 os.makedirs("rundriver", exist_ok=True)
                 with open("rundriver/status.json", "w") as statfile:
                     statfile.write(json.dumps(statuses, indent = 2))
             elif user_input in [ "finalize", "f" ]:
                 print("it's called 'write' now (to avoid confusion over what it does)")
             elif user_input in [ "list", "l" ]:
-                models = list_models()
-                print("models:", models)
+                available_models = list_models()
+                print("available models:", available_models)
+                print("models in current config:", models)
             elif user_input in [ "cw", "clearwritten"]:
                 iqsub = None
                 if len(user_split) > 1:
@@ -341,23 +405,27 @@ def main():
                 written = new_written
             elif user_input in [ "stop" ]:
                 if len(user_split) < 2:
-                    print("must specify iq and optionally tag track")
+                    print("must specify iq and optionally model")
                     continue
                 iq = user_split[1]
                 if len(user_split) > 2:
-                    tracks = [user_split[2]]
+                    stop_models = [user_split[2]]
                 else:
-                    tracks = models
-                stop(iq, auth, tracks)
+                    stop_models = models
+                stop(iq, auth, stop_models)
             elif user_input in [ "tag" , "t"]:
-                this_tag_config = tag_config
+                this_tag_config = deepcopy(tag_config)
                 iqsub = None
                 if len(user_split) > 1:
                     iqsub = user_split[1]
                 if len(user_split) > 2:
-                    track = user_split[2]
-                    this_tag_config = deepcopy(tag_config)
-                    this_tag_config['features'] = { track: tag_config['features'][track] }
+                    model = user_split[2]
+                    # Filter to only run the specified model
+                    this_tag_config['jobs'] = [job for job in tag_config['jobs'] if job['model'] == model]
+                    if not this_tag_config['jobs']:
+                        print(f"Model '{model}' not found in config. Available models: {models}")
+                        continue
+                        
                 contentsub = [ x for x in contents if iqsub == None or re.search(iqsub, x) ]    
                 tag(contentsub, auth, args.assets, this_tag_config,
                     start_time = start_time, end_time = end_time)
@@ -391,8 +459,8 @@ def main():
                     print("quickstatus off")
                     quickstatus_watch = None
                 else:
-                    for qhit in contents:
-                        quick_status(auth, qhit, " ".join(user_split[1:]))
+                    for qid in contents:
+                        quick_status(auth, qid, " ".join(user_split[1:]))
             elif user_input in [ 'reverse' ]:
                 contents.reverse()
                 print("First element:", contents[0])
@@ -410,8 +478,8 @@ def main():
                 contentsub = contents
                 if len(user_split) > 1:
                     contentsub = user_split[1:]
-                for qhit in contentsub:
-                    aggregate(qhit, args.config, args.commit)
+                for qid in contentsub:
+                    aggregate(qid, args.config, args.commit)
             elif user_input in [ "quit", "exit"]:
                 break
             elif user_input in [ "h", "help"]:
@@ -439,18 +507,38 @@ def main():
     print("Exiting")
     exit(0)
 
-def quick_status(auth, qhit, filter = None):
+def quick_status(auth, qid, filter = None):
     if filter == "": 
         filter = None
-    status = get_status(qhit, auth)
-    if status.get("error", None):
-        line = "[%9s] %-32s / %s: %s" % ("", qhit, "err", status['error']) 
+    res = requests.get(f"{server}/{qid}/job-status", params={"authorization": auth})
+    status_data = response_force_dict(res)
+    
+    # Handle error response
+    if isinstance(status_data, dict) and status_data.get("error", None):
+        line = "[%9s] %-32s / %s: %s" % ("", qid, "err", status_data['error']) 
         if filter is None or re.search(filter, line):
-            print(line, flush = True)
+            print(line, flush=True)
         return
-    for imgorvid, models in status.items():
+    
+    # Handle new {"jobs": [...]} format
+    if isinstance(status_data, dict) and "jobs" in status_data:
+        reports = status_data["jobs"]
+        for report in reports:
+            model = report['model']
+            stream = report['stream']
+            progress = report.get('tag_details', {}).get('progress', '')
+            status = report.get('status', '??')
+            line = "[%9s] %-32s / %s: %s" % (progress, qid, f"({stream}) {model}", status)
+            if filter is None or re.search(filter, line):
+                print(line)
+        return
+    
+    # Handle old dict format (backward compatibility)
+    for imgorvid, models in status_data.items():
+        if imgorvid == "error":  # Skip error key
+            continue
         for model, stat in models.items():
-            line =  "[%9s] %-32s / %s: %s" % (stat.get("tagging_progress", ""), qhit, f"({imgorvid}) {model}", stat.get("status", "??") ) 
+            line = "[%9s] %-32s / %s: %s" % (stat.get('tag_details', {}).get('progress', ''), qid, f"({imgorvid}) {model}", stat.get("status", "??"))
             if filter is None or re.search(filter, line):
                 print(line)
 
@@ -467,5 +555,6 @@ if __name__ == "__main__":
     parser.add_argument("--commit", "--finalize", action="store_true", help="if set, commit (finalize) on fabric after writing on tagger")
     parser.add_argument("--start-time", help="start time in seconds", default = 0)
     parser.add_argument("--end-time", help="end time in seconds", default = None)
+    parser.add_argument("--replace", help="force replaces", action="store_true", default = False)
     args = parser.parse_args()
     main()

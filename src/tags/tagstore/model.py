@@ -14,24 +14,27 @@ class TagstoreConfig:
 
 @dataclass
 class Tag:
+    # if empty string means it doesn't exist yet
+    id: str
     start_time: int
     end_time: int
     text: str
-    frame_tags: dict
-    additional_info: dict
+    additional_info: dict | None
     source: str
     batch_id: str
+    frame_info: dict | None = None
 
 @dataclass
 class Batch:
     id: str
-    qhit: str
+    qid: str
     track: str
     timestamp: float
     author: str
+    additional_info: dict
 
 @dataclass
 class Track:
-    qhit: str
+    qid: str
     name: str
     label: str

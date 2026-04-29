@@ -1,45 +1,26 @@
 # Content-Tagger
-A server for running individual containerized tagger models and publishing tags.
+HTTP server for running tagging containers against content-fabric objects
 
 ## Features
 
-1. Server for orchestrating tagging jobs across multiple containerized models. 
-2. Supports concurrent tagging across multiple tenants. 
-3. Splits jobs across all available GPUs and implements simple queing when there are more jobs than GPUs. 
-4. Offers an endpoint for finalizing tags by publishing to the Fabric. 
+1. Resource aware orchestration of concurrent tagging jobs across multiple containerized models. 
+2. Fetches media from the content fabric for tagging. Supports static vod video/audio parts, image assets, live video/audio segments
+3. Uploads tags to the tagstore: see https://ai.contentfabric.io/tagstore/docs
 
-## Prerequisites
+## API
+
+Offers endpoints for managing tagging LROs. See https://ai.contentfabric.io/tagging-live/docs
+
+## Install Prerequisites
 
 1. Podman with nvidia-toolkit enabled
-2. Python
-3. A podman image for each model you want to run. See the individual model repos for more information. 
-4. A gpu, cpu inference is not yet supported. 
-5. ssh key with github access to eluv-io
+2. One or more podman tagger images installed locally
+3. Podman API socket running `systemctl --user start podman.socket`
 
-## Setup w/ conda
-
-1. Start podman API socket `systemctl --user start podman.socket`
-2. Add private keys to ssh agent (if you are on remote server): `ssh-add` 
-3. Create new conda environment `conda create -n tagger-services python=3.10`
-4. Activate the environment `conda activate tagger-services`
-5. Install dependencies `pip install .`
-
-## Podman (Docker Image)
-
-### Dependencies
-
-1. Podman with nvidia toolkit enabled installed on machine
-2. Access to qluvio repo via ssh key
-
-#### Add ssh keys to ssh-agent
-`ssh-add` (on personal machine)
-
-**NOTE**: if you are on a remote server, either you should have your ssh key on the remote server and run `ssh-add` there, or you should run it on your personal machine and verify that you are connected with agent forwarding enabled.
+### Run Tagger with podman
 
 #### Build image
 `./build.sh`
-
-### Run as container
 
 You will also need a `tagger-config.yml` file in the data directory,
 which in the example is `data` under the current directory.
@@ -53,14 +34,29 @@ path in the container insures this.)  For a similar reason you need to
 pass all GPUs; GPUs are passed to containers using host GPU numbers so
 the tagger container needs all GPUs so the GPU numbers are right.
 
+#### Run server
+
 `podman run --device nvidia.com/gpu=all -p 8086:8086 -v /run/user/$(id -u)/podman:/run/user/0/podman -v $(pwd)/data:$(pwd)/data content-tagger --directory $(pwd)/data --host 0.0.0.0`
 
-## Usage
+### Run Tagger with python & conda
 
-### Start server
+1. Create and activate new conda environment `conda create -n tagger python=3.10 && conda activate tagger`
+2. Install dependencies `pip install .`
+3. `python server.py --port PORT_NUMBER`
 
-1. `python server.py --port <PORT_NUMBER>`
+### Development & Testing
 
-### Call API
+Check out the `architecture.md` files for general design
 
-Check out the swagger docs in api.yaml
+#### Run unit tests
+
+`pytest tests`
+
+#### Run integration tests
+
+Many of the tests are currently configured read-only against live content objects in several tenancies. Enable these extra tests as follows:
+
+1. `cp tests/integration_private_keys_example.json tests/integration_private_keys.json`
+2. Fill in the private keys for each of the required tenancies.
+3. `./tests/refresh_tokens.sh`
+4. `pytest tests` should now run the full test suite

@@ -15,20 +15,20 @@ class TagRequest:
 
 @dataclass
 class StatusRequest:
-    qhit: str
+    qid: str
 
     def __str__(self):
-        return f"StatusRequest(qhit={self.qhit})"
+        return f"StatusRequest(qid={self.qid})"
 
 @dataclass
 class StopRequest:
-    qhit: str
+    qid: str
     feature: str | None
-    stream: str | None
     status: Literal["Stopped", "Failed", "Completed"]
+    error: Exception | None = None
 
     def __str__(self):
-        return f"StopRequest(qhit={self.qhit}, feature={self.feature}, stream={self.stream}, status={self.status})"
+        return f"StopRequest(qid={self.qid}, feature={self.feature}, status={self.status}, error={self.error})"
 
 @dataclass
 class EnterFetchingPhase:
@@ -40,14 +40,16 @@ class EnterFetchingPhase:
 
 @dataclass
 class EnterTaggingPhase:
-    """Request to enter tagging phase. 
-    
-    Passes along the fetched data to tag."""
+    """Request to enter tagging phase."""
     job_id: JobID
-    data: DownloadResult
+    dl_result: DownloadResult
 
     def __str__(self):
         return f"EnterTaggingPhase(job_id={self.job_id})"
+    
+    def __repr__(self):
+        # not including full dl_result cause it's too much to log
+        return f"EnterTaggingPhase(job_id={self.job_id}, num_sources={len(self.dl_result.sources)}, done={self.dl_result.done})"
 
 @dataclass
 class EnterCompletePhase:

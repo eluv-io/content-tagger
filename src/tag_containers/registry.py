@@ -5,7 +5,7 @@ from copy import deepcopy
 from podman import PodmanClient
 from loguru import logger
 
-from src.common.errors import MissingResourceError
+from src.common.errors import MissingResourceError, BadRequestError
 from src.tag_containers.model import RegistryConfig, ContainerSpec, ModelConfig
 from src.tag_containers.containers import *
 from src.tag_containers.model import ContainerRequest
@@ -31,7 +31,7 @@ class ContainerRegistry:
             logger.warning(f"User request {req} did not give jobid, generating default: {jobid}")
 
         jobpath = os.path.join(self.cfg.base_dir, req.model_id, jobid)
-        tags_path = os.path.join(jobpath, 'tags')
+        output_path = os.path.join(jobpath, 'output.jsonl')
         logs_path = os.path.join(jobpath, 'log.out')
 
         cache_path = self.cfg.cache_dir
@@ -42,18 +42,16 @@ class ContainerRegistry:
 
         ccfg = ContainerSpec(
             id=jobid,
-            media_input=req.media_input,
+            media_dir=req.media_dir,
             run_config=req.run_config,
             logs_path=logs_path,
             cache_dir=cache_path,
-            tags_dir=tags_path,
+            output_path=output_path,
             model_config=modelcfg,
+            q=req.q,
         )
 
-        if req.live:
-            return LiveTagContainer(self.pclient, ccfg)
-        else:    
-            return TagContainer(self.pclient, ccfg)
+        return TagContainer(self.pclient, ccfg)
 
     def get_model_config(self, model: str) -> ModelConfig:
         if model not in self.cfg.model_configs:

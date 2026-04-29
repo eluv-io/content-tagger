@@ -1,0 +1,1 @@
+podman build . --format docker -t test_model --network host

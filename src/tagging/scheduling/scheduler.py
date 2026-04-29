@@ -109,6 +109,12 @@ class ContainerScheduler:
         self.mailbox.put(message)
         response_queue.get()
 
+    def cleanup(self) -> None:
+        """Shutdown and wait for all background threads to finish."""
+        self.shutdown()
+        self.actor_thread.join()
+        self.monitor_thread.join()
+
     def _actor_loop(self):
         """Processes all messages sequentially and starts queued jobs."""
         last_status_log = time.time()
@@ -231,7 +237,6 @@ class ContainerScheduler:
         else:
             logger.info("stopping job", extra=log_fields)
         
-        # TODO: stop in separate thread to not block
         try:
             job.container.stop()
         except Exception as e:

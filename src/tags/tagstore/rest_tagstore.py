@@ -17,11 +17,10 @@ class RestTagstore(Tagstore):
             'Content-Type': 'application/json'
         })
 
-    def _get_headers(self, q: Content | None) -> dict:
+    def _get_headers(self, q: Content) -> dict:
         """Get headers with q if provided"""
         headers = {'Content-Type': 'application/json'}
-        assert q is not None
-        headers['Authorization'] = f"Bearer {q.token()}"
+        headers['Authorization'] = f"Bearer {q.token}"
         return headers
 
     def _log_response_and_raise(self, response: requests.Response):
@@ -34,10 +33,9 @@ class RestTagstore(Tagstore):
         response.raise_for_status()
 
     def create_track(self,
-        qhit: str,
         name: str,
         label: str,
-        q: Content | None = None
+        q: Content
     ) -> None:
         """
         Create a new track with metadata (idempotent)
@@ -47,7 +45,7 @@ class RestTagstore(Tagstore):
         }
         
         response = self.session.post(
-            f"{self.base_url}/{qhit}/tracks/{name}",
+            f"{self.base_url}/{q.qid}/tracks/{name}",
             json=track_data,
             headers=self._get_headers(q),
             timeout=self.timeout
@@ -55,16 +53,15 @@ class RestTagstore(Tagstore):
         
         # 409 means track already exists - that's fine (idempotent)
         if response.status_code == 409:
-            logger.debug(f"Track {name} already exists for qhit {qhit}")
+            logger.debug(f"Track {name} already exists for qid {q.qid}")
             return
         
         if not response.ok:
             self._log_response_and_raise(response)
 
     def get_track(self,
-        qhit: str,
         name: str,
-        q: Content | None = None
+        q: Content
     ) -> Track | None:
         """
         Get track metadata
@@ -72,7 +69,7 @@ class RestTagstore(Tagstore):
         # The API doesn't have a GET /{qid}/tracks/{track} endpoint,
         # so we need to get all tracks and filter
         response = self.session.get(
-            f"{self.base_url}/{qhit}/tracks",
+            f"{self.base_url}/{q.qid}/tracks",
             headers=self._get_headers(q),
             timeout=self.timeout
         )
@@ -92,16 +89,15 @@ class RestTagstore(Tagstore):
                 return Track(
                     name=track_data['name'],
                     label=track_data['label'],
-                    qhit=track_data['qid']
+                    qid=track_data['qid']
                 )
         
         return None
 
     def create_batch(self,
-        qhit: str,
         track: str,
         author: str,
-        q: Content | None = None
+        q: Content
     ) -> Batch:
         """
         Starts a new batch with provided metadata
@@ -113,7 +109,7 @@ class RestTagstore(Tagstore):
         }
         
         response = self.session.post(
-            f"{self.base_url}/{qhit}/batches", 
+            f"{self.base_url}/{q.qid}/batches", 
             json=batch_data,
             headers=self._get_headers(q),
             timeout=self.timeout
@@ -128,23 +124,23 @@ class RestTagstore(Tagstore):
         # Create Batch object with the returned batch_id
         batch = Batch(
             id=batch_id,
-            qhit=qhit,
+            qid=q.qid,
             track=track,
             timestamp=time.time(),
-            author=author
+            author=author,
+            additional_info=result.get("additional_info", {})
         )
         
         return batch
 
-    def upload_tags(self, tags: list[Tag], batch_id: str, q: Content | None = None) -> None:
+    def upload_tags(self, tags: list[Tag], batch_id: str, q: Content) -> None:
         """
         Upload tags for a specific batch
         """
         if not tags:
             return
         
-        assert q is not None
-        qhit = q.qid
+        qid = q.qid
         
         # Convert tags to API format
         api_tags = []
@@ -154,9 +150,11 @@ class RestTagstore(Tagstore):
                 "end_time": tag.end_time,
                 "tag": tag.text,
                 "source": tag.source,
-                "frame_tags": tag.frame_tags,
-                "additional_info": tag.additional_info
             }
+            if tag.additional_info is not None:
+                api_tag["additional_info"] = tag.additional_info
+            if tag.frame_info is not None:
+                api_tag["frame_info"] = tag.frame_info
             api_tags.append(api_tag)
         
         # Upload tags
@@ -166,7 +164,7 @@ class RestTagstore(Tagstore):
         }
         
         response = self.session.post(
-            f"{self.base_url}/{qhit}/tags", 
+            f"{self.base_url}/{qid}/tags", 
             json=upload_data,
             headers=self._get_headers(q),
             timeout=self.timeout
@@ -175,12 +173,12 @@ class RestTagstore(Tagstore):
         if not response.ok:
             self._log_response_and_raise(response)
 
-    def find_tags(self, q: Content | None = None, **filters) -> list[Tag]:
+    def find_tags(self, q: Content, **filters) -> list[Tag]:
         """
         Find tags with flexible filtering.
         
         Supported filters:
-        - qhit: str
+        - qid: str
         - stream: str  
         - track: str
         - batch_id: str
@@ -193,10 +191,9 @@ class RestTagstore(Tagstore):
         - offset: int
         """
         
-        assert q is not None
-        if 'qhit' in filters:
-            assert filters['qhit'] == q.qid
-        qhit = q.qid
+        if 'qid' in filters:
+            assert filters['qid'] == q.qid
+        qid = q.qid
         
         # Build query parameters
         params = {}
@@ -224,7 +221,7 @@ class RestTagstore(Tagstore):
             params['limit'] = 100000
         
         response = self.session.get(
-            f"{self.base_url}/{qhit}/tags", 
+            f"{self.base_url}/{qid}/tags", 
             params=params,
             headers=self._get_headers(q),
             timeout=self.timeout
@@ -240,13 +237,14 @@ class RestTagstore(Tagstore):
         tags = []
         for api_tag in api_tags:
             tag = Tag(
+                id=api_tag['id'],
                 start_time=api_tag['start_time'],
                 end_time=api_tag['end_time'],
                 text=api_tag['tag'],
-                frame_tags=api_tag.get('frame_tags', {}),
-                additional_info=api_tag.get('additional_info', {}),
+                additional_info=api_tag.get('additional_info'),
                 source=api_tag.get('source', ''),
-                batch_id=api_tag['batch_id']
+                batch_id=api_tag['batch_id'],
+                frame_info=api_tag.get('frame_info'),
             )
             
             # Apply source filter if specified
@@ -258,12 +256,12 @@ class RestTagstore(Tagstore):
         
         return tags
 
-    def find_batches(self, q: Content | None = None, **filters) -> list[str]:
+    def find_batches(self, q: Content, **filters) -> list[str]:
         """
         Find batch IDs with flexible filtering.
         
         Supported filters:
-        - qhit: str
+        - qid: str
         - stream: str
         - track: str 
         - author: str
@@ -273,10 +271,9 @@ class RestTagstore(Tagstore):
         - offset: int
         """
         
-        assert q is not None
-        if 'qhit' in filters:
-            assert filters['qhit'] == q.qid
-        qhit = q.qid
+        if 'qid' in filters:
+            assert filters['qid'] == q.qid
+        qid = q.qid
         
         # Build query parameters
         params = {}
@@ -291,7 +288,7 @@ class RestTagstore(Tagstore):
             params['start'] = filters['offset']
         
         response = self.session.get(
-            f"{self.base_url}/{qhit}/batches", 
+            f"{self.base_url}/{qid}/batches", 
             params=params,
             headers=self._get_headers(q),
             timeout=self.timeout
@@ -308,14 +305,13 @@ class RestTagstore(Tagstore):
         
         return batch_ids
 
-    def count_tags(self, q: Content | None = None, **filters) -> int:
+    def count_tags(self, q: Content, **filters) -> int:
         """Count tags matching the given filters"""
         # Use the same query but with a high limit to get count from meta
         query_filters = filters.copy()
         query_filters['limit'] = 1  # Just need meta info
 
-        assert q is not None        
-        qhit = q.qid
+        qid = q.qid
         
         # Build query parameters
         params = {}
@@ -335,7 +331,7 @@ class RestTagstore(Tagstore):
         params['limit'] = 1
         
         response = self.session.get(
-            f"{self.base_url}/{qhit}/tags", 
+            f"{self.base_url}/{qid}/tags", 
             params=params,
             headers=self._get_headers(q),
             timeout=self.timeout
@@ -347,15 +343,13 @@ class RestTagstore(Tagstore):
         result = response.json()
         return result.get('meta', {}).get('total', 0)
 
-    def count_batches(self, q: Content | None = None, **filters) -> int:
+    def count_batches(self, q: Content, **filters) -> int:
         """Count batches matching the given filters"""
         # Use the same query but with a high limit to get count from meta
         query_filters = filters.copy()
         query_filters['limit'] = 1  # Just need meta info
         
-        assert q is not None
-        
-        qhit = q.qid
+        qid = q.qid
         
         # Build query parameters
         params = {}
@@ -367,7 +361,7 @@ class RestTagstore(Tagstore):
         params['limit'] = 1
         
         response = self.session.get(
-            f"{self.base_url}/{qhit}/batches", 
+            f"{self.base_url}/{qid}/batches", 
             params=params,
             headers=self._get_headers(q),
             timeout=self.timeout
@@ -379,17 +373,16 @@ class RestTagstore(Tagstore):
         result = response.json()
         return result.get('meta', {}).get('total', 0)
 
-    def get_batch(self, batch_id: str, q: Content | None = None) -> Batch | None:
+    def get_batch(self, batch_id: str, q: Content) -> Batch | None:
         """
         Get batch metadata
         """
-        # Extract qhit from batch_id (assuming format: qhit/track/timestamp)
-        assert q is not None
-        qhit = q.qid
+        # Extract qid from batch_id (assuming format: qid/track/timestamp)
+        qid = q.qid
         
         try:
             response = self.session.get(
-                f"{self.base_url}/{qhit}/batches/{batch_id}",
+                f"{self.base_url}/{qid}/batches/{batch_id}",
                 headers=self._get_headers(q),
                 timeout=self.timeout
             )
@@ -405,10 +398,11 @@ class RestTagstore(Tagstore):
             # Convert API batch to Batch
             batch = Batch(
                 id=str(batch_data['id']),
-                qhit=qhit,
+                qid=qid,
                 track=batch_data['track'],
-                timestamp=parser.isoparse(batch_data['timestamp'].replace("Z", "+00:00")).timestamp(),
-                author=batch_data['author']
+                timestamp=parser.isoparse(batch_data['created_at'].replace("Z", "+00:00")).timestamp(),
+                author=batch_data['author'],
+                additional_info=batch_data.get("additional_info", {})
             )
             
             return batch
@@ -418,18 +412,35 @@ class RestTagstore(Tagstore):
                 return None
             raise
 
-    def delete_batch(self, batch_id: str, q: Content | None = None) -> None:
+    def delete_batch(self, batch_id: str, q: Content) -> None:
         """
         Delete a batch and its associated tags
         """
-        assert q is not None
-        qhit = q.qid
+        qid = q.qid
         
         response = self.session.delete(
-            f"{self.base_url}/{qhit}/batches/{batch_id}",
+            f"{self.base_url}/{qid}/batches/{batch_id}",
             headers=self._get_headers(q),
             timeout=self.timeout
         )
         
+        if not response.ok:
+            self._log_response_and_raise(response)
+
+    def update_batch(self,
+        batch_id: str,
+        additional_info: dict,
+        q: Content,
+    ) -> None:
+        """
+        Update batch metadata (merges additional_info)
+        """
+        response = self.session.patch(
+            f"{self.base_url}/{q.qid}/batches/{batch_id}",
+            json={"additional_info": additional_info},
+            headers=self._get_headers(q),
+            timeout=self.timeout
+        )
+
         if not response.ok:
             self._log_response_and_raise(response)

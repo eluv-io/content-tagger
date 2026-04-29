@@ -1,130 +1,169 @@
 
 from requests.exceptions import HTTPError
 from fractions import Fraction
-
-from src.common.logging.timing import timeit
+import threading
 
 from src.common.logging import logger
 
-from src.common.content import Content
+from src.common.content import QAPI, Content, QAPIFactory
 from src.common.errors import MissingResourceError, BadRequestError
+from src.fetch.impl.assets import AssetWorker
+from src.fetch.impl.live import LiveWorker
+from src.fetch.impl.processors import SkipWorker
+from src.fetch.impl.tag_aligned import TagAlignedFetcher
+from src.fetch.impl.vod import VodWorker
 from src.fetch.model import *
 from src.fetch.cache import cache_by_qhash
-from src.fetch.workers import *
+from src.fetch.rate_limit import FetchRateLimiter
+from src.tags.reader.impl import TagReaderImpl
 from src.tags.tagstore.abstract import Tagstore
-
-logger = logger.bind(name="Fetcher")
 
 class FetchFactory:
     def __init__(
         self,
         config: FetcherConfig,
+        # we need this dependency for the tag-aligned fetcher
         ts: Tagstore,
+        qfactory: QAPIFactory
     ):
         self.config = config
         self.ts = ts
+        self.qfactory = qfactory
         # help rate limit & avoid double downloads
         self.rl = FetchRateLimiter(config.max_downloads)
 
     def get_session(
         self, 
-        q: Content, 
+        q: Content,
         req: DownloadRequest, 
         exit: threading.Event | None = None
     ) -> FetchSession:
-        with timeit(f"Getting media metadata: qhit={q.qhit}, scope={req.scope}"):
-            meta = self._get_metadata(q, req.scope)
-        with timeit(f"Getting already tagged sources so we can ignore them: qhit={q.qhit}, scope={req.scope}, track={req.preserve_track}"):
-            # TODO: the real tagstore doesn't have a great way to query for unique values yet. 
-            ignore_sources = self._get_ignored_sources(q, req.preserve_track, req.scope)
+
+        qapi = self.qfactory.create(q)
+
         if isinstance(req.scope, VideoScope):
-            assert isinstance(meta, VideoMetadata)
+            meta = self._fetch_stream_metadata(qapi, req.scope.stream)
             return VodWorker(
-                q=q,
+                qapi=qapi,
                 scope=req.scope,
                 rate_limiter=self.rl,
                 meta=meta,
-                ignore_parts=ignore_sources,
+                ignore_sources=req.ignore_sources,
                 output_dir=req.output_dir,
                 exit=exit
             )
         elif isinstance(req.scope, AssetScope):
-            assert isinstance(meta, AssetMetadata)
+            meta = self._fetch_asset_metadata(qapi, req.scope)
             return AssetWorker(
-                q=q,
+                qapi=qapi,
                 scope=req.scope,
                 rate_limiter=self.rl,
                 meta=meta,
-                ignore_assets=ignore_sources,
+                ignore_assets=req.ignore_sources,
                 output_dir=req.output_dir,
                 exit=exit
             )
         elif isinstance(req.scope, LiveScope):
-            assert isinstance(meta, LiveMetadata)
+            # TODO: fix fps
+            meta = MediaMetadata(sources=[], fps=50)
             return LiveWorker(
-                q=q,
+                qapi=qapi,
                 scope=req.scope,
                 rate_limiter=self.rl,
                 meta=meta,
                 output_dir=req.output_dir,
+                ignore_sources=req.ignore_sources,
                 exit=exit
+            )
+        elif isinstance(req.scope, TimeRangeScope):
+            meta = self._fetch_stream_metadata(qapi, req.scope.stream)
+            return SkipWorker(
+                scope=req.scope,
+                meta=meta,
+                ignore_sources=req.ignore_sources,
+                output_dir=req.output_dir,
+                exit=exit
+            )
+        elif isinstance(req.scope, TagAlignedScope):
+            meta = self._fetch_stream_metadata(qapi, req.scope.stream)
+            # create a normal Vodworker which is called to generate the tag-aligned media
+            video_scope = VideoScope(
+                stream=req.scope.stream,
+                start_time=req.scope.start_time,
+                end_time=req.scope.end_time,
+            )
+            vod_worker = VodWorker(
+                qapi=qapi,
+                scope=video_scope,
+                rate_limiter=self.rl,
+                meta=meta,
+                ignore_sources=req.ignore_sources,
+                output_dir=req.output_dir,
+                exit=exit
+            )
+            tr = TagReaderImpl(
+                q=q,
+                tagstore=self.ts,
+                track=req.scope.track
+            )
+            return TagAlignedFetcher(
+                tr=tr,
+                vod=vod_worker
             )
         else:
             raise BadRequestError(f"Unknown scope type: {type(req.scope)}")
 
-    def _get_ignored_sources(self, q: Content, preserve_track: str, scope: Scope) -> list[str]:
-        if not preserve_track:
-            return []
-        if isinstance(scope, VideoScope) or isinstance(scope, AssetScope):
-            # TODO: could get slow, doesn't work with pagination in case of real tagstore.
-            existing_tags = self.ts.find_tags(
-                author=self.config.author, 
-                qhit=q.qid,
-                track=preserve_track,
-                q=q
-            )
-            return list(set(tag.source for tag in existing_tags))
-        return []
     
-    def _get_metadata(self, q: Content, scope: Scope) -> MediaMetadata:
-        if isinstance(scope, VideoScope):
-            return self._fetch_stream_metadata(q, scope.stream)
-        elif isinstance(scope, AssetScope):
-            # no important metadata for assets yet
-            return AssetMetadata()
-        elif isinstance(scope, LiveScope):
-            return LiveMetadata(fps=50.0)   ## TODO: fetch real fps
+    def _fetch_asset_metadata(self, qapi: QAPI, scope: AssetScope) -> MediaMetadata:
+        # Get list of assets to download
+        if scope.assets is None:
+            assets_meta = qapi.content_object_metadata(metadata_subtree='assets')
+            assert isinstance(assets_meta, dict)
+            assets_meta = list(assets_meta.values())
+            assets = []
+            for ameta in assets_meta:
+                filepath = ameta.get("file")["/"]
+                assert filepath.startswith("./files/")
+                # strip leading term
+                filepath = filepath[8:]
+                assets.append(filepath)
         else:
-            raise BadRequestError(f"Unknown scope type: {type(scope)}")
+            assets = scope.assets
+        return MediaMetadata(sources=assets, fps=None)
 
     @cache_by_qhash
-    def _fetch_stream_metadata(self, q: Content, stream_name: str) -> VideoMetadata:
+    def _fetch_stream_metadata(self, qapi: QAPI, stream_name: str) -> VideoMetadata:
         """Fetches metadata for a stream based on content type."""
-        if self._is_live(q):
-            return self._fetch_livestream_metadata(q, stream_name)
+        if self._is_live(qapi):
+            return self._fetch_livestream_metadata(qapi, stream_name)
 
-        if self._is_legacy_vod(q):
-            return self._fetch_legacy_vod_metadata(q, stream_name)
+        if self._is_legacy_vod(qapi):
+            return self._fetch_legacy_vod_metadata(qapi, stream_name)
         else:
-            return self._fetch_vod_metadata(q, stream_name)
+            try:
+                return self._fetch_vod_metadata(qapi, stream_name)
+            except MissingResourceError as e:
+                # sometimes vod metadata is a mix of legacy and modern format - this is a quick fix
+                logger.error(f"fetching modern format vod metadata failed, trying legacy format", error=str(e))
+                return self._fetch_legacy_vod_metadata(qapi, stream_name)
 
-    def _fetch_vod_metadata(self, q: Content, stream_name: str) -> VideoMetadata:
+    def _fetch_vod_metadata(self, qapi: QAPI, stream_name: str) -> VideoMetadata:
         """Fetches metadata for modern VOD content."""
-        transcodes = q.content_object_metadata(
+        transcodes = qapi.content_object_metadata(
             metadata_subtree="transcodes", resolve_links=True
         )
 
         assert isinstance(transcodes, dict)
 
-        streams = q.content_object_metadata(
+        streams = qapi.content_object_metadata(
             metadata_subtree="offerings/default/playout/streams",
-            resolve_links=False,
+            resolve_links=True,
         )
         
         assert isinstance(streams, dict)
 
         if stream_name not in streams:
-            raise MissingResourceError(f"Stream {stream_name} not found in {q.qhit}")
+            raise MissingResourceError(f"Stream {stream_name} not found in {qapi.id()}")
 
         representations = streams[stream_name].get("representations", {})
 
@@ -136,12 +175,12 @@ class FetchFactory:
                 continue
             if tid != transcode_id:
                 logger.warning(
-                    f"Multiple transcode_ids found for stream {stream_name} in {q.qhit}! Continuing with the first one found."
+                    f"Multiple transcode_ids found for stream {stream_name} in {qapi.id()}! Continuing with the first one found."
                 )
 
         if transcode_id is None:
             raise MissingResourceError(
-                f"Transcode_id not found for stream {stream_name} in {q.qhit}"
+                f"Transcode_id not found for stream {stream_name} in {qapi.id()}"
             )
 
         transcode_meta = transcodes[transcode_id]["stream"]
@@ -169,10 +208,10 @@ class FetchFactory:
             parts=parts, part_duration=part_duration, fps=fps, codec_type=codec_type
         )
 
-    def _fetch_legacy_vod_metadata(self, q: Content, stream_name: str) -> VideoMetadata:
+    def _fetch_legacy_vod_metadata(self, qapi: QAPI, stream_name: str) -> VideoMetadata:
         """Fetches metadata for legacy VOD content."""
 
-        streams = q.content_object_metadata(
+        streams = qapi.content_object_metadata(
             metadata_subtree="offerings/default/media_struct/streams",
             resolve_links=True,
         )
@@ -180,20 +219,28 @@ class FetchFactory:
         assert isinstance(streams, dict)
 
         if stream_name not in streams:
-            raise MissingResourceError(f"Stream {stream_name} not found in {q.qhit}")
+            raise MissingResourceError(f"Stream {stream_name} not found in {qapi.id()}")
 
         stream = streams[stream_name].get("sources", [])
         if len(stream) == 0:
             raise MissingResourceError(f"Stream {stream_name} is empty")
 
-        parts = [part["source"] for part in stream]
+        parts = []
+        ## i don't know how we get in here as the legacy path when the parts are new array type parts, but we do, ARGH
+        ## content IQ: iq__4UBY9nXgAk1CafznDyAoWpgxEe9S
+        for part in stream:
+            if type(part) is dict:
+                parts.append(part["source"])
+                part_duration = stream[0]["duration"]["float"]
+            else:
+                parts.append(part[0])
+                part_duration = int(stream[0][1]) * float(Fraction(streams[stream_name]["duration"]["time_base"]))
 
         codec_type = streams[stream_name].get("codec_type", None)
-        part_duration = stream[0]["duration"]["float"]
 
         if codec_type is None:
             raise MissingResourceError(
-                f"Codec type not found for stream {stream_name} in {q.qhit}"
+                f"Codec type not found for stream {stream_name} in {qapi.id()}"
             )
 
         fps = None
@@ -207,23 +254,23 @@ class FetchFactory:
     # TODO: may need to have this thing take in a livestream qid instead and then forward to the qwt
     @cache_by_qhash
     def _fetch_livestream_metadata(
-        self, q: Content, stream_name: str
+        self, qapi: QAPI, stream_name: str
     ) -> VideoMetadata:
         """Fetches metadata for livestream content."""
         try:
-            periods = q.content_object_metadata(
+            periods = qapi.content_object_metadata(
                 metadata_subtree="live_recording/recordings/live_offering",
                 resolve_links=False,
             )
         except HTTPError as e:
             raise HTTPError(
-                f"Failed to retrieve periods for live recording {q.qhit}"
+                f"Failed to retrieve periods for live recording {qapi.id()}"
             ) from e
 
         assert isinstance(periods, list)
 
         if len(periods) == 0:
-            raise MissingResourceError(f"Live recording {q.qhit} is empty")
+            raise MissingResourceError(f"Live recording {qapi.id()} is empty")
 
         stream = (
             periods[0]
@@ -246,25 +293,25 @@ class FetchFactory:
             )
 
         try:
-            xc_params = q.content_object_metadata(
+            xc_params = qapi.content_object_metadata(
                 metadata_subtree="live_recording/recording_config/recording_params/xc_params",
                 resolve_links=False,
             )
         except HTTPError as e:
             raise HTTPError(
-                f"Failed to retrieve live stream metadata from {q.qhit}"
+                f"Failed to retrieve live stream metadata from {qapi.id()}"
             ) from e
 
         fps = None
         if codec_type == "video":
             try:
-                live_stream_info = q.content_object_metadata(
+                live_stream_info = qapi.content_object_metadata(
                     metadata_subtree="live_recording_config/probe_info/streams",
                     resolve_links=False,
                 )
             except HTTPError as e:
                 raise HTTPError(
-                    f"Failed to retrieve live stream metadata from {q.qhit}"
+                    f"Failed to retrieve live stream metadata from {qapi.id()}"
                 ) from e
             
             assert isinstance(live_stream_info, list)
@@ -313,22 +360,22 @@ class FetchFactory:
         )
 
     @cache_by_qhash
-    def _is_live(self, q: Content) -> bool:
+    def _is_live(self, qapi: QAPI) -> bool:
         """Check if content is a live stream."""
-        if not q.qhit.startswith("tqw__"):
+        if not qapi.id().startswith("tqw__"):
             return False
         try:
             # TODO: make sure works for write token
-            q.content_object_metadata(metadata_subtree="live_recording")
+            qapi.content_object_metadata(metadata_subtree="live_recording")
         except HTTPError:
             return False
         return True
 
     @cache_by_qhash
-    def _is_legacy_vod(self, q: Content) -> bool:
+    def _is_legacy_vod(self, qapi: QAPI) -> bool:
         """Check if content is legacy VOD format."""
         try:
-            q.content_object_metadata(metadata_subtree="transcodes")
+            qapi.content_object_metadata(metadata_subtree="transcodes")
         except HTTPError:
             return True
         return False

@@ -18,46 +18,59 @@ class Source:
 class Scope: ...
 
 @dataclass
+class TimeRangeScope(Scope):
+    start_time: int | None
+    end_time: int | None
+    chunk_size: int
+    stream: str
+    type: str = "processor"
+
+@dataclass
 class AssetScope(Scope):
     assets: list[str] | None
+    type: str = "assets"
 
 @dataclass
 class VideoScope(Scope):
     stream: str
+    # in seconds
     start_time: int
     end_time: float | int
+    type: str = "video"
 
 @dataclass
 class LiveScope(Scope):
     stream: str
     chunk_size: int
     max_duration: int | None
-
-class MediaMetadata: ...
+    type: str = "livestream"
 
 @dataclass
-class VideoMetadata(MediaMetadata):
+class TagAlignedScope(Scope):
+    stream: str
+    start_time: int
+    end_time: int
+    track: str
+    type: str = "tag aligned"
+
+@dataclass
+class VideoMetadata:
     parts: list[str]
-    part_duration: float
     fps: float | None
     codec_type: str
+    part_duration: float
 
 @dataclass
-class AssetMetadata(MediaMetadata): ...
-
-@dataclass
-class LiveMetadata(MediaMetadata):
-    fps: float
+class MediaMetadata:
+    sources: list[str]
+    fps: float | None
 
 @dataclass
 class DownloadRequest:
-    # used to avoid re-downloading parts if this track has already been tagged
-    preserve_track: str
     output_dir: str
     scope: Scope
-
-    def __str__(self):
-        return f"DownloadRequest(preserve_track={self.preserve_track}, scope={self.scope})"
+    # list of sources to ignore (for diff-based tagging)
+    ignore_sources: list[str]
     
 @dataclass
 class DownloadResult:

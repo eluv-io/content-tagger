@@ -10,30 +10,39 @@ from src.tagging.fabric_tagging.media_state import MediaState
 @dataclass
 class JobState:
     """Mutable state of the tagging job."""
-    status: JobStatus
+    status: JobStateDescription
     # internal handle used in the ContainerScheduler to identify the job
     taghandle: str
-    # sources with no corresponding tags
-    missing_tags: set[str]
-    message: str
     media: MediaState
     upload_session: UploadSession
-    container: TagContainer | None
+    container: TagContainer
     # callers can pass an event to be notified when tagging is done
     tagging_done: threading.Event
+    fetch_retry_count: int
+    warnings: list[str]
+    error: str | None
+    time_started: float
+    time_ended: float | None
 
     @staticmethod
-    def starting(media: MediaState, upload_session: UploadSession) -> "JobState":
+    def starting(
+        media: MediaState,
+        upload_session: UploadSession,
+        container: TagContainer,
+    ) -> "JobState":
         """Create a JobState in starting state."""
         return JobState(
-            status=JobStatus.starting(),
+            status="Queued",
             taghandle="",
-            missing_tags=set(),
-            message="",
             media=media,
             upload_session=upload_session,
+            time_started=time.time(),
+            time_ended=None,
             tagging_done=threading.Event(),
-            container=None
+            container=container,
+            fetch_retry_count=0,
+            warnings=[],
+            error=None,
         )
 
 @dataclass
@@ -45,16 +54,18 @@ class TagJob:
     stop_event: threading.Event
 
     def get_id(self) -> JobID:
-        """Get the job ID. Used as unique identifier for the job."""
+        """Get a human-readable identifier for the job (qid, feature, stream)."""
         if isinstance(self.args.scope, AssetScope):
             stream = "assets"
         elif isinstance(self.args.scope, VideoScope):
             stream = self.args.scope.stream
         elif isinstance(self.args.scope, LiveScope):
             stream = "video"
+        elif isinstance(self.args.scope, TimeRangeScope):
+            stream = "video"
         else:
             raise ValueError(f"unknown scope type: {type(self.args.scope)}")
-        return JobID(qhit=self.args.q.qhit, feature=self.args.feature, stream=stream)
+        return JobID(qid=self.args.q.qid, feature=self.args.feature, stream=stream)
 
 @dataclass
 class JobStore:

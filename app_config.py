@@ -7,20 +7,26 @@ from src.common.content import ContentConfig
 from src.fetch.model import FetcherConfig
 from src.tag_containers.model import RegistryConfig
 from src.tagging.scheduling.model import SysConfig
-from src.tags.conversion import TagConverterConfig
+from src.tagging.tag_runner import TagRunnerConfig
+from src.tagging.fabric_tagging.queue.model import JobStoreConfig
 from src.tags.tagstore.model import TagstoreConfig
-from src.tagging.fabric_tagging.model import FabricTaggerConfig
+from src.tagging.fabric_tagging.model import TaggerWorkerConfig
+from src.tags.track_resolver import TrackResolverConfig
+from src.status.get_info import UserInfoResolverConfig
 
 @dataclass
 class AppConfig:
     root_dir: str
     content: ContentConfig
+    jobstore: JobStoreConfig
     tagstore: TagstoreConfig
     system: SysConfig
     fetcher: FetcherConfig
     container_registry: RegistryConfig
-    tag_converter: TagConverterConfig
-    tagger: FabricTaggerConfig
+    tagger: TaggerWorkerConfig
+    track_resolver: TrackResolverConfig
+    tag_runner: TagRunnerConfig
+    user_info_resolver: UserInfoResolverConfig
 
     @staticmethod
     def from_yaml(filename: str) -> 'AppConfig':

@@ -8,11 +8,11 @@ def cache_by_qhash(func):
     unnecessary repeated fabric API calls. 
     """
     @lru_cache(maxsize=128)
-    def cached_func(qhash, *args, **kwargs):
+    def cached_func(qid, *args, **kwargs):
         return func(*args, **kwargs)
     
     @wraps(func)
     def wrapper(self, q: Content, *args, **kwargs):
-        return cached_func(q.qhash, self, q, *args, **kwargs)
+        return cached_func(q.qid, self, q, *args, **kwargs)
     
     return wrapper

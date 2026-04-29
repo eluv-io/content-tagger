@@ -5,6 +5,10 @@ content:
 
 tagstore:
   base_url: https://ai.contentfabric.io/tagstore
+  
+tag_runner:
+  poll_interval: 5.0
+  max_jobs: 1
 
 tag_converter:
   name_mapping:
@@ -32,57 +36,13 @@ system:
 
 fetcher:
   author: tagger
-  max_downloads: 16
+  max_downloads: 4
 
 tagger:
   media_dir: data/parts
-  uploader:
-    timeout: 10
-    model_params:
-      llava:
-        default:
-          name: llava_caption
-          label: LLAVA Caption
-      asr:
-        default:
-          name: speech_to_text
-          label: Speech to Text
-      french_asr:
-        default:
-          name: french_asr
-          label: French ASR
-      caption:
-        default:
-          name: object_detection
-          label: Object Detection
-      shot:
-        default:
-          name: shot_detection
-          label: Shot Detection
-      celeb:
-        default:
-          name: celebrity_detection
-          label: Celebrity Detection
-      ocr:
-        default:
-          name: optical_character_recognition
-          label: Optical Character Recognition
-      logo:
-        default:
-          name: logo_detection
-          label: Logo Detection
-      music:
-        default:
-          name: music_detection
-          label: Music Detection
-      breakdance:
-        default:
-          name: breakdance
-          label: Breakdance
-      test_model:
-        default:
-          name: test_model
-          label: Test Model
+
+jobstore:
+  base_url: data/jobstore
 
 container_registry:
   base_dir: data/containers
@@ -91,67 +51,140 @@ container_registry:
     llava:
       image: "localhost/llava:latest"
       type: "frame"
+      description: Scene Description
       resources: {
         "ollama": 1
       }
-    asr: 
+    asr:
       image: "localhost/asr:latest"
       type: "audio"
+      description: Speech to Text
       resources: {
         "gpu": 1
       }
-    french_asr: 
+    euro_asr:
       image: "localhost/multilingual:latest"
       type: "audio"
+      description: Multilingual European Speech to Text
       resources: {
         "gpu": 1
       }
     caption:
       image: "localhost/caption:latest"
       type: "frame"
+      description: Object Identification
       resources: {
         "gpu": 1
       }
     shot:
       image: "localhost/shot:latest"
       type: "video"
+      description: Shot Detection
       resources: {
         "gpu": 1
       }
     celeb:
       image: "localhost/celeb:latest"
-      type: "video"
+      type: "frame"
+      description: Celebrity Identification
       resources: {
         "gpu": 1,
         "cpu_juice": 35
       }
     ocr:
       image: "localhost/ocr:latest"
-      type: "video"
+      type: "frame"
+      description: OCR
       resources: {
         "gpu": 1
       }
     logo:
       image: "localhost/logo:latest"
-      type: "video"
+      type: "frame"
+      description: Logo Identification
       resources: {
         "gpu": 1
+      }
+    vertical_video:
+      image: "localhost/verticalvideo:latest"
+      type: "video"
+      description: Vertical Video Generation
+      resources: {
+        "cpu_juice": 40
       }
     music:
-      image: "ml-004.eluvio:5100/music:latest"
+      image: "localhost/music:latest"
       type: "audio"
+      description: Music Identification
       resources: {
-        "cpu_juice": 10
+        "cpu_juice": 8
       }
+    speaker:
+      image: "localhost/speaker:latest"
+      type: "audio"
+      description: Speaker Identification
+      resources: {
+        "gpu": 1
+      }
+      content_aligned: True
+
+track_resolver:
+  mapping:
+    speaker:
+      name: speaker_detection
+      label: Speaker Detection
+    llava:
+      name: llava_caption
+      label: LLAVA Caption
+    asr:
+      name: speech_to_text
+      label: Speech to Text
+    euro_asr:
+      name: euro_asr
+      label: Euro ASR
+    caption:
+      name: object_detection
+      label: Object Detection
+    shot:
+      name: shot_detection
+      label: Shot Detection
+    celeb:
+      name: celebrity_detection
+      label: Celebrity Detection
+    ocr:
+      name: optical_character_recognition
+      label: Optical Character Recognition
+    logo:
+      name: logo_detection
+      label: Logo Detection
+    music:
+      name: music_detection
+      label: Music Detection
     breakdance:
-      image: "localhost/breakdance"
-      type: "video"
-      resources: {
-        "gpu": 1
-      }
+      name: breakdance
+      label: Breakdance
     test_model:
-      image: "localhost/test_model:latest"
-      type: "video"
-      resources: {
-        "gpu": 1
-      }
+      name: test_model
+      label: Test Model
+    qwen:
+      name: qwen
+      label: Video Summary
+    run:
+      name: run
+      label: Running?
+    hit:
+      name: hit
+      label: Hit?
+    hit2s:
+      name: hit2s
+      label: (sm)Hit?
+    celebrate:
+      name: celebrate
+      label: Celebration?
+    delivery:
+      name: delivery
+      label: Delivery?
+
+user_info_resolver:
+  fabric_url: https://main.net955305.contentfabric.io
+  user_info_url: https://ai.contentfabric.io/ml/token_info
