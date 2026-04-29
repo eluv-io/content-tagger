@@ -9,6 +9,7 @@ class ModelSpec:
     description: str
     type: str
     tag_tracks: list[TrackArgs]
+    dependencies: list[str]
 
 
 @dataclass
@@ -30,7 +31,8 @@ def list_models(
                 name=m,
                 description=cfg.description,
                 type=cfg.type,
-                tag_tracks=[track]
+                tag_tracks=[track],
+                dependencies=cfg.dependencies
             )
         )
     return ListingResponse(

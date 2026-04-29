@@ -27,7 +27,8 @@ def fake_registry(temp_dir):
                     type="processor",
                     description="Test model 2",
                     resources={"gpu": 1},
-                    image="localhost/test_model:latest"
+                    image="localhost/test_model:latest",
+                    dependencies=["test_model"]
                 )
             }
         )
@@ -51,9 +52,10 @@ def test_listing(fake_registry, fake_resolver):
     assert models[0].description == "Test model"
     assert models[0].tag_tracks[0].name == "test_model"
     assert models[0].tag_tracks[0].label == "TEST MODEL"
-
+    assert models[0].dependencies == []
     assert models[1].name == "test_model2"
     assert models[1].type == "processor"
     assert models[1].description == "Test model 2"
     assert models[1].tag_tracks[0].name == "another_model"
     assert models[1].tag_tracks[0].label == "Some label"
+    assert models[1].dependencies == ["test_model"]
