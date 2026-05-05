@@ -1,9 +1,11 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Literal
 import yaml
 import os
 from dacite import from_dict
 
 from src.common.content import ContentConfig
+from src.common.model import ModelConfig
 from src.fetch.model import FetcherConfig
 from src.tag_containers.model import RegistryConfig
 from src.tagging.scheduling.model import SysConfig
@@ -23,6 +25,7 @@ class AppConfig:
     system: SysConfig
     fetcher: FetcherConfig
     container_registry: RegistryConfig
+    model_configs: dict[str, ModelConfig]
     tagger: TaggerWorkerConfig
     track_resolver: TrackResolverConfig
     tag_runner: TagRunnerConfig

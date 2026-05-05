@@ -16,30 +16,30 @@ def fake_registry(temp_dir):
         cfg=RegistryConfig(
             base_dir=temp_dir,
             cache_dir=temp_dir,
-            model_configs={
-                "test_model": ModelConfig(
-                    type="frame",
-                    description="Test model",
-                    resources={"gpu": 1},
-                    image="localhost/test_model:latest"
-                ),
-                "test_model2": ModelConfig(
-                    type="processor",
-                    description="Test model 2",
-                    resources={"gpu": 1},
-                    image="localhost/test_model:latest",
-                    dependencies=["test_model"]
-                ),
-                # should be hidden from listing API due to empty description
-                "hidden_model": ModelConfig(
-                    type="processor",
-                    description="",
-                    resources={"gpu": 1},
-                    image="localhost/test_model:latest",
-                    dependencies=["test_model"]
-                )
-            }
-        )
+        ),
+        model_configs={
+            "test_model": ModelConfig(
+                type="frame",
+                description="Test model",
+                resources={"gpu": 1},
+                image="localhost/test_model:latest"
+            ),
+            "test_model2": ModelConfig(
+                type="processor",
+                description="Test model 2",
+                resources={"gpu": 1},
+                image="localhost/test_model:latest",
+                dependencies=["test_model"]
+            ),
+            # should be hidden from listing API due to empty description
+            "hidden_model": ModelConfig(
+                type="processor",
+                description="",
+                resources={"gpu": 1},
+                image="localhost/test_model:latest",
+                dependencies=["test_model"]
+            )
+        }
     )
 
 

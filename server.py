@@ -114,10 +114,11 @@ def _build_worker(cfg: AppConfig) -> TaggerWorker:
     qfactory = QAPIFactory(cfg.content)
     tagstore = create_tagstore(cfg.tagstore)
     track_resolver = TrackResolver(cfg.track_resolver)
+    model_configs = cfg.model_configs
     return TaggerWorker(
         system_tagger=ContainerScheduler(cfg.system),
         fetcher=FetchFactory(cfg.fetcher, create_tagstore(cfg.tagstore), qfactory),
-        cregistry=ContainerRegistry(cfg.container_registry),
+        cregistry=ContainerRegistry(cfg.container_registry, model_configs),
         tagstore=tagstore,
         cfg=cfg.tagger,
         track_resolver=track_resolver,

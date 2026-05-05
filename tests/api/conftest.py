@@ -30,7 +30,24 @@ from src.tags.tagstore.model import TagstoreConfig
 def tagger_config(static_dir) -> TaggerWorkerConfig:
     media_path = os.path.join(static_dir, "media")
     os.makedirs(media_path, exist_ok=True)
-    return TaggerWorkerConfig(media_dir=media_path)    
+    return TaggerWorkerConfig(media_dir=media_path)
+
+@pytest.fixture()
+def model_configs() -> dict[str, ModelConfig]:
+    return {
+        "test_model": ModelConfig(
+            type="frame",
+            description="Test model",
+            resources={"gpu": 1},
+            image="localhost/test_model:latest"
+        ),
+        "test_model2": ModelConfig(
+            type="frame",
+            description="Test model 2",
+            resources={"gpu": 1},
+            image="localhost/test_model:latest"
+        )
+    }
 
     
 @pytest.fixture()
@@ -38,24 +55,10 @@ def container_registry_config(static_dir) -> RegistryConfig:
     return RegistryConfig(
             base_dir=os.path.join(static_dir, "stuff"),
             cache_dir=os.path.join(static_dir, "cache"),
-            model_configs={
-                "test_model": ModelConfig(
-                    type="frame",
-                    description="Test model",
-                    resources={"gpu": 1},
-                    image="localhost/test_model:latest"
-                ),
-                "test_model2": ModelConfig(
-                    type="frame",
-                    description="Test model 2",
-                    resources={"gpu": 1},
-                    image="localhost/test_model:latest"
-                )
-            }
         )
 
 @pytest.fixture()
-def app_config(static_dir, tagger_config, content_config, fetcher_config, container_registry_config) -> AppConfig:
+def app_config(static_dir, tagger_config, content_config, fetcher_config, container_registry_config, model_configs) -> AppConfig:
     """Create test configuration."""
     return AppConfig(
         root_dir=static_dir,
@@ -67,6 +70,7 @@ def app_config(static_dir, tagger_config, content_config, fetcher_config, contai
         system=SysConfig(gpus=["gpu", "disabled", "gpu"], resources={"cpu_juice": 16}),
         fetcher=fetcher_config,
         container_registry=container_registry_config,
+        model_configs=model_configs,
         tagger=tagger_config,
         track_resolver=TrackResolverConfig(mapping={"test_model": TrackArgs(name="test_model", label="TEST MODEL")}),
         tag_runner=TagRunnerConfig(poll_interval=0.1, max_jobs=2),

@@ -6,7 +6,7 @@ from podman import PodmanClient
 from loguru import logger
 
 from src.common.errors import MissingResourceError, BadRequestError
-from src.tag_containers.model import RegistryConfig, ContainerSpec, ModelConfig
+from src.tag_containers.model import RegistryConfig, ContainerSpec
 from src.tag_containers.containers import *
 from src.tag_containers.model import ContainerRequest
 
@@ -17,9 +17,10 @@ class ContainerRegistry:
     Get runnable containers through identifier
     """
 
-    def __init__(self, cfg: RegistryConfig):
+    def __init__(self, cfg: RegistryConfig, model_configs: dict[str, ModelConfig]):
         self.pclient = PodmanClient()
         self.cfg = cfg
+        self.model_configs = model_configs
         os.makedirs(self.cfg.base_dir, exist_ok=True)
         os.makedirs(self.cfg.cache_dir, exist_ok=True)
 
@@ -36,7 +37,7 @@ class ContainerRegistry:
 
         cache_path = self.cfg.cache_dir
 
-        modelcfg = self.cfg.model_configs.get(req.model_id)
+        modelcfg = self.model_configs.get(req.model_id)
         if not modelcfg:
             raise MissingResourceError(f"Model {req.model_id} not found")
 
@@ -54,13 +55,13 @@ class ContainerRegistry:
         return TagContainer(self.pclient, ccfg)
 
     def get_model_config(self, model: str) -> ModelConfig:
-        if model not in self.cfg.model_configs:
+        if model not in self.model_configs:
             raise BadRequestError(f"Model {model} not found")
-        return deepcopy(self.cfg.model_configs[model])
+        return deepcopy(self.model_configs[model])
 
     def services(self) -> list[str]:
         """
         Returns a list of available services
         """
         # TODO: check if the image exists
-        return list(self.cfg.model_configs.keys())
+        return list(self.model_configs.keys())
