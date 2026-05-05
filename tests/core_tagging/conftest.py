@@ -214,14 +214,12 @@ class FakeContainerRegistry:
         return ["caption", "asr"]
     
     @property
-    def cfg(self):
-        # Mock config with modconfigs
-        mock_cfg = Mock()
-        mock_cfg.modconfigs = {
+    def model_configs(self):
+        model_configs = {
             "caption": Mock(type="video"),
             "asr": Mock(type="audio"),
         }
-        return mock_cfg
+        return model_configs
 
 class FakeWorker(FetchSession):
     """Fake DownloadWorker that creates test files"""

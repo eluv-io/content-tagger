@@ -16,5 +16,5 @@ class ModelConfig:
     resources: SystemResources
     # indicates that the model will output tags aligned to the full content rather than individual parts
     content_aligned: bool = False
-    # tagstore track dependencies
-    dependencies: list[str] = field(default_factory=list)
+    track_outputs: list[str] = field(default_factory=list)
+    track_dependencies: list[str] = field(default_factory=list)
