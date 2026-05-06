@@ -1,23 +1,41 @@
 #!/bin/bash
-images=(content-tagger asr celeb qwen qwenjoe speaker shot llava ocr logo caption player highlight-composition summary highlights elv-vector-search)
 
-if [ "$1" ]; then
-    images=("$@")
+
+
+
+models=(content-tagger shot asr celeb llava caption logo ocr speaker verticalvideo music breakdance qwen multilingual qwenjoe helmet hungarian player)
+
+if [ "$1" = "" ]; then
+    set -- "${models[@]}"
 fi
 
-exec < /dev/null
+declare -A status
 
-source=cr.elv/ml
-tag=latest
-
-for img in "${images[@]}"; do
-
-    echo --------- "$img"
-    podman pull "$source/$img:$tag" && podman tag "$source/$img:$tag" "localhost/$img:$tag"
+for model in "$@"; do
+    echo ------ "$model"
+    status["$model"]="failed"
+    podman pull "cr.elv/ml/${model}:latest" && podman tag "cr.elv/ml/${model}:latest" "localhost/${model}:latest" && status["$model"]="fetched"
+    ## future: tag as elv-prod when we switch to that
 done
 
-tail=1
-for img in "${images[@]}"; do        
-    podman images "$img:$tag" | tail -n +$tail
-    tail=2
-done
+
+outputstatus() {
+    status="$1"
+    shift
+    commaspace=""
+    for model in "$@"; do
+        if [ "${status["$model"]}" == "$status" ]; then
+            echo -n "${commaspace}${model}"
+            commaspace=", "
+        fi
+    done
+    echo
+}
+
+echo ====== status report
+
+echo -n " failed: " ; outputstatus failed "$@"
+
+echo -n "fetched: " ; outputstatus fetched "$@"
+
+    
