@@ -9,7 +9,7 @@ const { hideBin } = require('yargs/helpers');
 const fraction = require('fraction.js');
 const { default: Fraction } = require('fraction.js');
 
-const JOB_STATUS = process.env.JOB_STATUS || "status"
+const JOB_STATUS = process.env.JOB_STATUS || "job-status"
 
 // Configuration
 const server = process.env.TAGGERV2_URL || "http://localhost:8086";
@@ -348,7 +348,7 @@ async function get_status(qid, auth) {
 
 const stateMap = {}
 
-async function getState(contents, auth, tag_config, maxInProgress = 0) {
+async function getState(contents, auth, tag_config, maxInProgress = 0, earliest_date = null) {
 
     let models = get_available_models(tag_config);
 
@@ -370,6 +370,8 @@ async function getState(contents, auth, tag_config, maxInProgress = 0) {
         if (maxInProgress > 0 && inProgressCount > maxInProgress) return inProgressCount;
         //if (maxInProgress > 0 && nothings > maxInProgress) return inProgressCount;
         const stat_raw = await get_status(qid, auth)
+        datefilter(stat_raw, earliest_date)
+        //console.debug(`Status for ${qid}:`, JSON.stringify(stat_raw))
         const stat = Object.fromEntries((stat_raw.jobs ||[]).map(job => [job.model, job]))
 
         let dones = 0
@@ -384,14 +386,14 @@ async function getState(contents, auth, tag_config, maxInProgress = 0) {
                 console.debug(`Marking ${qid} ${model} as "done" even though status is ${status}`);
                 dones += 1
             }
-            else if (status.toLowerCase().includes("fetch") || status.toLowerCase().includes("tagging") || status.toLowerCase().includes("running")) {
-                console.debug(`${qid} ${model} fetching, waiting to tag, or tagging`);
+            else if (status?.toLowerCase().includes("fetch") || status?.toLowerCase().includes("tagging") || status?.toLowerCase().includes("running") || status?.toLowerCase().includes("queued")) {
+                console.debug(`${qid} ${model} fetching, tagging/running, or queued`);
                 inProgressCount += 1;
                 break;
             }
             else {
                 nothings += 1
-                console.debug(`${qid} ${model} status: ${status} ${inProgressCount}`);
+                console.debug(`${qid} ${model} status: ${status} in progress so far: ${inProgressCount}`);
             }
         }        
         if (dones == models.length) stateMap[qid] = "done";
@@ -400,13 +402,13 @@ async function getState(contents, auth, tag_config, maxInProgress = 0) {
     return inProgressCount;
 }
 
-async function tag(contents, auth, assets, params, startTime = null, endTime = null, inProgressLimit = 0, status_secret = auth) {
+async function tag(contents, auth, assets, params, startTime = null, endTime = null, earliest_date = null, inProgressLimit = 0, status_secret = auth) {
 
     for (let i = 0; i < contents.length; i++) {
 
         if (inProgressLimit > 0) {
             while (true) {
-                const inProgressCount = await getState(contents, status_secret, params, inProgressLimit + 2);
+                const inProgressCount = await getState(contents, status_secret, params, inProgressLimit + 2, earliest_date);
                 if (inProgressCount >= inProgressLimit) {
                     process.stdout.write(`> ${inProgressCount} in progress <    \r`);
                     console.debug(`In progress count ${inProgressCount} has reached the limit of ${inProgressLimit}. Sleeping for a while.`);
@@ -609,12 +611,21 @@ function computePercentage(progress) {
     return "--";
 }
 
-async function quick_status(auth, qid, filter = null) {
+function datefilter(status_data, earliest_date) {
+ if (status_data && status_data.jobs) {
+    const reports = status_data.jobs;
+    status_data.jobs = status_data.jobs.filter(report => {
+        const created_at = report.created_at;
+        if (!created_at) return true;
+        if (earliest_date && new Date(created_at) < new Date(earliest_date)) return false
+        return true
+    })
+ }
+}
+async function quick_status(auth, qid, earliest_date, filter = null) {
     if (filter === "") filter = null;
-    const url = new URL(`${server}/${qid}/${JOB_STATUS}`);
-    url.searchParams.append("authorization", auth);
 
-    const status_data = await fetch_dict_with_status(url);
+    const status_data = await get_status(qid, auth)
 
     if (status_data.status != 200 && !status_data.error) status_data.error = `http ${status_data.status}`
   
@@ -626,16 +637,19 @@ async function quick_status(auth, qid, filter = null) {
         return;
     }
 
+    datefilter(status_data, earliest_date)
 
     //{"jobs": [{"qid": "iq__2hyWoctwMqcyFCrfveXASaBjUePC", "job_id": "7f51a504-73df-4be7-943d-decb90cab650", "status": "succeeded", "created_at": "2026-03-23T17:34:29.925371", "model": "french_asr", "params": {"feature": "french_asr", "run_config": {"pretty_trail": true}, "scope": {"stream": "audio", "start_time": 0, "end_time": 10000000000000000, "type": "video"}, "replace": false, "destination_qid": "", "max_fetch_retries": 3}, "tenant": "itenG5KagBD4397RRJhZE4Bka6nZ5w8", "user": "itenG5KagBD4397RRJhZE4Bka6nZ5w8", "tag_details": {"tag_status": "Completed", "stream": "audio", "time_running": 146.1237940788269, "tagging_progress": "10/10", "failed": []}}], "meta": {"total": 1, "start": 0, "limit": null, "count": 1}}
     if (status_data && status_data.jobs) {
         const reports = status_data.jobs;
         for (const report of reports) {
             const model = report.model;
+            const created_at = report.created_at;
             const stream = report.stream || report.tag_details?.stream
             const progress = report.tagging_progress || report.tag_details?.tagging_progress || ''
             const percentage = computePercentage(progress)
-            const status = report.status || report.tagging_progress?.tag_status || '??';
+            let status = report.status || report.tagging_progress?.tag_status || '??';
+            if (status == "failed") status = (report.error  || "" ).substring(0, 90)
             const line = `${percentage.padStart(5)} [${String(progress).padStart(9)}] ${qid.padEnd(32)} / (${stream}) ${model}: ${status}`;
             if (filter === null || (new RegExp(filter)).test(line)) {
                 console.log(line);
@@ -664,6 +678,7 @@ async function quick_status(auth, qid, filter = null) {
 // --- Main Execution ---
 
 async function main() {
+  
     const argv = yargs(hideBin(process.argv))
         .option('contents', {
             alias: 'c',
@@ -692,7 +707,8 @@ async function main() {
         .option('commit', {
             alias: 'finalize',
             type: 'boolean',
-            description: 'if set, commit (finalize) on fabric after writing on tagger'
+            default: true,
+            description: 'if set, commit (finalize) on fabric after writing on tagger',
         })
         .option('start-time', {
             type: 'number',
@@ -703,6 +719,11 @@ async function main() {
             type: 'number',
             default: null,
             description: 'end time in seconds'
+        })
+        .option('pacemax', {
+            type: 'number',
+            default: 4,
+            description: 'max jobs when pacing'
         })
         .option('replace', {
             type: 'boolean',
@@ -719,6 +740,11 @@ async function main() {
             default: false,
             description: 'enable console.debug() output'
         })
+        .option('timefilter', {
+            type: 'boolean',
+            default: false,
+            description: 'enable using rundriver/jobstatus.json for time filtering'
+        })
         .check((argv) => {
             if (!argv.contents && (!argv.iq || argv.iq.length === 0)) {
                 throw new Error("One of arguments -c/--contents or -q/--iq is required");
@@ -732,6 +758,9 @@ async function main() {
         console.debug = () => {};
     }
 
+  console.log("no_commit " + argv.commit)
+    console.log("no-commit " + argv['commit'])
+  
     let tag_config;
     if (argv['tag-config'] !== "") {
         tag_config = argv['tag-config'];
@@ -790,6 +819,22 @@ async function main() {
 
     if (process.stdin.isTTY) help()
 
+    jobstatus = {}
+    if (argv.timefilter) {
+      if (fs.existsSync("rundriver/jobstatus.json")) {
+        jobstatus = JSON.parse(fs.readFileSync("rundriver/jobstatus.json", 'utf8'));
+        console.log("Found earliest date from previous runs: " + jobstatus.earliest_date);
+      }
+      else {
+        jobstatus = { "earliest_date": new Date().toISOString() }
+        fs.writeFileSync("rundriver/jobstatus.json", JSON.stringify(jobstatus, null, 2));
+        console.log("No earliest date found, set to: " + jobstatus.earliest_date);
+      }
+    }
+    else {
+      jobstatus = { "earliest_date": new Date().toISOString() }
+    }
+        
     while (true) {
         let user_line = "";
         let timeout = null;
@@ -886,7 +931,7 @@ async function main() {
             }
 
             const contentsub = contents.filter(x => iqsub === null || new RegExp(iqsub).test(x));
-            await tag(contentsub, auth, argv.assets, this_tag_config, start_time, end_time, user_input === "pacetag" ? 4 : 0, status_secret);
+            await tag(contentsub, auth, argv.assets, this_tag_config, start_time, end_time, jobstatus.earliest_date, user_input === "pacetag" ? argv['pacemax'] : 0, status_secret);
         } else if (user_input.startsWith("+") || user_input.startsWith("-")) {
             let val = parseFloat(user_input);
             val = val * 60;
@@ -914,7 +959,7 @@ async function main() {
                 worker.servicer()
                 resultPromises = []
                 for (const qid of contents) {
-                    resultPromises.push(worker.addWork(() => quick_status(status_secret, qid, filter)));
+                    resultPromises.push(worker.addWork(() => quick_status(status_secret, qid, jobstatus.earliest_date, filter)));
                 }
                 await Promise.all(resultPromises);
                 worker.stopService();
@@ -925,22 +970,16 @@ async function main() {
         } else if (["write", "w"].includes(user_input)) {
             let contentsub = contents;
             if (user_split.length > 1) contentsub = user_split.slice(1);
-            await write_all(contentsub, argv.config, argv.commit, false);
+            await write_all(contentsub, argv.config, argv.no_commit, false);
         } else if (["getstate"].includes(user_input)) {
             for (key in stateMap) delete stateMap[key]
-            const inProgressCount = await getState(contents, status_secret, tag_config);
+            const inProgressCount = await getState(contents, status_secret, tag_config, 0, jobstatus.earliest_date)
             console.log(`Total contents currently in progress: ${inProgressCount}`);
             console.dir(stateMap);
         } else if (["forcewrite"].includes(user_input)) {
             let contentsub = contents;
             if (user_split.length > 1) contentsub = user_split.slice(1);
-            await write_all(contentsub, argv.config, argv.commit, true);
-        } else if (["agg", "aggregate"].includes(user_input)) {
-            let contentsub = contents;
-            if (user_split.length > 1) contentsub = user_split.slice(1);
-            for (const qid of contentsub) {
-                await aggregate(qid, argv.config, argv.commit);
-            }
+            await write_all(contentsub, argv.config, argv.no_commit, true);
         } else if (["quit", "exit"].includes(user_input)) {
           break
         } else if (["h", "help"].includes(user_input)) {
