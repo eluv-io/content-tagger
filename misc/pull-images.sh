@@ -1,18 +1,19 @@
 #!/bin/bash
-images=(content-tagger celeb qwen qwenjoe content-tagger shot llava ocr logo asr caption player highlight-composition summary highlights elv-vector-search)
+images=(content-tagger asr celeb qwen qwenjoe speaker shot llava ocr logo caption player highlight-composition summary highlights elv-vector-search)
 
 if [ "$1" ]; then
     images=("$@")
 fi
 
-source=ml-004.eluvio:5100
+exec < /dev/null
+
+source=cr.elv/ml
 tag=latest
 
 for img in "${images[@]}"; do
 
     echo --------- "$img"
-    echo podman pull "$source/$img:$tag" </dev/null
-    podman tag "$source/$img:$tag" "localhost/$img:$tag"
+    podman pull "$source/$img:$tag" && podman tag "$source/$img:$tag" "localhost/$img:$tag"
 done
 
 tail=1
