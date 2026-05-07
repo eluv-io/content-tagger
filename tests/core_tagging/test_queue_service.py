@@ -3,6 +3,7 @@ from unittest.mock import Mock
 
 from src.common.errors import MissingResourceError
 from src.service.impl.queue_based import QueueService
+from src.service.job_poster import JobPoster
 from src.service.model import StatusArgs
 from src.tagging.fabric_tagging.queue.model import CreateQueueItem, ListJobArgs
 from src.common.content import Content
@@ -23,13 +24,23 @@ def fake_qfactory():
     return TestQAPIFactory()
 
 @pytest.fixture
-def queue_service(jobstore, fake_qfactory) -> QueueService:
-    return QueueService(jobstore, fake_qfactory)
+def job_poster(queue_jobstore, track_resolver, fake_qfactory, model_configs) -> JobPoster:
+    """Create a JobPoster for testing, using the queue_jobstore and other dependencies."""
+    return JobPoster(
+        job_store=queue_jobstore,
+        track_resolver=track_resolver,
+        model_configs=model_configs,
+        qfactory=fake_qfactory
+    )
+
+@pytest.fixture
+def queue_service(job_poster) -> QueueService:
+    return QueueService(job_poster)
 
 def test_start_job(queue_service: QueueService, make_tag_args):
     args = make_tag_args()
     content = Content(qid="test", token="")
-    result = queue_service.tag(content, args)
+    result = queue_service.tag(content, [args])[0]
     assert result.started
     assert result.job_id != ""
     
@@ -40,7 +51,7 @@ def test_start_job(queue_service: QueueService, make_tag_args):
 def test_status(queue_service: QueueService, make_tag_args):
     args = make_tag_args()
     content = Content(qid="test", token="")
-    queue_service.tag(content, args)
+    queue_service.tag(content, [args])
     
     status_results = queue_service.status(StatusArgs(
         qid=None,
@@ -69,17 +80,17 @@ def test_status(queue_service: QueueService, make_tag_args):
     assert len(status_results) == 1
 
 def test_job_filter(queue_service: QueueService, make_tag_args):
-    assert isinstance(queue_service.qfactory, TestQAPIFactory)
-    queue_service.qfactory.title = "12 Angry Men"
+    assert isinstance(queue_service.job_poster.qfactory, TestQAPIFactory)
+    queue_service.job_poster.qfactory.title = "12 Angry Men"
 
     args = make_tag_args()
     content = Content(qid="test", token="")
-    res = queue_service.tag(content, args)
+    res = queue_service.tag(content, [args])[0]
     assert res.started
 
     content = Content(qid="test2", token="")
-    queue_service.qfactory.title = "King Kong"
-    res = queue_service.tag(content, args)
+    queue_service.job_poster.qfactory.title = "King Kong"
+    res = queue_service.tag(content, [args])[0]
     assert res.started
     assert queue_service.status(StatusArgs(
         qid=None,

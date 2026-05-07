@@ -7,6 +7,7 @@ import pytest
 from src.common.content import Content
 from src.fetch.model import DownloadRequest, DownloadResult, FetchSession, MediaMetadata, Source, VideoMetadata, VideoScope
 from src.fetch.model import VideoScope
+from src.service.job_poster import JobPoster
 from src.service.model import StatusArgs
 from src.status.get_info import UserInfo
 from src.tag_containers.model import *
@@ -31,8 +32,8 @@ def media_dir(temp_dir: str) -> str:
 @pytest.fixture
 def model_configs():
     return {
-        "caption": Mock(type="video", track_outputs=["object_detection"]),
-        "asr": Mock(type="audio", track_outputs=["speech_to_text"]),
+        "caption": Mock(type="video", track_outputs=["object_detection"], track_dependencies=[]),
+        "asr": Mock(type="audio", track_outputs=["speech_to_text"], track_dependencies=[]),
     }
 
 @pytest.fixture
@@ -361,6 +362,16 @@ def queue_jobstore(tmp_path, fake_user_info_resolver) -> FsJobStore:
     return FsJobStore(store_dir=str(tmp_path / "jobstore"), user_info_resolver=fake_user_info_resolver)
 
 @pytest.fixture
+def simple_job_poster(queue_jobstore, track_resolver, model_configs, fake_qapifactory) -> JobPoster:
+    """Create a simple JobPoster for testing."""
+    return JobPoster(
+        job_store=queue_jobstore,
+        track_resolver=track_resolver,
+        model_configs=model_configs,
+        qfactory=fake_qapifactory
+    )
+
+@pytest.fixture
 def fake_qapifactory():
     # for the queue client, all we need is to get the display title and add this to the job info
     return Mock(
@@ -373,10 +384,20 @@ def fake_qapifactory():
         )
     )
 
+@pytest.fixture
+def job_poster(queue_jobstore, track_resolver, fake_qapifactory, model_configs) -> JobPoster:
+    """Create a JobPoster for testing, using the queue_jobstore and other dependencies."""
+    return JobPoster(
+        job_store=queue_jobstore,
+        track_resolver=track_resolver,
+        model_configs=model_configs,
+        qfactory=fake_qapifactory
+    )
+
 
 @pytest.fixture
-def queue_client(queue_jobstore, fake_qapifactory, fake_user_info_resolver) -> QueueService:
-    return QueueService(jobstore=queue_jobstore, qfactory=fake_qapifactory)
+def queue_client(job_poster) -> QueueService:
+    return QueueService(job_poster=job_poster)
 
 
 @pytest.fixture

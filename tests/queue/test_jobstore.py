@@ -25,12 +25,13 @@ def _make_tag_args(feature: str = "test_feature") -> TagArgs:
     )
 
 
-def _make_create_item(qid: str = "iq__test", feature: str = "test_feature", additional_info: dict = {}) -> CreateQueueItem:
+def _make_create_item(qid: str = "iq__test", feature: str = "test_feature", deps: list = [], additional_info: dict = {}) -> CreateQueueItem:
     return CreateQueueItem(
         qid=qid,
         params=_make_tag_args(feature),
         status_details=None,
         additional_info=additional_info,
+        deps=deps,
     )
 
 

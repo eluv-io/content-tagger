@@ -168,26 +168,31 @@ class MockTaggerService:
         # job_id -> dict with job info
         self._jobs: dict[str, dict] = {}
 
-    def tag(self, q: Content, args: TagArgs) -> TagStartResult:
+    def tag(self, q: Content, args: list[TagArgs]) -> list[TagStartResult]:
         job_id = str(uuid.uuid4())
-        self._jobs[job_id] = {
-            "job_id": job_id,
-            "qid": q.qid,
-            "status": "Tagging content",
-            "model": args.feature,
-            "stream": "",
-            "created_at": time.time(),
-            "params": args.run_config,
-            "tenant": "test tenant",
-            "user": "test user",
-            "title": q.qid,
-            "error": None,
-        }
-        return TagStartResult(
-            job_id=JobID(qid=q.qid, feature=args.feature, stream=""),
-            started=True,
-            message="Mock job started",
-        )
+        res = []
+        for arg in args:
+            self._jobs[job_id] = {
+                "job_id": job_id,
+                "qid": q.qid,
+                "status": "Tagging content",
+                "model": arg.feature,
+                "stream": "",
+                "created_at": time.time(),
+                "params": arg.run_config,
+                "tenant": "test tenant",
+                "user": "test user",
+                "title": q.qid,
+                "error": None,
+            }
+            res.append(
+                TagStartResult(
+                    job_id=JobID(qid=q.qid, feature=arg.feature, stream=""),
+                    started=True,
+                    message="Mock job started",
+                )
+            )
+        return res
 
     def status(self, req: StatusArgs) -> list[TagJobStatusResult]:
         results = []
