@@ -23,6 +23,7 @@ class QueueItem:
     auth: str
     user: str
     tenant: str
+    deps: list[str]
     additional_info: dict
 
 @dataclass
@@ -30,6 +31,7 @@ class CreateQueueItem:
     qid: str
     params: TagArgs
     status_details: TagDetails | None
+    deps: list[str]
     additional_info: dict
 
 @dataclass
@@ -38,6 +40,7 @@ class ListJobArgs:
     qid: str | None = None
     user: str | None = None
     tenant: str | None = None
+    include_unready: bool = False
 
 @dataclass
 class UpdateJobRequest:

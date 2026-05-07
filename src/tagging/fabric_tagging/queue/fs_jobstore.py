@@ -81,6 +81,7 @@ class FsJobStore:
             auth=job["auth"],
             user=job["user"],
             tenant=job["tenant"],
+            deps=job.get("deps", []),
             additional_info=job.get("additional_info", {}),
         )
 
@@ -101,6 +102,7 @@ class FsJobStore:
             "tenant": tenant,
             "auth": auth,
             "additional_info": args.additional_info,
+            "deps": args.deps,
         })
         job_data = self._read_job(id)
         return self._convert_job_dict(job_data)
@@ -129,6 +131,11 @@ class FsJobStore:
                 continue
             if args.status and job["status"] != args.status:
                 continue
+            # filter if unmet dependencies
+            if job["status"] == "queued" and not args.include_unready:
+                unmet_deps = [dep for dep in job.get("deps", []) if self._read_job(dep)["status"] in ("running", "queued")]
+                if unmet_deps:
+                    continue
             results.append(self._convert_job_dict(job))
         return results
 
