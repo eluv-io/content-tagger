@@ -22,6 +22,7 @@ class DirectAPI(TaggerService):
                     job_id=str(res.job_id),
                     started=res.started,
                     created_at=time.time(),
+                    dependencies=[],
                     message=res.message,
                 )
             )
