@@ -2,6 +2,7 @@
 
 from src.fetch.model import VideoScope
 from src.tagging.fabric_tagging.model import TagArgs
+from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tagging.fabric_tagging.queue.model import (
     CreateQueueItem,
     ListJobArgs,
@@ -179,3 +180,12 @@ class TestStopJob:
         jobstore.create_job(_make_create_item(), auth="test-auth")
         jobs = _list_all(jobstore)
         assert jobs[0].stop_requested is False
+
+def test_dependency_listing(jobstore: JobStore):
+    job = jobstore.create_job(_make_create_item(), auth="test-auth")
+    child = jobstore.create_job(_make_create_item(deps=[job.id]), "test-auth")
+    jobs = jobstore.list_jobs(ListJobArgs(), auth="test-auth")
+    assert len(jobs) == 1
+    assert jobs[0].id == job.id
+    all_jobs = jobstore.list_jobs(ListJobArgs(include_unready=True), auth="test-auth")
+    assert len(all_jobs) == 2
