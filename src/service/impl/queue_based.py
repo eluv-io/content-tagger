@@ -38,7 +38,7 @@ class QueueService(TaggerService):
     def status(self, req: StatusArgs) -> list[TagJobStatusResult]:
         """Return the latest status for all jobs targeting *qid*."""
         items = self.jobstore.list_jobs(
-            ListJobArgs(qid=req.qid, user=req.user, tenant=req.tenant), 
+            ListJobArgs(qid=req.qid, user=req.user, tenant=req.tenant, include_unready=True), 
             auth="")
         if not items:
             raise MissingResourceError(f"No tagging jobs found for qid: {req.qid}")
@@ -80,6 +80,7 @@ class QueueService(TaggerService):
                 model=item.params.feature,
                 stream=_stream_from_scope(item.params.scope),
                 params=asdict(item.params),
+                dependencies=item.deps,
                 tagger_details=item.status_details,
                 tenant=item.tenant,
                 user=item.user,

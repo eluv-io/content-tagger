@@ -46,6 +46,7 @@ class DirectAPI(TaggerService):
                 tenant="",
                 user="",
                 title="",
+                dependencies=[],
                 tagger_details=TagDetails(
                     tag_status=r.status.status,
                     time_running=r.status.time_ended - r.status.time_started if r.status.time_ended else time.time() - r.status.time_started,
