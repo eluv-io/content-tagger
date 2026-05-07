@@ -56,6 +56,7 @@ def _execute_tagging(q: Content, tag_args: list[TagArgs]) -> Response:
                 model=arg.feature,
                 started=result.started,
                 message=result.message,
+                dependencies=result.dependencies,
                 error=None,
             )
         )

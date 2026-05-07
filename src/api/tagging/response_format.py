@@ -8,6 +8,7 @@ class StartStatus:
     model: str
     started: bool
     message: str
+    dependencies: list[str]
     error: str | None
 
 @dataclass(frozen=True)

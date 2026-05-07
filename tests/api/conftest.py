@@ -227,6 +227,7 @@ class MockTaggerService:
                 user=job["user"],
                 title=job["title"],
                 error=job["error"],
+                dependencies=[],
                 tagger_details=details,
             ))
         return results
