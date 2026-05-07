@@ -152,26 +152,18 @@ model_configs:
     track_dependencies: ["auto_captions"]
     track_outputs: ["speaker_identification"]
 
-track_resolver:
+# used to map track name to human friendly label for UI display
+label_resolution:
   mapping:
-    llava_caption:
-      label: LLAVA Caption
-    speech_to_text:
-      label: Speech to Text
-    euro_asr:
-      label: Euro ASR
-    qwen:
-      label: Video Summary
-    run:
-      label: Running?
-    hit:
-      label: Hit?
-    hit2s:
-      label: (sm)Hit?
-    celebrate:
-      label: Celebration?
-    delivery:
-      label: Delivery?
+    llava_caption: LLAVA Caption
+    speech_to_text: Speech to Text
+    euro_asr: Euro ASR
+    qwen: Video Summary
+    run: Running?
+    hit: Hit?
+    hit2s: (sm)Hit?
+    celebrate: Celebration?
+    delivery: Delivery?
 
 user_info_resolver:
   fabric_url: https://main.net955305.contentfabric.io

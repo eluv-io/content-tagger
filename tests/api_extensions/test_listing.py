@@ -7,7 +7,7 @@ import pytest
 from src.api_extensions.models import list_models
 from src.tag_containers.model import ModelConfig, RegistryConfig
 from src.tag_containers.registry import ContainerRegistry
-from src.tags.track_resolver import TrackArgs, TrackResolver, TrackResolverConfig
+from src.tags.track_resolver import TrackArgs, TrackResolver, LabelResolverConfig
 
 
 @pytest.fixture
@@ -30,7 +30,7 @@ def fake_registry(temp_dir):
                 description="Test model 2",
                 resources={"gpu": 1},
                 image="localhost/test_model:latest",
-                track_outputs=["test_model"],
+                track_outputs=["another_model"],
                 track_dependencies=["test_model"]
             ),
             # should be hidden from listing API due to empty description
@@ -47,11 +47,13 @@ def fake_registry(temp_dir):
 
 
 @pytest.fixture
-def fake_resolver():
-    return TrackResolver(cfg=TrackResolverConfig(
-        mapping={"test_model": TrackArgs(name="test_model", label="TEST MODEL"),
-                 "test_model2": TrackArgs(name="another_model", label="Some label")}
-    ))
+def fake_resolver(model_configs):
+    return TrackResolver(label_configs=LabelResolverConfig(
+            mapping={"test_model": "TEST MODEL",
+                    "another_model": "Some label"}
+        ),
+        model_configs=model_configs 
+    )
 
 def test_listing(fake_registry):
     res = list_models(fake_registry.model_configs)

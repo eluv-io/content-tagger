@@ -18,7 +18,7 @@ from src.tagging.tag_runner import TagRunner, TagRunnerConfig
 from src.service.impl.queue_based import QueueService
 from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.tagging.scheduling.model import SysConfig
-from src.tags.track_resolver import TrackArgs, TrackResolver, TrackResolverConfig
+from src.tags.track_resolver import TrackArgs, TrackResolver, LabelResolverConfig
 
 
 @pytest.fixture
@@ -29,13 +29,23 @@ def media_dir(temp_dir: str) -> str:
     return media_path
 
 @pytest.fixture
-def track_resolver():
+def model_configs():
+    return {
+        "caption": Mock(type="video", track_outputs=["object_detection"]),
+        "asr": Mock(type="audio", track_outputs=["speech_to_text"]),
+    }
+
+@pytest.fixture
+def track_resolver(model_configs):
     """Create a simple track resolver for testing"""
-    return TrackResolver(cfg=TrackResolverConfig(mapping={
-        "caption": TrackArgs(name="object_detection", label="Object Detection"),
-        "asr": TrackArgs(name="speech_to_text", label="Speech to Text"),
-        "pretty": TrackArgs(name="auto_captions", label="Pretty Speech")
-    }))
+    return TrackResolver(
+        label_configs=LabelResolverConfig(mapping={
+            "object_detection": "Object Detection",
+            "speech_to_text": "Speech to Text",
+            "pretty": "Pretty Speech"
+        }),
+        model_configs=model_configs
+    )
     
 @pytest.fixture
 def tagger_config(media_dir) -> TaggerWorkerConfig:

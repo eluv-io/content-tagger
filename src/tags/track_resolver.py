@@ -2,32 +2,62 @@
 from copy import deepcopy
 from dataclasses import dataclass, field
 
+from src.common.model import ModelConfig
+
 @dataclass(frozen=True)
 class TrackArgs:
     name: str
     label: str
 
-@dataclass(frozen=True)
-class TrackResolverConfig:
-    mapping: dict[str, TrackArgs]
+@dataclass
+class LabelResolverConfig:
+    mapping: dict[str, str]
 
 class TrackResolver:
-    def __init__(self, cfg: TrackResolverConfig):
-        self.cfg = cfg
-        self._reverse_mapping: dict[str, str] = {
-            track_args.name: model_name
-            for model_name, track_args in cfg.mapping.items()
-        }
+    def __init__(self, label_configs: LabelResolverConfig, model_configs: dict[str, ModelConfig]):
+        self.label_configs = label_configs
+        self.model_configs = model_configs
 
-    def resolve(self, model_name: str) -> TrackArgs:
-        if model_name in self.cfg.mapping:
-            return deepcopy(self.cfg.mapping[model_name])
+        self.forward_mapping: dict[str, list[TrackArgs]] = {}
+        for model_name, model_cfg in model_configs.items():
+            for track in model_cfg.track_outputs:
+                label = label_configs.mapping.get(track, track.replace("_", " ").title())
+                if model_name not in self.forward_mapping:
+                    self.forward_mapping[model_name] = []
+                self.forward_mapping[model_name].append(TrackArgs(name=track, label=label))
+
+        self.reverse_mapping: dict[str, list[str]] = {}
+        
+        for model_name, track_args_list in self.forward_mapping.items():
+            for track_arg in track_args_list:
+                track = track_arg.name
+                if track not in self.reverse_mapping:
+                    self.reverse_mapping[track] = []
+                self.reverse_mapping[track].append(model_name)
+
+    def resolve(self, model_name: str) -> list[TrackArgs]:
+        """Resolve a model name to its track args.
+        
+        Guaranteed to return list of length >= 1
+        """
+        if model_name in self.forward_mapping:
+            return self.forward_mapping[model_name]
         else:
-            return self._default_track_args(model_name)
+            # If no specific mapping, return default track args
+            return [self._default_track_args(model_name)]
 
-    def reverse_resolve(self, track_name: str) -> str:
-        """Resolve a track name back to the original model name."""
-        return self._reverse_mapping.get(track_name, track_name)
+    def reverse_resolve(self, track_name: str) -> list[str]:
+        """Resolve a track name back to the original model name.
+        
+        Guaranteed to return list of length >= 1
+        """
+        return self.reverse_mapping.get(track_name, [track_name])
+    
+    def get_label(self, track_name: str) -> str:
+        if track_name in self.label_configs.mapping:
+            return self.label_configs.mapping[track_name]
+        else:
+            return track_name.replace("_", " ").title()
         
     def _default_track_args(self, model_name: str) -> TrackArgs:
         return TrackArgs(name=model_name, label=model_name.replace("_", " ").title())

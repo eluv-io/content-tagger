@@ -480,7 +480,7 @@ def test_track_override_uploads_to_multiple_tracks(fabric_tagger, q, make_tag_ar
     wait_tag(fabric_tagger, q.qid, timeout=5)
 
     default_tags = fabric_tagger.tagstore.find_tags(q=q, track="speech_to_text")
-    override_tags = fabric_tagger.tagstore.find_tags(q=q, track="auto_captions")
+    override_tags = fabric_tagger.tagstore.find_tags(q=q, track="pretty")
     assert len(default_tags) == 2
     assert len(override_tags) == 2
 
@@ -492,7 +492,7 @@ def test_uploaded_track_label(fabric_tagger: TaggerWorker, q, make_tag_args):
     fabric_tagger.tag(q, args)
     wait_tag(fabric_tagger, q.qid, timeout=5)
     
-    track_arg = fabric_tagger.track_resolver.resolve(args.feature)
+    track_arg = fabric_tagger.track_resolver.resolve(args.feature)[0]
     
     track = fabric_tagger.tagstore.get_track(
         q=q,

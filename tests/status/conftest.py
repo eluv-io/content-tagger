@@ -2,10 +2,11 @@
 from unittest.mock import Mock
 import pytest
 
+from src.common.model import ModelConfig
 from src.status.service import TaggingStatusService
 from src.tags.tagstore.abstract import Tagstore
 from src.tags.tagstore.model import Batch
-from src.tags.track_resolver import TrackResolver, TrackResolverConfig, TrackArgs
+from src.tags.track_resolver import TrackResolver, LabelResolverConfig, TrackArgs
 
 
 @pytest.fixture
@@ -23,14 +24,30 @@ def mock_tagstore():
     return _mock_tagstore
 
 @pytest.fixture
-def track_resolver() -> TrackResolver:
+def model_configs():
+    return {
+        "llava": Mock(
+            type="frame",
+            description="Test model",
+            track_outputs=["llava_track"]
+        ),
+        "whisper": Mock(
+            type="audio",
+            description="Test model 2",
+            track_outputs=["whisper_track"]
+        ),
+    }
+
+@pytest.fixture
+def track_resolver(model_configs) -> TrackResolver:
     return TrackResolver(
-        TrackResolverConfig(
+        label_configs=LabelResolverConfig(
             mapping={
-                "llava": TrackArgs(name="llava_track", label="LLaVA"),
-                "whisper": TrackArgs(name="whisper_track", label="Whisper"),
+                "llava_track": "LLAVA",
+                "whisper_track": "Whisper",
             }
-        )
+        ),
+        model_configs=model_configs
     )
 
 @pytest.fixture

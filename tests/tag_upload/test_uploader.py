@@ -8,12 +8,12 @@ import pytest
 from src.common.content import Content
 from src.tagging.fabric_tagging.model import TagArgs, TagContentStatusReport
 from src.tagging.uploading.uploader import UploadSession
-from src.tags.track_resolver import TrackArgs, TrackResolver, TrackResolverConfig
+from src.tags.track_resolver import TrackArgs, TrackResolver, LabelResolverConfig
 
 def test_upload_tags(upload_session, get_tag):
     tags = [
-        get_tag(model_track="asr", text="hello world"),
-        get_tag(model_track="caption", text="test tag", start_time=100, end_time=200)
+        get_tag(model_track="", text="hello world"),
+        get_tag(model_track="pretty", text="test tag", start_time=100, end_time=200)
     ]
 
     upload_session.upload_tags(tags=tags, tagged_sources=[t.source_media for t in tags])
@@ -26,10 +26,10 @@ def test_upload_tags(upload_session, get_tag):
     assert track.name == "speech_to_text"
     assert track.label == "Speech to Text"
 
-    track = ts.get_track(name="object_detection", q=upload_session.dest_q)
+    track = ts.get_track(name="pretty", q=upload_session.dest_q)
     assert track is not None
-    assert track.name == "object_detection"
-    assert track.label == "Object Detection"
+    assert track.name == "pretty"
+    assert track.label == "Pretty Speech"
 
     ts_tags = ts.find_tags(q=upload_session.dest_q)
     assert len(ts_tags) == 2
@@ -37,10 +37,10 @@ def test_upload_tags(upload_session, get_tag):
     speech_tag = ts.find_tags(q=upload_session.dest_q, track="speech_to_text")[0]
     assert speech_tag.text == "hello world"
 
-    caption_tag = ts.find_tags(q=upload_session.dest_q, track="object_detection")[0]
-    assert caption_tag.text == "test tag"
-    assert caption_tag.start_time == 100
-    assert caption_tag.end_time == 200
+    pretty_tag = ts.find_tags(q=upload_session.dest_q, track="pretty")[0]
+    assert pretty_tag.text == "test tag"
+    assert pretty_tag.start_time == 100
+    assert pretty_tag.end_time == 200
 
 def test_upload_report(upload_session, get_tag):
     tags = [
@@ -62,7 +62,7 @@ def test_upload_report(upload_session, get_tag):
     upload_session.upload_report(report=report)
 
     ts = upload_session.tagstore
-    batch = upload_session._get_batch(model_track="asr")
+    batch = upload_session._get_or_create_batch(model_track="speech_to_text")
 
     assert batch is not None
 

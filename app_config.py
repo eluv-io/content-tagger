@@ -13,7 +13,7 @@ from src.tagging.tag_runner import TagRunnerConfig
 from src.tagging.fabric_tagging.queue.model import JobStoreConfig
 from src.tags.tagstore.model import TagstoreConfig
 from src.tagging.fabric_tagging.model import TaggerWorkerConfig
-from src.tags.track_resolver import TrackResolverConfig
+from src.tags.track_resolver import LabelResolverConfig
 from src.status.get_info import UserInfoResolverConfig
 
 @dataclass
@@ -27,7 +27,7 @@ class AppConfig:
     container_registry: RegistryConfig
     model_configs: dict[str, ModelConfig]
     tagger: TaggerWorkerConfig
-    track_resolver: TrackResolverConfig
+    label_resolver: LabelResolverConfig
     tag_runner: TagRunnerConfig
     user_info_resolver: UserInfoResolverConfig
 

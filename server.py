@@ -113,7 +113,7 @@ def configure_routes(app: Flask) -> None:
 def _build_worker(cfg: AppConfig) -> TaggerWorker:
     qfactory = QAPIFactory(cfg.content)
     tagstore = create_tagstore(cfg.tagstore)
-    track_resolver = TrackResolver(cfg.track_resolver)
+    track_resolver = TrackResolver(cfg.label_resolver, cfg.model_configs)
     model_configs = cfg.model_configs
     return TaggerWorker(
         system_tagger=ContainerScheduler(cfg.system),
@@ -144,7 +144,7 @@ def create_app_direct(config: AppConfig) -> Flask:
         "authenticator": Authenticator(config.content.config_url),
         "arg_resolver": arg_resolver,
         # for listing API
-        "container_registry": worker.cregistry,
+        "model_configs": config.model_configs,
         "track_resolver": worker.track_resolver,
         "worker": worker,  # Expose worker for testing purposes
     }
@@ -184,7 +184,7 @@ def create_app_queue_based(config: AppConfig) -> Flask:
         # for delete jobs endpoint
         "jobstore": job_store,
         # for listing API
-        "container_registry": worker.cregistry,
+        "model_configs": config.model_configs,
         "track_resolver": worker.track_resolver,
         "worker": worker,  # Expose worker for testing purposes
     }

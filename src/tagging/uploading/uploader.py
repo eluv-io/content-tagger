@@ -8,7 +8,7 @@ from src.tag_containers.model import ModelTag
 from src.common.content import Content
 from src.common.logging import logger
 from src.tagging.fabric_tagging.model import TagContentStatusReport
-from src.tags.track_resolver import TrackResolver
+from src.tags.track_resolver import TrackArgs, TrackResolver
 
 class UploadSession:
     
@@ -80,7 +80,8 @@ class UploadSession:
 
     def upload_report(self, report: TagContentStatusReport) -> None:
         """Upload a tagging report to the tagstore as a tag on the content object."""
-        batch = self._get_or_create_batch(report.params.feature)
+        # we use the first of the specified output tracks to write the report
+        batch = self._get_or_create_batch(self.track_resolver.resolve(self.feature)[0].name)
         if batch is None:
             logger.error("no batch found for report, skipping upload", feature=report.params.feature, destination_qid=self.dest_q.qid)
             return
@@ -91,16 +92,13 @@ class UploadSession:
         """Get the set of source media that have been tagged in this session."""
         return list(self.uploaded_sources)
     
-    def _get_batch(self, model_track: str) -> str | None:
-        """Get or create a batch for the given model track."""
-        track_args = self.track_resolver.resolve(model_track)
-        return self.track_to_batch.get(track_args.name)
-    
     def _get_or_create_batch(self, model_track: str) -> str:
         if model_track:
-            track_args = self.track_resolver.resolve(model_track)
+            # get the label
+            label = self.track_resolver.get_label(model_track)
+            track_args = TrackArgs(name=model_track, label=label)
         else:
-            track_args = self.track_resolver.resolve(self.feature)
+            track_args = self.track_resolver.resolve(self.feature)[0]
 
         track = track_args.name
 

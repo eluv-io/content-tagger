@@ -23,7 +23,7 @@ from src.tagging.fabric_tagging.queue.model import JobStoreConfig
 from src.tagging.fabric_tagging.tagger import TaggerWorker
 from src.tagging.scheduling.model import SysConfig
 from src.tagging.tag_runner import TagRunner, TagRunnerConfig
-from src.tags.track_resolver import TrackArgs, TrackResolverConfig
+from src.tags.track_resolver import TrackArgs, LabelResolverConfig
 from src.tags.tagstore.model import TagstoreConfig
 
 @pytest.fixture()
@@ -72,7 +72,7 @@ def app_config(static_dir, tagger_config, content_config, fetcher_config, contai
         container_registry=container_registry_config,
         model_configs=model_configs,
         tagger=tagger_config,
-        track_resolver=TrackResolverConfig(mapping={"test_model": TrackArgs(name="test_model", label="TEST MODEL")}),
+        label_resolver=LabelResolverConfig(mapping={"test_model": "TEST MODEL"}),
         tag_runner=TagRunnerConfig(poll_interval=0.1, max_jobs=2),
         user_info_resolver=UserInfoResolverConfig(
             fabric_url="https://main.net955305.contentfabric.io",
