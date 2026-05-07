@@ -2,15 +2,15 @@
 
 from functools import lru_cache
 from src.common.logging.timing import timeit
+from src.common.logging import logger
 
 from src.common.content import Content, QAPIFactory
 from src.common.model import ModelConfig
 from src.service.model import TagStartResult
 from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tagging.fabric_tagging.model import TagArgs
-from src.tagging.fabric_tagging.queue.model import CreateQueueItem, QueueItem
+from src.tagging.fabric_tagging.queue.model import CreateQueueItem, ListJobArgs, QueueItem
 from src.tags.track_resolver import TrackResolver
-from tests.core_tagging.conftest import model_configs
 
 
 class JobPoster:
@@ -67,20 +67,43 @@ class JobPoster:
                     continue
 
                 if num_dependencies[i] == 0:
-                    parents = [job_ids[idx] for idx in deps.get(i, [])]
+                    # see if there is a job already running
+                    existing_job = self._get_already_running(q, args[i].feature)
 
-                    job = self._post_job(q, args[i], parents)
+                    if not existing_job:
 
-                    job_ids[i] = job.id
+                        parents = [job_ids[idx] for idx in deps.get(i, [])]
+
+                        job = self._post_job(q, args[i], parents)
+
+                        job_ids[i] = job.id
+
+                        res.append(TagStartResult(started=True, created_at=job.created_at, job_id=job.id, message="Job enqueued"))
+
+                    else:
+                        # mark the job id of already running job so we can set it as a dependency
+                        job_ids[i] = existing_job.id
+
+                        res.append(TagStartResult(started=False, created_at=existing_job.created_at, job_id=existing_job.id, message="Job already running"))
 
                     # resolve dependents
                     for d in dependents.get(i, []):
                         num_dependencies[d] -= 1
 
-                    res.append(TagStartResult(started=True, created_at=job.created_at, job_id=job.id, message="Job enqueued"))
                     jobs_submitted += 1
 
         return res
+    
+    def _get_already_running(self, q: Content, model: str) -> QueueItem | None:
+        running = self.jobstore.list_jobs(ListJobArgs(qid=q.qid, status="running"), auth=q.token)
+        for item in running:
+            if item.params.feature == model:
+                return item
+        queued = self.jobstore.list_jobs(ListJobArgs(qid=q.qid, status="queued"), auth=q.token)
+        for item in queued:
+            if item.params.feature == model:
+                return item
+        return None
 
     def _post_job(self, q: Content, arg: TagArgs, deps: list[str]) -> QueueItem:
         with timeit("getting display title", min_duration=2):
@@ -92,6 +115,7 @@ class JobPoster:
                     qid=q.qid,
                     params=arg,
                     status_details=None,
+                    deps=deps,
                     additional_info={"title": title},
                 ),
                 auth=q.token,
