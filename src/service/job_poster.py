@@ -31,7 +31,7 @@ class JobPoster:
         self.qfactory = qfactory
     
     def post_jobs(self, q: Content, args: list[TagArgs]) -> list[TagStartResult]:
-        res = []
+        res: list[TagStartResult | None] = [None for _ in args]
 
         # maps arg idx -> list of arg idx dependencies
         deps: dict[int, list[int]] = {}
@@ -39,18 +39,27 @@ class JobPoster:
         # maps arg idx -> list of dependents
         dependents: dict[int, list[int]] = {}
 
+        # maps arg idx -> list of external job ids it depends on (jobs not in this request)
+        external_deps: dict[int, list[str]] = {}
+
         track_to_arg_idx: dict[str, list[int]] = {}
         for i, arg in enumerate(args):
             output_tracks = self.track_resolver.resolve(arg.feature)
             for track in output_tracks:
                 track_to_arg_idx.setdefault(track.name, []).append(i)
 
+        existing_jobs_by_track = self._get_existing_jobs_by_track(q)
+
         for i, arg in enumerate(args):
             dep_tracks = self.model_configs[arg.feature].track_dependencies
             for t in dep_tracks:
-                for idx in track_to_arg_idx.get(t, []):
-                    deps.setdefault(i, []).append(idx)
-                    dependents.setdefault(idx, []).append(i)
+                in_request = track_to_arg_idx.get(t, [])
+                if in_request:
+                    for idx in in_request:
+                        deps.setdefault(i, []).append(idx)
+                        dependents.setdefault(idx, []).append(i)
+                elif t in existing_jobs_by_track:
+                    external_deps.setdefault(i, []).append(existing_jobs_by_track[t])
 
         jobs_submitted = 0
 
@@ -72,19 +81,19 @@ class JobPoster:
 
                     if not existing_job:
 
-                        parents = [job_ids[idx] for idx in deps.get(i, [])]
+                        parents = [job_ids[idx] for idx in deps.get(i, [])] + external_deps.get(i, [])
 
                         job = self._post_job(q, args[i], parents)
 
                         job_ids[i] = job.id
 
-                        res.append(TagStartResult(started=True, created_at=job.created_at, job_id=job.id, message="Job enqueued"))
+                        res[i] = TagStartResult(started=True, created_at=job.created_at, job_id=job.id, dependencies=parents, message="Job enqueued")
 
                     else:
                         # mark the job id of already running job so we can set it as a dependency
                         job_ids[i] = existing_job.id
 
-                        res.append(TagStartResult(started=False, created_at=existing_job.created_at, job_id=existing_job.id, message="Job already running"))
+                        res[i] = TagStartResult(started=False, created_at=existing_job.created_at, job_id=existing_job.id, dependencies=[], message="Job already running")
 
                     # resolve dependents
                     for d in dependents.get(i, []):
@@ -92,8 +101,28 @@ class JobPoster:
 
                     jobs_submitted += 1
 
-        return res
+        type_checked_res = []
+        
+        # placate type checker
+        for r in res:
+            assert isinstance(r, TagStartResult)
+            type_checked_res.append(r)
+
+        return type_checked_res
     
+    def _get_existing_jobs_by_track(self, q: Content) -> dict[str, str]:
+        """Returns a map of track name -> job id for tracks produced by running/queued jobs."""
+        result: dict[str, str] = {}
+        running = self.jobstore.list_jobs(ListJobArgs(qid=q.qid, status="running", include_unready=True), auth=q.token)
+        queued = self.jobstore.list_jobs(ListJobArgs(qid=q.qid, status="queued", include_unready=True), auth=q.token)
+        for item in list(running) + list(queued):
+            feature = item.params.feature
+            if feature not in self.model_configs:
+                continue
+            for track in self.track_resolver.resolve(feature):
+                result.setdefault(track.name, item.id)
+        return result
+
     def _get_already_running(self, q: Content, model: str) -> QueueItem | None:
         running = self.jobstore.list_jobs(ListJobArgs(qid=q.qid, status="running"), auth=q.token)
         for item in running:
