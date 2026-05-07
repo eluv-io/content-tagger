@@ -7,6 +7,7 @@ from src.common.content import Content, QAPIFactory
 from src.common.errors import BadRequestError, MissingResourceError
 from src.common.logging import logger
 from src.fetch.model import AssetScope, LiveScope, TimeRangeScope, VideoScope
+from src.service.job_poster import JobPoster
 from src.service.model import *
 from src.tagging.fabric_tagging.model import TagArgs
 from src.tagging.fabric_tagging.queue.abstract import JobStore
@@ -24,44 +25,15 @@ class QueueService(TaggerService):
 
     def __init__(
         self, 
-        jobstore: JobStore,
-        qfactory: QAPIFactory
+        job_poster: JobPoster,
     ):
-        self.jobstore = jobstore
-        self.qfactory = qfactory
+        self.job_poster = job_poster
+        self.jobstore = job_poster.jobstore
 
-    def tag(self, q: Content, args: TagArgs) -> TagStartResult:
+    def tag(self, q: Content, args: list[TagArgs]) -> list[TagStartResult]:
         """Enqueue a tagging job and return immediately."""
-        auth = q.token
 
-        with timeit("listing jobs"):
-            existing = self.jobstore.list_jobs(ListJobArgs(qid=q.qid), auth=auth)
-        for item in existing:
-            if item.status in ("queued", "running") and item.params.feature == args.feature:
-                logger.info("duplicate job rejected", qid=q.qid, feature=args.feature, existing_job_id=str(item.id))
-                return TagStartResult(
-                    job_id="",
-                    started=False,
-                    message=f"A job with params {args} is already running",
-                    created_at=item.created_at,
-                )
-
-        with timeit("getting display title"):
-            title = self._get_display_title(q)
-
-        with timeit("creating job"):
-            job = self.jobstore.create_job(
-                CreateQueueItem(
-                    qid=q.qid,
-                    params=args,
-                    status_details=None,
-                    additional_info={"title": title},
-                ),
-                auth=auth,
-            )
-
-        logger.info("enqueued tagging job", job_id=str(job.id), qid=q.qid)
-        return TagStartResult(started=True, created_at=job.created_at, job_id=job.id, message="Job enqueued")
+        return self.job_poster.post_jobs(q, args)
 
     def status(self, req: StatusArgs) -> list[TagJobStatusResult]:
         """Return the latest status for all jobs targeting *qid*."""
@@ -95,14 +67,6 @@ class QueueService(TaggerService):
             logger.info("stop requested", job_id=str(item.id))
 
         return results
-    
-    @lru_cache(maxsize=1024)
-    def _get_display_title(self, q: Content) -> str:
-        qapi = self.qfactory.create(q)
-        title = qapi.content_object_metadata(metadata_subtree="/public/name")
-        if not isinstance(title, str):
-            return ""
-        return title
     
     def _items_to_reports(self, items: list[QueueItem]) -> list[TagJobStatusResult]:
         """Convert a list of QueueItems to TagJobStatusResult objects."""

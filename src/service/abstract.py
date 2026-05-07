@@ -6,7 +6,7 @@ from src.service.model import TagJobStatusResult, TagStopResult, TagStartResult,
 
 class TaggerService(Protocol):
     """Service level interface for opertating the tagging. This is the interface the API will call."""
-    def tag(self, q: Content, args: TagArgs) -> TagStartResult:
+    def tag(self, q: Content, args: list[TagArgs]) -> list[TagStartResult]:
         ...
 
     def status(self, req: StatusArgs) -> list[TagJobStatusResult]:
