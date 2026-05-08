@@ -3,7 +3,7 @@ from typing_extensions import Literal
 
 from src.common.content import Content
 from src.tags.tagstore.model import Tag
-from src.common.model import SystemResources
+from src.common.model import ModelConfig
 
 MediaInput = list[str] | str
 
@@ -11,21 +11,6 @@ MediaInput = list[str] | str
 class ContainerInfo:
     image_name: str
     annotations: dict
-
-@dataclass
-class ModelConfig:
-    """
-    Describes static attributes of a model
-    """
-    image: str
-    # empty description string indicates that it will be hidden from listing API
-    description: str
-    type: Literal["audio", "video", "frame", "processor"]
-    resources: SystemResources
-    # indicates that the model will output tags aligned to the full content rather than individual parts
-    content_aligned: bool = False
-    # tagstore track dependencies
-    dependencies: list[str] = field(default_factory=list)
 
 @dataclass
 class ContainerSpec:
@@ -67,8 +52,6 @@ class ContainerRequest:
 
 @dataclass
 class RegistryConfig:
-    # maps model_id -> ModelConfig
-    model_configs: dict[str, ModelConfig]
     base_dir: str
     cache_dir: str
 

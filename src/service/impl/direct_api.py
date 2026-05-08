@@ -13,15 +13,20 @@ class DirectAPI(TaggerService):
     def __init__(self, tagger: TaggerWorker):
         self.tagger = tagger
 
-    def tag(self, q: Content, args: TagArgs) -> TagStartResult:
-        res = self.tagger.tag(q, args)
-        # convert to service level struct which has the same name
-        return TagStartResult(
-            job_id=str(res.job_id),
-            started=res.started,
-            created_at=time.time(),
-            message=res.message,
-        )
+    def tag(self, q: Content, args: list[TagArgs]) -> list[TagStartResult]:
+        results = []
+        for arg in args:
+            res = self.tagger.tag(q, arg)
+            results.append(
+                TagStartResult(
+                    job_id=str(res.job_id),
+                    started=res.started,
+                    created_at=time.time(),
+                    dependencies=[],
+                    message=res.message,
+                )
+            )
+        return results
     
     def status(self, req: StatusArgs) -> list[TagJobStatusResult]:
         if not req.qid:
@@ -41,6 +46,7 @@ class DirectAPI(TaggerService):
                 tenant="",
                 user="",
                 title="",
+                dependencies=[],
                 tagger_details=TagDetails(
                     tag_status=r.status.status,
                     time_running=r.status.time_ended - r.status.time_started if r.status.time_ended else time.time() - r.status.time_started,

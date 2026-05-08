@@ -14,6 +14,7 @@ from src.api.arg_resolver import ArgsResolver
 from src.api.auth import Authenticator
 from src.service.impl.direct_api import DirectAPI
 from src.service.impl.queue_based import QueueService
+from src.service.job_poster import JobPoster
 from src.status.get_info import UserInfoResolver
 from src.status.service import TaggingStatusService
 from src.tagging.scheduling.scheduler import ContainerScheduler
@@ -113,11 +114,12 @@ def configure_routes(app: Flask) -> None:
 def _build_worker(cfg: AppConfig) -> TaggerWorker:
     qfactory = QAPIFactory(cfg.content)
     tagstore = create_tagstore(cfg.tagstore)
-    track_resolver = TrackResolver(cfg.track_resolver)
+    track_resolver = TrackResolver(cfg.label_resolver, cfg.model_configs)
+    model_configs = cfg.model_configs
     return TaggerWorker(
         system_tagger=ContainerScheduler(cfg.system),
         fetcher=FetchFactory(cfg.fetcher, create_tagstore(cfg.tagstore), qfactory),
-        cregistry=ContainerRegistry(cfg.container_registry),
+        cregistry=ContainerRegistry(cfg.container_registry, model_configs),
         tagstore=tagstore,
         cfg=cfg.tagger,
         track_resolver=track_resolver,
@@ -143,7 +145,7 @@ def create_app_direct(config: AppConfig) -> Flask:
         "authenticator": Authenticator(config.content.config_url),
         "arg_resolver": arg_resolver,
         # for listing API
-        "container_registry": worker.cregistry,
+        "model_configs": config.model_configs,
         "track_resolver": worker.track_resolver,
         "worker": worker,  # Expose worker for testing purposes
     }
@@ -170,9 +172,10 @@ def create_app_queue_based(config: AppConfig) -> Flask:
     job_store: JobStore = FsJobStore(config.jobstore.base_url, user_info_resolver=user_info_resolver)
     qfactory = QAPIFactory(config.content)
     arg_resolver = ArgsResolver(worker.cregistry, api_factory=qfactory)
+    job_poster = JobPoster(job_store, worker.track_resolver, config.model_configs, qfactory)
 
     app.config["state"] = {
-        "service": QueueService(job_store, qfactory),
+        "service": QueueService(job_poster=job_poster),
         "status_service": TaggingStatusService(
             tagstore=worker.tagstore, 
             track_resolver=worker.track_resolver
@@ -183,7 +186,7 @@ def create_app_queue_based(config: AppConfig) -> Flask:
         # for delete jobs endpoint
         "jobstore": job_store,
         # for listing API
-        "container_registry": worker.cregistry,
+        "model_configs": config.model_configs,
         "track_resolver": worker.track_resolver,
         "worker": worker,  # Expose worker for testing purposes
     }

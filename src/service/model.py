@@ -11,6 +11,8 @@ class StatusArgs:
 class TagStartResult:
     job_id: str
     started: bool
+    # list of job ids which are dependencies
+    dependencies: list[str]
     message: str
     created_at: float
 
@@ -46,6 +48,7 @@ class TagJobStatusResult:
     tenant: str
     user: str
     title: str
+    dependencies: list[str]
     error: str | None
     tagger_details: TagDetails | None
 

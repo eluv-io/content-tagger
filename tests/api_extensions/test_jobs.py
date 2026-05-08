@@ -10,7 +10,7 @@ from src.tagging.fabric_tagging.queue.model import CreateQueueItem, ListJobArgs,
 
 def test_delete_job(jobstore, make_tag_args, fake_user_info_resolver):
     args = make_tag_args()
-    job = jobstore.create_job(CreateQueueItem(qid="iq__test", params=args, status_details=None, additional_info={}), auth="token")
+    job = jobstore.create_job(CreateQueueItem(qid="iq__test", params=args, status_details=None, additional_info={}, deps=[]), auth="token")
     req = DeleteJobRequest(job_id=job.id, tenant=None, authorization="token")
 
     with pytest.raises(BadRequestError):
@@ -24,7 +24,7 @@ def test_delete_job(jobstore, make_tag_args, fake_user_info_resolver):
 
     assert jobstore.get_job(job.id).status == "deleted"
 
-    job = jobstore.create_job(CreateQueueItem(qid="iq__test", params=args, status_details=None, additional_info={}), auth="token")
+    job = jobstore.create_job(CreateQueueItem(qid="iq__test", params=args, status_details=None, additional_info={}, deps=[]), auth="token")
 
     # update job state
     jobstore.update_job(UpdateJobRequest(id=job.id, status="failed"), "token")
@@ -61,7 +61,7 @@ def test_delete_job(jobstore, make_tag_args, fake_user_info_resolver):
         assert j.status != "deleted"
 
     # check that if user specifies tenant and is not tenant admin, it will still be ok as long as the job belongs to them
-    job = jobstore.create_job(CreateQueueItem(qid="iq__test", params=args, status_details=None, additional_info={}), auth="token")
+    job = jobstore.create_job(CreateQueueItem(qid="iq__test", params=args, status_details=None, additional_info={}, deps=[]), auth="token")
     jobstore.update_job(UpdateJobRequest(id=job.id, status="succeeded"), "token")
 
     fake_user_info_resolver.get_user_info = Mock(return_value=UserInfo(
@@ -77,7 +77,7 @@ def test_delete_job(jobstore, make_tag_args, fake_user_info_resolver):
     assert jobstore.get_job(job.id).status == "deleted"
 
     # check that mismatched tenant id raises ForbiddenError
-    job = jobstore.create_job(CreateQueueItem(qid="iq__test", params=args, status_details=None, additional_info={}), auth="token")
+    job = jobstore.create_job(CreateQueueItem(qid="iq__test", params=args, status_details=None, additional_info={}, deps=[]), auth="token")
     jobstore.update_job(UpdateJobRequest(id=job.id, status="succeeded"), "token")
 
     fake_user_info_resolver.get_user_info = Mock(return_value=UserInfo(

@@ -34,7 +34,8 @@ class TaggingStatusService:
         for track_name, batches in batches_by_track.items():
             latest_batch = max(batches, key=lambda b: b.timestamp)
 
-            model_name = self.track_resolver.reverse_resolve(track_name)
+            # TODO: not ideal if multiple models write to same track
+            model_name = self.track_resolver.reverse_resolve(track_name)[0]
 
             all_sources: set[str] = set()
             tagged_sources: set[str] = set()
@@ -68,8 +69,7 @@ class TaggingStatusService:
         q: Content,
         model: str,
     ) -> ModelStatusResponse:
-        track_args = self.track_resolver.resolve(model)
-        track_name = track_args.name
+        track_name = self.track_resolver.resolve(model)[0].name
 
         batch_ids = self.tagstore.find_batches(q=q, qid=q.qid, author="tagger")
 

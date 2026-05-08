@@ -9,6 +9,7 @@ from src.api_extensions.jobs import DeleteJobRequest
 from src.api_extensions.jobs import delete_job
 from src.api_extensions.models import list_models
 from src.common.errors import BadRequestError
+from src.common.model import ModelConfig
 from src.status.get_info import UserInfoResolver
 from src.tag_containers.registry import ContainerRegistry
 from src.tagging.fabric_tagging.queue.abstract import JobStore
@@ -16,10 +17,9 @@ from src.tags.track_resolver import TrackResolver
 
 
 def handle_list_models() -> Response:
-    registry: ContainerRegistry = current_app.config["state"]["container_registry"]
-    track_resolver: TrackResolver = current_app.config["state"]["track_resolver"]
+    model_configs: dict[str, ModelConfig] = current_app.config["state"]["model_configs"]
 
-    payload = list_models(registry, track_resolver)
+    payload = list_models(model_configs)
 
     return Response(
         response=json.dumps(asdict(payload)),

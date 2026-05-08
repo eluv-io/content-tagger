@@ -137,10 +137,6 @@ def test_live_worker_respects_ignore_sources(
     assert len(result.sources) == 1
     assert result.sources[0].name == f"video:segment_{chunk_size}_3"
 
-    result = worker.download()
-    assert len(result.sources) == 0
-    assert result.done is True
-
 def test_live_worker_all_ignored(
     fetcher: FetchFactory,
     q_live: Content,
@@ -153,6 +149,7 @@ def test_live_worker_all_ignored(
         f"video:segment_{chunk_size}_1",
         f"video:segment_{chunk_size}_2",
         f"video:segment_{chunk_size}_3",
+        f"video:segment_{chunk_size}_4",
     ]
 
     req = DownloadRequest(

@@ -14,23 +14,40 @@ from src.api.auth import Authenticator
 from src.api.tagging.request_format import StartJobsRequest
 from src.common.content import Content
 from src.fetch.model import DownloadResult, FetchSession, MediaMetadata, VideoScope
-from src.service.model import StatusArgs, TagDetails, TagJobStatusResult
+from src.service.model import StatusArgs, TagDetails, TagJobStatusResult, TagStartResult
 from src.status.get_info import UserInfoResolverConfig
 from src.tag_containers.model import ModelConfig, RegistryConfig
-from src.tagging.fabric_tagging.model import TaggerWorkerConfig, JobID, TagArgs, TagStartResult, TagStopResult
+from src.tagging.fabric_tagging.model import TaggerWorkerConfig, JobID, TagArgs, TagStopResult
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
 from src.tagging.fabric_tagging.queue.model import JobStoreConfig
 from src.tagging.fabric_tagging.tagger import TaggerWorker
 from src.tagging.scheduling.model import SysConfig
 from src.tagging.tag_runner import TagRunner, TagRunnerConfig
-from src.tags.track_resolver import TrackArgs, TrackResolverConfig
+from src.tags.track_resolver import TrackArgs, LabelResolverConfig
 from src.tags.tagstore.model import TagstoreConfig
 
 @pytest.fixture()
 def tagger_config(static_dir) -> TaggerWorkerConfig:
     media_path = os.path.join(static_dir, "media")
     os.makedirs(media_path, exist_ok=True)
-    return TaggerWorkerConfig(media_dir=media_path)    
+    return TaggerWorkerConfig(media_dir=media_path)
+
+@pytest.fixture()
+def model_configs() -> dict[str, ModelConfig]:
+    return {
+        "test_model": ModelConfig(
+            type="frame",
+            description="Test model",
+            resources={"gpu": 1},
+            image="localhost/test_model:latest"
+        ),
+        "test_model2": ModelConfig(
+            type="frame",
+            description="Test model 2",
+            resources={"gpu": 1},
+            image="localhost/test_model:latest"
+        )
+    }
 
     
 @pytest.fixture()
@@ -38,24 +55,10 @@ def container_registry_config(static_dir) -> RegistryConfig:
     return RegistryConfig(
             base_dir=os.path.join(static_dir, "stuff"),
             cache_dir=os.path.join(static_dir, "cache"),
-            model_configs={
-                "test_model": ModelConfig(
-                    type="frame",
-                    description="Test model",
-                    resources={"gpu": 1},
-                    image="localhost/test_model:latest"
-                ),
-                "test_model2": ModelConfig(
-                    type="frame",
-                    description="Test model 2",
-                    resources={"gpu": 1},
-                    image="localhost/test_model:latest"
-                )
-            }
         )
 
 @pytest.fixture()
-def app_config(static_dir, tagger_config, content_config, fetcher_config, container_registry_config) -> AppConfig:
+def app_config(static_dir, tagger_config, content_config, fetcher_config, container_registry_config, model_configs) -> AppConfig:
     """Create test configuration."""
     return AppConfig(
         root_dir=static_dir,
@@ -67,8 +70,9 @@ def app_config(static_dir, tagger_config, content_config, fetcher_config, contai
         system=SysConfig(gpus=["gpu", "disabled", "gpu"], resources={"cpu_juice": 16}),
         fetcher=fetcher_config,
         container_registry=container_registry_config,
+        model_configs=model_configs,
         tagger=tagger_config,
-        track_resolver=TrackResolverConfig(mapping={"test_model": TrackArgs(name="test_model", label="TEST MODEL")}),
+        label_resolver=LabelResolverConfig(mapping={"test_model": "TEST MODEL"}),
         tag_runner=TagRunnerConfig(poll_interval=0.1, max_jobs=2),
         user_info_resolver=UserInfoResolverConfig(
             fabric_url="https://main.net955305.contentfabric.io",
@@ -164,26 +168,33 @@ class MockTaggerService:
         # job_id -> dict with job info
         self._jobs: dict[str, dict] = {}
 
-    def tag(self, q: Content, args: TagArgs) -> TagStartResult:
+    def tag(self, q: Content, args: list[TagArgs]) -> list[TagStartResult]:
         job_id = str(uuid.uuid4())
-        self._jobs[job_id] = {
-            "job_id": job_id,
-            "qid": q.qid,
-            "status": "Tagging content",
-            "model": args.feature,
-            "stream": "",
-            "created_at": time.time(),
-            "params": args.run_config,
-            "tenant": "test tenant",
-            "user": "test user",
-            "title": q.qid,
-            "error": None,
-        }
-        return TagStartResult(
-            job_id=JobID(qid=q.qid, feature=args.feature, stream=""),
-            started=True,
-            message="Mock job started",
-        )
+        res = []
+        for arg in args:
+            self._jobs[job_id] = {
+                "job_id": job_id,
+                "qid": q.qid,
+                "status": "Tagging content",
+                "model": arg.feature,
+                "stream": "",
+                "created_at": time.time(),
+                "params": arg.run_config,
+                "tenant": "test tenant",
+                "user": "test user",
+                "title": q.qid,
+                "error": None,
+            }
+            res.append(
+                TagStartResult(
+                    job_id="hello",
+                    started=True,
+                    message="Mock job started",
+                    dependencies=[],
+                    created_at=time.time(),
+                )
+            )
+        return res
 
     def status(self, req: StatusArgs) -> list[TagJobStatusResult]:
         results = []
@@ -218,6 +229,7 @@ class MockTaggerService:
                 user=job["user"],
                 title=job["title"],
                 error=job["error"],
+                dependencies=[],
                 tagger_details=details,
             ))
         return results

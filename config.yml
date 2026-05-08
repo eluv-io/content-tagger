@@ -1,5 +1,5 @@
 content:
-  parts_url: http://192.168.96.203/config?self&qspace=main
+  parts_url: http://192.168.90.218/config?self&qspace=main
   config_url: https://host-154-14-185-98.contentfabric.io/config?self&qspace=main
   live_media_url: https://host-76-74-29-5.contentfabric.io/config?self&qspace=main
 
@@ -8,7 +8,7 @@ tagstore:
   
 tag_runner:
   poll_interval: 5.0
-  max_jobs: 1
+  max_jobs: 5
 
 tag_converter:
   name_mapping:
@@ -47,143 +47,142 @@ jobstore:
 container_registry:
   base_dir: data/containers
   cache_dir: data/cache
-  model_configs:
-    llava:
-      image: "localhost/llava:latest"
-      type: "frame"
-      description: Scene Description
+
+model_configs:
+  llava:
+    image: "localhost/llava:latest"
+    type: "frame"
+    description: Scene Description
+    resources: {
+      "ollama": 1
+    }
+    track_outputs: ["llava_caption"]
+  asr:
+    image: "localhost/asr:latest"
+    type: "audio"
+    description: Speech to Text
+    resources: {
+      "gpu": 1
+    }
+    track_outputs: ["speech_to_text", "auto_captions"]
+  euro_asr:
+    image: "localhost/multilingual:latest"
+    type: "audio"
+    description: Multilingual Speech to Text
+    resources: {
+      "gpu": 1
+    }
+    track_outputs: ["euro_asr", "auto_captions"]
+  caption:
+    image: "localhost/caption:latest"
+    type: "frame"
+    description: Object Identification
+    resources: {
+      "gpu": 1
+    }
+    track_outputs: ["object_detection"]
+  shot:
+    image: "localhost/shot:latest"
+    type: "video"
+    description: Shot Detection
+    resources: {
+      "gpu": 1
+    }
+    track_outputs: ["shot_detection"]
+  celeb:
+    image: "localhost/celeb:latest"
+    type: "frame"
+    description: Celebrity Identification
+    resources: {
+      "gpu": 1,
+      "cpu_juice": 35
+    }
+    track_outputs: ["celebrity_detection"]
+  ocr:
+    image: "localhost/ocr:latest"
+    type: "frame"
+    description: OCR
+    resources: {
+      "gpu": 1
+    }
+    track_outputs: ["optical_character_recognition"]
+  logo:
+    image: "localhost/logo:latest"
+    type: "frame"
+    description: Logo Identification
+    resources: {
+      "gpu": 1
+    }
+    track_outputs: ["logo_detection"]
+  vertical_video:
+    image: "localhost/verticalvideo:latest"
+    type: "video"
+    description: Focus Identification
+    resources: {
+      "gpu": 1
+    }
+    track_outputs: ["vertical_video", "focus_detection"]
+    track_dependencies: ["shot_detection"]
+  chapters:
+    image: "localhost/chapter:latest"
+    type: "processor"
+    description: Chapter Generation
+    resources: {
+      "ollama": 1
+    }
+    content_aligned: True
+    track_outputs: ["chapter"]
+    track_dependencies: ["auto_captions"]
+  pose:
+    image: "localhost/pose:latest"
+    type: "video"
+    description: Pose Detection
+    resources: {
+      "gpu": 1
+    }
+    track_dependencies: ["shot_detection"]
+  speaker:
+    image: "localhost/speaker:latest"
+    type: "audio"
+    description: Speaker Identification
+    resources: {
+      "gpu": 1
+    }
+    content_aligned: True
+    track_dependencies: ["auto_captions"]
+    track_outputs: ["speaker_detection", "transcription"]
+  music:
+    image: "localhost/music:latest"
+    type: "audio"
+    description: Music Identification
+    resources: {
+      "cpu_juice": 8
+    }
+    track_outputs: ["music_detection"]
+  evidence:
+      image: "localhost/evidence:latest"
+      type: "processor"
+      description: Evidence Generation
       resources: {
         "ollama": 1
       }
-    asr:
-      image: "localhost/asr:latest"
-      type: "audio"
-      description: Speech to Text
-      resources: {
-        "gpu": 1
-      }
-    euro_asr:
-      image: "localhost/multilingual:latest"
-      type: "audio"
-      description: Multilingual European Speech to Text
-      resources: {
-        "gpu": 1
-      }
-    caption:
-      image: "localhost/caption:latest"
-      type: "frame"
-      description: Object Identification
-      resources: {
-        "gpu": 1
-      }
-    shot:
-      image: "localhost/shot:latest"
-      type: "video"
-      description: Shot Detection
-      resources: {
-        "gpu": 1
-      }
-    celeb:
-      image: "localhost/celeb:latest"
-      type: "frame"
-      description: Celebrity Identification
-      resources: {
-        "gpu": 1,
-        "cpu_juice": 35
-      }
-    ocr:
-      image: "localhost/ocr:latest"
-      type: "frame"
-      description: OCR
-      resources: {
-        "gpu": 1
-      }
-    logo:
-      image: "localhost/logo:latest"
-      type: "frame"
-      description: Logo Identification
-      resources: {
-        "gpu": 1
-      }
-    vertical_video:
-      image: "localhost/verticalvideo:latest"
-      type: "video"
-      description: Vertical Video Generation
-      resources: {
-        "cpu_juice": 40
-      }
-    music:
-      image: "localhost/music:latest"
-      type: "audio"
-      description: Music Identification
-      resources: {
-        "cpu_juice": 8
-      }
-    speaker:
-      image: "localhost/speaker:latest"
-      type: "audio"
-      description: Speaker Identification
-      resources: {
-        "gpu": 1
-      }
       content_aligned: True
+      track_outputs: ["evidence_v2"]
 
-track_resolver:
+# used to map track name to human friendly label for UI display
+label_resolver:
   mapping:
-    speaker:
-      name: speaker_detection
-      label: Speaker Detection
-    llava:
-      name: llava_caption
-      label: LLAVA Caption
-    asr:
-      name: speech_to_text
-      label: Speech to Text
-    euro_asr:
-      name: euro_asr
-      label: Euro ASR
-    caption:
-      name: object_detection
-      label: Object Detection
-    shot:
-      name: shot_detection
-      label: Shot Detection
-    celeb:
-      name: celebrity_detection
-      label: Celebrity Detection
-    ocr:
-      name: optical_character_recognition
-      label: Optical Character Recognition
-    logo:
-      name: logo_detection
-      label: Logo Detection
-    music:
-      name: music_detection
-      label: Music Detection
-    breakdance:
-      name: breakdance
-      label: Breakdance
-    test_model:
-      name: test_model
-      label: Test Model
-    qwen:
-      name: qwen
-      label: Video Summary
-    run:
-      name: run
-      label: Running?
-    hit:
-      name: hit
-      label: Hit?
-    hit2s:
-      name: hit2s
-      label: (sm)Hit?
-    celebrate:
-      name: celebrate
-      label: Celebration?
-    delivery:
-      name: delivery
-      label: Delivery?
+    llava_caption: LLAVA Caption
+    speech_to_text: Speech to Text
+    euro_asr: Euro ASR
+    qwen: Video Summary
+    run: Running?
+    hit: Hit?
+    hit2s: (sm)Hit?
+    celebrate: Celebration?
+    delivery: Delivery?
+    vertical_video: Vertical Video Information
+    speaker_detection: Speaker Recognition
 
 user_info_resolver:
   fabric_url: https://main.net955305.contentfabric.io

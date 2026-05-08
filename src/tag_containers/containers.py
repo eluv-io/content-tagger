@@ -11,6 +11,7 @@ import time
 from src.common.logging.timing import timeit
 from src.tag_containers.model import *
 from src.tag_containers.model import ContainerInfo, Progress, Error
+from src.common.model import SystemResources
 
 logger = logger.bind(name="TagContainer")
 

@@ -1,10 +1,13 @@
 
+from unittest.mock import Mock
+
 import pytest
 
 from src.common.content import Content
+from src.common.model import ModelConfig
 from src.tag_containers.model import ModelTag
 from src.tagging.uploading.uploader import UploadSession
-from src.tags.track_resolver import TrackArgs, TrackResolver, TrackResolverConfig
+from src.tags.track_resolver import TrackArgs, TrackResolver, LabelResolverConfig
 
 
 @pytest.fixture
@@ -35,13 +38,23 @@ def mock_q():
     return Content(qid="test_qid", token="")
 
 @pytest.fixture
-def track_resolver():
+def model_configs():
+    return {
+        "asr": Mock(
+            track_outputs=["speech_to_text", "pretty"]
+        ),
+    }
+
+@pytest.fixture
+def track_resolver(model_configs):
     """Create a simple track resolver for testing"""
-    return TrackResolver(cfg=TrackResolverConfig(mapping={
-        "caption": TrackArgs(name="object_detection", label="Object Detection"),
-        "asr": TrackArgs(name="speech_to_text", label="Speech to Text"),
-        "pretty": TrackArgs(name="auto_captions", label="Pretty Speech")
-    }))
+    return TrackResolver(label_configs=
+        LabelResolverConfig(mapping={
+            "speech_to_text": "Speech to Text",
+            "pretty": "Pretty Speech",
+        }),
+        model_configs=model_configs
+    )
 
 @pytest.fixture
 def upload_session(track_resolver, mock_q, filesystem_tagstore):

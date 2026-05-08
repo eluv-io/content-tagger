@@ -18,7 +18,7 @@ def source_resolver(tag_store, track_resolver):
 
 def test_source_resolver(q, source_resolver):
     tagstore = source_resolver.tagstore
-    track = source_resolver.track_resolver.resolve("asr")
+    track = source_resolver.track_resolver.resolve("asr")[0]
     batch = tagstore.create_batch(
         q=q,
         author="tagger",

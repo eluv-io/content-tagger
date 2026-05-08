@@ -726,7 +726,7 @@ class TaggerWorker:
     def _validate_args(self, args: TagArgs) -> None:
         """Validate args (called from actor thread)"""
         services = self.cregistry.services()
-        modconfigs = self.cregistry.cfg.model_configs
+        modconfigs = self.cregistry.model_configs
 
         feature = args.feature
         if feature not in services:

@@ -14,16 +14,22 @@ class SourceResolver:
         self.track_resolver = track_resolver
 
     def resolve(self, q: Content, model: str) -> list[str]:
-        default_track = self.track_resolver.resolve(model)
-        track_name = default_track.name
+        tracks = self.track_resolver.resolve(model)
 
         batch_ids = self.tagstore.find_batches(q=q, qid=q.qid, author="tagger")
 
-        uploaded_sources = []
-        for batch_id in batch_ids:
-            batch = self.tagstore.get_batch(batch_id, q=q)
-            if batch is not None and batch.track == track_name and "tagger" in batch.additional_info:
-                tagger_info: dict = batch.additional_info["tagger"]
-                uploaded_sources.extend(tagger_info.get("upload_status", {}).get("uploaded_sources", []))
+        batch_by_id = {bid: self.tagstore.get_batch(bid, q=q) for bid in batch_ids}
 
-        return uploaded_sources
+        uploaded_sources = set()
+        for t in tracks:
+            track_name = t.name
+
+            for _, batch in batch_by_id.items():
+                if not batch:
+                    # tiny chance it could have been deleted
+                    continue
+                if batch is not None and batch.track == track_name and "tagger" in batch.additional_info:
+                    tagger_info: dict = batch.additional_info["tagger"]
+                    uploaded_sources.update(tagger_info.get("upload_status", {}).get("uploaded_sources", []))
+
+        return sorted(uploaded_sources)
