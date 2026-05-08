@@ -124,11 +124,11 @@ class JobPoster:
         return result
 
     def _get_already_running(self, q: Content, model: str) -> QueueItem | None:
-        running = self.jobstore.list_jobs(ListJobArgs(qid=q.qid, status="running"), auth=q.token)
+        running = self.jobstore.list_jobs(ListJobArgs(qid=q.qid, status="running", include_unready=True), auth=q.token)
         for item in running:
             if item.params.feature == model:
                 return item
-        queued = self.jobstore.list_jobs(ListJobArgs(qid=q.qid, status="queued"), auth=q.token)
+        queued = self.jobstore.list_jobs(ListJobArgs(qid=q.qid, status="queued", include_unready=True), auth=q.token)
         for item in queued:
             if item.params.feature == model:
                 return item

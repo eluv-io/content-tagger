@@ -98,10 +98,23 @@ def test_mixed_dependencies(q, job_poster: JobPoster, make_tag_args):
     job_id2 = res[1].job_id
     assert set(res[2].dependencies) == {job_id1, job_id2}
 
+def test_mixed_dependencies2(q, job_poster: JobPoster, make_tag_args):
+    res = job_poster.post_jobs(q, [make_tag_args(feature="model1")])
+    job_id1 = res[0].job_id
+
+    res = job_poster.post_jobs(q, [make_tag_args(feature="model2")])
+    job_id2 = res[0].job_id
+
+    # post model2 and 3 in the same request, and make sure that model3 depends on the previously submitted job
+    res = job_poster.post_jobs(q, [make_tag_args(feature="model2"), make_tag_args(feature="model3")])
+    assert res[0].started is False
+    assert res[1].started is True
+    assert set(res[1].dependencies) == {job_id1, job_id2}
+
 def test_missing_dependency_runs_anyway(q, job_poster: JobPoster, make_tag_args):
     jobstore = job_poster.jobstore
     res = job_poster.post_jobs(q, [make_tag_args(feature="model2")])
-    job_id1 = len(res[0].dependencies) == 0
+    assert len(res[0].dependencies) == 0
 
     # make sure it's claimable by worker
     assert len(jobstore.list_jobs(ListJobArgs(), "test-auth")) == 1
