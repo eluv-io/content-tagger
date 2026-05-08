@@ -1,16 +1,14 @@
 from dataclasses import asdict
 from functools import lru_cache
 from time import time
-from common_ml.utils.metrics import timeit
 
-from src.common.content import Content, QAPIFactory
-from src.common.errors import BadRequestError, MissingResourceError
+from src.common.content import Content
+from src.common.errors import MissingResourceError
 from src.common.logging import logger
 from src.fetch.model import AssetScope, LiveScope, TimeRangeScope, VideoScope
 from src.service.job_poster import JobPoster
 from src.service.model import *
 from src.tagging.fabric_tagging.model import TagArgs
-from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tagging.fabric_tagging.queue.model import CreateQueueItem, ListJobArgs, QueueItem
 from src.service.abstract import TaggerService
 

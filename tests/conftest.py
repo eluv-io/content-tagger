@@ -23,7 +23,7 @@ dotenv.load_dotenv()
 def content_config() -> ContentConfig:
     return ContentConfig(
         config_url="https://host-76-74-29-5.contentfabric.io/config?self&qspace=main", 
-        parts_url="http://192.168.96.203/config?self&qspace=main",
+        parts_url="http://192.168.90.218/config?self&qspace=main",
         live_media_url="https://host-76-74-29-5.contentfabric.io/config?self&qspace=main"
     )
 

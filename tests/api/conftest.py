@@ -14,10 +14,10 @@ from src.api.auth import Authenticator
 from src.api.tagging.request_format import StartJobsRequest
 from src.common.content import Content
 from src.fetch.model import DownloadResult, FetchSession, MediaMetadata, VideoScope
-from src.service.model import StatusArgs, TagDetails, TagJobStatusResult
+from src.service.model import StatusArgs, TagDetails, TagJobStatusResult, TagStartResult
 from src.status.get_info import UserInfoResolverConfig
 from src.tag_containers.model import ModelConfig, RegistryConfig
-from src.tagging.fabric_tagging.model import TaggerWorkerConfig, JobID, TagArgs, TagStartResult, TagStopResult
+from src.tagging.fabric_tagging.model import TaggerWorkerConfig, JobID, TagArgs, TagStopResult
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
 from src.tagging.fabric_tagging.queue.model import JobStoreConfig
 from src.tagging.fabric_tagging.tagger import TaggerWorker
@@ -187,9 +187,11 @@ class MockTaggerService:
             }
             res.append(
                 TagStartResult(
-                    job_id=JobID(qid=q.qid, feature=arg.feature, stream=""),
+                    job_id="hello",
                     started=True,
                     message="Mock job started",
+                    dependencies=[],
+                    created_at=time.time(),
                 )
             )
         return res
