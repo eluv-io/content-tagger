@@ -1,5 +1,5 @@
 content:
-  parts_url: http://192.168.96.203/config?self&qspace=main
+  parts_url: http://192.168.90.218/config?self&qspace=main
   config_url: https://host-154-14-185-98.contentfabric.io/config?self&qspace=main
   live_media_url: https://host-76-74-29-5.contentfabric.io/config?self&qspace=main
 
@@ -8,7 +8,7 @@ tagstore:
   
 tag_runner:
   poll_interval: 5.0
-  max_jobs: 1
+  max_jobs: 5
 
 tag_converter:
   name_mapping:
@@ -64,7 +64,7 @@ model_configs:
     resources: {
       "gpu": 1
     }
-    track_outputs: ["speech_to_text"]
+    track_outputs: ["speech_to_text", "auto_captions"]
   euro_asr:
     image: "localhost/multilingual:latest"
     type: "audio"
@@ -72,7 +72,7 @@ model_configs:
     resources: {
       "gpu": 1
     }
-    track_outputs: ["euro_asr"]
+    track_outputs: ["euro_asr", "auto_captions"]
   caption:
     image: "localhost/caption:latest"
     type: "frame"
@@ -119,7 +119,7 @@ model_configs:
     type: "video"
     description: Focus Identification
     resources: {
-      "cpu_juice": 40
+      "gpu": 1
     }
     track_outputs: ["vertical_video", "focus_detection"]
     track_dependencies: ["shot_detection"]
@@ -150,10 +150,27 @@ model_configs:
     }
     content_aligned: True
     track_dependencies: ["auto_captions"]
-    track_outputs: ["speaker_identification"]
+    track_outputs: ["speaker_detection", "transcription"]
+  music:
+    image: "localhost/music:latest"
+    type: "audio"
+    description: Music Identification
+    resources: {
+      "cpu_juice": 8
+    }
+    track_outputs: ["music_detection"]
+  evidence:
+      image: "localhost/evidence:latest"
+      type: "processor"
+      description: Evidence Generation
+      resources: {
+        "ollama": 1
+      }
+      content_aligned: True
+      track_outputs: ["evidence_v2"]
 
 # used to map track name to human friendly label for UI display
-label_resolution:
+label_resolver:
   mapping:
     llava_caption: LLAVA Caption
     speech_to_text: Speech to Text
@@ -164,6 +181,8 @@ label_resolution:
     hit2s: (sm)Hit?
     celebrate: Celebration?
     delivery: Delivery?
+    vertical_video: Vertical Video Information
+    speaker_detection: Speaker Recognition
 
 user_info_resolver:
   fabric_url: https://main.net955305.contentfabric.io
