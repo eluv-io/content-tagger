@@ -41,7 +41,7 @@ class TrackResolver:
         Guaranteed to return list of length >= 1
         """
         if model_name in self.forward_mapping:
-            return self.forward_mapping[model_name]
+            return self.forward_mapping[model_name][:]
         else:
             # If no specific mapping, return default track args
             return [self._default_track_args(model_name)]
@@ -51,7 +51,7 @@ class TrackResolver:
         
         Guaranteed to return list of length >= 1
         """
-        return self.reverse_mapping.get(track_name, [track_name])
+        return self.reverse_mapping.get(track_name, [track_name])[:]
     
     def get_label(self, track_name: str) -> str:
         if track_name in self.label_configs.mapping:
