@@ -81,15 +81,18 @@ class TagAlignedFetcher(FetchSession):
                 if not vod_result.done:
                     continue
 
+            # use the tag timerange as the source name
+            source = f"{tag_start_ms}_{tag_end_ms}"
+
             ext = self._detect_extension(overlapping[0].filepath)
-            out_path = os.path.join(output_dir, f"{tag.id}{ext}")
+            out_path = os.path.join(output_dir, f"{source}{ext}")
 
             try:
                 self._extract_tag_segment(
                     overlapping, tag_start_ms, tag_end_ms, out_path, ext
                 )
                 result_sources.append(Source(
-                    name=tag.id,
+                    name=source,
                     filepath=out_path,
                     offset=tag_start_ms,
                     wall_clock=None,
