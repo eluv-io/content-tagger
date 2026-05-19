@@ -6,7 +6,7 @@ from flask import Flask
 
 from src.api.arg_resolver import ArgsResolver
 from src.api.arg_resolver import ArgsResolver
-from src.fetch.model import AssetScope, LiveScope, TimeRangeScope, VideoScope
+from src.fetch.model import AssetScope, LiveScope, TagAlignedScope, TimeRangeScope, VideoScope
 from src.tag_containers.registry import ContainerRegistry
 from src.api.tagging.request_format import (
     StartJobsRequest, JobSpec, TaggerOptions, StatusRequest,
@@ -104,6 +104,27 @@ def test_detect_processor_scope(resolver, mock_content):
     tag_args = result[0]
     assert isinstance(tag_args.scope, TimeRangeScope)
     assert tag_args.scope.chunk_size > 0
+
+def test_with_model_scope(resolver, mock_content):
+    """Test that model scope is used when provided."""
+    model_scope = {"type": "tag-aligned", "track": "shot_detection"}
+    resolver.model_configs["object_detection"].scope = model_scope
+    
+    args = StartJobsRequest(
+        options=TaggerOptions(),
+        jobs=[
+            JobSpec(
+                model="object_detection",
+            )
+        ]
+    )
+
+    result = resolver.resolve(args, mock_content)
+    
+    assert len(result) == 1
+    tag_args = result[0]
+    assert isinstance(tag_args.scope, TagAlignedScope)
+    assert tag_args.scope.track == "shot_detection"
 
 def test_vod_with_destination_qid(resolver, mock_content):
     """Test VOD mapping with destination_qid set."""
