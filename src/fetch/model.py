@@ -51,7 +51,7 @@ class TagAlignedScope(Scope):
     start_time: int = 0
     end_time: int = int(1e10)
     track: str = "shot_detection"
-    type: str = "tag aligned"
+    type: str = "tag-aligned"
 
 @dataclass
 class VideoMetadata:

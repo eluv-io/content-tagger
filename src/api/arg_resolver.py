@@ -110,16 +110,13 @@ class ArgsResolver:
         
         model_type = model_cfg.type
 
-        if model_cfg.scope is None:
-            default_scope = self._get_default_scope_dict(model_type, q)
-        else:
-            default_scope = deepcopy(model_cfg.scope)
+        default_scope = self._get_default_scope_dict(model_type, model_cfg.scope or {}, q)
         
         # override with options provided in request
         scope_dict = nested_update(default_scope, defaults.scope)
         # override with per-model options provided in request
         scope_dict = nested_update(scope_dict, overrides.scope)
-
+        
         try:
             scope = self._map_scope(scope_dict)
         except Exception as e:
@@ -145,27 +142,32 @@ class ArgsResolver:
             return AssetScope(**scope_arg)
         elif scope_type == "livestream":
             return LiveScope(**scope_arg)
-        elif scope_type == "tag_aligned":
+        elif scope_type == "tag-aligned":
             return TagAlignedScope(**scope_arg)
         else:
             raise BadRequestError(f"Invalid scope type: {scope_type}")
 
-    def _get_default_scope_dict(self, model_type: str, q: Content) -> dict[str, Any]:
+    def _get_default_scope_dict(self, model_type: str, model_scope: dict, q: Content) -> dict[str, Any]:
         res = {}
         is_live = self.is_live_content(q)
         if is_live and model_type == "processor":
             raise BadRequestError("Processor models are not currently supported for live content.")
 
-        if is_live:
-            res["type"] = "livestream"
-        elif model_type == "processor":
-            res["type"] = "processor"
-        else:
-            res["type"] = "video"
+        res = deepcopy(model_scope)
 
-        if model_type == "audio" and not is_live:
-            res["stream"] = self.find_default_audio_stream(q)
-        else:
-            res["stream"] = "video"
+        # set type
+        if "type" not in res:
+            if is_live:
+                res["type"] = "livestream"
+            elif model_type == "processor":
+                res["type"] = "processor"
+            else:
+                res["type"] = "video"
+
+        if "stream" not in res:
+            if model_type == "audio" and not is_live:
+                res["stream"] = self.find_default_audio_stream(q)
+            else:
+                res["stream"] = "video"
 
         return res
