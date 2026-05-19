@@ -19,7 +19,7 @@ def test_live_worker_incremental_segments(
     req = DownloadRequest(
         scope=LiveScope(
             stream="video",
-            chunk_size=chunk_size,
+            segment_length=chunk_size,
             max_duration=max_duration
         ),
         output_dir=temp_dir,
@@ -118,7 +118,7 @@ def test_live_worker_respects_ignore_sources(
     ]
 
     req = DownloadRequest(
-        scope=LiveScope(stream="video", chunk_size=chunk_size, max_duration=20),
+        scope=LiveScope(stream="video", segment_length=chunk_size, max_duration=20),
         output_dir=temp_dir,
         ignore_sources=ignored,
     )
@@ -153,7 +153,7 @@ def test_live_worker_all_ignored(
     ]
 
     req = DownloadRequest(
-        scope=LiveScope(stream="video", chunk_size=chunk_size, max_duration=20),
+        scope=LiveScope(stream="video", segment_length=chunk_size, max_duration=20),
         output_dir=temp_dir,
         ignore_sources=ignored,
     )
@@ -172,7 +172,7 @@ def test_live_worker_metadata(
     temp_dir: str
 ):
     req = DownloadRequest(
-        scope=LiveScope(stream="video", chunk_size=4, max_duration=20),
+        scope=LiveScope(stream="video", segment_length=4, max_duration=20),
         output_dir=temp_dir,
         ignore_sources=[],
     )

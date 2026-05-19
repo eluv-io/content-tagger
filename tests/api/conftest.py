@@ -171,7 +171,7 @@ class MockTaggerService:
     def tag(self, q: Content, args: list[TagArgs]) -> list[TagStartResult]:
         job_id = str(uuid.uuid4())
         res = []
-        for arg in args:
+        for i, arg in enumerate(args):
             self._jobs[job_id] = {
                 "job_id": job_id,
                 "qid": q.qid,
@@ -187,7 +187,7 @@ class MockTaggerService:
             }
             res.append(
                 TagStartResult(
-                    job_id="hello",
+                    job_id=f"hello{i}",
                     started=True,
                     message="Mock job started",
                     dependencies=[],

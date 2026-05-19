@@ -16,23 +16,18 @@ from src.tagging.fabric_tagging.model import TagArgs
 from src.api.tagging.handlers import _parse_status_request
 
 @pytest.fixture
-def mock_registry():
-    """Mock ContainerRegistry for testing."""
-    registry = Mock(spec=ContainerRegistry)
-    # Mock model configs for different features
-    def get_model_config(feature):
-        if feature == "object_detection":
-            return Mock(type="video")
-        elif feature == "image_classification":
-            return Mock(type="frame")
-        elif feature == "joe's processor":
-            return Mock(type="processor")
-        elif feature == "audio_classification":
-            return Mock(type="audio")
-        else:
-            return Mock(type="video")
-    registry.get_model_config.side_effect = get_model_config
-    return registry
+def model_configs():
+    """Provide model configs for testing."""
+    return {
+        "object_detection": Mock(type="video", scope=None),
+        "image_classification": Mock(type="frame", scope=None),
+        "joe's processor": Mock(type="processor", scope=None),
+        "audio_classification": Mock(type="audio", scope=None),
+        "speech_recognition": Mock(type="audio", scope=None),
+        "feature1": Mock(type="video", scope=None),
+        "feature2": Mock(type="video", scope=None),
+        "feature3": Mock(type="video", scope=None),
+    }
 
 @pytest.fixture
 def mock_content():
@@ -46,9 +41,9 @@ def mock_qfactory():
     return qfactory
 
 @pytest.fixture
-def resolver(mock_registry, mock_qfactory):
+def resolver(model_configs, mock_qfactory):
     """Import the resolver function for testing."""
-    return ArgsResolver(mock_registry, mock_qfactory)
+    return ArgsResolver(model_configs, mock_qfactory)
 
 def test_auto_detect_livestream(resolver, mock_content):
     """Test that livestream scope is auto-detected when segment_length is provided."""
@@ -68,7 +63,7 @@ def test_auto_detect_livestream(resolver, mock_content):
     assert len(result) == 1
     tag_args = result[0]
     assert isinstance(tag_args.scope, LiveScope)
-    assert tag_args.scope.chunk_size > 0
+    assert tag_args.scope.segment_length > 0
 
 def test_resolve_audio_stream(resolver, mock_content):
     """Test that audio stream is correctly resolved for audio models."""
@@ -174,7 +169,7 @@ def test_live_with_destination_qid(resolver, mock_content):
     assert tag_args.destination_qid == "iq__destination"
     assert tag_args.replace == False
     assert isinstance(tag_args.scope, LiveScope)
-    assert tag_args.scope.chunk_size == 5
+    assert tag_args.scope.segment_length == 5
     assert tag_args.scope.max_duration == 60
 
 def test_vod_without_destination_qid(resolver, mock_content):
@@ -522,7 +517,7 @@ def test_set_defaults_live_content(resolver, mock_content):
     result = resolver._set_defaults(mock_content, defaults, job)
     
     assert isinstance(result.scope, LiveScope)
-    assert result.scope.chunk_size > 0
+    assert result.scope.segment_length > 0
     assert result.scope.stream == "video"
 
 def test_set_defaults_live_content_audio_model(resolver, mock_content):
@@ -534,7 +529,7 @@ def test_set_defaults_live_content_audio_model(resolver, mock_content):
     result = resolver._set_defaults(mock_content, defaults, job)
     
     assert isinstance(result.scope, LiveScope)
-    assert result.scope.chunk_size > 0
+    assert result.scope.segment_length > 0
     assert result.scope.stream == "audio_stream"
 
 def test_set_defaults_asset_scope(resolver, mock_content):

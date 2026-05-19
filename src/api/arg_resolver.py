@@ -1,11 +1,13 @@
 
 from functools import lru_cache
+from copy import deepcopy
 
 from common_ml.utils.dictionary import nested_update
 from requests import HTTPError
 
 from src.common.content import QAPI, Content, QAPIFactory
-from src.fetch.model import AssetScope, LiveScope, TimeRangeScope, TimeRangeScope, VideoScope
+from src.common.model import ModelConfig
+from src.fetch.model import *
 from src.tag_containers.registry import ContainerRegistry
 from src.api.tagging.request_format import *
 from src.tagging.fabric_tagging.model import TagArgs, Scope
@@ -14,8 +16,8 @@ from src.common.errors import BadRequestError, MissingResourceError
 class ArgsResolver:
     """Class to resolve arguments for tagging features."""
 
-    def __init__(self, registry: ContainerRegistry, api_factory: QAPIFactory):
-        self.registry = registry
+    def __init__(self, model_configs: dict[str, ModelConfig], api_factory: QAPIFactory):
+        self.model_configs = model_configs
         self.api_factory = api_factory
 
     def resolve(self, args: StartJobsRequest, q: Content) -> list[TagArgs]:
@@ -102,10 +104,17 @@ class ArgsResolver:
         if max_fetch_retries is None:
             max_fetch_retries = 3
 
-        model_type = self.registry.get_model_config(feature).type
+        model_cfg = self.model_configs.get(feature)
+        if model_cfg is None:
+            raise BadRequestError(f"Model {feature} not found.")
+        
+        model_type = model_cfg.type
 
-        default_scope = self._get_default_scope_dict(model_type, q)
-
+        if model_cfg.scope is None:
+            default_scope = self._get_default_scope_dict(model_type, q)
+        else:
+            default_scope = deepcopy(model_cfg.scope)
+        
         # override with options provided in request
         scope_dict = nested_update(default_scope, defaults.scope)
         # override with per-model options provided in request
@@ -119,50 +128,27 @@ class ArgsResolver:
         return TagArgs(
             feature=feature,
             run_config=run_config,
-            scope=self._scope_dto_to_model(scope),
+            scope=scope,
             replace=replace,
             destination_qid=destination_qid,
             max_fetch_retries=max_fetch_retries,
         )
 
-    def _map_scope(self, scope_arg: dict[str, Any]) -> ScopeDTO:
+    def _map_scope(self, scope_arg: dict[str, Any]) -> Scope:
         scope_type = scope_arg.get("type")    
         if scope_type == "video":
-            return ScopeVideo(**scope_arg)
+            return VideoScope(**scope_arg)
         elif scope_type == "processor":
-            return ScopeProcessor(**scope_arg)
+            return TimeRangeScope(**scope_arg)
         elif scope_type == "assets":
             del scope_arg["stream"]
-            return ScopeAssets(**scope_arg)
+            return AssetScope(**scope_arg)
         elif scope_type == "livestream":
-            return ScopeLivestream(**scope_arg)
+            return LiveScope(**scope_arg)
+        elif scope_type == "tag_aligned":
+            return TagAlignedScope(**scope_arg)
         else:
             raise BadRequestError(f"Invalid scope type: {scope_type}")
-        
-    def _scope_dto_to_model(self, scope: ScopeDTO) -> Scope:
-        if isinstance(scope, ScopeVideo):
-            return VideoScope(
-                stream=scope.stream,
-                start_time=scope.start_time,
-                end_time=scope.end_time,
-            )
-        elif isinstance(scope, ScopeProcessor):
-            return TimeRangeScope(
-                stream=scope.stream,
-                start_time=scope.start_time,
-                end_time=scope.end_time,
-                chunk_size=scope.chunk_size,
-            )
-        elif isinstance(scope, ScopeAssets):
-            return AssetScope(assets=scope.assets)
-        elif isinstance(scope, ScopeLivestream):
-            return LiveScope(
-                chunk_size=scope.segment_length,
-                max_duration=scope.max_duration,
-                stream=scope.stream,
-            )
-        else:
-            raise BadRequestError(f"Invalid scope type: {type(scope)}")
 
     def _get_default_scope_dict(self, model_type: str, q: Content) -> dict[str, Any]:
         res = {}

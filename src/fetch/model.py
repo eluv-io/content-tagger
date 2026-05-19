@@ -19,38 +19,38 @@ class Scope: ...
 
 @dataclass
 class TimeRangeScope(Scope):
-    start_time: int | None
-    end_time: int | None
-    chunk_size: int
-    stream: str
+    start_time: int | None = 0
+    end_time: int | None = int(1e10)
+    chunk_size: int = 600
+    stream: str = ""
     type: str = "processor"
 
 @dataclass
 class AssetScope(Scope):
-    assets: list[str] | None
-    type: str = "assets"
+    assets: list[str] | None = None
+    type: str = "assets"    
 
 @dataclass
 class VideoScope(Scope):
-    stream: str
+    stream: str = ""
     # in seconds
-    start_time: int
-    end_time: float | int
+    start_time: int = 0
+    end_time: int = int(1e10)
     type: str = "video"
 
 @dataclass
 class LiveScope(Scope):
-    stream: str
-    chunk_size: int
-    max_duration: int | None
+    stream: str = ""
+    segment_length: int = 4
+    max_duration: int | None = None
     type: str = "livestream"
 
 @dataclass
 class TagAlignedScope(Scope):
-    stream: str
-    start_time: int
-    end_time: int
-    track: str
+    stream: str = ""
+    start_time: int = 0
+    end_time: int = int(1e10)
+    track: str = "shot_detection"
     type: str = "tag aligned"
 
 @dataclass

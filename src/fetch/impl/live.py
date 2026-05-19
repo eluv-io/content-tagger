@@ -63,7 +63,7 @@ class LiveWorker(FetchSession):
                 done=True
             )
         
-        chunk_size = self.scope.chunk_size
+        chunk_size = self.scope.segment_length
 
         idx = self.next_idx
         source_name = _get_live_source_name(chunk_size, self.scope.stream, idx)

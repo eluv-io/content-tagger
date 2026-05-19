@@ -146,7 +146,7 @@ def test_metadata(
         scope=VideoScope(
             stream="video",
             start_time=0,
-            end_time=1e10
+            end_time=int(1e10)
         ),
         output_dir=temp_dir,
         ignore_sources=[],
@@ -161,7 +161,7 @@ def test_metadata(
         scope=VideoScope(
             stream="video",
             start_time=0,
-            end_time=1e9
+            end_time=int(1e10)
         ),
         output_dir=temp_dir,
         ignore_sources=[all_parts[0]],
@@ -188,7 +188,7 @@ def test_incremental(fetcher: FetchFactory, q, temp_dir):
         scope=VideoScope(
             stream="video",
             start_time=0,
-            end_time=1e10
+            end_time=int(1e10)
         ),
         output_dir=temp_dir,
         ignore_sources=[],

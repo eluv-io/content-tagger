@@ -23,7 +23,7 @@ def fake_registry(temp_dir):
                 description="Test model",
                 resources={"gpu": 1},
                 image="localhost/test_model:latest",
-                track_outputs=["test_model"],
+                track_outputs=["test_model"]
             ),
             "test_model2": ModelConfig(
                 type="processor",
