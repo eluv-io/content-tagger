@@ -49,10 +49,22 @@ container_registry:
   cache_dir: data/cache
 
 model_configs:
+  scene_description:
+    image: "localhost/qwenvl:latest"
+    type: "video"
+    description: Scene Description
+    resources: {
+      "gpu": 1
+    }
+    scope: 
+      type: "tag-aligned"
+      track: shot_detection
+    track_outputs: ["scene_description"]
+    track_dependencies: ["shot_detection"]
   llava:
     image: "localhost/llava:latest"
     type: "frame"
-    description: Scene Description
+    description: Frame Description
     resources: {
       "ollama": 1
     }

@@ -91,11 +91,7 @@ def _stream_from_scope(scope) -> str:
     """Derive the stream identifier from a scope, matching TagJob.get_id() logic."""
     if isinstance(scope, AssetScope):
         return "assets"
-    elif isinstance(scope, VideoScope):
+    elif hasattr(scope, "stream"):
         return scope.stream
-    elif isinstance(scope, LiveScope):
-        return "video"
-    elif isinstance(scope, TimeRangeScope):
-        return "video"
     else:
-        raise ValueError(f"unknown scope type: {type(scope)}")
+        return "video"

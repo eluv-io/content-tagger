@@ -99,7 +99,7 @@ class UploadStatus:
 
 @dataclass(frozen=True)
 class JobRunStatus:
-    status: str
+    status: JobStateDescription
     time_ran: str
     
 @dataclass(frozen=True)
