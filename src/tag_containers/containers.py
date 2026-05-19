@@ -144,6 +144,7 @@ class TagContainer:
             "remove": True,
             "network_mode": "host",
             "pids_limit": -1,
+            "ulimits": [{"Name": "nproc", "Soft": 65535, "Hard": 65535}],
             "stdin_open": True,
             "tty": False,
             "environment": {
@@ -192,7 +193,8 @@ class TagContainer:
         if len(new_media) == 0:
             return
         for fpath in new_media:
-            assert os.path.dirname(fpath) == self.media_dir
+            # make sure the file is in the media mount
+            assert os.path.dirname(fpath).startswith(self.media_dir)
 
         for f in new_media:
             self.basename_to_source[os.path.basename(f)] = f

@@ -139,7 +139,7 @@ def test_live_video_model(app, last_res_has_media, q):
             return fake_worker_ref[0]
         # we need the non-live worker in this test
         old_scope = req.scope
-        req.scope = VideoScope(stream="video", start_time=0, end_time=float('inf'))
+        req.scope = VideoScope(stream="video", start_time=0, end_time=int(1e10))
         real_worker = original_get_worker(q, req, exit)
         req.scope = old_scope
         fake_worker = FakeLiveWorker(real_worker, last_res_has_media)

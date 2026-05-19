@@ -135,7 +135,7 @@ def create_app_direct(config: AppConfig) -> Flask:
     app = Flask(__name__)
 
     worker = _build_worker(config)
-    arg_resolver = ArgsResolver(worker.cregistry, QAPIFactory(config.content))
+    arg_resolver = ArgsResolver(config.model_configs, QAPIFactory(config.content))
     app.config["state"] = {
         "service": DirectAPI(worker),
         "status_service": TaggingStatusService(
@@ -171,7 +171,7 @@ def create_app_queue_based(config: AppConfig) -> Flask:
     user_info_resolver = UserInfoResolver(config.user_info_resolver)
     job_store: JobStore = FsJobStore(config.jobstore.base_url, user_info_resolver=user_info_resolver)
     qfactory = QAPIFactory(config.content)
-    arg_resolver = ArgsResolver(worker.cregistry, api_factory=qfactory)
+    arg_resolver = ArgsResolver(config.model_configs, api_factory=qfactory)
     job_poster = JobPoster(job_store, worker.track_resolver, config.model_configs, qfactory)
 
     app.config["state"] = {

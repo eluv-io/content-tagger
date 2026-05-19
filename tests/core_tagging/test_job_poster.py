@@ -11,7 +11,7 @@ def model_configs():
             image="not important",
             description="not important",
             type="video",
-            resources={},
+            resources={}
         ),
         "model2": ModelConfig(
             image="not important",
@@ -26,14 +26,14 @@ def model_configs():
             description="not important",
             type="video",
             resources={},
-            track_dependencies=["model1", "some-track1", "some-track2"],
+            track_dependencies=["model1", "some-track1", "some-track2"]
         ),
         "not-runnable": ModelConfig(
             image="not important",
             description="not important",
             type="video",
             resources={},
-            track_dependencies=["doesn't exist"],
+            track_dependencies=["doesn't exist"]
         ),
     }
 

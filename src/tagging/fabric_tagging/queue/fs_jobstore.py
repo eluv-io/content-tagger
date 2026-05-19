@@ -21,6 +21,8 @@ def _convert_scope(data: dict) -> Scope:
         return VideoScope(**data)
     elif type == "livestream":
         return LiveScope(**data)
+    elif type == "tag-aligned":
+        return TagAlignedScope(**data)
     else:
         raise ValueError(f"Unknown scope type: {type}")
 

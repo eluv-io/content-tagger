@@ -57,14 +57,10 @@ class TagJob:
         """Get a human-readable identifier for the job (qid, feature, stream)."""
         if isinstance(self.args.scope, AssetScope):
             stream = "assets"
-        elif isinstance(self.args.scope, VideoScope):
-            stream = self.args.scope.stream
-        elif isinstance(self.args.scope, LiveScope):
-            stream = "video"
-        elif isinstance(self.args.scope, TimeRangeScope):
-            stream = "video"
+        elif hasattr(self.args.scope, "stream"):
+            stream = self.args.scope.stream # type: ignore
         else:
-            raise ValueError(f"unknown scope type: {type(self.args.scope)}")
+            stream = "video"
         return JobID(qid=self.args.q.qid, feature=self.args.feature, stream=stream)
 
 @dataclass

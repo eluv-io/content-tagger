@@ -15,6 +15,7 @@ class ModelConfig:
     type: Literal["audio", "video", "frame", "processor"]
     resources: SystemResources
     # indicates that the model will output tags aligned to the full content rather than individual parts
+    scope: dict | None = None
     content_aligned: bool = False
     track_outputs: list[str] = field(default_factory=list)
     track_dependencies: list[str] = field(default_factory=list)
