@@ -105,13 +105,13 @@ class UploadSession:
         track = track_args.name
         label = track_args.label
 
-        if track in self.track_to_batch:
-            return self.track_to_batch[track]
-        
         if self.track_suffix:
             label += f" {self.track_suffix}"
             # convert to slug
             track += f"_{self.track_suffix.replace(' ', '_')}"
+
+        if track in self.track_to_batch:
+            return self.track_to_batch[track]
 
         try:
             self.tagstore.create_track(
