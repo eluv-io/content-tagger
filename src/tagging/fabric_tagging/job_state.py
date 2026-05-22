@@ -55,13 +55,7 @@ class TagJob:
 
     def get_id(self) -> JobID:
         """Get a human-readable identifier for the job (qid, feature, stream)."""
-        if isinstance(self.args.scope, AssetScope):
-            stream = "assets"
-        elif hasattr(self.args.scope, "stream"):
-            stream = self.args.scope.stream # type: ignore
-        else:
-            stream = "video"
-        return JobID(qid=self.args.q.qid, feature=self.args.feature, stream=stream)
+        return JobID(qid=self.args.q.qid, feature=self.args.feature, stream=self.args.scope.get_stream())
 
 @dataclass
 class JobStore:

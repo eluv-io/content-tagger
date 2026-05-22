@@ -47,7 +47,7 @@ def _status_for(
     model: str,
     stream: str | None = None,
 ) -> TagJobStatusResult:
-    matches = [r for r in reports if r.model == model]
+    matches = [r for r in reports if r.model == model and (stream is None or r.stream == stream)]
     assert matches, f"Missing status for model={model}, stream={stream}"
     return matches[0]
 
@@ -170,3 +170,19 @@ def test_max_jobs_limits_concurrency(queue_client, make_tag_args, tag_runner):
 
     assert len(running) <= 2, f"Expected at most 2 running jobs (max_jobs=2), got {len(running)}"
     assert len(queued) >= 1, f"Expected at least 1 job still queued, got {len(queued)}"
+
+def test_two_streams_gives_different_status(queue_client, q, make_tag_args, tag_runner):
+    """Jobs with different stream names should be tracked separately."""
+    args1 = make_tag_args(feature="caption", stream="video")
+    args2 = make_tag_args(feature="caption", stream="audio")
+    queue_client.tag(q, [args1, args2])
+
+    reports = _wait_for_status(queue_client, q.qid, "running")
+    assert len(reports) == 2
+    status_video = _status_for(reports, model="caption", stream="video")
+    status_audio = _status_for(reports, model="caption", stream="audio")
+    assert status_video.status == "running"
+    assert status_audio.status == "running"
+    assert status_video.tagger_details is not None
+    assert status_audio.tagger_details is not None
+    assert status_video.tagger_details != status_audio.tagger_details

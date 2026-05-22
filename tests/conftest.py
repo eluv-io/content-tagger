@@ -56,7 +56,7 @@ def q_legacy(qid_legacy):
 
 @pytest.fixture
 def qid_live():
-    return "iq__QptwK3rhSNnhBKci86dxuqZtcWB"
+    return "iq__3A3bGWiJfAd2N9v4LLooinK1WZMm"
 
 @pytest.fixture
 def q_live(qid_live):

@@ -15,7 +15,11 @@ class Source:
     # absolute unix time (in ms)
     wall_clock: int | None
 
-class Scope: ...
+class Scope:
+    def get_stream(self) -> str:
+        if hasattr(self, "stream"):
+            return getattr(self, "stream")
+        return ""
 
 @dataclass
 class TimeRangeScope(Scope):
@@ -28,7 +32,10 @@ class TimeRangeScope(Scope):
 @dataclass
 class AssetScope(Scope):
     assets: list[str] | None = None
-    type: str = "assets"    
+    type: str = "assets"
+    
+    def get_stream(self) -> str:
+        return "assets"
 
 @dataclass
 class VideoScope(Scope):

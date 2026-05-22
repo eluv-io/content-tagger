@@ -265,4 +265,4 @@ def test_tag_aligned(fetcher: FetchFactory, q_legacy, temp_dir):
     dl = tag_aligned.download()
     assert len(dl.failed) == 0
     assert len(dl.sources) == 2
-    assert set(s.name for s in dl.sources) == {"1", "2"}
+    assert set(s.name for s in dl.sources) == {"243400_247320", "248360_249200"}
