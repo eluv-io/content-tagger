@@ -15,6 +15,7 @@ from src.tagging.fabric_tagging.tagger import TaggerWorker
 from src.tags.tagstore.abstract import Tagstore
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.service.abstract import TaggerService
+from src.tagging.fabric_tagging.queue.abstract import JobStore
 from tests.api.conftest import FakeLiveWorker
 
 def is_queue_mode():
@@ -117,7 +118,8 @@ def test_video_model(client, q):
 
     assert completed, "Timeout waiting for jobs to complete"
 
-def test_track_suffix(client, q):
+# testing both of these features in one unit test cause i'm lazy sorry not sorry
+def test_track_suffix_and_caller_info(client, q):
     """Test the complete tagging workflow."""
 
     # Test initial status - should return 404 for no jobs
@@ -132,6 +134,7 @@ def test_track_suffix(client, q):
                 {
                     "model": "test_model",
                     "track_suffix": "Hi I am a test",
+                    "caller_info": {"hello": "world"},
                 }
             ]
         }
@@ -143,6 +146,10 @@ def test_track_suffix(client, q):
     track = tagstore.get_track(q=q, name="test_model_Hi_I_am_a_test")
     assert track
     assert track.label == "Test Model Hi I am a test"
+
+    response = client.get(f"/{q.qid}/job-status?authorization={q.token}")
+    assert response.status_code == 200
+    assert response.json["jobs"][0]["params"]["caller_info"] == {"hello": "world"}
 
 @pytest.mark.parametrize("last_res_has_media", [True, False])
 def test_live_video_model(app, last_res_has_media, q):

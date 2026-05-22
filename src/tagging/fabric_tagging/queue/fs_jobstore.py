@@ -71,6 +71,7 @@ class FsJobStore:
             replace=p["replace"],
             destination_qid=p["destination_qid"],
             max_fetch_retries=p["max_fetch_retries"],
+            caller_info=p.get("caller_info", {})
         )
         return QueueItem(
             id=job["id"],

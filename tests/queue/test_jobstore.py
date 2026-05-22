@@ -23,6 +23,7 @@ def _make_tag_args(feature: str = "test_feature") -> TagArgs:
         replace=False,
         destination_qid="iq__dest",
         track_suffix="",
+        caller_info={},
         max_fetch_retries=3,
     )
 

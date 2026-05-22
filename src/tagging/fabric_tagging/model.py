@@ -23,6 +23,7 @@ class TagArgs:
     replace: bool
     destination_qid: str
     max_fetch_retries: int
+    caller_info: dict[str, str]
 
 JobStateDescription = Literal[
     "Queued",

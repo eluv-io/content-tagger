@@ -489,6 +489,7 @@ class TaggerWorker:
             replace=job.args.replace,
             track_suffix=job.args.track_suffix,
             max_fetch_retries=job.args.max_fetch_retries,
+            caller_info={}
         )
 
         assert job.state.time_ended is not None

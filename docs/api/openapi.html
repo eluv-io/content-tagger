@@ -2802,6 +2802,10 @@ $.ajax({
       "model_params": {
         "fps": 1.5
       },
+      "track_suffix": "",
+      "caller_job_info": {
+        "user_note": "This is a note about the job"
+      },
       "overrides": {
         "destination_qid": "",
         "replace": false,
@@ -2954,6 +2958,10 @@ $request_body = <span class="hljs-keyword">array</span>();
       <span class="hljs-attr">"model"</span>: <span class="hljs-string">"asr"</span>,
       <span class="hljs-attr">"model_params"</span>: {
         <span class="hljs-attr">"fps"</span>: <span class="hljs-number">1.5</span>
+      },
+      <span class="hljs-attr">"track_suffix"</span>: <span class="hljs-string">""</span>,
+      <span class="hljs-attr">"caller_job_info"</span>: {
+        <span class="hljs-attr">"user_note"</span>: <span class="hljs-string">"This is a note about the job"</span>
       },
       <span class="hljs-attr">"overrides"</span>: {
         <span class="hljs-attr">"destination_qid"</span>: <span class="hljs-string">""</span>,
@@ -4594,6 +4602,10 @@ TokenAuth
       <span class="hljs-attr">"model_params"</span>: {
         <span class="hljs-attr">"fps"</span>: <span class="hljs-number">1.5</span>
       },
+      <span class="hljs-attr">"track_suffix"</span>: <span class="hljs-string">""</span>,
+      <span class="hljs-attr">"caller_job_info"</span>: {
+        <span class="hljs-attr">"user_note"</span>: <span class="hljs-string">"This is a note about the job"</span>
+      },
       <span class="hljs-attr">"overrides"</span>: {
         <span class="hljs-attr">"destination_qid"</span>: <span class="hljs-string">""</span>,
         <span class="hljs-attr">"replace"</span>: <span class="hljs-literal">false</span>,
@@ -4690,6 +4702,10 @@ TokenAuth
   <span class="hljs-attr">"model_params"</span>: {
     <span class="hljs-attr">"fps"</span>: <span class="hljs-number">1.5</span>
   },
+  <span class="hljs-attr">"track_suffix"</span>: <span class="hljs-string">""</span>,
+  <span class="hljs-attr">"caller_job_info"</span>: {
+    <span class="hljs-attr">"user_note"</span>: <span class="hljs-string">"This is a note about the job"</span>
+  },
   <span class="hljs-attr">"overrides"</span>: {
     <span class="hljs-attr">"destination_qid"</span>: <span class="hljs-string">""</span>,
     <span class="hljs-attr">"replace"</span>: <span class="hljs-literal">false</span>,
@@ -4724,6 +4740,18 @@ TokenAuth
 <td>object</td>
 <td>false</td>
 <td>Model level parameters</td>
+</tr>
+<tr>
+<td>track_suffix</td>
+<td>string</td>
+<td>false</td>
+<td>If set this will be appended to the track id &amp; label that the model writes to. This allows you to write to different tracks with the same model by specifying different suffixes.</td>
+</tr>
+<tr>
+<td>caller_job_info</td>
+<td>object</td>
+<td>false</td>
+<td>Arbitrary key-value pairs that will be stored with the job for later reference.</td>
 </tr>
 <tr>
 <td>overrides</td>

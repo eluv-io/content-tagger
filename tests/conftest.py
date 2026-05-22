@@ -169,6 +169,7 @@ def make_tag_args():
             replace=replace,
             track_suffix="",
             destination_qid=destination_qid,
+            caller_info={},
             max_fetch_retries=max_fetch_retries
         )
     return _make
