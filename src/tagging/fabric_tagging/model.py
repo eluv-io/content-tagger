@@ -19,6 +19,7 @@ class TagArgs:
     run_config: dict
     # scope of the tagging job w.r.t the content
     scope: Scope
+    track_suffix: str
     replace: bool
     destination_qid: str
     max_fetch_retries: int

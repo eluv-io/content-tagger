@@ -167,6 +167,7 @@ def make_tag_args():
             run_config=run_config or {},
             scope=VideoScope(stream=stream, start_time=start_time, end_time=end_time),
             replace=replace,
+            track_suffix="",
             destination_qid=destination_qid,
             max_fetch_retries=max_fetch_retries
         )

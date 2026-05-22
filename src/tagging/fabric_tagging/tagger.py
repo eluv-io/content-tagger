@@ -236,6 +236,7 @@ class TaggerWorker:
             feature=feature,
             dest_q=dest_q,
             track_resolver=self.track_resolver,
+            track_suffix=args.track_suffix,
             do_retry=is_live,
         )
 
@@ -480,13 +481,13 @@ class TaggerWorker:
             log.opt(exception=e).warning("failed to get container info")
             container_info = ContainerInfo(image_name="", annotations={})
 
-
         tag_args = TagArgs(
             feature=job.args.feature,
             run_config=job.args.run_config,
             scope=job.args.scope,
             destination_qid=job.args.destination_qid,
             replace=job.args.replace,
+            track_suffix=job.args.track_suffix,
             max_fetch_retries=job.args.max_fetch_retries,
         )
 

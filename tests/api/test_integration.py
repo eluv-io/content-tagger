@@ -117,6 +117,33 @@ def test_video_model(client, q):
 
     assert completed, "Timeout waiting for jobs to complete"
 
+def test_track_suffix(client, q):
+    """Test the complete tagging workflow."""
+
+    # Test initial status - should return 404 for no jobs
+    response = client.get(f"/{q.qid}/job-status?authorization={q.token}")
+    assert response.status_code == 404
+    
+    # Start video tagging with GPU feature
+    response = client.post(
+        f"/{q.qid}/tag?authorization={q.token}", 
+        json={
+            "jobs": [
+                {
+                    "model": "test_model",
+                    "track_suffix": "Hi I am a test",
+                }
+            ]
+        }
+    )
+    assert response.status_code == 200
+    completed = wait_for_jobs_completion(client, [q], timeout=30)
+    assert completed
+    tagstore: Tagstore = client.application.config["state"]["worker"].tagstore
+    track = tagstore.get_track(q=q, name="test_model_Hi_I_am_a_test")
+    assert track
+    assert track.label == "Test Model Hi I am a test"
+
 @pytest.mark.parametrize("last_res_has_media", [True, False])
 def test_live_video_model(app, last_res_has_media, q):
     """Test the live tagging workflow with FakeLiveFetcher."""

@@ -127,6 +127,7 @@ class ArgsResolver:
             run_config=run_config,
             scope=scope,
             replace=replace,
+            track_suffix=job.track_suffix,
             destination_qid=destination_qid,
             max_fetch_retries=max_fetch_retries,
         )

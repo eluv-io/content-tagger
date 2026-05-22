@@ -17,6 +17,7 @@ class UploadSession:
         feature: str,
         track_resolver: TrackResolver,
         tagstore: Tagstore,
+        track_suffix: str,
         dest_q: Content,
         do_retry: bool,
     ):
@@ -25,6 +26,7 @@ class UploadSession:
         self.track_resolver = track_resolver
         self.tagstore = tagstore
         self.dest_q = dest_q
+        self.track_suffix = track_suffix
         self.retry = do_retry
         # Mutable state
         self.track_to_batch: dict[str, str] = {}
@@ -101,14 +103,20 @@ class UploadSession:
             track_args = self.track_resolver.resolve(self.feature)[0]
 
         track = track_args.name
+        label = track_args.label
 
         if track in self.track_to_batch:
             return self.track_to_batch[track]
+        
+        if self.track_suffix:
+            label += f" {self.track_suffix}"
+            # convert to slug
+            track += f"_{self.track_suffix.replace(' ', '_')}"
 
         try:
             self.tagstore.create_track(
                 name=track,
-                label=track_args.label,
+                label=label,
                 q=self.dest_q,
             )
         except Exception:

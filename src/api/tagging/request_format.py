@@ -14,6 +14,7 @@ class TaggerOptions:
 class JobSpec:
     model: str
     model_params: dict[str, Any] = field(default_factory=dict)
+    track_suffix: str = ""
     overrides: TaggerOptions = field(default_factory=TaggerOptions)
 
 @dataclass
