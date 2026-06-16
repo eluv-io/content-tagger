@@ -43,6 +43,7 @@ class JobStatus:
     downloaded_sources: list[str]
     tagged_sources: list[str]
     uploaded_sources: list[str]
+    container_progress_ratio: float | None
     warnings: list[str]
     error: str | None
 
@@ -56,6 +57,7 @@ class JobStatus:
             tagged_sources=[],
             downloaded_sources=[],
             uploaded_sources=[],
+            container_progress_ratio=None,
             warnings=[],
             error=None,
         )

@@ -57,7 +57,7 @@ def tagger_config(media_dir) -> TaggerWorkerConfig:
 class FakeTagContainer:
     """Fake TagContainer that simulates work and asynchronous behavior."""
     
-    def __init__(self, media_dir: str, feature, work_duration: float = 0.25):
+    def __init__(self, media_dir: str, feature, work_duration: float = 0.25, report_progress: bool = True):
         """
         Initialize the FakeTagContainer.
     
@@ -66,6 +66,7 @@ class FakeTagContainer:
             feature (str): The feature being tagged.
             work_duration (float): Time in seconds to simulate work.
         """
+        self.report_progress = report_progress
         self.media_dir = media_dir
         self.feature = feature
         self.work_duration = work_duration
@@ -179,6 +180,14 @@ class FakeTagContainer:
     def progress(self) -> list[Progress]:
         finished_files = self.media_files[:-1] if not self.is_stopped else self.media_files
         return [Progress(source_media=filepath) for filepath in finished_files]
+    
+    def progress_ratio(self) -> float | None:
+        if self.report_progress:
+            if not self.media_files:
+                return 1.0
+            finished_files = self.media_files[:-1] if not self.is_stopped else self.media_files
+            return (len(finished_files) / len(self.media_files))
+        return None
     
     def errors(self) -> list[Error]:
         return []

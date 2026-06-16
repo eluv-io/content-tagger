@@ -260,6 +260,33 @@ def test_progress_from_output(tag_container):
     assert progress[0].source_media == "video1.mp4"
 
 
+def test_progress_ratio_none_before_any_message(tag_container):
+    assert tag_container.progress_ratio() is None
+
+
+def test_progress_ratio_from_output(tag_container):
+    output_path = tag_container.cfg.output_path
+
+    write_jsonl(output_path, [
+        {"type": "progress_ratio", "data": {"progress": 0.42}},
+    ])
+
+    assert tag_container.progress_ratio() == 0.42
+
+
+def test_progress_ratio_reports_most_recent(tag_container):
+    output_path = tag_container.cfg.output_path
+
+    write_jsonl(output_path, [
+        {"type": "progress_ratio", "data": {"progress": 0.1}},
+        {"type": "tag", "data": {"start_time": 0, "end_time": 5.0, "tag": "person walking", "source_media": "video1.mp4"}},
+        {"type": "progress_ratio", "data": {"progress": 0.5}},
+        {"type": "progress_ratio", "data": {"progress": 1.0}},
+    ])
+
+    assert tag_container.progress_ratio() == 1.0
+
+
 def test_track_field(tag_container):
     output_path = tag_container.cfg.output_path
     

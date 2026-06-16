@@ -465,7 +465,6 @@ class TaggerWorker:
 
         tagged_sources = self._get_tagged_sources(job.state.media.downloaded, statuses)
 
-
         uploaded_sources = job.state.upload_session.get_uploaded_sources()
         
         upload_status = UploadStatus(
@@ -534,6 +533,8 @@ class TaggerWorker:
 
         downloaded_sources = [s.name for s in state.media.downloaded]
 
+        progress_ratio = state.container.progress_ratio()
+
         job_status = JobStatus(
             status=state.status,
             time_started=state.time_started,
@@ -542,6 +543,7 @@ class TaggerWorker:
             downloaded_sources=downloaded_sources,
             tagged_sources=tagged_sources,
             uploaded_sources=state.upload_session.get_uploaded_sources(),
+            container_progress_ratio=progress_ratio,
             warnings=state.warnings,
             error=state.error
         )

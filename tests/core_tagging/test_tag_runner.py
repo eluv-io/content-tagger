@@ -11,8 +11,10 @@ import pytest
 from src.common.errors import MissingResourceError
 from src.service.impl.queue_based import QueueService
 from src.service.model import *
+from src.tag_containers.containers import TagContainer
 from src.tagging.fabric_tagging.queue.model import ListJobArgs
 from src.common.content import Content
+from tests.core_tagging.conftest import FakeTagContainer
 
 def _wait_for_status(
     client: QueueService,
@@ -137,6 +139,17 @@ def test_stop_running_job(queue_client, q, make_tag_args, tag_runner):
     # check that job is marked cancelled in jobstore
     jobstore = tag_runner.jobstore
     assert jobstore.list_jobs(ListJobArgs(status="cancelled"), auth="")
+    
+def test_job_progress(queue_client, q, make_tag_args, tag_runner):
+    args = make_tag_args(feature="caption", stream="video")
+    #def set_report_progress(container: FakeTagContainer) -> FakeTagContainer:
+    #    container.report_progress = True
+    #    return container
+    #tag_runner.tagger.cregistry.get = 
+    queue_client.tag(q, [args])
+    time.sleep(2)
+    status = queue_client.status(StatusArgs(q.qid, None, None, None))[0]
+    assert status.tagger_details.progress == 1.0
 
 def test_worker_tag_fails(queue_client, q, make_tag_args, tag_runner):
     tag_runner.tagger.tag = Mock(side_effect=Exception("Tagging failed"))
