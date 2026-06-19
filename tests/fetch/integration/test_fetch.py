@@ -234,13 +234,22 @@ def test_tag_aligned(fetcher: FetchFactory, q_legacy, temp_dir):
         ),
         # out of range
         Tag(id='3', 
-            start_time=418000, 
-            end_time=420050, 
+            start_time=600000, 
+            end_time=600100, 
             text='TESTING 123.', 
             additional_info=None, 
             source='', 
             batch_id='', 
-        )
+        ),
+        Tag(
+            id='4', 
+            start_time=248360, 
+            end_time=420000, 
+            text='this is a very long tag', 
+            additional_info=None, 
+            source='', 
+            batch_id='', 
+        ),
     ]
     fake_tag_reader = Mock(read=Mock(return_value=tags))
 
@@ -248,7 +257,7 @@ def test_tag_aligned(fetcher: FetchFactory, q_legacy, temp_dir):
         scope=VideoScope(
             stream="audio",
             start_time=240,
-            end_time=390
+            end_time=500,
         ),
         output_dir=temp_dir,
         ignore_sources=[],
@@ -260,9 +269,9 @@ def test_tag_aligned(fetcher: FetchFactory, q_legacy, temp_dir):
 
     meta = tag_aligned.metadata()
 
-    assert meta.fps is None and len(meta.sources) == 3
+    assert meta.fps is None and len(meta.sources) == 4
 
     dl = tag_aligned.download()
     assert len(dl.failed) == 0
-    assert len(dl.sources) == 2
-    assert set(s.name for s in dl.sources) == {"243400_247320", "248360_249200"}
+    assert len(dl.sources) == 3
+    assert set(s.name for s in dl.sources) == {"243400_247320", "248360_249200", "248360_420000"}
