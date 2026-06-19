@@ -32,7 +32,7 @@ from src.common.logging import logger
 from src.api.tagging.handlers import tagging_blp
 from src.api.content_status.handlers import content_status_blp
 from src.api.extension.handlers import extension_blp
-from src.api.tagging.scope_schemas import SCOPE_SCHEMAS, ScopeSchema
+from src.api.tagging.scope_schemas import SCOPE_SCHEMAS, ScopeSchema, scope_component_name
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
 from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tagging.tag_runner import TagRunner
@@ -103,11 +103,11 @@ def configure_routes(app: Flask) -> None:
 
     api = Api(app)
 
-    # document the polymorphic scope variants in the OpenAPI components
+    # register the polymorphic scope variants as OpenAPI components so the `scope` field's
+    # oneOf refs (see scope_oneof_metadata) resolve.
     api.spec.components.schema("Scope", schema=ScopeSchema)
     for scope_type, scope_schema in SCOPE_SCHEMAS.items():
-        name = "".join(part.capitalize() for part in scope_type.split("-")) + "Scope"
-        api.spec.components.schema(name, schema=scope_schema)
+        api.spec.components.schema(scope_component_name(scope_type), schema=scope_schema)
 
     api.register_blueprint(tagging_blp)
     api.register_blueprint(content_status_blp)

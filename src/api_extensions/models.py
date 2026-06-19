@@ -23,19 +23,40 @@ class ListingResponse:
 
 
 class TrackOutputSchema(Schema):
-    name = fields.Str()
+    name = fields.Str(
+        metadata={
+            "description": "Track name as stored in the tag store",
+            "example": "celebrity_detection",
+        }
+    )
 
 
 class ModelSpecSchema(Schema):
-    name = fields.Str()
-    description = fields.Str()
-    type = fields.Str()
-    tag_tracks = fields.List(fields.Nested(TrackOutputSchema))
-    dependencies = fields.List(fields.Str())
+    name = fields.Str(metadata={"description": "Model identifier", "example": "celeb"})
+    description = fields.Str(
+        metadata={
+            "description": "Human readable description of what the model does",
+            "example": "Celebrity Identification",
+        }
+    )
+    type = fields.Str(metadata={"description": "Model type", "example": "frame"})
+    tag_tracks = fields.List(
+        fields.Nested(TrackOutputSchema),
+        metadata={"description": "Tag tracks this model writes to"},
+    )
+    dependencies = fields.List(
+        fields.Str(),
+        metadata={
+            "description": "Tag tracks that must exist before this model can be run"
+        },
+    )
 
 
 class ListingResponseSchema(Schema):
-    models = fields.List(fields.Nested(ModelSpecSchema))
+    models = fields.List(
+        fields.Nested(ModelSpecSchema),
+        metadata={"description": "List of available models"},
+    )
 
 
 def list_models(

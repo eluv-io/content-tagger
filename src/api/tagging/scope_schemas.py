@@ -4,41 +4,99 @@
 from marshmallow import Schema, fields, validate
 
 
+_DISCRIMINATOR = "Scope identifier to remove ambiguity"
+
+
 class VideoScopeSchema(Schema):
-    type = fields.Constant("video", dump_only=True)
-    stream = fields.Str()
+    type = fields.Constant("video", dump_only=True, metadata={"description": _DISCRIMINATOR})
+    stream = fields.Str(
+        metadata={
+            "description": (
+                "Audio or video stream to tag. If this value is not set, it's value will "
+                "be automatically set depending on the model and the content."
+            ),
+            "example": "audio_1",
+        }
+    )
     # in seconds
-    start_time = fields.Int()
-    end_time = fields.Int()
+    start_time = fields.Int(
+        metadata={
+            "description": "Start tagging at this point in the media stream (in seconds)"
+        }
+    )
+    end_time = fields.Int(
+        metadata={
+            "description": "End tagging at this point in the media stream (in seconds)",
+            "example": 600,
+        }
+    )
 
 
 class TimeRangeScopeSchema(Schema):
     """`type: "processor"`"""
-    type = fields.Constant("processor", dump_only=True)
-    start_time = fields.Int(allow_none=True)
-    end_time = fields.Int(allow_none=True)
-    chunk_size = fields.Int()
-    stream = fields.Str()
+    type = fields.Constant("processor", dump_only=True, metadata={"description": _DISCRIMINATOR})
+    start_time = fields.Int(
+        allow_none=True,
+        metadata={
+            "description": "Start tagging at this point in the media stream (in seconds)"
+        },
+    )
+    end_time = fields.Int(
+        allow_none=True,
+        metadata={
+            "description": "End tagging at this point in the media stream (in seconds)",
+            "example": 600,
+        },
+    )
+    chunk_size = fields.Int(
+        metadata={"description": "Processor will be fed intervals of this size to tag"}
+    )
+    stream = fields.Str(metadata={"description": "Media stream"})
 
 
 class AssetScopeSchema(Schema):
-    type = fields.Constant("assets", dump_only=True)
-    assets = fields.List(fields.Str(), allow_none=True)
+    type = fields.Constant("assets", dump_only=True, metadata={"description": _DISCRIMINATOR})
+    assets = fields.List(
+        fields.Str(),
+        allow_none=True,
+        metadata={
+            "description": "List of asset paths to tag",
+            "example": ["assets/hello1.jpg", "assets/hello2.jpg"],
+        },
+    )
 
 
 class LiveScopeSchema(Schema):
-    type = fields.Constant("livestream", dump_only=True)
-    stream = fields.Str()
-    segment_length = fields.Int()
-    max_duration = fields.Int(allow_none=True)
+    type = fields.Constant("livestream", dump_only=True, metadata={"description": _DISCRIMINATOR})
+    stream = fields.Str(metadata={"description": "Media stream"})
+    segment_length = fields.Int(
+        metadata={"description": "Tagging interval size (in seconds)"}
+    )
+    max_duration = fields.Int(
+        allow_none=True,
+        metadata={
+            "description": "Maximum amount of content from livestream to tag (in seconds)"
+        },
+    )
 
 
 class TagAlignedScopeSchema(Schema):
-    type = fields.Constant("tag-aligned", dump_only=True)
-    stream = fields.Str()
-    start_time = fields.Int()
-    end_time = fields.Int()
-    track = fields.Str()
+    type = fields.Constant("tag-aligned", dump_only=True, metadata={"description": _DISCRIMINATOR})
+    stream = fields.Str(metadata={"description": "Media stream"})
+    start_time = fields.Int(
+        metadata={
+            "description": "Start tagging at this point in the media stream (in seconds)"
+        }
+    )
+    end_time = fields.Int(
+        metadata={
+            "description": "End tagging at this point in the media stream (in seconds)",
+            "example": 600,
+        }
+    )
+    track = fields.Str(
+        metadata={"description": "Tag track whose intervals tagging is aligned to. Alternatively, we can set track to \"1s\", \"5s\", \"Ns\" to align tagging to fixed intervals of N seconds."}
+    )
 
 
 # Maps the `type` discriminator to its schema. Registered in the OpenAPI spec in server.py.
