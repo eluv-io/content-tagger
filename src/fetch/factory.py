@@ -15,7 +15,8 @@ from src.fetch.impl.vod import VodWorker
 from src.fetch.model import *
 from src.fetch.cache import cache_by_qhash
 from src.fetch.rate_limit import FetchRateLimiter
-from src.tags.reader.impl import TagReaderImpl
+from src.tags.reader.abstract import TagReader
+from src.tags.reader.impl import INTERVAL_TRACK_PATTERN, IntervalTagReader, TagReaderImpl
 from src.tags.tagstore.abstract import Tagstore
 
 class FetchFactory:
@@ -101,11 +102,20 @@ class FetchFactory:
                 output_dir=req.output_dir,
                 exit=exit
             )
-            tr = TagReaderImpl(
-                q=q,
-                tagstore=self.ts,
-                track=req.scope.track
-            )
+            interval_match = INTERVAL_TRACK_PATTERN.match(req.scope.track)
+            if interval_match is not None:
+                interval_ms = int(interval_match.group(1)) * 1000
+                duration_ms = int(len(meta.parts) * meta.part_duration * 1000)
+                tr: TagReader = IntervalTagReader(
+                    interval_ms=interval_ms,
+                    duration_ms=duration_ms,
+                )
+            else:
+                tr = TagReaderImpl(
+                    q=q,
+                    tagstore=self.ts,
+                    track=req.scope.track
+                )
             return TagAlignedFetcher(
                 tr=tr,
                 vod=vod_worker

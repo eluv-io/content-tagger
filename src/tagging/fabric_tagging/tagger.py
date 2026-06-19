@@ -236,6 +236,7 @@ class TaggerWorker:
             feature=feature,
             dest_q=dest_q,
             track_resolver=self.track_resolver,
+            track_suffix=args.track_suffix,
             do_retry=is_live,
         )
 
@@ -464,7 +465,6 @@ class TaggerWorker:
 
         tagged_sources = self._get_tagged_sources(job.state.media.downloaded, statuses)
 
-
         uploaded_sources = job.state.upload_session.get_uploaded_sources()
         
         upload_status = UploadStatus(
@@ -480,14 +480,15 @@ class TaggerWorker:
             log.opt(exception=e).warning("failed to get container info")
             container_info = ContainerInfo(image_name="", annotations={})
 
-
         tag_args = TagArgs(
             feature=job.args.feature,
             run_config=job.args.run_config,
             scope=job.args.scope,
             destination_qid=job.args.destination_qid,
             replace=job.args.replace,
+            track_suffix=job.args.track_suffix,
             max_fetch_retries=job.args.max_fetch_retries,
+            caller_info={}
         )
 
         assert job.state.time_ended is not None
@@ -532,6 +533,8 @@ class TaggerWorker:
 
         downloaded_sources = [s.name for s in state.media.downloaded]
 
+        progress_ratio = state.container.progress_ratio()
+
         job_status = JobStatus(
             status=state.status,
             time_started=state.time_started,
@@ -540,6 +543,7 @@ class TaggerWorker:
             downloaded_sources=downloaded_sources,
             tagged_sources=tagged_sources,
             uploaded_sources=state.upload_session.get_uploaded_sources(),
+            container_progress_ratio=progress_ratio,
             warnings=state.warnings,
             error=state.error
         )

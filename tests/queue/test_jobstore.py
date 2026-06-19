@@ -22,6 +22,8 @@ def _make_tag_args(feature: str = "test_feature") -> TagArgs:
         scope=VideoScope(stream="video", start_time=0, end_time=60),
         replace=False,
         destination_qid="iq__dest",
+        track_suffix="",
+        caller_info={},
         max_fetch_retries=3,
     )
 

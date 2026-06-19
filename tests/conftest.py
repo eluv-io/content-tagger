@@ -56,7 +56,7 @@ def q_legacy(qid_legacy):
 
 @pytest.fixture
 def qid_live():
-    return "iq__QptwK3rhSNnhBKci86dxuqZtcWB"
+    return "iq__3A3bGWiJfAd2N9v4LLooinK1WZMm"
 
 @pytest.fixture
 def q_live(qid_live):
@@ -167,7 +167,9 @@ def make_tag_args():
             run_config=run_config or {},
             scope=VideoScope(stream=stream, start_time=start_time, end_time=end_time),
             replace=replace,
+            track_suffix="",
             destination_qid=destination_qid,
+            caller_info={},
             max_fetch_retries=max_fetch_retries
         )
     return _make

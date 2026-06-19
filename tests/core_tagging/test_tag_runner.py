@@ -11,8 +11,10 @@ import pytest
 from src.common.errors import MissingResourceError
 from src.service.impl.queue_based import QueueService
 from src.service.model import *
+from src.tag_containers.containers import TagContainer
 from src.tagging.fabric_tagging.queue.model import ListJobArgs
 from src.common.content import Content
+from tests.core_tagging.conftest import FakeTagContainer
 
 def _wait_for_status(
     client: QueueService,
@@ -47,7 +49,7 @@ def _status_for(
     model: str,
     stream: str | None = None,
 ) -> TagJobStatusResult:
-    matches = [r for r in reports if r.model == model]
+    matches = [r for r in reports if r.model == model and (stream is None or r.stream == stream)]
     assert matches, f"Missing status for model={model}, stream={stream}"
     return matches[0]
 
@@ -137,6 +139,17 @@ def test_stop_running_job(queue_client, q, make_tag_args, tag_runner):
     # check that job is marked cancelled in jobstore
     jobstore = tag_runner.jobstore
     assert jobstore.list_jobs(ListJobArgs(status="cancelled"), auth="")
+    
+def test_job_progress(queue_client, q, make_tag_args, tag_runner):
+    args = make_tag_args(feature="caption", stream="video")
+    #def set_report_progress(container: FakeTagContainer) -> FakeTagContainer:
+    #    container.report_progress = True
+    #    return container
+    #tag_runner.tagger.cregistry.get = 
+    queue_client.tag(q, [args])
+    time.sleep(2)
+    status = queue_client.status(StatusArgs(q.qid, None, None, None))[0]
+    assert status.tagger_details.progress == 1.0
 
 def test_worker_tag_fails(queue_client, q, make_tag_args, tag_runner):
     tag_runner.tagger.tag = Mock(side_effect=Exception("Tagging failed"))
@@ -170,3 +183,19 @@ def test_max_jobs_limits_concurrency(queue_client, make_tag_args, tag_runner):
 
     assert len(running) <= 2, f"Expected at most 2 running jobs (max_jobs=2), got {len(running)}"
     assert len(queued) >= 1, f"Expected at least 1 job still queued, got {len(queued)}"
+
+def test_two_streams_gives_different_status(queue_client, q, make_tag_args, tag_runner):
+    """Jobs with different stream names should be tracked separately."""
+    args1 = make_tag_args(feature="caption", stream="video")
+    args2 = make_tag_args(feature="caption", stream="audio")
+    queue_client.tag(q, [args1, args2])
+
+    reports = _wait_for_status(queue_client, q.qid, "running")
+    assert len(reports) == 2
+    status_video = _status_for(reports, model="caption", stream="video")
+    status_audio = _status_for(reports, model="caption", stream="audio")
+    assert status_video.status == "running"
+    assert status_audio.status == "running"
+    assert status_video.tagger_details is not None
+    assert status_audio.tagger_details is not None
+    assert status_video.tagger_details != status_audio.tagger_details

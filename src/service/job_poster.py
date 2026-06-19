@@ -6,6 +6,7 @@ from src.common.logging import logger
 
 from src.common.content import Content, QAPIFactory
 from src.common.model import ModelConfig
+from src.fetch.model import Scope
 from src.service.model import TagStartResult
 from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tagging.fabric_tagging.model import TagArgs
@@ -77,7 +78,7 @@ class JobPoster:
 
                 if num_dependencies[i] == 0:
                     # see if there is a job already running
-                    existing_job = self._get_already_running(q, args[i].feature)
+                    existing_job = self._get_already_running(q, args[i].feature, args[i].scope)
 
                     if not existing_job:
 
@@ -123,14 +124,16 @@ class JobPoster:
                 result.setdefault(track.name, item.id)
         return result
 
-    def _get_already_running(self, q: Content, model: str) -> QueueItem | None:
+    def _get_already_running(self, q: Content, model: str, scope: Scope) -> QueueItem | None:
         running = self.jobstore.list_jobs(ListJobArgs(qid=q.qid, status="running", include_unready=True), auth=q.token)
         for item in running:
-            if item.params.feature == model:
+            item_stream = item.params.scope.get_stream()
+            if item.params.feature == model and item_stream == scope.get_stream():
                 return item
         queued = self.jobstore.list_jobs(ListJobArgs(qid=q.qid, status="queued", include_unready=True), auth=q.token)
         for item in queued:
-            if item.params.feature == model:
+            item_stream = item.params.scope.get_stream()
+            if item.params.feature == model and item_stream == scope.get_stream():
                 return item
         return None
 

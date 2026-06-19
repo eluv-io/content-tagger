@@ -67,9 +67,11 @@ class FsJobStore:
             feature=p["feature"],
             run_config=p["run_config"],
             scope=_convert_scope(p["scope"]),
+            track_suffix=p.get("track_suffix", ""),
             replace=p["replace"],
             destination_qid=p["destination_qid"],
             max_fetch_retries=p["max_fetch_retries"],
+            caller_info=p.get("caller_info", {})
         )
         return QueueItem(
             id=job["id"],

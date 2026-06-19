@@ -38,6 +38,7 @@ class JobInfo:
     id: str
     qid: str
     feature: str
+    stream: str
     auth: str
 
 class TagRunner:
@@ -150,7 +151,8 @@ class TagRunner:
             logger.info("claimed job", job_id=item.id, qid=item.qid)
 
             feature = item.params.feature
-            self._running_jobs[item.id] = JobInfo(id=item.id, qid=item.qid, feature=feature, auth=item.auth)
+            stream = item.params.scope.get_stream()
+            self._running_jobs[item.id] = JobInfo(id=item.id, qid=item.qid, feature=feature, stream=stream, auth=item.auth)
 
             self._run_job(item)
 
@@ -212,10 +214,10 @@ class TagRunner:
                 logger.opt(exception=True).warning("failed to get status", qid=qid)
                 continue
 
-            report_by_feature: dict[str, TagStatusResult] = {r.model: r for r in reports}
+            reports_by_model_stream: dict[tuple[str, str], TagStatusResult] = {(r.model, r.stream) : r for r in reports}
 
             for item in job_items:
-                r = report_by_feature.get(item.feature)
+                r = reports_by_model_stream.get((item.feature, item.stream))
                 if r is None:
                     continue
 
@@ -224,10 +226,18 @@ class TagRunner:
 
                 error = r.status.error
 
+                fetch_progress = len(r.status.downloaded_sources) / len(r.status.total_sources) if r.status.total_sources else 1.0
+                
+                if r.status.container_progress_ratio is None:
+                    # approximate with tagged parts
+                    tag_progress = len(r.status.uploaded_sources) / len(r.status.total_sources) if r.status.total_sources else 1.0
+                else:
+                    tag_progress = r.status.container_progress_ratio
+
                 details=TagDetails(
                     tag_status=r.status.status,
                     time_running=r.status.time_ended - r.status.time_started if r.status.time_ended else time.time() - r.status.time_started,
-                    progress=(0.3 * len(r.status.downloaded_sources) + 0.7 * len(r.status.uploaded_sources)) / len(r.status.total_sources) if r.status.total_sources else 1.0,
+                    progress=0.3 * fetch_progress + 0.7 * tag_progress,
                     tagging_progress=f"{len(r.status.uploaded_sources)}/{len(r.status.total_sources)}",
                     total_parts=len(r.status.total_sources),
                     downloaded_parts=len(r.status.downloaded_sources),

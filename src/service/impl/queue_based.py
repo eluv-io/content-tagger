@@ -76,7 +76,7 @@ class QueueService(TaggerService):
                 status=item.status,
                 created_at=item.created_at,
                 model=item.params.feature,
-                stream=_stream_from_scope(item.params.scope),
+                stream=item.params.scope.get_stream(),
                 params=asdict(item.params),
                 dependencies=item.deps,
                 tagger_details=item.status_details,
@@ -86,12 +86,3 @@ class QueueService(TaggerService):
                 error=item.error,
             ))
         return reports
-    
-def _stream_from_scope(scope) -> str:
-    """Derive the stream identifier from a scope, matching TagJob.get_id() logic."""
-    if isinstance(scope, AssetScope):
-        return "assets"
-    elif hasattr(scope, "stream"):
-        return scope.stream
-    else:
-        return "video"

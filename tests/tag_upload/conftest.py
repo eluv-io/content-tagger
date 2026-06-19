@@ -64,5 +64,6 @@ def upload_session(track_resolver, mock_q, filesystem_tagstore):
         track_resolver=track_resolver,
         tagstore=filesystem_tagstore,
         dest_q=mock_q,
+        track_suffix="",
         do_retry=False
     )

@@ -19,9 +19,11 @@ class TagArgs:
     run_config: dict
     # scope of the tagging job w.r.t the content
     scope: Scope
+    track_suffix: str
     replace: bool
     destination_qid: str
     max_fetch_retries: int
+    caller_info: dict[str, str]
 
 JobStateDescription = Literal[
     "Queued",
@@ -41,6 +43,7 @@ class JobStatus:
     downloaded_sources: list[str]
     tagged_sources: list[str]
     uploaded_sources: list[str]
+    container_progress_ratio: float | None
     warnings: list[str]
     error: str | None
 
@@ -54,6 +57,7 @@ class JobStatus:
             tagged_sources=[],
             downloaded_sources=[],
             uploaded_sources=[],
+            container_progress_ratio=None,
             warnings=[],
             error=None,
         )
@@ -75,9 +79,6 @@ class JobID:
 
     def __hash__(self):
         return hash((self.qid, self.feature, self.stream))
-    
-    def __str__(self):
-        return f"(qid={self.qid}, model={self.feature}, stream={self.stream})"
     
 @dataclass(frozen=True)
 class TagStartResult:

@@ -42,6 +42,7 @@ class TagContainer:
         self._cached_tags: list[ModelTag] = []
         self._cached_progress: list[Progress] = []
         self._cached_errors: list[Error] = []
+        self._progress_ratio: float | None = None
         self._output_file_offset: int = 0
         self._tags_read_cursor: int = 0
 
@@ -89,6 +90,13 @@ class TagContainer:
         """
         with self._lock:
             return self._progress()
+
+    def progress_ratio(self) -> float | None:
+        """
+        Returns the most recent progress percentage (0 to 1), or None if none reported yet.
+        """
+        with self._lock:
+            return self._progress_ratio_value()
 
     def name(self) -> str:
         with self._lock:
@@ -263,6 +271,11 @@ class TagContainer:
         self._parse_new_output()
         return deepcopy(self._cached_progress)
 
+    def _progress_ratio_value(self) -> float | None:
+        """Get the most recent progress ratio (0 to 1) reported by the container."""
+        self._parse_new_output()
+        return self._progress_ratio
+
     def _name(self) -> str:
         """A human friendly name for the container, useful for logging"""
         return f"{self.cfg.id}_{self.cfg.model_config.image}"
@@ -312,9 +325,12 @@ class TagContainer:
                 local_media_path = None
                 source_media = data.get("source_media")
 
-                if not source_media and msg_type != "error":
+                # these message types are not tied to a specific media file
+                source_optional = msg_type in ("error", "progress_ratio")
+
+                if not source_media and not source_optional:
                     raise ValueError(f"Missing source_media in container output message: {msg}")
-                elif msg_type == "error" and not source_media:
+                elif source_optional and not source_media:
                     # allow source_media to be None
                     pass
                 else:
@@ -335,8 +351,10 @@ class TagContainer:
                     ))
                 elif msg_type == "progress":
                     # placate type checker
-                    assert local_media_path is not None  
+                    assert local_media_path is not None
                     self._cached_progress.append(Progress(source_media=local_media_path))
+                elif msg_type == "progress_ratio":
+                    self._progress_ratio = data.get("progress")
                 elif msg_type == "error":
                     self._cached_errors.append(Error(message=data.get("message", ""), source_media=local_media_path))
                 else:

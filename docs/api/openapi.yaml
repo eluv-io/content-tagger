@@ -366,6 +366,15 @@ components:
           additionalProperties: true
           description: Model level parameters
           example: {"fps": 1.5}
+        track_suffix:
+          type: string
+          default: ""
+          description: If set this will be appended to the track id & label that the model writes to. This allows you to write to different tracks with the same model by specifying different suffixes.
+        caller_job_info:
+          type: object
+          additionalProperties: true
+          description: Arbitrary key-value pairs that will be stored with the job for later reference.
+          example: {"user_note": "This is a note about the job"}
         overrides:
           $ref: '#/components/schemas/TaggerOptions'
       required:

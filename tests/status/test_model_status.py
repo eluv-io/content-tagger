@@ -27,7 +27,7 @@ def make_batch(
         additional_info={
             "tagger": {
                 "source_qid": source_qid,
-                "params": {"feature": "llava", "run_config": {}, "scope": "full", "replace": False, "destination_qid": "iq__dest", "max_fetch_retries": 3},
+                "params": {"feature": "llava", "run_config": {}, "scope": "full", "replace": False, "destination_qid": "iq__dest", "max_fetch_retries": 3, "caller_info": {}, "track_suffix": ""},
                 "job_status": {"status": job_status, "time_ran": "1h 0m 0s"},
                 "upload_status": {
                     "all_sources": all_sources,

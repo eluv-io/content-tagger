@@ -127,8 +127,10 @@ class ArgsResolver:
             run_config=run_config,
             scope=scope,
             replace=replace,
+            track_suffix=job.track_suffix,
             destination_qid=destination_qid,
             max_fetch_retries=max_fetch_retries,
+            caller_info=job.caller_info
         )
 
     def _map_scope(self, scope_arg: dict[str, Any]) -> Scope:

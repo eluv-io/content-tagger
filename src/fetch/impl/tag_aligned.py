@@ -153,6 +153,48 @@ class TagAlignedFetcher(FetchSession):
         _, ext = os.path.splitext(filepath)
         return ext if ext else ".mp4"
 
+    # Audio-only containers — these have no video stream to map or encode.
+    _AUDIO_EXTS = {"m4a", "aac", "mp3", "opus", "ogg", "oga", "wav", "flac"}
+
+    @staticmethod
+    def _output_args(ext: str) -> list[str]:
+        """
+        Stream-mapping and encoder args appropriate for the output container.
+        We must re-encode (rather than stream-copy) so that the cut is
+        frame-accurate; with ``-c copy`` ffmpeg can only cut on keyframe
+        boundaries, which makes the output duration off by up to a full GOP
+        (commonly ~1s).
+        """
+        e = ext.lower().lstrip(".")
+
+        if e in TagAlignedFetcher._AUDIO_EXTS:
+            if e in ("opus", "ogg", "oga"):
+                acodec = ["-c:a", "libopus"]
+            elif e == "mp3":
+                acodec = ["-c:a", "libmp3lame"]
+            elif e == "flac":
+                acodec = ["-c:a", "flac"]
+            elif e == "wav":
+                acodec = ["-c:a", "pcm_s16le"]
+            else:  # m4a / aac
+                acodec = ["-c:a", "aac", "-b:a", "192k"]
+            return ["-map", "0:a:0", *acodec]
+
+        if e == "webm":
+            return [
+                "-map", "0:v:0", "-map", "0:a:0?",
+                "-c:v", "libvpx-vp9", "-crf", "30", "-b:v", "0",
+                "-c:a", "libopus",
+            ]
+
+        # mp4 / m4s / ts / mov / mkv and anything else: H.264 + AAC
+        return [
+            "-map", "0:v:0", "-map", "0:a:0?",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "192k",
+        ]
+
     @staticmethod
     def _extract_tag_segment(
         segments: list[Source],
@@ -168,45 +210,28 @@ class TagAlignedFetcher(FetchSession):
         if os.path.exists(output_path):
             return
 
+        seg_offset = segments[0].offset
+        ss = (start_ms - seg_offset) / 1000.0
+        duration = (end_ms - start_ms) / 1000.0
+
         with tempfile.TemporaryDirectory(dir=os.path.dirname(output_path)) as tmp_dir:
             if len(segments) == 1:
-                input_path = segments[0].filepath
-                seg_offset = segments[0].offset
+                input_args = ["-i", segments[0].filepath]
             else:
-                # Concatenate segments first
                 concat_list = os.path.join(tmp_dir, "concat.txt")
                 with open(concat_list, "w") as f:
                     for seg in segments:
                         f.write(f"file '{seg.filepath}'\n")
-                input_path = os.path.join(tmp_dir, f"concat{ext}")
-                subprocess.run(
-                    [
-                        "ffmpeg",
-                        "-f", "concat",
-                        "-safe", "0",
-                        "-i", concat_list,
-                        "-y",
-                        "-c", "copy",
-                        input_path,
-                    ],
-                    check=True,
-                    capture_output=True,
-                )
-                seg_offset = segments[0].offset
-
-            # Trim to the exact tag time range
-            ss = (start_ms - seg_offset) / 1000.0
-            duration = (end_ms - start_ms) / 1000.0
+                input_args = ["-f", "concat", "-safe", "0", "-i", concat_list]
 
             subprocess.run(
                 [
                     "ffmpeg",
                     "-ss", f"{ss:.3f}",
-                    "-i", input_path,
+                    *input_args,
                     "-t", f"{duration:.3f}",
                     "-y",
-                    "-map", "0",
-                    "-c", "copy",
+                    *TagAlignedFetcher._output_args(ext),
                     "-avoid_negative_ts", "make_zero",
                     output_path,
                 ],

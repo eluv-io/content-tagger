@@ -15,6 +15,7 @@ from src.tagging.fabric_tagging.tagger import TaggerWorker
 from src.tags.tagstore.abstract import Tagstore
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.service.abstract import TaggerService
+from src.tagging.fabric_tagging.queue.abstract import JobStore
 from tests.api.conftest import FakeLiveWorker
 
 def is_queue_mode():
@@ -116,6 +117,39 @@ def test_video_model(client, q):
     assert len(ftags) == 122
 
     assert completed, "Timeout waiting for jobs to complete"
+
+# testing both of these features in one unit test cause i'm lazy sorry not sorry
+def test_track_suffix_and_caller_info(client, q):
+    """Test the complete tagging workflow."""
+
+    # Test initial status - should return 404 for no jobs
+    response = client.get(f"/{q.qid}/job-status?authorization={q.token}")
+    assert response.status_code == 404
+    
+    # Start video tagging with GPU feature
+    response = client.post(
+        f"/{q.qid}/tag?authorization={q.token}", 
+        json={
+            "jobs": [
+                {
+                    "model": "test_model",
+                    "track_suffix": "Hi I am a test",
+                    "caller_info": {"hello": "world"},
+                }
+            ]
+        }
+    )
+    assert response.status_code == 200
+    completed = wait_for_jobs_completion(client, [q], timeout=30)
+    assert completed
+    tagstore: Tagstore = client.application.config["state"]["worker"].tagstore
+    track = tagstore.get_track(q=q, name="test_model_Hi_I_am_a_test")
+    assert track
+    assert track.label == "Test Model Hi I am a test"
+
+    response = client.get(f"/{q.qid}/job-status?authorization={q.token}")
+    assert response.status_code == 200
+    assert response.json["jobs"][0]["params"]["caller_info"] == {"hello": "world"}
 
 @pytest.mark.parametrize("last_res_has_media", [True, False])
 def test_live_video_model(app, last_res_has_media, q):
