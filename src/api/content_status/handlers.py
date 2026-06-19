@@ -1,35 +1,30 @@
-from dataclasses import asdict
-import json
-
-from flask import Response, current_app, request
+from flask import current_app, request
+from flask_smorest import Blueprint
 
 from src.api.auth import authorize
+from src.status.format import ContentStatusResponse, ContentStatusResponseSchema, ModelStatusResponse, ModelStatusResponseSchema
 from src.status.service import TaggingStatusService
 
+content_status_blp = Blueprint(
+    "content_status", __name__, description="Per-content tagging status summaries."
+)
 
-def handle_content_status(qid: str) -> Response:
 
+@content_status_blp.route("/<qid>/tag-status", methods=["GET"])
+@content_status_blp.response(200, ContentStatusResponseSchema)
+def handle_content_status(qid: str) -> ContentStatusResponse:
     q = authorize(qid, request)
 
     service: TaggingStatusService = current_app.config["state"]["status_service"]
 
-    payload = service.get_content_summary(q=q)
+    return service.get_content_summary(q=q)
 
-    return Response(
-        response=json.dumps(asdict(payload)),
-        status=200,
-        mimetype="application/json",
-    )
 
-def handle_model_status(qid: str, model: str) -> Response:
+@content_status_blp.route("/<qid>/tag-status/<model>", methods=["GET"])
+@content_status_blp.response(200, ModelStatusResponseSchema)
+def handle_model_status(qid: str, model: str) -> ModelStatusResponse:
     q = authorize(qid, request)
 
     service: TaggingStatusService = current_app.config["state"]["status_service"]
 
-    payload = service.get_model_status(q=q, model=model)
-
-    return Response(
-        response=json.dumps(asdict(payload)),
-        status=200,
-        mimetype="application/json",
-    )
+    return service.get_model_status(q=q, model=model)

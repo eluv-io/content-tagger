@@ -5,8 +5,9 @@ setup(
     version='0.1',
     packages=find_packages(),
     install_requires=[
-        'marshmallow==3.26.1',
+        'marshmallow>=3.24,<5',
         'flask',
+        'flask-smorest>=0.44',
         'flask_cors',
         'loguru',
         'podman',

@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from marshmallow import Schema, fields
+
 from src.common.model import ModelConfig
 
 @dataclass
@@ -18,6 +20,22 @@ class ModelSpec:
 @dataclass
 class ListingResponse:
     models: list[ModelSpec]
+
+
+class TrackOutputSchema(Schema):
+    name = fields.Str()
+
+
+class ModelSpecSchema(Schema):
+    name = fields.Str()
+    description = fields.Str()
+    type = fields.Str()
+    tag_tracks = fields.List(fields.Nested(TrackOutputSchema))
+    dependencies = fields.List(fields.Str())
+
+
+class ListingResponseSchema(Schema):
+    models = fields.List(fields.Nested(ModelSpecSchema))
 
 
 def list_models(

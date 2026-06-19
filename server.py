@@ -1,6 +1,8 @@
 import argparse
-from flask import Flask, Response, jsonify, send_from_directory
+from flask import Flask, jsonify
 from flask_cors import CORS
+from flask_smorest import Api
+from werkzeug.exceptions import HTTPException
 import json
 from requests.exceptions import HTTPError
 import atexit
@@ -27,17 +29,34 @@ from src.tag_containers.registry import ContainerRegistry
 from src.tags.track_resolver import TrackResolver
 from src.common.logging import logger
 
-from src.api.tagging.handlers import handle_tag, handle_status, handle_status_content, handle_stop_model, handle_stop_content
-from src.api.content_status.handlers import handle_content_status, handle_model_status
-from src.api.extension.handlers import handle_list_models, handle_delete_job
+from src.api.tagging.handlers import tagging_blp
+from src.api.content_status.handlers import content_status_blp
+from src.api.extension.handlers import extension_blp
+from src.api.tagging.scope_schemas import SCOPE_SCHEMAS, ScopeSchema
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
 from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tagging.tag_runner import TagRunner
 from src.common.errors import *
 from app_config import AppConfig
 
-def configure_routes(app: Flask) -> None:
-    # Configure the Flask app with the routes defined in this module.
+_SMOREST_DEFAULTS = {
+    "API_TITLE": "Eluvio Tagger API",
+    "API_VERSION": "1.0.0",
+    "OPENAPI_VERSION": "3.0.2",
+    # serve the spec + Swagger UI (replaces the old hand-maintained docs/api/openapi.html)
+    "OPENAPI_URL_PREFIX": "/",
+    "OPENAPI_JSON_PATH": "openapi.json",
+    "OPENAPI_SWAGGER_UI_PATH": "/docs",
+    "OPENAPI_SWAGGER_UI_URL": "https://cdn.jsdelivr.net/npm/swagger-ui-dist/",
+}
+
+
+def _register_error_handlers(app: Flask) -> None:
+    """Map the domain exceptions to HTTP responses.
+
+    flask-smorest handles request-validation errors (422) and other HTTPExceptions
+    itself; these handlers cover the application's own exception types.
+    """
 
     @app.errorhandler(BadRequestError)
     def handle_bad_request(e):
@@ -60,56 +79,39 @@ def configure_routes(app: Flask) -> None:
     def handle_forbidden(e):
         logger.opt(exception=e).error("Forbidden error")
         return jsonify({'code': 403, 'message': e.message}), 403
-    
+
     @app.errorhandler(ExternalServiceError)
     def handle_external_service_error(e):
         logger.opt(exception=e).error("External service error")
         return jsonify({'message': "An upstream service failed", 'error': str(e)}), 502
-    
+
     @app.errorhandler(Exception)
     def handle_generic_exception(e):
+        # let flask-smorest / werkzeug handle HTTP errors (validation 422, 404, ...)
+        if isinstance(e, HTTPException):
+            return e
         logger.opt(exception=e).error("Unhandled exception in API")
         return jsonify({'message': "An unexpected error occurred", 'error': str(e)}), 500
 
-    @app.route('/<qid>/tag', methods=['POST'])
-    def tag(qid: str) -> Response:
-        return handle_tag(qid)
-    
-    @app.route('/<qid>/job-status', methods=['GET'])
-    def status(qid: str) -> Response:
-        return handle_status_content(qid)
 
-    @app.route('/job-status', methods=['GET'])
-    def status_all() -> Response:
-        return handle_status()
-    
-    @app.route('/<qid>/stop/<feature>', methods=['POST'])
-    def stop_model(qid: str, feature: str) -> Response:
-        return handle_stop_model(qid, feature)
+def configure_routes(app: Flask) -> None:
+    # Configure the Flask app: error handlers, the flask-smorest Api, and the blueprints.
+    for key, value in _SMOREST_DEFAULTS.items():
+        app.config.setdefault(key, value)
 
-    @app.route('/<qid>/stop', methods=['POST'])
-    def stop_content(qid: str) -> Response:
-        return handle_stop_content(qid)
+    _register_error_handlers(app)
 
-    @app.route('/<qid>/tag-status', methods=['GET'])
-    def content_status(qid: str) -> Response:
-        return handle_content_status(qid)
+    api = Api(app)
 
-    @app.route('/<qid>/tag-status/<model>', methods=['GET'])
-    def model_status(qid: str, model: str) -> Response:
-        return handle_model_status(qid, model)
+    # document the polymorphic scope variants in the OpenAPI components
+    api.spec.components.schema("Scope", schema=ScopeSchema)
+    for scope_type, scope_schema in SCOPE_SCHEMAS.items():
+        name = "".join(part.capitalize() for part in scope_type.split("-")) + "Scope"
+        api.spec.components.schema(name, schema=scope_schema)
 
-    @app.route('/models', methods=['GET'])
-    def list_models_route() -> Response:
-        return handle_list_models()
-
-    @app.route('/jobs/<job_id>', methods=['DELETE'])
-    def delete_job_route(job_id: str) -> Response:
-        return handle_delete_job(job_id)
-
-    @app.route('/docs', strict_slashes=False)
-    def docs_route():
-        return send_from_directory('docs/api', 'openapi.html')
+    api.register_blueprint(tagging_blp)
+    api.register_blueprint(content_status_blp)
+    api.register_blueprint(extension_blp)
 
 def _build_worker(cfg: AppConfig) -> TaggerWorker:
     qfactory = QAPIFactory(cfg.content)

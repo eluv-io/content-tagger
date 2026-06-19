@@ -1,16 +1,23 @@
 from copy import deepcopy
-from dataclasses import asdict
-from dacite import from_dict, Config
-import json
 import os
 from common_ml.utils.metrics import timeit
 
-from flask import Response, request, current_app
-from dacite import from_dict
+from flask import request, current_app
+from flask_smorest import Blueprint
 
 from src.api.arg_resolver import ArgsResolver
 from src.service.abstract import TaggerService
-from src.api.tagging.response_format import StartStatus, StartTaggingResponse
+from src.api.tagging.request_format import (
+    StartJobsRequestSchema,
+    StatusRequestSchema,
+)
+from src.api.tagging.response_format import (
+    StartStatus,
+    StartTaggingResponse,
+    StartTaggingResponseSchema,
+    StatusResponseSchema,
+    StopTaggingResponseSchema,
+)
 from src.common.logging import logger
 
 from src.common.errors import *
@@ -21,14 +28,17 @@ from src.api.tagging.response_mapping import *
 from src.service.impl.queue_based import QueueService
 from src.status.get_info import UserInfoResolver
 
-def handle_tag(qid: str) -> Response:
+tagging_blp = Blueprint(
+    "tagging", __name__, description="Start, query and stop tagging jobs."
+)
+
+
+@tagging_blp.route("/<qid>/tag", methods=["POST"])
+@tagging_blp.arguments(StartJobsRequestSchema)
+@tagging_blp.response(200, StartTaggingResponseSchema)
+def handle_tag(args: StartJobsRequest, qid: str) -> StartTaggingResponse:
     q = authorize(qid, request)
 
-    try:
-        args = from_dict(data_class=StartJobsRequest, data=request.get_json(), config=Config(strict=True))
-    except Exception as e:
-        raise BadRequestError(f"Invalid request body format: {e}") from e
-    
     logger.debug(args)
 
     if args.options.destination_qid:
@@ -41,10 +51,10 @@ def handle_tag(qid: str) -> Response:
 
     return _execute_tagging(q, tag_args)
 
-def _execute_tagging(q: Content, tag_args: list[TagArgs]) -> Response:
+def _execute_tagging(q: Content, tag_args: list[TagArgs]) -> StartTaggingResponse:
     """Execute tagging for multiple features and return start status response."""
     tagger: TaggerService = current_app.config["state"]["service"]
-    
+
     jobs: list[StartStatus] = []
 
     start_results = tagger.tag(q, tag_args)
@@ -60,18 +70,15 @@ def _execute_tagging(q: Content, tag_args: list[TagArgs]) -> Response:
                 error=None,
             )
         )
-    
-    payload = StartTaggingResponse(jobs=jobs)
 
-    return Response(
-        response=json.dumps(asdict(payload)),
-        status=200,
-        mimetype="application/json",
-    )
+    return StartTaggingResponse(jobs=jobs)
 
-def handle_status_content(qid: str) -> Response:
+@tagging_blp.route("/<qid>/job-status", methods=["GET"])
+@tagging_blp.arguments(StatusRequestSchema, location="query")
+@tagging_blp.response(200, StatusResponseSchema)
+def handle_status_content(status_req: StatusRequest, qid: str) -> StatusResponse:
     status_secret = os.environ.get("STATUS_SECRET", None)
-    
+
     if status_secret is not None and get_authorization(request) == status_secret:
         pass
     else:
@@ -86,34 +93,29 @@ def handle_status_content(qid: str) -> Response:
         title=None
     ))
 
-    status_req = _parse_status_request()
+    return map_all_jobs_status_to_response(reports, status_req)
 
-    response = map_all_jobs_status_to_response(reports, status_req)
-
-    return Response(response=json.dumps(asdict(response)), status=200, mimetype='application/json')
-
-def handle_status() -> Response:
+@tagging_blp.route("/job-status", methods=["GET"])
+@tagging_blp.arguments(StatusRequestSchema, location="query")
+@tagging_blp.response(200, StatusResponseSchema)
+def handle_status(status_req: StatusRequest) -> StatusResponse:
     """Global job-status endpoint. Requires ?tenant= filter.
-    
+
     Authentication: the caller's auth token is verified by picking the first
     returned job's qid and confirming get_tenant(qid, auth) matches the
     requested tenant.
     """
     auth = get_authorization(request)
 
-    status_req = _parse_status_request()
-
     service: QueueService = current_app.config["state"]["service"]
-    
+
     user_info_resolver: UserInfoResolver = current_app.config["state"]["user_info_resolver"]
 
     args = _get_status_args_and_authorize(status_req, auth, user_info_resolver)
 
     reports = service.status(args)
 
-    response = map_all_jobs_status_to_response(reports, status_req)
-
-    return Response(response=json.dumps(asdict(response)), status=200, mimetype='application/json')
+    return map_all_jobs_status_to_response(reports, status_req)
 
 def _get_status_args_and_authorize(status_req: StatusRequest, auth: str, user_info_resolver: UserInfoResolver) -> StatusArgs:
     status_req = deepcopy(status_req)
@@ -132,39 +134,24 @@ def _get_status_args_and_authorize(status_req: StatusRequest, auth: str, user_in
 
     return args
 
-def _parse_status_request() -> StatusRequest:
-    """Parse status query parameters into a StatusRequest."""
-    try:
-        args = request.args.to_dict()
-        if "authorization" in args:
-            del args["authorization"]
-        return from_dict(data_class=StatusRequest, data=args, config=Config(strict=True, cast=[int]))
-    except Exception as e:
-        raise BadRequestError(f"Invalid status query parameters: {e}") from e
-
-def handle_stop_model(
-    qid: str, 
-    feature: str
-) -> Response:
+@tagging_blp.route("/<qid>/stop/<feature>", methods=["POST"])
+@tagging_blp.response(200, StopTaggingResponseSchema)
+def handle_stop_model(qid: str, feature: str) -> StopTaggingResponse:
     q = authorize(qid, request)
 
     tagger: TaggerService = current_app.config["state"]["service"]
 
     stop_res = tagger.stop(q.qid, feature)
 
-    api_res = map_stop_results_to_response(stop_res)
+    return map_stop_results_to_response(stop_res)
 
-    return Response(response=json.dumps(asdict(api_res)), status=200, mimetype='application/json')
-
-def handle_stop_content(
-    qid: str
-) -> Response:
+@tagging_blp.route("/<qid>/stop", methods=["POST"])
+@tagging_blp.response(200, StopTaggingResponseSchema)
+def handle_stop_content(qid: str) -> StopTaggingResponse:
     q = authorize(qid, request)
 
     tagger: TaggerService = current_app.config["state"]["service"]
 
     stop_res = tagger.stop(q.qid, None)
 
-    api_res = map_stop_results_to_response(stop_res)
-
-    return Response(response=json.dumps(asdict(api_res)), status=200, mimetype='application/json')
+    return map_stop_results_to_response(stop_res)

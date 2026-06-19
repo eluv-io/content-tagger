@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from loguru import logger
+from marshmallow import EXCLUDE, Schema, fields
 
 from src.common.errors import BadRequestError, ForbiddenError
 from src.status.get_info import UserInfoResolver
@@ -11,6 +12,15 @@ class DeleteJobRequest:
     job_id: str
     tenant: str | None
     authorization: str
+
+
+class DeleteJobQuerySchema(Schema):
+    """Query parameters for DELETE /jobs/<job_id>."""
+    class Meta:
+        # the request also carries ?authorization=...; ignore it here
+        unknown = EXCLUDE
+
+    tenant = fields.Str(load_default=None, allow_none=True)
 
 
 def delete_job(
