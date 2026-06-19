@@ -4,6 +4,8 @@ from typing import Any, Literal, Optional, TypeAlias
 
 from marshmallow import EXCLUDE, Schema, fields, post_load
 
+from src.api.tagging.scope_schemas import scope_oneof_metadata
+
 @dataclass
 class TaggerOptions:
     destination_qid: str | None = None
@@ -44,10 +46,11 @@ class TaggerOptionsSchema(Schema):
     destination_qid = fields.Str(load_default=None, allow_none=True)
     replace = fields.Bool(load_default=None, allow_none=True)
     max_fetch_retries = fields.Int(load_default=None, allow_none=True)
-    scope = fields.Dict(
-        load_default=dict,
-        metadata={"description": "Tagging scope. See ScopeSchema for the supported variants."},
-    )
+    # Dict (validates the value is an object) + oneOf metadata so the OpenAPI spec points
+    # explicitly at the per-type scope schemas. Stays a plain dict at runtime so
+    # ArgsResolver's merge/resolution pipeline is unchanged; it may be partial, so the
+    # individual scope fields are not required here.
+    scope = fields.Dict(load_default=dict, metadata=scope_oneof_metadata())
 
     @post_load
     def make(self, data, **kwargs):

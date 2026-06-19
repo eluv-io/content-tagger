@@ -51,6 +51,32 @@ SCOPE_SCHEMAS = {
 }
 
 
+def scope_component_name(scope_type: str) -> str:
+    """OpenAPI component name for a scope `type`, e.g. "tag-aligned" -> "TagAlignedScope"."""
+    return "".join(part.capitalize() for part in scope_type.split("-")) + "Scope"
+
+
+def scope_oneof_metadata() -> dict:
+    """marshmallow field metadata that renders the scope as a discriminated `oneOf`.
+
+    apispec merges these keys into the field's OpenAPI schema, so the `scope` request
+    field points explicitly at the per-type scope components registered in the spec
+    (rather than a generic object). The field stays a raw dict at runtime — see
+    TaggerOptionsSchema.scope.
+    """
+    return {
+        "description": (
+            "Polymorphic tagging scope, discriminated by `type`. May be partial: omitted "
+            "fields are filled in server-side based on the content (live vs. static, default "
+            "audio stream)."
+        ),
+        "oneOf": [
+            {"$ref": f"#/components/schemas/{scope_component_name(t)}"}
+            for t in SCOPE_SCHEMAS
+        ],
+    }
+
+
 class ScopeSchema(Schema):
     """Documentation-only envelope: a scope is discriminated by its `type` field.
 
