@@ -16,7 +16,7 @@ render that default in the docs; fields without one are marked required.
 from marshmallow import Schema, fields
 
 
-class AsrParamsSchema(Schema):
+class ParamsAsrSchema(Schema):
     """`model: "asr"`"""
     word_level = fields.Bool(
         load_default=True,
@@ -50,7 +50,7 @@ class AsrParamsSchema(Schema):
     )
 
 
-class MultilingualAsrParamsSchema(Schema):
+class ParamsMultilingualAsrSchema(Schema):
     """`model: "multilingual_asr"`"""
     word_level = fields.Bool(
         load_default=True,
@@ -84,7 +84,7 @@ class MultilingualAsrParamsSchema(Schema):
     )
 
 
-class LlavaParamsSchema(Schema):
+class ParamsLlavaSchema(Schema):
     """`model: "llava"` (frame description)"""
     fps = fields.Int(
         required=True,
@@ -107,7 +107,7 @@ class LlavaParamsSchema(Schema):
     )
 
 
-class CelebParamsSchema(Schema):
+class ParamsCelebSchema(Schema):
     """`model: "celeb"`"""
     fps = fields.Float(
         load_default=4,
@@ -152,7 +152,7 @@ class CelebParamsSchema(Schema):
     )
 
 
-class OcrParamsSchema(Schema):
+class ParamsOcrSchema(Schema):
     """`model: "ocr"`"""
     fps = fields.Int(
         required=True,
@@ -176,7 +176,7 @@ class OcrParamsSchema(Schema):
     )
 
 
-class LogoParamsSchema(Schema):
+class ParamsLogoSchema(Schema):
     """`model: "logo"`"""
     fps = fields.Int(
         required=True,
@@ -184,7 +184,7 @@ class LogoParamsSchema(Schema):
     )
 
 
-class CaptionParamsSchema(Schema):
+class ParamsCaptionSchema(Schema):
     """`model: "caption"`"""
     fps = fields.Int(
         required=True,
@@ -192,7 +192,7 @@ class CaptionParamsSchema(Schema):
     )
 
 
-class SceneDescriptionParamsSchema(Schema):
+class ParamsSceneDescriptionSchema(Schema):
     """`model: "scene_description"`"""
     num_frames = fields.Int(
         load_default=5,
@@ -234,14 +234,14 @@ class SceneDescriptionParamsSchema(Schema):
 # Maps the `model` discriminator to its params schema. Registered in the OpenAPI
 # spec in server.py. Models not listed here take no documented parameters.
 MODEL_PARAM_SCHEMAS = {
-    "asr": AsrParamsSchema,
-    "multilingual_asr": MultilingualAsrParamsSchema,
-    "llava": LlavaParamsSchema,
-    "celeb": CelebParamsSchema,
-    "ocr": OcrParamsSchema,
-    "logo": LogoParamsSchema,
-    "caption": CaptionParamsSchema,
-    "scene_description": SceneDescriptionParamsSchema,
+    "asr": ParamsAsrSchema,
+    "euro_asr": ParamsMultilingualAsrSchema,
+    "llava": ParamsLlavaSchema,
+    "celeb": ParamsCelebSchema,
+    "ocr": ParamsOcrSchema,
+    "logo": ParamsLogoSchema,
+    "caption": ParamsCaptionSchema,
+    "scene_description": ParamsSceneDescriptionSchema,
 }
 
 
