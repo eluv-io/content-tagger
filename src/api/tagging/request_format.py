@@ -4,6 +4,7 @@ from typing import Any, Literal, Optional, TypeAlias
 
 from marshmallow import EXCLUDE, Schema, fields, post_load
 
+from src.api.tagging.model_param_schemas import model_params_oneof_metadata
 from src.api.tagging.scope_schemas import scope_oneof_metadata
 
 @dataclass
@@ -88,10 +89,7 @@ class JobSpecSchema(Schema):
         required=True,
         metadata={"description": "Name of model to run", "example": "asr"},
     )
-    model_params = fields.Dict(
-        load_default=dict,
-        metadata={"description": "Unstructured model level parameters", "example": {"fps": 1.5, "min_confidence": 0.8}},
-    )
+    model_params = fields.Dict(load_default=dict, metadata=model_params_oneof_metadata())
     track_suffix = fields.Str(
         load_default="",
         metadata={

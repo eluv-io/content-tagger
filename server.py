@@ -32,6 +32,7 @@ from src.common.logging import logger
 from src.api.tagging.handlers import tagging_blp
 from src.api.content_status.handlers import content_status_blp
 from src.api.extension.handlers import extension_blp
+from src.api.tagging.model_param_schemas import MODEL_PARAM_SCHEMAS, model_params_component_name
 from src.api.tagging.scope_schemas import SCOPE_SCHEMAS, ScopeSchema, scope_component_name
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
 from src.tagging.fabric_tagging.queue.abstract import JobStore
@@ -103,11 +104,18 @@ def configure_routes(app: Flask) -> None:
 
     api = Api(app)
 
+    assert api.spec is not None
+
     # register the polymorphic scope variants as OpenAPI components so the `scope` field's
     # oneOf refs (see scope_oneof_metadata) resolve.
     api.spec.components.schema("Scope", schema=ScopeSchema)
     for scope_type, scope_schema in SCOPE_SCHEMAS.items():
         api.spec.components.schema(scope_component_name(scope_type), schema=scope_schema)
+
+    # register the per-model params variants so the `model_params` oneOf refs
+    # (see model_params_oneof_metadata) resolve.
+    for model_name, params_schema in MODEL_PARAM_SCHEMAS.items():
+        api.spec.components.schema(model_params_component_name(model_name), schema=params_schema)
 
     api.register_blueprint(tagging_blp)
     api.register_blueprint(content_status_blp)
