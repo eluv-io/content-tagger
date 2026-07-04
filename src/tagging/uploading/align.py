@@ -1,5 +1,6 @@
 from copy import deepcopy
 
+from src.common.logging import logger
 from src.tag_containers.model import ModelTag, Progress
 from src.fetch.model import Source
 
@@ -50,13 +51,21 @@ def align_tags(tags: list[ModelTag], sources: list[Source], fps: float | None) -
             else:
                 frame_info = None
 
-        # this step I feel a little weird about having in align_tags
         src_name = src.name
 
+        start_time = tag.start_time + src.offset
+        end_time = tag.end_time + src.offset
+
+        # in some live cases, real part duration can mismatch with expected duration which 
+        # can sometimes lead to negative start_time for certain models (namely shot detection)
+        if start_time < 0:
+            logger.warning(f"Received negative start_time: {tag}")
+            start_time = 0
+        
         aligned.append(
             ModelTag(
-                start_time=tag.start_time + src.offset,
-                end_time=tag.end_time + src.offset,
+                start_time=start_time,
+                end_time=end_time,
                 text=tag.text,
                 additional_info=additional_info,
                 source_media=src_name,

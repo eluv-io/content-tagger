@@ -226,11 +226,11 @@ class TagRunner:
 
                 error = r.status.error
 
-                fetch_progress = len(r.status.downloaded_sources) / len(r.status.total_sources) if r.status.total_sources else 1.0
+                fetch_progress = len(r.status.downloaded_sources) / len(r.status.total_sources) if r.status.total_sources else 0
                 
                 if r.status.container_progress_ratio is None:
                     # approximate with tagged parts
-                    tag_progress = len(r.status.uploaded_sources) / len(r.status.total_sources) if r.status.total_sources else 1.0
+                    tag_progress = len(r.status.uploaded_sources) / len(r.status.total_sources) if r.status.total_sources else 0
                 else:
                     tag_progress = r.status.container_progress_ratio
 
