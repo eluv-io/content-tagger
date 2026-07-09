@@ -20,6 +20,7 @@ class FilesystemTagStore(Tagstore):
         name: str,
         label: str,
         q: Content,
+        additional_info: dict | None = None,
     ) -> None:
         """
         Create a new track with metadata
@@ -30,7 +31,8 @@ class FilesystemTagStore(Tagstore):
         track = Track(
             name=name,
             label=label,
-            qid=q.qid
+            qid=q.qid,
+            additional_info=additional_info,
         )
 
         metadata_path = self._get_track_metadata_path(q.qid, name)

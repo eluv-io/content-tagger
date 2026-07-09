@@ -35,14 +35,17 @@ class RestTagstore(Tagstore):
     def create_track(self,
         name: str,
         label: str,
-        q: Content
+        q: Content,
+        additional_info: dict | None = None,
     ) -> None:
         """
         Create a new track with metadata (idempotent)
         """
-        track_data = {
+        track_data: dict = {
             "label": label
         }
+        if additional_info is not None:
+            track_data["additional_info"] = additional_info
         
         response = self.session.post(
             f"{self.base_url}/{q.qid}/tracks/{name}",

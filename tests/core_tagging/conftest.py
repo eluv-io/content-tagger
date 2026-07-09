@@ -228,6 +228,10 @@ class FakeContainerRegistry:
         return self.containers[container_key]
     
     def get_model_config(self, feature: str) -> ModelConfig:
+        if feature == "caption":
+            return Mock(resources={"gpu": 1, "cpu_juice": 5}, tags=Mock(hidden=False))
+        elif feature == "asr":
+            return Mock(resources={"gpu": 1, "cpu_juice": 5}, tags=Mock(hidden=True))
         return Mock(resources={"gpu": 1, "cpu_juice": 5})
     
     def services(self) -> list[str]:

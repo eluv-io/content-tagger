@@ -20,6 +20,7 @@ class UploadSession:
         track_suffix: str,
         dest_q: Content,
         do_retry: bool,
+        hidden: bool = False,
     ):
 
         self.feature = feature
@@ -28,6 +29,7 @@ class UploadSession:
         self.dest_q = dest_q
         self.track_suffix = track_suffix
         self.retry = do_retry
+        self.hidden = hidden
         # Mutable state
         self.track_to_batch: dict[str, str] = {}
         self.uploaded_tags: set[ModelTag] = set()
@@ -113,11 +115,14 @@ class UploadSession:
         if track in self.track_to_batch:
             return self.track_to_batch[track]
 
+        additional_info = {"hidden": True} if self.hidden else None
+
         try:
             self.tagstore.create_track(
                 name=track,
                 label=label,
                 q=self.dest_q,
+                additional_info=additional_info,
             )
         except Exception:
             # track may already exist

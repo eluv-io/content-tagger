@@ -38,3 +38,4 @@ class Track:
     qid: str
     name: str
     label: str
+    additional_info: dict | None = None

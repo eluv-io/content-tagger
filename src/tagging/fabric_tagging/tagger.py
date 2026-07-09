@@ -238,6 +238,7 @@ class TaggerWorker:
             track_resolver=self.track_resolver,
             track_suffix=args.track_suffix,
             do_retry=is_live,
+            hidden=self.cregistry.get_model_config(feature).tags.hidden,
         )
 
         container = self.cregistry.get(ContainerRequest(

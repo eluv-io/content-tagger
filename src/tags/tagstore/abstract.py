@@ -4,10 +4,11 @@ from src.common.content import Content
 from src.tags.tagstore.model import *
 
 class Tagstore(Protocol):
-    def create_track(self, 
+    def create_track(self,
         name: str,
         label: str,
-        q: Content
+        q: Content,
+        additional_info: dict | None = None,
     ) -> None:
         ...
 

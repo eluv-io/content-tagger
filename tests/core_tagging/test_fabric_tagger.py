@@ -255,6 +255,13 @@ def test_tags_uploaded_during_and_after_job(
     assert 2 in tag_counts
     assert 4 in tag_counts
 
+    # check that we set the asr additional info to hidden
+    assert fabric_tagger.tagstore.get_track(q=q, name="speech_to_text").additional_info is not None
+    assert fabric_tagger.tagstore.get_track(q=q, name="speech_to_text").additional_info["hidden"] is True
+
+    # we set hidden to false
+    assert fabric_tagger.tagstore.get_track(q=q, name="object_detection").additional_info is None
+
 
 def test_tags_uploaded_during_and_after_job_through_status(
     fabric_tagger, 

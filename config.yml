@@ -133,6 +133,8 @@ model_configs:
     resources: {
       "gpu": 1
     }
+    tags:
+      hidden: True
     track_outputs: ["vertical_video", "focus_detection"]
     track_dependencies: ["shot_detection"]
   chapters:
@@ -152,6 +154,8 @@ model_configs:
     resources: {
       "gpu": 1
     }
+    tags:
+      hidden: True
     track_dependencies: ["shot_detection"]
   speaker:
     image: "localhost/speaker:latest"
