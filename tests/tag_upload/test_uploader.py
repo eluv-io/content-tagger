@@ -107,3 +107,28 @@ def test_upload_empty_tags_get_sources(upload_session):
     uploaded_sources = upload_session.get_uploaded_sources()
 
     assert set(uploaded_sources) == {"source1", "source2"}
+
+def test_retry_on_upload_failure(upload_session, get_tag):
+    upload_session.retry = True
+    tags = [
+        get_tag(model_track="asr", text="hello world", source_media="/path/to/source1.mp4"),
+    ]
+
+    tagged_sources = ["source1"]
+
+    original_fn = upload_session.tagstore.upload_tags
+
+    upload_session.tagstore.upload_tags = Mock(side_effect=Exception("upload failed"))
+
+    upload_session.upload_tags(tags=tags, tagged_sources=tagged_sources)
+    
+    uploaded_sources = upload_session.get_uploaded_sources()
+    assert not uploaded_sources
+
+    # Restore the original function
+    upload_session.tagstore.upload_tags = original_fn
+
+    # Retry should allow subsequent uploads to succeed
+    upload_session.upload_tags(tags=tags, tagged_sources=tagged_sources)
+    uploaded_sources = upload_session.get_uploaded_sources()
+    assert set(uploaded_sources) == {"source1"}

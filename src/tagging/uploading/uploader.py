@@ -75,6 +75,7 @@ class UploadSession:
         except Exception as e:
             if self.retry:
                 logger.opt(exception=e).error("error uploading tags, but retry is set to true, will retry on next upload tick", destination_qid=self.dest_q.qid, feature=self.feature)
+                return
             else:
                 raise
 
