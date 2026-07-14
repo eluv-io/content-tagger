@@ -108,6 +108,40 @@ def test_upload_empty_tags_get_sources(upload_session):
 
     assert set(uploaded_sources) == {"source1", "source2"}
 
+def test_reupload_replaces_tags_for_source(upload_session, track_resolver, get_tag):
+    ts = upload_session.tagstore
+    q = upload_session.dest_q
+
+    # first tagging run writes some tags for the source
+    old_tags = [
+        get_tag(model_track="asr", text="old tag 1", source_media="source1"),
+        get_tag(model_track="asr", text="old tag 2", source_media="source1"),
+        get_tag(model_track="asr", text="old tag 3", source_media="source2"),
+    ]
+    upload_session.upload_tags(tags=old_tags, tagged_sources=["source"])
+
+    assert {t.text for t in ts.find_tags(q=q)} == {"old tag 1", "old tag 2", "old tag 3"}
+
+    # a fresh run over the same source uploads different tags
+    second_session = UploadSession(
+        feature="asr",
+        track_resolver=track_resolver,
+        tagstore=ts,
+        dest_q=q,
+        track_suffix="",
+        do_retry=False,
+    )
+    new_tags = [
+        get_tag(model_track="asr", text="new tag 1", source_media="source1"),
+        get_tag(model_track="asr", text="new tag 2", source_media="source1"),
+    ]
+    second_session.upload_tags(tags=new_tags, tagged_sources=["source"])
+
+    # the old tags for the source are gone, only the new ones remain
+    assert {t.text for t in ts.find_tags(q=q, sources=["source1"])} == {"new tag 1", "new tag 2"}
+    assert {t.text for t in ts.find_tags(q=q, sources=["source2"])} == {"old tag 3"}
+
+
 def test_retry_on_upload_failure(upload_session, get_tag):
     upload_session.retry = True
     tags = [

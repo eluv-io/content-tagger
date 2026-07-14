@@ -34,6 +34,9 @@ class UploadSession:
         self.track_to_batch: dict[str, str] = {}
         self.uploaded_tags: set[ModelTag] = set()
         self.uploaded_sources = set()
+        # sources whose pre-existing tags have already been deleted this session,
+        # so we only delete-by-source once (before the first post for that source)
+        self.deleted_sources: set[str] = set()
 
     def upload_tags(
         self, 
@@ -70,7 +73,14 @@ class UploadSession:
             for t in new_inputs
         ]
 
+        # delete any pre-existing tags for these sources before posting fresh ones,
+        # so re-tagging replaces rather than accumulates tags. Only done once per
+        # source so we don't wipe tags we uploaded on an earlier tick.
+        sources_to_delete = {t.source for t in tags2upload} - self.deleted_sources
+
         try:
+            if sources_to_delete:
+                self.tagstore.delete_tags_by_source(sources=list(sources_to_delete), q=self.dest_q)
             self._post_tags(tags2upload, q=self.dest_q)
         except Exception as e:
             if self.retry:
@@ -78,6 +88,8 @@ class UploadSession:
                 return
             else:
                 raise
+
+        self.deleted_sources.update(sources_to_delete)
 
         self.uploaded_sources.update(tagged_sources)
 

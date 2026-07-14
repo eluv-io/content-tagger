@@ -407,6 +407,28 @@ def test_source_with_slash_encoding(filesystem_tagstore, job_args, q):
     assert len(video_tags) == 1
     assert video_tags[0].text == "person"
 
+def test_delete_tags_by_source(tag_store, job_args, q):
+    """Test that delete_tags_by_source removes only tags matching the given sources"""
+    sample_job = tag_store.create_batch(**job_args, q=q)
+
+    tags = [
+        make_tag(100, 200, "person", None, "source_a", sample_job.id),
+        make_tag(300, 400, "car", None, "source_a", sample_job.id),
+        make_tag(500, 600, "hello world", None, "source_b", sample_job.id),
+    ]
+    tag_store.upload_tags(tags, sample_job.id, q=q)
+
+    # sanity check
+    assert len(tag_store.find_tags(batch_id=sample_job.id, q=q)) == 3
+
+    tag_store.delete_tags_by_source(sources=["source_a"], q=q)
+
+    remaining = tag_store.find_tags(batch_id=sample_job.id, q=q)
+    assert len(remaining) == 1
+    assert remaining[0].source == "source_b"
+    assert remaining[0].text == "hello world"
+
+
 def test_create_track(tag_store, q):
     """Test creating a track with metadata"""
     track_name = "test_track"

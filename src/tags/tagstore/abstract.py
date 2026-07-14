@@ -35,6 +35,10 @@ class Tagstore(Protocol):
     def upload_tags(self, tags: list[Tag], batch_id: str, q: Content) -> None:
         ...
 
+    def delete_tags_by_source(self, sources: list[str], q: Content) -> None:
+        """Permanently delete all tags whose source matches one of the given sources."""
+        ...
+
     def find_tags(self, q: Content, **filters) -> list[Tag]:
         """
         Find tags with flexible filtering.

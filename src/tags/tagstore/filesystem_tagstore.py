@@ -138,6 +138,22 @@ class FilesystemTagStore(Tagstore):
                     os.remove(temp_path)
                 raise e
 
+    def delete_tags_by_source(self, sources: list[str], q: Content) -> None:
+        """
+        Permanently delete all tags whose source matches one of the provided sources.
+
+        Tags are stored one file per source per batch, so we remove the matching
+        source file from every batch belonging to the content object.
+        """
+        if not sources:
+            return
+
+        for batch_id in self.find_batches(q):
+            for source in sources:
+                tags_path = self._get_tags_path(batch_id, source)
+                if os.path.exists(tags_path):
+                    os.remove(tags_path)
+
     def find_tags(self, q: Content, **filters) -> list[Tag]:
         """
         Find tags with flexible filtering.

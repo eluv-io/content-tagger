@@ -176,6 +176,23 @@ class RestTagstore(Tagstore):
         if not response.ok:
             self._log_response_and_raise(response)
 
+    def delete_tags_by_source(self, sources: list[str], q: Content) -> None:
+        """
+        Permanently delete all tags whose source matches one of the provided sources.
+        """
+        if not sources:
+            return
+
+        response = self.session.delete(
+            f"{self.base_url}/{q.qid}/tags",
+            json={"sources": sources},
+            headers=self._get_headers(q),
+            timeout=self.timeout
+        )
+
+        if not response.ok:
+            self._log_response_and_raise(response)
+
     def find_tags(self, q: Content, **filters) -> list[Tag]:
         """
         Find tags with flexible filtering.
