@@ -142,6 +142,71 @@ def test_reupload_replaces_tags_for_source(upload_session, track_resolver, get_t
     assert {t.text for t in ts.find_tags(q=q, sources=["source2"])} == {"old tag 3"}
 
 
+def test_tags_survive_when_progress_lags_across_ticks(upload_session, get_tag):
+    """A source's tags on one track can be posted a tick before its progress arrives
+    (the tagger reads tags and progress independently). The later tick, once the
+    source shows up in progress, must not delete the tags posted earlier."""
+    ts = upload_session.tagstore
+    q = upload_session.dest_q
+
+    # tick 1: speech_to_text tags for source1 arrive, but no progress yet
+    upload_session.upload_tags(
+        tags=[get_tag(model_track="", text="word", source_media="source1")],
+        tagged_sources=[],
+    )
+    # tick 2: auto_captions tags for source1 arrive together with its progress
+    upload_session.upload_tags(
+        tags=[get_tag(model_track="auto_captions", text="sentence", source_media="source1")],
+        tagged_sources=["source1"],
+    )
+
+    assert {t.text for t in ts.find_tags(q=q, track="speech_to_text")} == {"word"}
+    assert {t.text for t in ts.find_tags(q=q, track="auto_captions")} == {"sentence"}
+
+
+def test_two_tracks_two_sources_with_batched_progress(upload_session, get_tag):
+    """Mirror the asr container: word tags (default track) for two sources land before
+    progress, then sentence tags (auto_captions) land with batched progress for both."""
+    ts = upload_session.tagstore
+    q = upload_session.dest_q
+
+    upload_session.upload_tags(
+        tags=[
+            get_tag(model_track="", text="word1", source_media="source1"),
+            get_tag(model_track="", text="word2", source_media="source2"),
+        ],
+        tagged_sources=[],
+    )
+    upload_session.upload_tags(
+        tags=[
+            get_tag(model_track="auto_captions", text="sentence1", source_media="source1"),
+            get_tag(model_track="auto_captions", text="sentence2", source_media="source2"),
+        ],
+        tagged_sources=["source1", "source2"],
+    )
+
+    assert {t.text for t in ts.find_tags(q=q, track="speech_to_text")} == {"word1", "word2"}
+    assert {t.text for t in ts.find_tags(q=q, track="auto_captions")} == {"sentence1", "sentence2"}
+
+
+def test_incremental_tags_for_same_pair_are_not_wiped(upload_session, get_tag):
+    """Tags for the same (track, source) streaming across ticks should append, not
+    delete what was already posted."""
+    ts = upload_session.tagstore
+    q = upload_session.dest_q
+
+    upload_session.upload_tags(
+        tags=[get_tag(model_track="", text="first", source_media="source1")],
+        tagged_sources=["source1"],
+    )
+    upload_session.upload_tags(
+        tags=[get_tag(model_track="", text="second", source_media="source1")],
+        tagged_sources=["source1"],
+    )
+
+    assert {t.text for t in ts.find_tags(q=q, track="speech_to_text")} == {"first", "second"}
+
+
 def test_delete_by_source_is_scoped_to_track(upload_session, track_resolver, get_tag):
     """Two sessions tagging the same source on different tracks must not clobber
     each other when deleting pre-existing tags before posting."""

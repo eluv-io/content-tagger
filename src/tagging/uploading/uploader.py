@@ -34,9 +34,9 @@ class UploadSession:
         self.track_to_batch: dict[str, str] = {}
         self.uploaded_tags: set[ModelTag] = set()
         self.uploaded_sources = set()
-        # every source the model has processed (a source may be processed without
-        # producing any tags), used to delete pre-existing tags for those sources
-        self.processed_sources: set[str] = set()
+        # every source we've seen this session, from progress (tagged_sources) or from
+        # the tags themselves, used to delete pre-existing tags for those sources
+        self.seen_sources: set[str] = set()
         # (track, source) pairs whose pre-existing tags have already been deleted,
         # so we delete each pair at most once (before its first post)
         self.deleted_source_tracks: set[tuple[str, str]] = set()
@@ -47,9 +47,13 @@ class UploadSession:
         tagged_sources: list[str]
     ) -> None:
         """Main upload method - formats and uploads tags to tagstore"""
-        # a source may be processed without producing any tags, but we still need to
-        # remember it so its pre-existing tags get deleted for every relevant track
-        self.processed_sources.update(tagged_sources)
+        # Mark sources as seen from both progress (tagged_sources) and the tags
+        # themselves. A source may be processed without producing tags, so progress
+        # matters; but a source's tags can also arrive a tick before its progress, so
+        # we must count those too, otherwise we'd delete the (track, source) pair on a
+        # later tick and wipe tags we already posted for it.
+        self.seen_sources.update(tagged_sources)
+        self.seen_sources.update(t.source_media for t in tags)
 
         with timeit("deduplicating tags", min_duration=1):
             new_inputs = [t for t in tags if t not in self.uploaded_tags]
@@ -81,7 +85,7 @@ class UploadSession:
         pairs_to_delete = {
             (track, source)
             for track in relevant_tracks
-            for source in self.processed_sources
+            for source in self.seen_sources
         } - self.deleted_source_tracks
 
         sources_by_track: dict[str, set[str]] = {}
@@ -90,8 +94,10 @@ class UploadSession:
 
         try:
             for track, sources in sources_by_track.items():
+                print('deleting tags for track', track, 'and sources', sources)
                 self.tagstore.delete_tags_by_source(sources=list(sources), tracks=[track], q=self.dest_q)
             self._post_tags(tags2upload, q=self.dest_q)
+            print(set(t.model_track for t in new_inputs))
         except Exception as e:
             if self.retry:
                 logger.opt(exception=e).error("error uploading tags, but retry is set to true, will retry on next upload tick", destination_qid=self.dest_q.qid, feature=self.feature)
