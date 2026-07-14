@@ -147,9 +147,9 @@ def test_container(container, video_paths):
         with open(container.cfg.logs_path, 'r') as f:
             logs = f.read()
         
-        assert "Got media/video1.mp4" in logs
-        assert "Got media/video2.mp4" in logs
-        assert "Got media/video3.mp4" in logs
+        assert "Got /elv/media/video1.mp4" in logs
+        assert "Got /elv/media/video2.mp4" in logs
+        assert "Got /elv/media/video3.mp4" in logs
 
         # check that the model can read the auth environment variable
         assert "GOT AUTH: auth12345" in logs

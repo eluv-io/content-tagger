@@ -34,33 +34,37 @@ class UploadSession:
         self.track_to_batch: dict[str, str] = {}
         self.uploaded_tags: set[ModelTag] = set()
         self.uploaded_sources = set()
-        # sources whose pre-existing tags have already been deleted this session,
-        # so we only delete-by-source once (before the first post for that source)
-        self.deleted_sources: set[str] = set()
+        # every source the model has processed (a source may be processed without
+        # producing any tags), used to delete pre-existing tags for those sources
+        self.processed_sources: set[str] = set()
+        # (track, source) pairs whose pre-existing tags have already been deleted,
+        # so we delete each pair at most once (before its first post)
+        self.deleted_source_tracks: set[tuple[str, str]] = set()
 
     def upload_tags(
         self, 
-        tags: list[ModelTag], 
+        tags: list[ModelTag],
         tagged_sources: list[str]
     ) -> None:
         """Main upload method - formats and uploads tags to tagstore"""
+        # a source may be processed without producing any tags, but we still need to
+        # remember it so its pre-existing tags get deleted for every relevant track
+        self.processed_sources.update(tagged_sources)
+
         with timeit("deduplicating tags", min_duration=1):
             new_inputs = [t for t in tags if t not in self.uploaded_tags]
 
-            if not new_inputs:
-                self.uploaded_sources.update(tagged_sources)
-                return
-
-        logger.info(
-            "uploading new tags",
-            num_new_tags=len(new_inputs),
-            feature=self.feature,
-            dest_qid=self.dest_q.qid,
-        )
+        if new_inputs:
+            logger.info(
+                "uploading new tags",
+                num_new_tags=len(new_inputs),
+                feature=self.feature,
+                dest_qid=self.dest_q.qid,
+            )
 
         tags2upload: list[Tag] = [
             Tag(
-                # empty -> not created yet
+                # empty -> not created yet in live tagstore
                 id="",
                 start_time=t.start_time,
                 end_time=t.end_time,
@@ -73,14 +77,19 @@ class UploadSession:
             for t in new_inputs
         ]
 
-        # delete any pre-existing tags for these sources before posting fresh ones,
-        # so re-tagging replaces rather than accumulates tags. Only done once per
-        # source so we don't wipe tags we uploaded on an earlier tick.
-        sources_to_delete = {t.source for t in tags2upload} - self.deleted_sources
+        pairs_to_delete = {
+            (track, source)
+            for track in self.track_to_batch
+            for source in self.processed_sources
+        } - self.deleted_source_tracks
+
+        sources_by_track: dict[str, set[str]] = {}
+        for track, source in pairs_to_delete:
+            sources_by_track.setdefault(track, set()).add(source)
 
         try:
-            if sources_to_delete:
-                self.tagstore.delete_tags_by_source(sources=list(sources_to_delete), q=self.dest_q)
+            for track, sources in sources_by_track.items():
+                self.tagstore.delete_tags_by_source(sources=list(sources), tracks=[track], q=self.dest_q)
             self._post_tags(tags2upload, q=self.dest_q)
         except Exception as e:
             if self.retry:
@@ -89,7 +98,7 @@ class UploadSession:
             else:
                 raise
 
-        self.deleted_sources.update(sources_to_delete)
+        self.deleted_source_tracks.update(pairs_to_delete)
 
         self.uploaded_sources.update(tagged_sources)
 

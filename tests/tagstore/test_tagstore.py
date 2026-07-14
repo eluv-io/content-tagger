@@ -407,26 +407,31 @@ def test_source_with_slash_encoding(filesystem_tagstore, job_args, q):
     assert len(video_tags) == 1
     assert video_tags[0].text == "person"
 
-def test_delete_tags_by_source(tag_store, job_args, q):
-    """Test that delete_tags_by_source removes only tags matching the given sources"""
-    sample_job = tag_store.create_batch(**job_args, q=q)
+def test_delete_tags_by_source(tag_store, q):
+    """Test that delete_tags_by_source removes only tags matching the given sources
+    within the given tracks, leaving other sources and other tracks untouched."""
+    llava_job = tag_store.create_batch(track="llava", author="user", q=q)
+    asr_job = tag_store.create_batch(track="asr", author="user", q=q)
 
-    tags = [
-        make_tag(100, 200, "person", None, "source_a", sample_job.id),
-        make_tag(300, 400, "car", None, "source_a", sample_job.id),
-        make_tag(500, 600, "hello world", None, "source_b", sample_job.id),
-    ]
-    tag_store.upload_tags(tags, sample_job.id, q=q)
+    # same source ("source_a") is tagged on two different tracks
+    tag_store.upload_tags([
+        make_tag(100, 200, "person", None, "source_a", llava_job.id),
+        make_tag(300, 400, "car", None, "source_a", llava_job.id),
+        make_tag(500, 600, "building", None, "source_b", llava_job.id),
+    ], llava_job.id, q=q)
+    tag_store.upload_tags([
+        make_tag(100, 200, "hello world", None, "source_a", asr_job.id),
+    ], asr_job.id, q=q)
 
-    # sanity check
-    assert len(tag_store.find_tags(batch_id=sample_job.id, q=q)) == 3
+    tag_store.delete_tags_by_source(sources=["source_a"], tracks=["llava"], q=q)
 
-    tag_store.delete_tags_by_source(sources=["source_a"], q=q)
+    # source_a tags on the llava track are gone
+    llava_remaining = tag_store.find_tags(batch_id=llava_job.id, q=q)
+    assert {t.text for t in llava_remaining} == {"building"}
 
-    remaining = tag_store.find_tags(batch_id=sample_job.id, q=q)
-    assert len(remaining) == 1
-    assert remaining[0].source == "source_b"
-    assert remaining[0].text == "hello world"
+    # source_a tags on the asr track are untouched (different track)
+    asr_remaining = tag_store.find_tags(batch_id=asr_job.id, q=q)
+    assert {t.text for t in asr_remaining} == {"hello world"}
 
 
 def test_create_track(tag_store, q):

@@ -112,17 +112,17 @@ def test_reupload_replaces_tags_for_source(upload_session, track_resolver, get_t
     ts = upload_session.tagstore
     q = upload_session.dest_q
 
-    # first tagging run writes some tags for the source
+    # first tagging run processes both sources and writes tags for them
     old_tags = [
         get_tag(model_track="asr", text="old tag 1", source_media="source1"),
         get_tag(model_track="asr", text="old tag 2", source_media="source1"),
         get_tag(model_track="asr", text="old tag 3", source_media="source2"),
     ]
-    upload_session.upload_tags(tags=old_tags, tagged_sources=["source"])
+    upload_session.upload_tags(tags=old_tags, tagged_sources=["source1", "source2"])
 
     assert {t.text for t in ts.find_tags(q=q)} == {"old tag 1", "old tag 2", "old tag 3"}
 
-    # a fresh run over the same source uploads different tags
+    # a fresh run reprocesses only source1 and emits different tags for it
     second_session = UploadSession(
         feature="asr",
         track_resolver=track_resolver,
@@ -135,11 +135,42 @@ def test_reupload_replaces_tags_for_source(upload_session, track_resolver, get_t
         get_tag(model_track="asr", text="new tag 1", source_media="source1"),
         get_tag(model_track="asr", text="new tag 2", source_media="source1"),
     ]
-    second_session.upload_tags(tags=new_tags, tagged_sources=["source"])
+    second_session.upload_tags(tags=new_tags, tagged_sources=["source1"])
 
-    # the old tags for the source are gone, only the new ones remain
+    # source1's old tags are replaced; source2 was not reprocessed so it is untouched
     assert {t.text for t in ts.find_tags(q=q, sources=["source1"])} == {"new tag 1", "new tag 2"}
     assert {t.text for t in ts.find_tags(q=q, sources=["source2"])} == {"old tag 3"}
+
+
+def test_delete_by_source_is_scoped_to_track(upload_session, track_resolver, get_tag):
+    """Two sessions tagging the same source on different tracks must not clobber
+    each other when deleting pre-existing tags before posting."""
+    ts = upload_session.tagstore
+    q = upload_session.dest_q
+
+    # session A tags source1 on track_a
+    upload_session.upload_tags(
+        tags=[get_tag(model_track="track_a", text="A tag", source_media="source1")],
+        tagged_sources=["source1"],
+    )
+
+    # a concurrent session tags the SAME source on a different track
+    session_b = UploadSession(
+        feature="asr",
+        track_resolver=track_resolver,
+        tagstore=ts,
+        dest_q=q,
+        track_suffix="",
+        do_retry=False,
+    )
+    session_b.upload_tags(
+        tags=[get_tag(model_track="track_b", text="B tag", source_media="source1")],
+        tagged_sources=["source1"],
+    )
+
+    # session B's pre-post delete must not have wiped track_a's tag for source1
+    assert {t.text for t in ts.find_tags(q=q, track="track_a")} == {"A tag"}
+    assert {t.text for t in ts.find_tags(q=q, track="track_b")} == {"B tag"}
 
 
 def test_retry_on_upload_failure(upload_session, get_tag):
