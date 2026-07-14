@@ -173,6 +173,95 @@ def test_delete_by_source_is_scoped_to_track(upload_session, track_resolver, get
     assert {t.text for t in ts.find_tags(q=q, track="track_b")} == {"B tag"}
 
 
+def test_reupload_replaces_tags_no_model_track(upload_session, track_resolver, get_tag):
+    """Tags without a model_track resolve to the feature's configured track, and a
+    re-run should still replace prior tags for the reprocessed source."""
+    ts = upload_session.tagstore
+    q = upload_session.dest_q
+
+    upload_session.upload_tags(
+        tags=[get_tag(model_track="", text="old tag", source_media="source1")],
+        tagged_sources=["source1"],
+    )
+    # asr's first configured track is speech_to_text
+    assert {t.text for t in ts.find_tags(q=q, track="speech_to_text")} == {"old tag"}
+
+    second_session = UploadSession(
+        feature="asr",
+        track_resolver=track_resolver,
+        tagstore=ts,
+        dest_q=q,
+        track_suffix="",
+        do_retry=False,
+    )
+    second_session.upload_tags(
+        tags=[get_tag(model_track="", text="new tag", source_media="source1")],
+        tagged_sources=["source1"],
+    )
+    assert {t.text for t in ts.find_tags(q=q, track="speech_to_text")} == {"new tag"}
+
+
+def test_processed_sources_without_tags_clears_configured_tracks(upload_session, track_resolver, get_tag):
+    """A source can be processed without producing any tags; its pre-existing tags on
+    the feature's configured tracks should still be cleared."""
+    ts = upload_session.tagstore
+    q = upload_session.dest_q
+
+    # a prior run left tags for source1 on the configured speech_to_text track
+    upload_session.upload_tags(
+        tags=[get_tag(model_track="", text="stale tag", source_media="source1")],
+        tagged_sources=["source1"],
+    )
+    assert {t.text for t in ts.find_tags(q=q, track="speech_to_text")} == {"stale tag"}
+
+    # a fresh run processes source1 but the container produces no tags for it
+    second_session = UploadSession(
+        feature="asr",
+        track_resolver=track_resolver,
+        tagstore=ts,
+        dest_q=q,
+        track_suffix="",
+        do_retry=False,
+    )
+    second_session.upload_tags(tags=[], tagged_sources=["source1"])
+
+    # the stale tags are cleared even though no new tags were produced
+    assert ts.find_tags(q=q, track="speech_to_text") == []
+
+
+def test_configured_track_deletion_respects_suffix(track_resolver, mock_q, filesystem_tagstore, get_tag):
+    """The track suffix must be applied when clearing configured tracks."""
+    ts = filesystem_tagstore
+    q = mock_q
+
+    session = UploadSession(
+        feature="asr",
+        track_resolver=track_resolver,
+        tagstore=ts,
+        dest_q=q,
+        track_suffix="v2",
+        do_retry=False,
+    )
+    session.upload_tags(
+        tags=[get_tag(model_track="", text="stale tag", source_media="source1")],
+        tagged_sources=["source1"],
+    )
+    assert {t.text for t in ts.find_tags(q=q, track="speech_to_text_v2")} == {"stale tag"}
+
+    # a new session over the same suffixed track processes source1 with no tags
+    session2 = UploadSession(
+        feature="asr",
+        track_resolver=track_resolver,
+        tagstore=ts,
+        dest_q=q,
+        track_suffix="v2",
+        do_retry=False,
+    )
+    session2.upload_tags(tags=[], tagged_sources=["source1"])
+
+    assert ts.find_tags(q=q, track="speech_to_text_v2") == []
+
+
 def test_retry_on_upload_failure(upload_session, get_tag):
     upload_session.retry = True
     tags = [

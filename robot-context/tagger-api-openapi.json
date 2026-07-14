@@ -1,0 +1,1600 @@
+{
+    "paths": {
+        "/{qid}/tag": {
+            "post": {
+                "responses": {
+                    "422": {
+                        "$ref": "#/components/responses/UNPROCESSABLE_ENTITY"
+                    },
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/StartTaggingResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/DEFAULT_ERROR"
+                    }
+                },
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/StartJobsRequest"
+                            }
+                        }
+                    }
+                },
+                "tags": [
+                    "tagging"
+                ]
+            },
+            "parameters": [
+                {
+                    "in": "path",
+                    "name": "qid",
+                    "required": true,
+                    "schema": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                }
+            ]
+        },
+        "/{qid}/job-status": {
+            "get": {
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "start",
+                        "description": "Pagination offset.",
+                        "schema": {
+                            "type": "integer",
+                            "default": 0
+                        },
+                        "required": false
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "description": "Maximum number of jobs to return. Null for no limit.",
+                        "schema": {
+                            "type": "integer",
+                            "default": null,
+                            "nullable": true
+                        },
+                        "required": false
+                    },
+                    {
+                        "in": "query",
+                        "name": "qid",
+                        "description": "Filter by content id.",
+                        "schema": {
+                            "type": "string",
+                            "default": null,
+                            "nullable": true
+                        },
+                        "required": false
+                    },
+                    {
+                        "in": "query",
+                        "name": "status",
+                        "description": "Filter by job status.",
+                        "schema": {
+                            "type": "string",
+                            "default": null,
+                            "nullable": true
+                        },
+                        "required": false
+                    },
+                    {
+                        "in": "query",
+                        "name": "tenant",
+                        "description": "Filter by tenant. Requires tenant admin privileges.",
+                        "schema": {
+                            "type": "string",
+                            "default": null,
+                            "nullable": true
+                        },
+                        "required": false
+                    },
+                    {
+                        "in": "query",
+                        "name": "user",
+                        "description": "Filter by user address. Provided authorization must match the authenticated user unless querying as tenant admin.",
+                        "schema": {
+                            "type": "string",
+                            "default": null,
+                            "nullable": true
+                        },
+                        "required": false
+                    },
+                    {
+                        "in": "query",
+                        "name": "model",
+                        "description": "Filter by model name (e.g. \"asr\", \"celeb\").",
+                        "schema": {
+                            "type": "string",
+                            "default": null,
+                            "nullable": true
+                        },
+                        "required": false
+                    },
+                    {
+                        "in": "query",
+                        "name": "title",
+                        "description": "Filter by content title (case-insensitive substring match).",
+                        "schema": {
+                            "type": "string",
+                            "default": null,
+                            "nullable": true
+                        },
+                        "required": false
+                    }
+                ],
+                "responses": {
+                    "422": {
+                        "$ref": "#/components/responses/UNPROCESSABLE_ENTITY"
+                    },
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/StatusResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/DEFAULT_ERROR"
+                    }
+                },
+                "tags": [
+                    "tagging"
+                ]
+            },
+            "parameters": [
+                {
+                    "in": "path",
+                    "name": "qid",
+                    "required": true,
+                    "schema": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                }
+            ]
+        },
+        "/job-status": {
+            "get": {
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "start",
+                        "description": "Pagination offset.",
+                        "schema": {
+                            "type": "integer",
+                            "default": 0
+                        },
+                        "required": false
+                    },
+                    {
+                        "in": "query",
+                        "name": "limit",
+                        "description": "Maximum number of jobs to return. Null for no limit.",
+                        "schema": {
+                            "type": "integer",
+                            "default": null,
+                            "nullable": true
+                        },
+                        "required": false
+                    },
+                    {
+                        "in": "query",
+                        "name": "qid",
+                        "description": "Filter by content id.",
+                        "schema": {
+                            "type": "string",
+                            "default": null,
+                            "nullable": true
+                        },
+                        "required": false
+                    },
+                    {
+                        "in": "query",
+                        "name": "status",
+                        "description": "Filter by job status.",
+                        "schema": {
+                            "type": "string",
+                            "default": null,
+                            "nullable": true
+                        },
+                        "required": false
+                    },
+                    {
+                        "in": "query",
+                        "name": "tenant",
+                        "description": "Filter by tenant. Requires tenant admin privileges.",
+                        "schema": {
+                            "type": "string",
+                            "default": null,
+                            "nullable": true
+                        },
+                        "required": false
+                    },
+                    {
+                        "in": "query",
+                        "name": "user",
+                        "description": "Filter by user address. Provided authorization must match the authenticated user unless querying as tenant admin.",
+                        "schema": {
+                            "type": "string",
+                            "default": null,
+                            "nullable": true
+                        },
+                        "required": false
+                    },
+                    {
+                        "in": "query",
+                        "name": "model",
+                        "description": "Filter by model name (e.g. \"asr\", \"celeb\").",
+                        "schema": {
+                            "type": "string",
+                            "default": null,
+                            "nullable": true
+                        },
+                        "required": false
+                    },
+                    {
+                        "in": "query",
+                        "name": "title",
+                        "description": "Filter by content title (case-insensitive substring match).",
+                        "schema": {
+                            "type": "string",
+                            "default": null,
+                            "nullable": true
+                        },
+                        "required": false
+                    }
+                ],
+                "responses": {
+                    "422": {
+                        "$ref": "#/components/responses/UNPROCESSABLE_ENTITY"
+                    },
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/StatusResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/DEFAULT_ERROR"
+                    }
+                },
+                "summary": "Global job-status endpoint. Requires ?tenant= filter.",
+                "description": "Authentication: the caller's auth token is verified by picking the first\nreturned job's qid and confirming get_tenant(qid, auth) matches the\nrequested tenant.",
+                "tags": [
+                    "tagging"
+                ]
+            }
+        },
+        "/{qid}/stop/{feature}": {
+            "post": {
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/StopTaggingResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/DEFAULT_ERROR"
+                    }
+                },
+                "tags": [
+                    "tagging"
+                ]
+            },
+            "parameters": [
+                {
+                    "in": "path",
+                    "name": "qid",
+                    "required": true,
+                    "schema": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                },
+                {
+                    "in": "path",
+                    "name": "feature",
+                    "required": true,
+                    "schema": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                }
+            ]
+        },
+        "/{qid}/stop": {
+            "post": {
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/StopTaggingResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/DEFAULT_ERROR"
+                    }
+                },
+                "tags": [
+                    "tagging"
+                ]
+            },
+            "parameters": [
+                {
+                    "in": "path",
+                    "name": "qid",
+                    "required": true,
+                    "schema": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                }
+            ]
+        },
+        "/{qid}/tag-status": {
+            "get": {
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ContentStatusResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/DEFAULT_ERROR"
+                    }
+                },
+                "tags": [
+                    "content_status"
+                ]
+            },
+            "parameters": [
+                {
+                    "in": "path",
+                    "name": "qid",
+                    "required": true,
+                    "schema": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                }
+            ]
+        },
+        "/{qid}/tag-status/{model}": {
+            "get": {
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ModelStatusResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/DEFAULT_ERROR"
+                    }
+                },
+                "tags": [
+                    "content_status"
+                ]
+            },
+            "parameters": [
+                {
+                    "in": "path",
+                    "name": "qid",
+                    "required": true,
+                    "schema": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                },
+                {
+                    "in": "path",
+                    "name": "model",
+                    "required": true,
+                    "schema": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                }
+            ]
+        },
+        "/models": {
+            "get": {
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ListingResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/DEFAULT_ERROR"
+                    }
+                },
+                "tags": [
+                    "extension"
+                ]
+            }
+        },
+        "/jobs/{job_id}": {
+            "delete": {
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "tenant",
+                        "schema": {
+                            "type": "string",
+                            "default": null,
+                            "nullable": true
+                        },
+                        "required": false
+                    }
+                ],
+                "responses": {
+                    "422": {
+                        "$ref": "#/components/responses/UNPROCESSABLE_ENTITY"
+                    },
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/DEFAULT_ERROR"
+                    }
+                },
+                "tags": [
+                    "extension"
+                ]
+            },
+            "parameters": [
+                {
+                    "in": "path",
+                    "name": "job_id",
+                    "required": true,
+                    "schema": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                }
+            ]
+        }
+    },
+    "info": {
+        "title": "Eluvio Tagger API",
+        "version": "1.0.0"
+    },
+    "tags": [
+        {
+            "name": "tagging",
+            "description": "Start, query and stop tagging jobs."
+        },
+        {
+            "name": "content_status",
+            "description": "Per-content tagging status summaries."
+        },
+        {
+            "name": "extension",
+            "description": "Model listing and job management."
+        }
+    ],
+    "openapi": "3.0.2",
+    "components": {
+        "schemas": {
+            "Error": {
+                "type": "object",
+                "properties": {
+                    "code": {
+                        "type": "integer",
+                        "description": "Error code"
+                    },
+                    "status": {
+                        "type": "string",
+                        "description": "Error name"
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "Error message"
+                    },
+                    "errors": {
+                        "type": "object",
+                        "description": "Errors",
+                        "additionalProperties": {}
+                    }
+                },
+                "additionalProperties": false
+            },
+            "PaginationMetadata": {
+                "type": "object",
+                "properties": {
+                    "total": {
+                        "type": "integer",
+                        "description": "Total number of items."
+                    },
+                    "total_pages": {
+                        "type": "integer",
+                        "description": "Total number of pages."
+                    },
+                    "first_page": {
+                        "type": "integer",
+                        "description": "First available page number."
+                    },
+                    "last_page": {
+                        "type": "integer",
+                        "description": "Last available page number."
+                    },
+                    "page": {
+                        "type": "integer",
+                        "description": "Current page number."
+                    },
+                    "previous_page": {
+                        "type": "integer",
+                        "description": "Previous page number."
+                    },
+                    "next_page": {
+                        "type": "integer",
+                        "description": "Next page number."
+                    }
+                },
+                "additionalProperties": false
+            },
+            "Scope": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "video",
+                            "processor",
+                            "assets",
+                            "livestream",
+                            "tag-aligned"
+                        ],
+                        "description": "Discriminator selecting the scope variant."
+                    }
+                },
+                "additionalProperties": false
+            },
+            "VideoScope": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "default": "video",
+                        "readOnly": true,
+                        "description": "Scope identifier to remove ambiguity"
+                    },
+                    "stream": {
+                        "type": "string",
+                        "description": "Audio or video stream to tag. If this value is not set, it's value will be automatically set depending on the model and the content.",
+                        "example": "audio_1"
+                    },
+                    "start_time": {
+                        "type": "integer",
+                        "description": "Start tagging at this point in the media stream (in seconds)"
+                    },
+                    "end_time": {
+                        "type": "integer",
+                        "description": "End tagging at this point in the media stream (in seconds)",
+                        "example": 600
+                    }
+                },
+                "additionalProperties": false
+            },
+            "ProcessorScope": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "default": "processor",
+                        "readOnly": true,
+                        "description": "Scope identifier to remove ambiguity"
+                    },
+                    "start_time": {
+                        "type": "integer",
+                        "description": "Start tagging at this point in the media stream (in seconds)",
+                        "nullable": true
+                    },
+                    "end_time": {
+                        "type": "integer",
+                        "description": "End tagging at this point in the media stream (in seconds)",
+                        "example": 600,
+                        "nullable": true
+                    },
+                    "chunk_size": {
+                        "type": "integer",
+                        "description": "Processor will be fed intervals of this size to tag"
+                    },
+                    "stream": {
+                        "type": "string",
+                        "description": "Media stream"
+                    }
+                },
+                "additionalProperties": false
+            },
+            "AssetsScope": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "default": "assets",
+                        "readOnly": true,
+                        "description": "Scope identifier to remove ambiguity"
+                    },
+                    "assets": {
+                        "type": "array",
+                        "description": "List of asset paths to tag",
+                        "example": [
+                            "assets/hello1.jpg",
+                            "assets/hello2.jpg"
+                        ],
+                        "items": {
+                            "type": "string"
+                        },
+                        "nullable": true
+                    }
+                },
+                "additionalProperties": false
+            },
+            "LivestreamScope": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "default": "livestream",
+                        "readOnly": true,
+                        "description": "Scope identifier to remove ambiguity"
+                    },
+                    "stream": {
+                        "type": "string",
+                        "description": "Media stream"
+                    },
+                    "segment_length": {
+                        "type": "integer",
+                        "description": "Tagging interval size (in seconds)"
+                    },
+                    "max_duration": {
+                        "type": "integer",
+                        "description": "Maximum amount of content from livestream to tag (in seconds)",
+                        "nullable": true
+                    }
+                },
+                "additionalProperties": false
+            },
+            "TagAlignedScope": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "default": "tag-aligned",
+                        "readOnly": true,
+                        "description": "Scope identifier to remove ambiguity"
+                    },
+                    "stream": {
+                        "type": "string",
+                        "description": "Media stream"
+                    },
+                    "start_time": {
+                        "type": "integer",
+                        "description": "Start tagging at this point in the media stream (in seconds)"
+                    },
+                    "end_time": {
+                        "type": "integer",
+                        "description": "End tagging at this point in the media stream (in seconds)",
+                        "example": 600
+                    },
+                    "track": {
+                        "type": "string",
+                        "description": "Tag track whose intervals tagging is aligned to. Alternatively, we can set track to \"1s\", \"5s\", \"Ns\" to align tagging to fixed intervals of N seconds."
+                    }
+                },
+                "additionalProperties": false
+            },
+            "ModelParamsAsr": {
+                "type": "object",
+                "properties": {
+                    "word_level": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Whether to output word level tags or collapse into longer tags."
+                    },
+                    "prettify": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Punctuation/capitalization postprocessing."
+                    },
+                    "pretty_trail": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "If running at word level, output a second track \"auto_captions\" which processes bigger blocks of audio in a single pass for better output quality and returns sentence level tags. This can be particularly useful for live tagging so you can have a \"pretty\" track alongside a live-edge track."
+                    },
+                    "pretty_trail_buffer": {
+                        "type": "integer",
+                        "default": 30,
+                        "description": "(when pretty_trail=true) how many seconds worth of audio do we wait for before we output a batch of auto_captions tags."
+                    }
+                },
+                "additionalProperties": false
+            },
+            "ModelParamsEuroAsr": {
+                "type": "object",
+                "properties": {
+                    "word_level": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Whether to output word level tags or collapse into longer tags."
+                    },
+                    "prettify": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Punctuation/capitalization postprocessing."
+                    },
+                    "pretty_trail": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "If running at word level, output a second track \"auto_captions\" which processes bigger blocks of audio in a single pass for better output quality and returns sentence level tags. This can be particularly useful for live tagging so you can have a \"pretty\" track alongside a live-edge track."
+                    },
+                    "pretty_trail_buffer": {
+                        "type": "integer",
+                        "default": 30,
+                        "description": "(when pretty_trail=true) how many seconds worth of audio do we wait for before we output a batch of auto_captions tags."
+                    }
+                },
+                "additionalProperties": false
+            },
+            "ModelParamsLlava": {
+                "type": "object",
+                "properties": {
+                    "fps": {
+                        "type": "integer",
+                        "description": "Frequency to generate frame level tags.",
+                        "example": 1
+                    },
+                    "model": {
+                        "type": "string",
+                        "description": "Ollama model to run.",
+                        "example": "llava"
+                    },
+                    "temperature": {
+                        "type": "number",
+                        "description": "Sampling temperature for generation.",
+                        "example": 0.2
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "Prompt used to generate the frame description.",
+                        "example": "Describe this frame."
+                    }
+                },
+                "required": [
+                    "fps",
+                    "model",
+                    "prompt",
+                    "temperature"
+                ],
+                "additionalProperties": false
+            },
+            "ModelParamsCeleb": {
+                "type": "object",
+                "properties": {
+                    "fps": {
+                        "type": "number",
+                        "default": 4.0,
+                        "description": "Frames per second to sample for face detection."
+                    },
+                    "thres": {
+                        "type": "number",
+                        "default": 0.4,
+                        "description": "Minimum confidence threshold."
+                    },
+                    "min_box_size": {
+                        "type": "number",
+                        "default": 0.0,
+                        "description": "Minimum face bounding box size to consider. Value is a ratio of the area of the full frame."
+                    },
+                    "allow_single_frame": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Whether to generate a video tag if we only detect a celebrity in a single frame. Setting to true helps to avoid false positives for erroneous single-frame detections."
+                    },
+                    "ground_truth": {
+                        "type": "string",
+                        "description": "Content id of ground truth pool to use for celebrity detection."
+                    },
+                    "content_type": {
+                        "type": "string",
+                        "default": "video",
+                        "description": "\"image\" or \"video\". Image mode optimizes the accuracy for static images.",
+                        "enum": [
+                            "image",
+                            "video"
+                        ]
+                    }
+                },
+                "additionalProperties": false
+            },
+            "ModelParamsOcr": {
+                "type": "object",
+                "properties": {
+                    "fps": {
+                        "type": "integer",
+                        "description": "Frames per second to sample for text detection.",
+                        "example": 1
+                    },
+                    "allow_single_frame": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Whether to generate a video tag from a single-frame detection (same as celeb)."
+                    },
+                    "w_thres": {
+                        "type": "number",
+                        "description": "Word-level confidence threshold.",
+                        "example": 0.5
+                    },
+                    "l_thres": {
+                        "type": "boolean",
+                        "description": "Line-level threshold.",
+                        "example": true
+                    }
+                },
+                "required": [
+                    "fps",
+                    "l_thres",
+                    "w_thres"
+                ],
+                "additionalProperties": false
+            },
+            "ModelParamsLogo": {
+                "type": "object",
+                "properties": {
+                    "fps": {
+                        "type": "integer",
+                        "description": "Frames per second to sample for logo detection.",
+                        "example": 1
+                    }
+                },
+                "required": [
+                    "fps"
+                ],
+                "additionalProperties": false
+            },
+            "ModelParamsCaption": {
+                "type": "object",
+                "properties": {
+                    "fps": {
+                        "type": "integer",
+                        "description": "Frames per second to sample for captioning.",
+                        "example": 1
+                    }
+                },
+                "required": [
+                    "fps"
+                ],
+                "additionalProperties": false
+            },
+            "ModelParamsSceneDescription": {
+                "type": "object",
+                "properties": {
+                    "num_frames": {
+                        "type": "integer",
+                        "default": 5,
+                        "description": "How many frames to sample for each input video chunk. NOTE: often it's most sensible to run scene description alongside the \"tag-aligned\" scope."
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "default": "Describe this scene.",
+                        "description": "Prompt used to describe the scene."
+                    },
+                    "model": {
+                        "type": "string",
+                        "default": "Qwen/Qwen3-VL-8B-Instruct",
+                        "description": "Model name to run. Currently this is limited to huggingface model ids in the Qwen3-VL family."
+                    },
+                    "rescale_width": {
+                        "type": "integer",
+                        "default": 320,
+                        "description": "Rescale the video to this width before processing. Lowering this value can improve inference performance, potentially at the cost of model accuracy."
+                    },
+                    "rescale_height": {
+                        "type": "integer",
+                        "default": 240,
+                        "description": "Rescale the video to this height before processing."
+                    }
+                },
+                "additionalProperties": false
+            },
+            "TaggerOptions": {
+                "type": "object",
+                "properties": {
+                    "destination_qid": {
+                        "type": "string",
+                        "default": null,
+                        "description": "Content where tags should be written to. Leaving empty will write to the same content the model is running on.",
+                        "nullable": true
+                    },
+                    "replace": {
+                        "type": "boolean",
+                        "default": null,
+                        "description": "Replace already existing tagstore tags. Set to true to retag, set to false to enable diff-based tagging.",
+                        "nullable": true
+                    },
+                    "max_fetch_retries": {
+                        "type": "integer",
+                        "default": null,
+                        "description": "If a fetch operation fails, we can retry this many times before the job is marked as failed.",
+                        "nullable": true
+                    },
+                    "scope": {
+                        "type": "object",
+                        "description": "Polymorphic tagging scope, discriminated by `type`. May be partial: omitted fields are filled in server-side based on the content (live vs. static, default audio stream).",
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/VideoScope"
+                            },
+                            {
+                                "$ref": "#/components/schemas/ProcessorScope"
+                            },
+                            {
+                                "$ref": "#/components/schemas/AssetsScope"
+                            },
+                            {
+                                "$ref": "#/components/schemas/LivestreamScope"
+                            },
+                            {
+                                "$ref": "#/components/schemas/TagAlignedScope"
+                            }
+                        ],
+                        "additionalProperties": {}
+                    }
+                },
+                "additionalProperties": false
+            },
+            "JobSpec": {
+                "type": "object",
+                "properties": {
+                    "model": {
+                        "type": "string",
+                        "description": "Name of model to run",
+                        "example": "asr"
+                    },
+                    "model_params": {
+                        "type": "object",
+                        "description": "Model-specific parameters, selected by the sibling `model` field. The shape is one of the per-model variants below; models without documented parameters accept an empty object.",
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/ModelParamsAsr"
+                            },
+                            {
+                                "$ref": "#/components/schemas/ModelParamsEuroAsr"
+                            },
+                            {
+                                "$ref": "#/components/schemas/ModelParamsLlava"
+                            },
+                            {
+                                "$ref": "#/components/schemas/ModelParamsCeleb"
+                            },
+                            {
+                                "$ref": "#/components/schemas/ModelParamsOcr"
+                            },
+                            {
+                                "$ref": "#/components/schemas/ModelParamsLogo"
+                            },
+                            {
+                                "$ref": "#/components/schemas/ModelParamsCaption"
+                            },
+                            {
+                                "$ref": "#/components/schemas/ModelParamsSceneDescription"
+                            }
+                        ],
+                        "additionalProperties": {}
+                    },
+                    "track_suffix": {
+                        "type": "string",
+                        "default": "",
+                        "description": "If set this will be appended to the track name that the tagger writes to. This allows you to write to different tracks with the same model by specifying different suffixes.",
+                        "example": "test run"
+                    },
+                    "caller_info": {
+                        "type": "object",
+                        "description": "Arbitrary key-value pairs that will be stored with the job for later reference.",
+                        "example": {
+                            "user_note": "This is a note about the job"
+                        },
+                        "additionalProperties": {
+                            "type": "string"
+                        }
+                    },
+                    "overrides": {
+                        "description": "Per-job options that override the request-level options.",
+                        "example": {
+                            "scope": {
+                                "stream": "spanish_audio_5_1"
+                            }
+                        },
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/TaggerOptions"
+                            }
+                        ]
+                    }
+                },
+                "required": [
+                    "model"
+                ],
+                "additionalProperties": false
+            },
+            "StartJobsRequest": {
+                "type": "object",
+                "properties": {
+                    "options": {
+                        "description": "Knobs that apply to all tagger jobs in the request.",
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/TaggerOptions"
+                            }
+                        ]
+                    },
+                    "jobs": {
+                        "type": "array",
+                        "description": "List of individual job parameters.",
+                        "items": {
+                            "$ref": "#/components/schemas/JobSpec"
+                        }
+                    }
+                },
+                "additionalProperties": false
+            },
+            "StartStatus": {
+                "type": "object",
+                "properties": {
+                    "job_id": {
+                        "type": "string",
+                        "description": "Job id",
+                        "example": "1234"
+                    },
+                    "model": {
+                        "type": "string",
+                        "description": "Model name",
+                        "example": "asr"
+                    },
+                    "started": {
+                        "type": "boolean",
+                        "description": "Did the job start yes or no",
+                        "example": true
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "Additional information or words of positive affirmation",
+                        "example": "successfully started"
+                    },
+                    "dependencies": {
+                        "type": "array",
+                        "description": "Job ids that this job depends on. The job will not start until these have completed.",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "error": {
+                        "type": "string",
+                        "description": "Error message if the job failed",
+                        "example": null,
+                        "nullable": true
+                    }
+                },
+                "additionalProperties": false
+            },
+            "StartTaggingResponse": {
+                "type": "object",
+                "properties": {
+                    "jobs": {
+                        "type": "array",
+                        "description": "Start status for each job in the request",
+                        "items": {
+                            "$ref": "#/components/schemas/StartStatus"
+                        }
+                    }
+                },
+                "additionalProperties": false
+            },
+            "WarningResponse": {
+                "type": "object",
+                "properties": {
+                    "num_warnings": {
+                        "type": "integer",
+                        "description": "Total number of warnings",
+                        "example": 25
+                    },
+                    "last_warning": {
+                        "type": "string",
+                        "description": "Most recent warning message",
+                        "example": "Failed to download part hqpe2EChvsWa6KNqFBqzn5yit7Z8NFLZ6DdxbcykW673Musy6JL4Vj"
+                    }
+                },
+                "additionalProperties": false
+            },
+            "TagDetails": {
+                "type": "object",
+                "properties": {
+                    "tag_status": {
+                        "type": "string",
+                        "description": "Human-readable description of what the job is currently doing",
+                        "example": "Fetching content"
+                    },
+                    "time_running": {
+                        "type": "number",
+                        "description": "How long the job has been running (in seconds)",
+                        "example": 70.05
+                    },
+                    "progress": {
+                        "type": "number",
+                        "description": "Overall job progress as a ratio from 0.0 to 1.0",
+                        "example": 0.56
+                    },
+                    "tagging_progress": {
+                        "type": "string",
+                        "description": "Ratio of tagged parts to total parts (deprecated)",
+                        "example": "120/214"
+                    },
+                    "total_parts": {
+                        "type": "integer",
+                        "description": "Total number of parts in scope for the tag request",
+                        "example": 214
+                    },
+                    "downloaded_parts": {
+                        "type": "integer",
+                        "description": "Number of parts that have been downloaded",
+                        "example": 150
+                    },
+                    "tagged_parts": {
+                        "type": "integer",
+                        "description": "Number of parts that have been tagged",
+                        "example": 120
+                    },
+                    "warnings": {
+                        "description": "Warning summary, or null if there are no warnings",
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/WarningResponse"
+                            },
+                            {
+                                "type": "object",
+                                "nullable": true
+                            }
+                        ]
+                    }
+                },
+                "additionalProperties": false
+            },
+            "JobStatus": {
+                "type": "object",
+                "properties": {
+                    "qid": {
+                        "type": "string",
+                        "description": "Content object id that is being tagged",
+                        "example": "iq__3Bs4xdLS9obhmQVWHNJvJ457ZL2X"
+                    },
+                    "job_id": {
+                        "type": "string",
+                        "description": "Job id",
+                        "example": "efd8e379-9256-40bc-9aa6-1fab74234f85"
+                    },
+                    "status": {
+                        "type": "string",
+                        "description": "Current state of the job",
+                        "example": "running"
+                    },
+                    "model": {
+                        "type": "string",
+                        "description": "Name of model",
+                        "example": "asr"
+                    },
+                    "stream": {
+                        "type": "string",
+                        "description": "Stream name",
+                        "example": "video"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "description": "ISO 8601 timestamp of when the job was created",
+                        "example": "2026-03-25T03:33:38.746127"
+                    },
+                    "params": {
+                        "type": "object",
+                        "description": "Parameters that were used to run the tagging job.",
+                        "additionalProperties": {}
+                    },
+                    "tenant": {
+                        "type": "string",
+                        "description": "Tenant identifier",
+                        "example": "iten2fY3bSh8Q7zY1t6vGZ8mUNFLHAWM"
+                    },
+                    "user": {
+                        "type": "string",
+                        "description": "Address of the user who submitted the job",
+                        "example": "0x9d7186b18ecbb5751719795415e9b8146e1bed2b"
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Title of the content being tagged",
+                        "example": "Casablanca"
+                    },
+                    "tagging_progress": {
+                        "type": "string",
+                        "description": "Deprecated: ratio of tagged_parts to total_parts. Use progress instead.",
+                        "example": "120/214",
+                        "deprecated": true
+                    },
+                    "progress": {
+                        "type": "number",
+                        "description": "Overall job progress as a fraction (0.0 \u2013 1.0)",
+                        "example": 0.56
+                    },
+                    "error": {
+                        "type": "string",
+                        "description": "Error message if the job failed or was cancelled",
+                        "example": null,
+                        "nullable": true
+                    },
+                    "tag_details": {
+                        "description": "Detailed progress information for the tagging job. Null if the job is still on the queue.",
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/TagDetails"
+                            },
+                            {
+                                "type": "object",
+                                "nullable": true
+                            }
+                        ]
+                    }
+                },
+                "additionalProperties": false
+            },
+            "StatusMeta": {
+                "type": "object",
+                "properties": {
+                    "total": {
+                        "type": "integer",
+                        "description": "Total number of matching items",
+                        "example": 8
+                    },
+                    "start": {
+                        "type": "integer",
+                        "description": "Offset of the first item returned",
+                        "example": 0
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of items requested, or null for no limit",
+                        "example": null,
+                        "nullable": true
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "Number of items returned in this response",
+                        "example": 8
+                    }
+                },
+                "additionalProperties": false
+            },
+            "StatusResponse": {
+                "type": "object",
+                "properties": {
+                    "jobs": {
+                        "type": "array",
+                        "description": "Individual job statuses",
+                        "items": {
+                            "$ref": "#/components/schemas/JobStatus"
+                        }
+                    },
+                    "meta": {
+                        "$ref": "#/components/schemas/StatusMeta"
+                    }
+                },
+                "additionalProperties": false
+            },
+            "StopStatus": {
+                "type": "object",
+                "properties": {
+                    "job_id": {
+                        "type": "string",
+                        "description": "Job ID",
+                        "example": "1234"
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "Message"
+                    }
+                },
+                "additionalProperties": false
+            },
+            "StopTaggingResponse": {
+                "type": "object",
+                "properties": {
+                    "jobs": {
+                        "type": "array",
+                        "description": "Stop statuses of individual jobs",
+                        "items": {
+                            "$ref": "#/components/schemas/StopStatus"
+                        }
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "Top level message"
+                    }
+                },
+                "additionalProperties": false
+            },
+            "ModelStatus": {
+                "type": "object",
+                "properties": {
+                    "model": {
+                        "type": "string",
+                        "description": "Model identifier",
+                        "example": "celeb"
+                    },
+                    "track": {
+                        "type": "string",
+                        "description": "Track the model writes its tags to",
+                        "example": "celebrity_detection"
+                    },
+                    "last_run": {
+                        "type": "string",
+                        "description": "ISO 8601 timestamp of the most recent job run",
+                        "example": "2026-02-25T18:30:00Z"
+                    },
+                    "percent_completion": {
+                        "type": "number",
+                        "description": "Ratio of content parts that have been tagged (0.0 \u2013 1.0)",
+                        "example": 0.85
+                    }
+                },
+                "additionalProperties": false
+            },
+            "ContentStatusResponse": {
+                "type": "object",
+                "properties": {
+                    "models": {
+                        "type": "array",
+                        "description": "List of per-model status summaries",
+                        "items": {
+                            "$ref": "#/components/schemas/ModelStatus"
+                        }
+                    }
+                },
+                "additionalProperties": false
+            },
+            "ModelStatusSummary": {
+                "type": "object",
+                "properties": {
+                    "model": {
+                        "type": "string",
+                        "description": "Model identifier",
+                        "example": "celeb"
+                    },
+                    "track": {
+                        "type": "string",
+                        "description": "Track the model writes its tags to",
+                        "example": "celebrity_detection"
+                    },
+                    "last_run": {
+                        "type": "string",
+                        "description": "ISO 8601 timestamp of the most recent job run",
+                        "example": "2026-02-25T18:30:00Z"
+                    },
+                    "tagging_progress": {
+                        "type": "number",
+                        "description": "Fraction of content parts that have been tagged (0.0 \u2013 1.0)",
+                        "example": 0.85
+                    },
+                    "num_content_parts": {
+                        "type": "integer",
+                        "description": "Total number of parts in the content",
+                        "example": 120
+                    }
+                },
+                "additionalProperties": false
+            },
+            "JobRunStatus": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "description": "Final status of the job",
+                        "example": "Completed"
+                    },
+                    "time_ran": {
+                        "type": "string",
+                        "description": "Duration the job ran before stopping",
+                        "example": "1h 0m 0s"
+                    }
+                },
+                "additionalProperties": false
+            },
+            "JobUploadStatusSummary": {
+                "type": "object",
+                "properties": {
+                    "num_job_parts": {
+                        "type": "integer",
+                        "description": "Total number of parts in the job",
+                        "example": 60
+                    },
+                    "num_tagged_parts": {
+                        "type": "integer",
+                        "description": "Number of parts that were successfully tagged and uploaded",
+                        "example": 60
+                    }
+                },
+                "additionalProperties": false
+            },
+            "JobDetail": {
+                "type": "object",
+                "properties": {
+                    "time_ran": {
+                        "type": "string",
+                        "description": "Duration that the job ran before stopping",
+                        "example": "1h 0m 0s"
+                    },
+                    "source_qid": {
+                        "type": "string",
+                        "description": "Content object id that was tagged",
+                        "example": "iq__3C58dDYxsn5KKSWGYrfYr44ykJRm"
+                    },
+                    "params": {
+                        "readOnly": true,
+                        "description": "Parameters that were used to run the tagging job."
+                    },
+                    "job_status": {
+                        "$ref": "#/components/schemas/JobRunStatus"
+                    },
+                    "upload_status": {
+                        "description": "Upload progress for this job. Null if the job did not reach the upload phase.",
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/JobUploadStatusSummary"
+                            },
+                            {
+                                "type": "object",
+                                "nullable": true
+                            }
+                        ]
+                    }
+                },
+                "additionalProperties": false
+            },
+            "ModelStatusResponse": {
+                "type": "object",
+                "properties": {
+                    "summary": {
+                        "$ref": "#/components/schemas/ModelStatusSummary"
+                    },
+                    "jobs": {
+                        "type": "array",
+                        "description": "Chronological list of every job that has been run for this model",
+                        "items": {
+                            "$ref": "#/components/schemas/JobDetail"
+                        }
+                    }
+                },
+                "additionalProperties": false
+            },
+            "TrackOutput": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Track name as stored in the tag store",
+                        "example": "celebrity_detection"
+                    }
+                },
+                "additionalProperties": false
+            },
+            "ModelSpec": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Model identifier",
+                        "example": "celeb"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Human readable description of what the model does",
+                        "example": "Celebrity Identification"
+                    },
+                    "type": {
+                        "type": "string",
+                        "description": "Model type",
+                        "example": "frame"
+                    },
+                    "tag_tracks": {
+                        "type": "array",
+                        "description": "Tag tracks this model writes to",
+                        "items": {
+                            "$ref": "#/components/schemas/TrackOutput"
+                        }
+                    },
+                    "dependencies": {
+                        "type": "array",
+                        "description": "Tag tracks that must exist before this model can be run",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "additionalProperties": false
+            },
+            "ListingResponse": {
+                "type": "object",
+                "properties": {
+                    "models": {
+                        "type": "array",
+                        "description": "List of available models",
+                        "items": {
+                            "$ref": "#/components/schemas/ModelSpec"
+                        }
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        "responses": {
+            "UNPROCESSABLE_ENTITY": {
+                "description": "Unprocessable Entity",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Error"
+                        }
+                    }
+                }
+            },
+            "DEFAULT_ERROR": {
+                "description": "Default error response",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/Error"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

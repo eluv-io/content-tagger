@@ -76,10 +76,11 @@ class UploadSession:
             )
             for t in new_inputs
         ]
-
+        
+        relevant_tracks = set(self._configured_tracks()) | set(self.track_to_batch)
         pairs_to_delete = {
             (track, source)
-            for track in self.track_to_batch
+            for track in relevant_tracks
             for source in self.processed_sources
         } - self.deleted_source_tracks
 
@@ -118,6 +119,16 @@ class UploadSession:
         """Get the set of source media that have been tagged in this session."""
         return list(self.uploaded_sources)
     
+    def _apply_suffix(self, track: str) -> str:
+        if self.track_suffix:
+            return f"{track}_{self.track_suffix.replace(' ', '_')}"
+        return track
+
+    def _configured_tracks(self) -> list[str]:
+        if self.feature not in self.track_resolver.forward_mapping:
+            return []
+        return [self._apply_suffix(ta.name) for ta in self.track_resolver.resolve(self.feature)]
+
     def _get_or_create_batch(self, model_track: str) -> str:
         if model_track:
             # get the label
@@ -126,13 +137,11 @@ class UploadSession:
         else:
             track_args = self.track_resolver.resolve(self.feature)[0]
 
-        track = track_args.name
+        track = self._apply_suffix(track_args.name)
         label = track_args.label
 
         if self.track_suffix:
             label += f" {self.track_suffix}"
-            # convert to slug
-            track += f"_{self.track_suffix.replace(' ', '_')}"
 
         if track in self.track_to_batch:
             return self.track_to_batch[track]
