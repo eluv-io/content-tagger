@@ -6,6 +6,11 @@ from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.common.content import Content
 from tests.tagstore.conftest import make_tag
 
+# A batch spans multiple tracks; the track is a per-upload property, so tests
+# supply one explicitly when uploading. Its exact value is irrelevant unless the
+# test is exercising track filtering.
+DEFAULT_TRACK = "default_track"
+
 def test_init_creates_base_directory(temp_dir):
     """Test that initialization creates the base directory"""
     base_dir = os.path.join(temp_dir, "new_dir")
@@ -32,9 +37,10 @@ def test_get_batch_metadata_path(filesystem_tagstore):
 def test_get_tags_path(filesystem_tagstore):
     """Test tags file path generation"""
     job_id = "test-job-123"
+    track = "mytrack"
     source = "llava"
-    expected_path = os.path.join(filesystem_tagstore.base_path, job_id, "llava.json")
-    assert filesystem_tagstore._get_tags_path(job_id, source) == expected_path
+    expected_path = os.path.join(filesystem_tagstore.base_path, job_id, track, "llava.json")
+    assert filesystem_tagstore._get_tags_path(job_id, track, source) == expected_path
 
 
 def test_create_batch_creates_directory_and_metadata(filesystem_tagstore, job_args, q):
@@ -46,18 +52,18 @@ def test_create_batch_creates_directory_and_metadata(filesystem_tagstore, job_ar
     job_dir = tag_store._get_batch_dir(sample_job.id)
     assert os.path.exists(job_dir)
     assert os.path.isdir(job_dir)
-    
+
     # Check metadata file was created
     metadata_path = tag_store._get_batch_metadata_path(sample_job.id)
     assert os.path.exists(metadata_path)
-    
+
     # Check metadata content
     with open(metadata_path, 'r') as f:
         metadata = json.load(f)
-    
+
     assert metadata['id'] == sample_job.id
     assert metadata['qid'] == sample_job.qid
-    assert metadata['track'] == sample_job.track
+    assert metadata['model'] == sample_job.model
     assert metadata['author'] == sample_job.author
 
 
@@ -66,11 +72,11 @@ def test_get_batch_returns_correct_job(tag_store, job_args, q):
     sample_job = tag_store.create_batch(**job_args, q=q)
 
     retrieved_job = tag_store.get_batch(sample_job.id, q=q)
-    
+
     assert retrieved_job is not None
     assert retrieved_job.id == sample_job.id
     assert retrieved_job.qid == sample_job.qid
-    assert retrieved_job.track == sample_job.track
+    assert retrieved_job.model == sample_job.model
     assert retrieved_job.author == sample_job.author
 
 
@@ -84,13 +90,13 @@ def test_upload_tags_creates_source_files(filesystem_tagstore, job_args, sample_
     """Test that uploading tags creates separate files for each source"""
     tag_store = filesystem_tagstore
     sample_job = tag_store.create_batch(**job_args, q=q)
-    tag_store.upload_tags(sample_tags, sample_job.id, q=q)
-    
-    # Check that source files were created
-    llava_path = tag_store._get_tags_path(sample_job.id, "llava")
-    asr_path = tag_store._get_tags_path(sample_job.id, "asr")
-    caption_path = tag_store._get_tags_path(sample_job.id, "caption")
-    
+    tag_store.upload_tags(sample_tags, sample_job.id, track=DEFAULT_TRACK, q=q)
+
+    # Check that source files were created under the track subdirectory
+    llava_path = tag_store._get_tags_path(sample_job.id, DEFAULT_TRACK, "llava")
+    asr_path = tag_store._get_tags_path(sample_job.id, DEFAULT_TRACK, "asr")
+    caption_path = tag_store._get_tags_path(sample_job.id, DEFAULT_TRACK, "caption")
+
     assert os.path.exists(llava_path)
     assert os.path.exists(asr_path)
     assert os.path.exists(caption_path)
@@ -99,7 +105,7 @@ def test_upload_tags_creates_source_files(filesystem_tagstore, job_args, sample_
 def test_upload_tags_without_job_raises_error(tag_store, sample_tags, q):
     """Test that uploading tags without starting job raises error"""
     try:
-        tag_store.upload_tags(sample_tags, "test-job-123", q=q)
+        tag_store.upload_tags(sample_tags, "test-job-123", track=DEFAULT_TRACK, q=q)
         assert False
     except Exception:
         pass
@@ -108,24 +114,24 @@ def test_upload_tags_without_job_raises_error(tag_store, sample_tags, q):
 def test_upload_tags_appends_to_existing(tag_store, job_args, q):
     """Test that uploading tags appends to existing files"""
     sample_job = tag_store.create_batch(**job_args, q=q)
-    
+
     # Upload initial tags
     initial_tags = [
         make_tag(100, 200, "person", None, "llava", sample_job.id),
     ]
-    tag_store.upload_tags(initial_tags, sample_job.id, q=q)
-    
+    tag_store.upload_tags(initial_tags, sample_job.id, track=DEFAULT_TRACK, q=q)
+
     # Verify initial upload worked
     llava_tags = tag_store.find_tags(batch_id=sample_job.id, q=q)
     assert len(llava_tags) == 1
     assert llava_tags[0].text == "person"
-    
+
     # Upload additional tags
     additional_tags = [
         make_tag(300, 400, "car", None, "llava", sample_job.id),
     ]
-    tag_store.upload_tags(additional_tags, sample_job.id, q=q)
-    
+    tag_store.upload_tags(additional_tags, sample_job.id, track=DEFAULT_TRACK, q=q)
+
     # Check that both tags are present
     llava_tags = tag_store.find_tags(batch_id=sample_job.id, q=q)
     assert len(llava_tags) == 2
@@ -135,7 +141,7 @@ def test_upload_tags_appends_to_existing(tag_store, job_args, q):
 def test_upload_empty_tags_list(tag_store, job_args, q):
     """Test that uploading empty tags list doesn't create files"""
     sample_job = tag_store.create_batch(**job_args, q=q)
-    tag_store.upload_tags([], sample_job.id, q=q)
+    tag_store.upload_tags([], sample_job.id, track=DEFAULT_TRACK, q=q)
 
     tags = tag_store.find_tags(batch_id=sample_job.id, q=q)
     assert tags == []
@@ -144,10 +150,10 @@ def test_upload_empty_tags_list(tag_store, job_args, q):
 def test_get_tags_returns_all_tags(tag_store, job_args, sample_tags, q):
     """Test that find_tags returns tags from all sources"""
     sample_job = tag_store.create_batch(**job_args, q=q)
-    tag_store.upload_tags(sample_tags, sample_job.id, q=q)
-    
+    tag_store.upload_tags(sample_tags, sample_job.id, track=DEFAULT_TRACK, q=q)
+
     all_tags = tag_store.find_tags(batch_id=sample_job.id, q=q)
-    
+
     assert len(all_tags) == 4
     tags = {tag.text for tag in all_tags}
     assert tags == {"person", "car", "hello world", "building"}
@@ -162,12 +168,12 @@ def test_get_tags_nonexistent_job_returns_empty(tag_store, q):
 def test_find_batches_no_filters(tag_store, job_args, q):
     """Test getting all jobs without filters"""
     sample_job = tag_store.create_batch(**job_args, q=q)
-    
+
     # Create another job
-    job2 = tag_store.create_batch(**{"track": "asr", "author": "user2"}, q=q)
-    
+    job2 = tag_store.create_batch(**{"model": "asr", "author": "user2"}, q=q)
+
     job_ids = tag_store.find_batches(q=q)
-    
+
     assert set(job_ids) == {sample_job.id, job2.id}
 
 
@@ -178,42 +184,42 @@ def test_find_batches_with_qhit_filter(filesystem_tagstore, job_args, q):
 
     # Create job with a different qid
     q2 = Content(qid=f"iq__{uuid.uuid4().hex[:8]}", token="test-token")
-    tag_store.create_batch(track="asr", author="user2", q=q2)
+    tag_store.create_batch(model="asr", author="user2", q=q2)
     job_ids = tag_store.find_batches(qid=sample_job.qid, q=q)
-    
+
     assert job_ids == [sample_job.id]
 
 def test_find_batches_with_qhit_filter_rest(tag_store, job_args, q):
     """Test getting jobs filtered by qid
-    
+
     Doesn't create another job with different qid cause we would need a real content
     """
     sample_job = tag_store.create_batch(**job_args, q=q)
     job_ids = tag_store.find_batches(qid=sample_job.qid, q=q)
-    
+
     assert job_ids == [sample_job.id]
 
-def test_find_batches_with_track_filter(tag_store, job_args, q):
-    """Test getting jobs filtered by track"""
+def test_find_batches_with_model_filter(tag_store, job_args, q):
+    """Test getting jobs filtered by model"""
     sample_job = tag_store.create_batch(**job_args, q=q)
-    
-    # Create job with different track
-    tag_store.create_batch(**{"track": "asr", "author": "user2"}, q=q)
-    
-    job_ids = tag_store.find_batches(track="llava", q=q)
-    
+
+    # Create job with different model
+    tag_store.create_batch(**{"model": "asr", "author": "user2"}, q=q)
+
+    job_ids = tag_store.find_batches(model="llava", q=q)
+
     assert job_ids == [sample_job.id]
 
 
 def test_find_batches_with_multiple_filters(tag_store, job_args, q):
     """Test getting jobs with multiple filters"""
     sample_job = tag_store.create_batch(**job_args, q=q)
-    
-    # Create jobs that match some but not all filters
-    job2 = tag_store.create_batch(**{"track": "asr", "author": sample_job.author}, q=q)
-    job3 = tag_store.create_batch(**{"track": sample_job.track, "author": "another author"}, q=q)
 
-    job_ids = tag_store.find_batches(qid=sample_job.qid, track=sample_job.track, author=sample_job.author, q=q)
+    # Create jobs that match some but not all filters
+    job2 = tag_store.create_batch(**{"model": "asr", "author": sample_job.author}, q=q)
+    job3 = tag_store.create_batch(**{"model": sample_job.model, "author": "another author"}, q=q)
+
+    job_ids = tag_store.find_batches(qid=sample_job.qid, model=sample_job.model, author=sample_job.author, q=q)
 
     assert job_ids == [sample_job.id]
 
@@ -221,7 +227,7 @@ def test_upload_tags_handles_missing_job_directory(tag_store, sample_tags, q):
     """Test proper error when job directory doesn't exist"""
     # Try to upload tags without starting job
     try:
-        tag_store.upload_tags(sample_tags, str(uuid.uuid4()), q=q)
+        tag_store.upload_tags(sample_tags, str(uuid.uuid4()), track=DEFAULT_TRACK, q=q)
         assert False
     except Exception:
         pass
@@ -230,30 +236,30 @@ def test_upload_tags_handles_missing_job_directory(tag_store, sample_tags, q):
 def test_create_batch_and_upload_tags(tag_store, job_args, sample_tags, q):
     """Test basic job creation and tag upload functionality"""
     sample_job = tag_store.create_batch(**job_args, q=q)
-    tag_store.upload_tags(sample_tags, sample_job.id, q=q)
-    
+    tag_store.upload_tags(sample_tags, sample_job.id, track=DEFAULT_TRACK, q=q)
+
     # Verify all tags are retrievable
     all_tags = tag_store.find_tags(batch_id=sample_job.id, q=q)
     assert len(all_tags) == 4
 
 def test_filter_track(tag_store, q):
-    """Test filtering by track"""
-    job1 = tag_store.create_batch(**{"track": "llava", "author": "user1"}, q=q)
-    job2 = tag_store.create_batch(**{"track": "asr", "author": "user2"}, q=q)
+    """Test filtering tags by track within model-keyed batches"""
+    job1 = tag_store.create_batch(**{"model": "llava", "author": "user1"}, q=q)
+    job2 = tag_store.create_batch(**{"model": "asr", "author": "user2"}, q=q)
 
-    job_ids = tag_store.find_batches(track="llava", q=q)
+    job_ids = tag_store.find_batches(model="llava", q=q)
     assert job_ids == [job1.id]
 
-    # upload tags
+    # upload tags, each associated with a distinct track
     tags_job1 = [
-        make_tag(100, 200, "person", None, "llava", job1.id),
+        make_tag(100, 200, "person", None, "source_1", job1.id),
     ]
     tags_job2 = [
-        make_tag(300, 400, "hello world", None, "asr", job2.id)
+        make_tag(300, 400, "hello world", None, "source_2", job2.id)
     ]
 
-    tag_store.upload_tags(tags_job1, job1.id, q=q)
-    tag_store.upload_tags(tags_job2, job2.id, q=q)
+    tag_store.upload_tags(tags_job1, job1.id, track="llava", q=q)
+    tag_store.upload_tags(tags_job2, job2.id, track="asr", q=q)
 
     # filter tags by track
     tags = tag_store.find_tags(track="llava", q=q)
@@ -267,12 +273,12 @@ def test_filter_track(tag_store, q):
 def test_find_tags_basic_filters(tag_store, job_args, sample_tags, q):
     """Test basic tag filtering functionality"""
     sample_job = tag_store.create_batch(**job_args, q=q)
-    tag_store.upload_tags(sample_tags, sample_job.id, q=q)
-    
+    tag_store.upload_tags(sample_tags, sample_job.id, track=DEFAULT_TRACK, q=q)
+
     # Test filtering by qid
     tags = tag_store.find_tags(qid=sample_job.qid, q=q)
     assert len(tags) == 4
-    
+
     # Test filtering by text content
     tags = tag_store.find_tags(text_contains="hello", q=q)
     assert len(tags) == 1
@@ -282,12 +288,12 @@ def test_find_tags_basic_filters(tag_store, job_args, sample_tags, q):
 def test_find_tags_time_range_filters(tag_store, job_args, sample_tags, q):
     """Test time range filtering"""
     sample_job = tag_store.create_batch(**job_args, q=q)
-    tag_store.upload_tags(sample_tags, sample_job.id, q=q)
-    
+    tag_store.upload_tags(sample_tags, sample_job.id, track=DEFAULT_TRACK, q=q)
+
     # Test start_time filters
     tags = tag_store.find_tags(start_time_gte=300, q=q)
     assert len(tags) == 3  # Should exclude the first tag (start_time=100)
-    
+
     tags = tag_store.find_tags(start_time_lte=500, q=q)
     assert len(tags) == 3  # Should exclude the last tag (start_time=700)
 
@@ -295,31 +301,31 @@ def test_find_tags_time_range_filters(tag_store, job_args, sample_tags, q):
 def test_find_batches_with_filters(tag_store, q):
     """Test job filtering functionality"""
     # Create multiple jobs
-    job1 = tag_store.create_batch(**{"track": "llava", "author": "user1"}, q=q)
-    job2 = tag_store.create_batch(**{"track": "asr", "author": "user2"}, q=q)
-    job3 = tag_store.create_batch(**{"track": "caption", "author": "user1"}, q=q)
+    job1 = tag_store.create_batch(**{"model": "llava", "author": "user1"}, q=q)
+    job2 = tag_store.create_batch(**{"model": "asr", "author": "user2"}, q=q)
+    job3 = tag_store.create_batch(**{"model": "caption", "author": "user1"}, q=q)
 
     # Test filtering by author
     job_ids = tag_store.find_batches(author="user1", q=q)
     assert set(job_ids) == {job1.id, job3.id}
 
     # Test multiple filters
-    job_ids = tag_store.find_batches(track="caption", author="user1", q=q)
+    job_ids = tag_store.find_batches(model="caption", author="user1", q=q)
     assert set(job_ids) == {job3.id}
 
 def test_pagination(tag_store, job_args, sample_tags, q):
     """Test pagination functionality"""
     sample_job = tag_store.create_batch(**job_args, q=q)
-    tag_store.upload_tags(sample_tags, sample_job.id, q=q)
-    
+    tag_store.upload_tags(sample_tags, sample_job.id, track=DEFAULT_TRACK, q=q)
+
     # Test limit
     tags = tag_store.find_tags(limit=2, q=q)
     assert len(tags) == 2
-    
+
     # Test offset
     tags = tag_store.find_tags(offset=2, q=q)
     assert len(tags) == 2
-    
+
     # Test limit + offset
     tags = tag_store.find_tags(limit=1, offset=1, q=q)
     assert len(tags) == 1
@@ -328,16 +334,16 @@ def test_pagination(tag_store, job_args, sample_tags, q):
 def test_count_methods(tag_store, job_args, sample_tags, q):
     """Test counting without loading full data"""
     sample_job = tag_store.create_batch(**job_args, q=q)
-    tag_store.upload_tags(sample_tags, sample_job.id, q=q)
-    
+    tag_store.upload_tags(sample_tags, sample_job.id, track=DEFAULT_TRACK, q=q)
+
     # Count all tags
     count = tag_store.count_tags(q=q)
     assert count == 4
-    
+
     # Count with filters
     count = tag_store.count_tags(start_time_gte=10, start_time_lte=450, q=q)
     assert count == 2
-    
+
     # Count jobs
     count = tag_store.count_batches(q=q)
     assert count == 1
@@ -347,16 +353,16 @@ def test_error_handling(tag_store, sample_tags, q):
     """Test error handling for edge cases"""
     # Test uploading tags without starting job
     with pytest.raises(Exception):
-        tag_store.upload_tags(sample_tags, str(uuid.uuid4()), q=q)
-    
+        tag_store.upload_tags(sample_tags, str(uuid.uuid4()), track=DEFAULT_TRACK, q=q)
+
     # Test empty tags upload
-    job = tag_store.create_batch(**{"track": "track", "author": "user"}, q=q)
-    tag_store.upload_tags([], job.id, q=q)  # Should not raise error
-    
+    job = tag_store.create_batch(**{"model": "model", "author": "user"}, q=q)
+    tag_store.upload_tags([], job.id, track=DEFAULT_TRACK, q=q)  # Should not raise error
+
     # Test getting nonexistent job
     result = tag_store.get_batch(str(uuid.uuid4()), q=q)
     assert result is None
-    
+
     # Test getting tags for nonexistent job
     tags = tag_store.find_tags(batch_id=str(uuid.uuid4()), q=q)
     assert tags == []
@@ -365,15 +371,15 @@ def test_error_handling(tag_store, sample_tags, q):
 def test_tag_appending(tag_store, job_args, q):
     """Test that tags are properly appended to existing files"""
     sample_job = tag_store.create_batch(**job_args, q=q)
-    
+
     # Upload initial tags
     initial_tags = [make_tag(100, 200, "person", None, "llava", sample_job.id)]
-    tag_store.upload_tags(initial_tags, sample_job.id, q=q)
-    
+    tag_store.upload_tags(initial_tags, sample_job.id, track=DEFAULT_TRACK, q=q)
+
     # Upload additional tags
     additional_tags = [make_tag(300, 400, "car", None, "llava", sample_job.id)]
-    tag_store.upload_tags(additional_tags, sample_job.id, q=q)
-    
+    tag_store.upload_tags(additional_tags, sample_job.id, track=DEFAULT_TRACK, q=q)
+
     # Check that both tags are present
     all_tags = tag_store.find_tags(batch_id=sample_job.id, q=q)
     assert len(all_tags) == 2
@@ -384,24 +390,24 @@ def test_source_with_slash_encoding(filesystem_tagstore, job_args, q):
     """Test that sources with slashes are properly base64 encoded"""
     tag_store = filesystem_tagstore
     sample_job = tag_store.create_batch(**job_args, q=q)
-    
+
     # Create tags with sources containing slashes
     tags_with_slashes = [
         make_tag(100, 200, "person", None, "video/segment_1", sample_job.id),
         make_tag(300, 400, "car", None, "audio/track_2", sample_job.id),
         make_tag(500, 600, "building", None, "normal_source", sample_job.id),  # No slash
     ]
-    
-    tag_store.upload_tags(tags_with_slashes, sample_job.id, q=q)
-    
+
+    tag_store.upload_tags(tags_with_slashes, sample_job.id, track=DEFAULT_TRACK, q=q)
+
     # Verify we can retrieve all tags correctly
     all_tags = tag_store.find_tags(batch_id=sample_job.id, q=q)
     assert len(all_tags) == 3
-    
+
     # Verify original source names are preserved in the tag data
     tags = {tag.text for tag in all_tags}
     assert tags == {"person", "car", "building"}
-    
+
     # Test filtering by source names with slashes works
     video_tags = tag_store.find_tags(sources=["video/segment_1"], q=q)
     assert len(video_tags) == 1
@@ -409,27 +415,27 @@ def test_source_with_slash_encoding(filesystem_tagstore, job_args, q):
 
 def test_delete_tags_by_source(tag_store, q):
     """Test that delete_tags_by_source removes only tags matching the given sources
-    within the given tracks, leaving other sources and other tracks untouched."""
-    llava_job = tag_store.create_batch(track="llava", author="user", q=q)
-    asr_job = tag_store.create_batch(track="asr", author="user", q=q)
+    within batches of the given model, leaving other sources and other models untouched."""
+    llava_job = tag_store.create_batch(model="llava", author="user", q=q)
+    asr_job = tag_store.create_batch(model="asr", author="user", q=q)
 
-    # same source ("source_a") is tagged on two different tracks
+    # same source ("source_a") is tagged under two different models
     tag_store.upload_tags([
         make_tag(100, 200, "person", None, "source_a", llava_job.id),
         make_tag(300, 400, "car", None, "source_a", llava_job.id),
         make_tag(500, 600, "building", None, "source_b", llava_job.id),
-    ], llava_job.id, q=q)
+    ], llava_job.id, track="llava_track", q=q)
     tag_store.upload_tags([
         make_tag(100, 200, "hello world", None, "source_a", asr_job.id),
-    ], asr_job.id, q=q)
+    ], asr_job.id, track="asr_track", q=q)
 
-    tag_store.delete_tags_by_source(sources=["source_a"], tracks=["llava"], q=q)
+    tag_store.delete_tags_by_source(sources=["source_a"], model="llava", q=q)
 
-    # source_a tags on the llava track are gone
+    # source_a tags in the llava-model batch are gone
     llava_remaining = tag_store.find_tags(batch_id=llava_job.id, q=q)
     assert {t.text for t in llava_remaining} == {"building"}
 
-    # source_a tags on the asr track are untouched (different track)
+    # source_a tags in the asr-model batch are untouched (different model)
     asr_remaining = tag_store.find_tags(batch_id=asr_job.id, q=q)
     assert {t.text for t in asr_remaining} == {"hello world"}
 
@@ -438,16 +444,16 @@ def test_create_track(tag_store, q):
     """Test creating a track with metadata"""
     track_name = "test_track"
     track_label = "Test Track"
-    
+
     tag_store.create_track(
         name=track_name,
         label=track_label,
         q=q
     )
-    
+
     # Verify track was created
     track = tag_store.get_track(name=track_name, q=q)
-    
+
     assert track is not None
     assert track.name == track_name
     assert track.label == track_label
@@ -459,7 +465,7 @@ def test_get_track_nonexistent(tag_store, q):
         name="nonexistent_track",
         q=q
     )
-    
+
     assert track is None
 
 

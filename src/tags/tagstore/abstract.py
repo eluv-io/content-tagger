@@ -19,25 +19,23 @@ class Tagstore(Protocol):
         ...
 
     def create_batch(self,
-        track: str,
+        model: str,
         author: str,
         q: Content
     ) -> Batch:
         ...
-        
-    def update_batch(self, 
+
+    def update_batch(self,
         batch_id: str,
         additional_info: dict,
         q: Content
     ) -> None:
         ...
 
-    def upload_tags(self, tags: list[Tag], batch_id: str, q: Content) -> None:
+    def upload_tags(self, tags: list[Tag], batch_id: str, track: str, q: Content) -> None:
         ...
 
-    def delete_tags_by_source(self, sources: list[str], tracks: list[str], q: Content) -> None:
-        """Permanently delete all tags whose source matches one of the given sources
-        within one of the given tracks."""
+    def delete_tags_by_source(self, sources: list[str], model: str, q: Content) -> None:
         ...
 
     def find_tags(self, q: Content, **filters) -> list[Tag]:

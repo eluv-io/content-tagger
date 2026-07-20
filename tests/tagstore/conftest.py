@@ -19,7 +19,7 @@ def make_tag(start_time, end_time, text, additional_info, source, batch_id, fram
 def job_args():
     """Create a sample job for testing"""
     return {
-        "track": "llava",
+        "model": "llava",
         "author": "test-user"
     }
 

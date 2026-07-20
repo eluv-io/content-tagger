@@ -28,7 +28,7 @@ class Tag:
 class Batch:
     id: str
     qid: str
-    track: str
+    model: str
     timestamp: float
     author: str
     additional_info: dict

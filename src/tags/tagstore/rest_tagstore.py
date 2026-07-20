@@ -98,53 +98,53 @@ class RestTagstore(Tagstore):
         return None
 
     def create_batch(self,
-        track: str,
+        model: str,
         author: str,
         q: Content
     ) -> Batch:
         """
-        Starts a new batch with provided metadata
+        Starts a new batch for a single run identified by (qid, author, model)
         """
         # Create batch via REST API
         batch_data = {
-            "track": track,
+            "model": model,
             "author": author
         }
-        
+
         response = self.session.post(
-            f"{self.base_url}/{q.qid}/batches", 
+            f"{self.base_url}/{q.qid}/batches",
             json=batch_data,
             headers=self._get_headers(q),
             timeout=self.timeout
         )
-        
+
         if not response.ok:
             self._log_response_and_raise(response)
-        
+
         result = response.json()
         batch_id = result["batch_id"]
-        
+
         # Create Batch object with the returned batch_id
         batch = Batch(
             id=batch_id,
             qid=q.qid,
-            track=track,
+            model=model,
             timestamp=time.time(),
             author=author,
             additional_info=result.get("additional_info", {})
         )
-        
+
         return batch
 
-    def upload_tags(self, tags: list[Tag], batch_id: str, q: Content) -> None:
+    def upload_tags(self, tags: list[Tag], batch_id: str, track: str, q: Content) -> None:
         """
-        Upload tags for a specific batch
+        Upload tags for a specific batch, associated with the given track
         """
         if not tags:
             return
-        
+
         qid = q.qid
-        
+
         # Convert tags to API format
         api_tags = []
         for tag in tags:
@@ -159,13 +159,14 @@ class RestTagstore(Tagstore):
             if tag.frame_info is not None:
                 api_tag["frame_info"] = tag.frame_info
             api_tags.append(api_tag)
-        
+
         # Upload tags
         upload_data = {
             "batch_id": batch_id,
+            "track": track,
             "tags": api_tags
         }
-        
+
         response = self.session.post(
             f"{self.base_url}/{qid}/tags", 
             json=upload_data,
@@ -176,17 +177,17 @@ class RestTagstore(Tagstore):
         if not response.ok:
             self._log_response_and_raise(response)
 
-    def delete_tags_by_source(self, sources: list[str], tracks: list[str], q: Content) -> None:
+    def delete_tags_by_source(self, sources: list[str], model: str, q: Content) -> None:
         """
         Permanently delete all tags whose source matches one of the provided sources
-        within one of the provided tracks.
+        and that belong to batches with the given model.
         """
-        if not sources or not tracks:
+        if not sources or not model:
             return
 
         response = self.session.delete(
             f"{self.base_url}/{q.qid}/tags",
-            json={"sources": sources, "tracks": tracks},
+            json={"sources": sources, "model": model},
             headers=self._get_headers(q),
             timeout=self.timeout
         )
@@ -284,23 +285,23 @@ class RestTagstore(Tagstore):
         Supported filters:
         - qid: str
         - stream: str
-        - track: str 
+        - model: str
         - author: str
         - timestamp_gte: float
         - timestamp_lte: float
         - limit: int
         - offset: int
         """
-        
+
         if 'qid' in filters:
             assert filters['qid'] == q.qid
         qid = q.qid
-        
+
         # Build query parameters
         params = {}
-        
-        if 'track' in filters:
-            params['track'] = filters['track']
+
+        if 'model' in filters:
+            params['model'] = filters['model']
         if 'author' in filters:
             params['author'] = filters['author']
         if 'limit' in filters:
@@ -374,15 +375,15 @@ class RestTagstore(Tagstore):
         
         # Build query parameters
         params = {}
-        
-        if 'track' in query_filters:
-            params['track'] = query_filters['track']
+
+        if 'model' in query_filters:
+            params['model'] = query_filters['model']
         if 'author' in query_filters:
             params['author'] = query_filters['author']
         params['limit'] = 1
-        
+
         response = self.session.get(
-            f"{self.base_url}/{qid}/batches", 
+            f"{self.base_url}/{qid}/batches",
             params=params,
             headers=self._get_headers(q),
             timeout=self.timeout
@@ -420,8 +421,8 @@ class RestTagstore(Tagstore):
             batch = Batch(
                 id=str(batch_data['id']),
                 qid=qid,
-                track=batch_data['track'],
-                timestamp=parser.isoparse(batch_data['created_at'].replace("Z", "+00:00")).timestamp(),
+                model=batch_data['model'],
+                timestamp=parser.isoparse(batch_data['timestamp'].replace("Z", "+00:00")).timestamp(),
                 author=batch_data['author'],
                 additional_info=batch_data.get("additional_info", {})
             )

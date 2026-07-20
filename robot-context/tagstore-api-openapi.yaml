@@ -113,6 +113,9 @@ components:
         id:
           type: string
           example: "123"
+        qid:
+          type: string
+          example: "iq__3Zi4NjhZfjUEdiMGfHduW5kLr3HY"
         batch_id:
           type: string
           example: "234"
@@ -171,8 +174,13 @@ components:
     Batch:
       type: object
       description: >
-        A Batch groups together one or more tags for a given (QID, track, author).
-        Batches are created explicitly or implicitly when tags are uploaded.
+        A Batch represents a single model run identified by (QID, author, model) and
+        can span multiple tracks. Batches are created explicitly or implicitly when
+        tags are uploaded.
+      required:
+        - id
+        - qid
+        - model
       properties:
         id:
           type: integer
@@ -180,8 +188,9 @@ components:
           type: string
         author:
           type: string
-        track:
+        model:
           type: string
+          description: Identifier of the model/run that produced the tags.
         timestamp:
           type: string
           format: date-time
@@ -526,7 +535,8 @@ paths:
       summary: Delete a track
       description: >
         Permanently deletes a track by its name.
-        All batches and tags associated with this track will also be deleted due to CASCADE constraints.
+        Only the tags associated with this track are deleted; batches are no longer tied
+        to tracks and remain.
       parameters:
         - in: path
           required: true
@@ -542,7 +552,7 @@ paths:
           description: Name of the track to delete
       responses:
         '204':
-          description: Track (and all related batches/tags) deleted successfully
+          description: Track (and its tags) deleted successfully
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '404':
@@ -656,8 +666,8 @@ paths:
       summary: Query tags
       description: >
         Returns a list of tags matching the query. If `batch_id` is not specified, then
-        the result will include tags from the most recent batch per track and per author for each taggable source in the
-        content.
+        all matching tags are returned (excluding deleted tags). The `track` query
+        parameter still filters by track.
       parameters:
         - in: path
           required: true
@@ -746,9 +756,10 @@ paths:
       tags: [Tags]
       summary: Add a list of tags
       description: >
-        Adds one or more tags. Tags are always associated with a batch. Either you can
-        specify the `batch_id` explicitly, or provide the triplet (`qid`, `author`, `track`) to automatically add to the most
-        recent batch with that triplet (creating a new batch if none exists).
+        Adds one or more tags. `track` is required and determines the track each written
+        tag is associated with. `batch_id` is optional: if omitted, a new batch is
+        created for this write, recording (`qid`, `author`, `model`). Batches are only
+        appended to when `batch_id` is supplied explicitly.
       parameters:
         - in: path
           required: true
@@ -762,17 +773,24 @@ paths:
           application/json:
             schema:
               type: object
+              required:
+                - track
+                - tags
               properties:
                 batch_id:
                   type: string
-                  description: An existing batch ID to add tags to. If not provided, then `author` and `track` must be provided. 
-                    If provided, then `author` and `track` will be ignored.
+                  description: An existing batch ID to add tags to. Optional. If omitted, a new
+                    batch is created for this write, recording (`qid`, `author`, `model`).
+                    `track` is always required regardless of whether `batch_id` is provided.
                 author:
                   type: string
-                  description: Batch author (required if no batch_id).
+                  description: Batch author (optional). Recorded on the new batch when `batch_id` is omitted.
+                model:
+                  type: string
+                  description: Identifier of the model/run (optional). Recorded on the new batch when `batch_id` is omitted.
                 track:
                   type: string
-                  description: Batch track (required if no batch_id).
+                  description: Track that each written tag is associated with (required).
                 tags:
                   type: array
                   description: List of video tags to add.
@@ -802,7 +820,8 @@ paths:
                 summary: Add tags to an existing batch
                 value:
                   batch_id: "12345"
-                  tags: 
+                  track: "object_detection"
+                  tags:
                     - start_time: 1000
                       end_time: 2000
                       tag: "dog"
@@ -821,11 +840,12 @@ paths:
                       additional_info:
                         "note": 'A "frame-tag" is defined by having the frame_info field present. You can filter by in the GET /tags api using the has_frame_info option.'
 
-              with_author_track_example:
-                summary: Add tags by (author, track)
-                description: Add the tags to the most recent batch for (qid, author, track), creating one if it doesn't exist
+              with_model_example:
+                summary: Add tags by (author, model)
+                description: Create a new batch recording (qid, author, model) and add the tags to it. `track` determines the track each tag is associated with.
                 value:
                   author: "alice"
+                  model: "object_detector_v2"
                   track: "object_detection"
                   tags:
                     - start_time: 40
@@ -849,6 +869,62 @@ paths:
               example:
                 batch_id: "12345"
                 created_tag_ids: ["67890", "67891"]
+        '400':
+          description: Invalid input
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+    delete:
+      tags: [Tags]
+      summary: Delete tags by source
+      description: >
+        Permanently deletes all tags belonging to the content object whose `source`
+        matches one of the sources provided in the request body and that belong to
+        batches with the given `model`.
+      parameters:
+        - in: path
+          required: true
+          name: qid
+          schema:
+            type: string
+          description: Content fabric content id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sources, model]
+              properties:
+                sources:
+                  type: array
+                  description: List of tag sources to delete. All tags matching any of these sources will be deleted.
+                  minItems: 1
+                  items:
+                    type: string
+                model:
+                  type: string
+                  description: >
+                    Model name. Only tags belonging to batches with this model (and
+                    matching one of the sources) are deleted.
+            example:
+              sources: ["part_abc", "asset_def"]
+              model: "celebrity-detection-v2"
+      responses:
+        '200':
+          description: Tags deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  tags_deleted:
+                    type: integer
+                    description: Number of tags deleted.
+              example:
+                message: "Tags deleted successfully"
+                tags_deleted: 42
         '400':
           description: Invalid input
         '401':
@@ -965,8 +1041,8 @@ paths:
       tags: [Batches]
       summary: Query batches
       description: >
-        Returns a list of batches matching the query.  
-        Supports filtering by QID, author, and track.  
+        Returns a list of batches matching the query.
+        Supports filtering by QID, author, and model.
         Results are paginated with `start` and `limit`.
       parameters:
         - in: path
@@ -982,11 +1058,11 @@ paths:
           required: false
           description: Filter batches by author.
         - in: query
-          name: track
+          name: model
           schema:
             type: string
           required: false
-          description: Filter batches by track.
+          description: Filter batches by model.
         - in: query
           name: start
           schema:
@@ -1020,9 +1096,9 @@ paths:
     post:
       tags: [Batches]
       summary: Create a batch
-      description: Creates a new batch and returns the `batch_id`. If a batch with the same (`qid`, `author`, `track`) triplet already exists,
-        then future read requests which don't specify a `batch_id` explicitly will resolve to the most recent one. So, this
-        call will have the effect of clearing previous tags for that triplet in the default read path.
+      description: Creates a new batch for a single run identified by (`qid`, `author`, `model`)
+        and returns the `batch_id`. A batch can span multiple tracks; the track of each tag
+        is a per-tag property.
       parameters:
         - in: path
           required: true
@@ -1037,13 +1113,14 @@ paths:
             schema:
               type: object
               required:
-                - track
-                - author
+                - model
               properties:
                 author:
                   type: string
-                track:
+                  description: Batch author (optional).
+                model:
                   type: string
+                  description: Identifier of the model/run that produced the tags.
                 additional_info:
                   type: object
                   description: Additional batch metadata
@@ -1068,7 +1145,8 @@ paths:
       summary: Bulk upload tags from multiple tracks
       description: >
         Upload tags from multiple tracks at once in one json body.
-        Returns a map from `track` to `batch_id`.
+        A single batch is created spanning all tracks in the upload, and its
+        `batch_id` is returned.
       parameters:
         - in: path
           required: true
@@ -1081,6 +1159,12 @@ paths:
           schema:
             type: string
           required: true
+        - in: query
+          name: model
+          schema:
+            type: string
+          required: false
+          description: Identifier of the model/run that produced the tags.
       requestBody:
         required: true
         content:
@@ -1095,18 +1179,14 @@ paths:
             application/json:
               schema:
                 type: object
-                additionalProperties:
-                  type: string
-                example:
-                  celebrity_detection: "12345"
-                  speech_recognition: "67890"
+                properties:
+                  batch_id:
+                    type: string
                 description: >
-                  A map where each key is a track name (string) from the uploaded file
-                  and each value is the corresponding batch ID (integer) that was either
-                  created or reused for that track.
+                  The ID of the single batch that was created for this upload,
+                  spanning all tracks in the uploaded file.
               example:
-                "celebrity_detection": 101
-                "shot_detection": 102
+                batch_id: "101"
         '400':
           description: Invalid input
         '401':
