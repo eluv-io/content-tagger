@@ -23,7 +23,8 @@ class LiveWorker(FetchSession):
         meta: MediaMetadata,
         ignore_sources: list[str],
         output_dir: str,
-        exit: threading.Event | None = None
+        exit: threading.Event | None = None,
+        max_bad_segments: int = 20
     ):
         self.qapi = qapi
         self.scope = scope
@@ -33,6 +34,7 @@ class LiveWorker(FetchSession):
         self.exit = exit
         self.next_idx = 0
         self.ignore_sources = set(ignore_sources)
+        self.max_bad_segments = max_bad_segments
     
     def metadata(self) -> MediaMetadata:
         return deepcopy(self.meta)
@@ -71,21 +73,41 @@ class LiveWorker(FetchSession):
         while source_name in self.ignore_sources:
             idx += 1
             source_name = _get_live_source_name(chunk_size, self.scope.stream, idx)
-        
-        filename = f"segment_{chunk_size}_{self.scope.stream}_{str(idx).zfill(4)}.mp4"
-        save_path = os.path.join(self.output_dir, filename)
 
-        segment_info = self.qapi.live_media_segment(
-            object_id=self.qapi.id(),
-            dest_path=save_path,
-            segment_idx=idx,
-            segment_length=chunk_size,
-            stream=self.scope.stream
-        )
+        bad_segments = 0
+        while True:
+            filename = f"segment_{chunk_size}_{self.scope.stream}_{str(idx).zfill(4)}.mp4"
+            save_path = os.path.join(self.output_dir, filename)
+            try:
+                segment_info = self.qapi.live_media_segment(
+                    object_id=self.qapi.id(),
+                    dest_path=save_path,
+                    segment_idx=idx,
+                    segment_length=chunk_size,
+                    stream=self.scope.stream
+                )
 
-        if self.scope.stream == "video":
-            # ideally we can do this in the API just in case we have a different stream name for video
-            center_segment(save_path)
+                if self.scope.stream == "video":
+                    # ideally we can do this in the API just in case we have a different stream name for video
+                    center_segment(save_path)
+                break
+            except Exception as e:
+                bad_segments += 1
+                if bad_segments > self.max_bad_segments:
+                    logger.error(
+                        f"Exceeded max bad segments ({self.max_bad_segments}) for live stream {self.qapi.id()}",
+                        segment_idx=idx
+                    )
+                    raise
+                logger.warning(
+                    f"Bad segment {idx} for live stream {self.qapi.id()}, skipping ahead ({bad_segments}/{self.max_bad_segments})",
+                    segment_idx=idx, error=str(e)
+                )
+                idx += 1
+                source_name = _get_live_source_name(chunk_size, self.scope.stream, idx)
+                while source_name in self.ignore_sources:
+                    idx += 1
+                    source_name = _get_live_source_name(chunk_size, self.scope.stream, idx)
 
         seg_offset = segment_info.seg_offset_millis
         seg_idx = segment_info.seg_num
