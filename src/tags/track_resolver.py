@@ -27,7 +27,7 @@ class TrackResolver:
                 self.forward_mapping[model_name].append(TrackArgs(name=track, label=label))
 
         self.reverse_mapping: dict[str, list[str]] = {}
-        
+
         for model_name, track_args_list in self.forward_mapping.items():
             for track_arg in track_args_list:
                 track = track_arg.name

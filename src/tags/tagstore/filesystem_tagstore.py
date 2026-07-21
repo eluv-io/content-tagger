@@ -23,10 +23,18 @@ class FilesystemTagStore(Tagstore):
         additional_info: dict | None = None,
     ) -> None:
         """
-        Create a new track with metadata
+        Create a new track with metadata (idempotent).
+
+        The track directory may already exist as a batch directory when a model
+        shares its name with one of its tracks, so we tolerate that and only write
+        the metadata when it is not already present.
         """
         track_dir = self._get_track_dir(q.qid, name)
-        os.makedirs(track_dir)
+        os.makedirs(track_dir, exist_ok=True)
+
+        metadata_path = self._get_track_metadata_path(q.qid, name)
+        if os.path.exists(metadata_path):
+            return
 
         track = Track(
             name=name,
@@ -35,7 +43,6 @@ class FilesystemTagStore(Tagstore):
             additional_info=additional_info,
         )
 
-        metadata_path = self._get_track_metadata_path(q.qid, name)
         with open(metadata_path, 'w') as f:
             json.dump(asdict(track), f, indent=2)
 

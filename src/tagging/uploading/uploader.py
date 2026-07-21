@@ -31,15 +31,17 @@ class UploadSession:
         self.retry = do_retry
         self.hidden = hidden
         # Mutable state
-        self.track_to_batch: dict[str, str] = {}
+        # a single batch spans the whole session (one model run over many tracks)
+        self.batch_id: str | None = None
+        self.created_tracks: set[str] = set()
         self.uploaded_tags: set[ModelTag] = set()
         self.uploaded_sources = set()
         # every source we've seen this session, from progress (tagged_sources) or from
         # the tags themselves, used to delete pre-existing tags for those sources
         self.seen_sources: set[str] = set()
-        # (track, source) pairs whose pre-existing tags have already been deleted,
-        # so we delete each pair at most once (before its first post)
-        self.deleted_source_tracks: set[tuple[str, str]] = set()
+        # sources whose pre-existing tags have already been deleted, so we delete each
+        # at most once (before its first post)
+        self.deleted_sources: set[str] = set()
 
     def upload_tags(
         self, 
@@ -66,38 +68,40 @@ class UploadSession:
                 dest_qid=self.dest_q.qid,
             )
 
-        tags2upload: list[Tag] = [
-            Tag(
-                # empty -> not created yet in live tagstore
-                id="",
-                start_time=t.start_time,
-                end_time=t.end_time,
-                text=t.text,
-                additional_info=t.additional_info,
-                source=t.source_media,
-                batch_id=self._get_or_create_batch(t.model_track),
-                frame_info=t.frame_info,
-            )
-            for t in new_inputs
-        ]
-        
-        relevant_tracks = set(self._configured_tracks()) | set(self.track_to_batch)
-        pairs_to_delete = {
-            (track, source)
-            for track in relevant_tracks
-            for source in self.seen_sources
-        } - self.deleted_source_tracks
+        # Build tags grouped by their (suffixed) track. A single batch spans all
+        # tracks; the track is supplied per upload.
+        tags_by_track: dict[str, list[Tag]] = {}
+        if new_inputs:
+            batch_id = self._get_or_create_batch()
+            for t in new_inputs:
+                track = self._ensure_track(t.model_track)
+                tags_by_track.setdefault(track, []).append(
+                    Tag(
+                        # empty -> not created yet in live tagstore
+                        id="",
+                        start_time=t.start_time,
+                        end_time=t.end_time,
+                        text=t.text,
+                        additional_info=t.additional_info,
+                        source=t.source_media,
+                        batch_id=batch_id,
+                        frame_info=t.frame_info,
+                    )
+                )
 
-        sources_by_track: dict[str, set[str]] = {}
-        for track, source in pairs_to_delete:
-            sources_by_track.setdefault(track, set()).add(source)
+        # Delete pre-existing tags for this model's newly-seen sources so a re-run
+        # replaces rather than duplicates. Deletion is scoped to the model, which
+        # covers every track the model produces in one call.
+        sources_to_delete = self.seen_sources - self.deleted_sources
 
         try:
-            for track, sources in sources_by_track.items():
-                print('deleting tags for track', track, 'and sources', sources)
-                self.tagstore.delete_tags_by_source(sources=list(sources), tracks=[track], q=self.dest_q)
-            self._post_tags(tags2upload, q=self.dest_q)
-            print(set(t.model_track for t in new_inputs))
+            if sources_to_delete:
+                self.tagstore.delete_tags_by_source(
+                    sources=list(sources_to_delete),
+                    model=self._model_name(),
+                    q=self.dest_q,
+                )
+            self._post_tags(tags_by_track, q=self.dest_q)
         except Exception as e:
             if self.retry:
                 logger.opt(exception=e).error("error uploading tags, but retry is set to true, will retry on next upload tick", destination_qid=self.dest_q.qid, feature=self.feature)
@@ -105,20 +109,15 @@ class UploadSession:
             else:
                 raise
 
-        self.deleted_source_tracks.update(pairs_to_delete)
+        self.deleted_sources.update(sources_to_delete)
 
         self.uploaded_sources.update(tagged_sources)
 
         self.uploaded_tags.update(new_inputs)
 
     def upload_report(self, report: TagContentStatusReport) -> None:
-        """Upload a tagging report to the tagstore as a tag on the content object."""
-        # we use the first of the specified output tracks to write the report
-        batch = self._get_or_create_batch(self.track_resolver.resolve(self.feature)[0].name)
-        if batch is None:
-            logger.error("no batch found for report, skipping upload", feature=report.params.feature, destination_qid=self.dest_q.qid)
-            return
-
+        """Upload a tagging report to the tagstore, recorded on the session's batch."""
+        batch = self._get_or_create_batch()
         self.tagstore.update_batch(batch_id=batch, additional_info={"tagger": asdict(report)}, q=self.dest_q)
 
     def get_uploaded_sources(self) -> list[str]:
@@ -130,12 +129,24 @@ class UploadSession:
             return f"{track}_{self.track_suffix.replace(' ', '_')}"
         return track
 
-    def _configured_tracks(self) -> list[str]:
-        if self.feature not in self.track_resolver.forward_mapping:
-            return []
-        return [self._apply_suffix(ta.name) for ta in self.track_resolver.resolve(self.feature)]
+    def _model_name(self) -> str:
+        """The model identifier recorded on the session's batch (and used to scope
+        source deletions). The track suffix keeps distinct runs from colliding."""
+        return self._apply_suffix(self.feature)
 
-    def _get_or_create_batch(self, model_track: str) -> str:
+    def _get_or_create_batch(self) -> str:
+        """Return the single batch for this session, creating it on first use."""
+        if self.batch_id is None:
+            ts_batch = self.tagstore.create_batch(
+                model=self._model_name(),
+                author="tagger",
+                q=self.dest_q,
+            )
+            self.batch_id = ts_batch.id
+        return self.batch_id
+
+    def _ensure_track(self, model_track: str) -> str:
+        """Ensure the (suffixed) track for a model_track exists and return its name."""
         if model_track:
             # get the label
             label = self.track_resolver.get_label(model_track)
@@ -149,8 +160,8 @@ class UploadSession:
         if self.track_suffix:
             label += f" {self.track_suffix}"
 
-        if track in self.track_to_batch:
-            return self.track_to_batch[track]
+        if track in self.created_tracks:
+            return track
 
         additional_info = {"hidden": True} if self.hidden else None
 
@@ -171,44 +182,36 @@ class UploadSession:
         )
 
         assert db_track is not None and db_track.name == track
-        ts_batch = self.tagstore.create_batch(
-            track=track,
-            author="tagger",
-            q=self.dest_q,
-        )
+        self.created_tracks.add(track)
+        return track
 
-        self.track_to_batch[track] = ts_batch.id
-        return self.track_to_batch[track]
-
-    def _post_tags(self, tags: list[Tag], q: Content) -> None:
-        """Upload tags to tagstore (called from actor thread)"""
-        if not tags:
+    def _post_tags(self, tags_by_track: dict[str, list[Tag]], q: Content) -> None:
+        """Upload tags to tagstore, grouped by track under the session's batch."""
+        total = sum(len(tags) for tags in tags_by_track.values())
+        if not total:
             return
-        
-        # group by batch
-        batch_to_tags = {}
-        for tag in tags:
-            batch_to_tags.setdefault(tag.batch_id, []).append(tag)
 
-        logger.info("uploading tags", num_tags=len(tags), qid=q.qid, num_batches=len(batch_to_tags))
+        batch_id = self._get_or_create_batch()
 
-        for batch, tags in batch_to_tags.items():
+        logger.info("uploading tags", num_tags=total, qid=q.qid, num_tracks=len(tags_by_track))
+
+        for track, tags in tags_by_track.items():
             try:
-                self._upload_tags_with_batch(batch, tags, q)
+                self._upload_tags_with_batch(batch_id, tags, track, q)
             except Exception as e:
                 logger.opt(exception=e).error("error uploading tags", destination_qid=q.qid)
                 raise
 
-    def _upload_tags_with_batch(self, batch_id: str, tags: list[Tag], q: Content) -> None:
+    def _upload_tags_with_batch(self, batch_id: str, tags: list[Tag], track: str, q: Content) -> None:
         """
-        Uploads a list of tags to the tagstore under the specified batch ID.
+        Uploads a list of tags to the tagstore under the specified batch ID and track.
         Uploads in small increments to avoid sending too many tags in a single request.
         """
         chunk_size = 5000
         for i in range(0, len(tags), chunk_size):
             chunk = tags[i:i + chunk_size]
             try:
-                self.tagstore.upload_tags(chunk, batch_id, q=q)
+                self.tagstore.upload_tags(chunk, batch_id, track, q=q)
             except Exception as e:
                 logger.opt(exception=e).error("error uploading tags chunk", destination_qid=q.qid, batch_id=batch_id)
                 raise

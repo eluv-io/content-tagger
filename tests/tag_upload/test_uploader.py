@@ -62,7 +62,7 @@ def test_upload_report(upload_session, get_tag):
     upload_session.upload_report(report=report)
 
     ts = upload_session.tagstore
-    batch = upload_session._get_or_create_batch(model_track="speech_to_text")
+    batch = upload_session._get_or_create_batch()
 
     assert batch is not None
 
@@ -207,21 +207,22 @@ def test_incremental_tags_for_same_pair_are_not_wiped(upload_session, get_tag):
     assert {t.text for t in ts.find_tags(q=q, track="speech_to_text")} == {"first", "second"}
 
 
-def test_delete_by_source_is_scoped_to_track(upload_session, track_resolver, get_tag):
-    """Two sessions tagging the same source on different tracks must not clobber
-    each other when deleting pre-existing tags before posting."""
+def test_delete_by_source_is_scoped_to_model(upload_session, track_resolver, get_tag):
+    """Two sessions for different models tagging the same source must not clobber
+    each other when deleting pre-existing tags before posting. Deletion is scoped
+    to the model, so a different model's tags for the same source are untouched."""
     ts = upload_session.tagstore
     q = upload_session.dest_q
 
-    # session A tags source1 on track_a
+    # session A (model "asr") tags source1 on track_a
     upload_session.upload_tags(
         tags=[get_tag(model_track="track_a", text="A tag", source_media="source1")],
         tagged_sources=["source1"],
     )
 
-    # a concurrent session tags the SAME source on a different track
+    # a session for a DIFFERENT model tags the SAME source
     session_b = UploadSession(
-        feature="asr",
+        feature="other_model",
         track_resolver=track_resolver,
         tagstore=ts,
         dest_q=q,
@@ -233,7 +234,8 @@ def test_delete_by_source_is_scoped_to_track(upload_session, track_resolver, get
         tagged_sources=["source1"],
     )
 
-    # session B's pre-post delete must not have wiped track_a's tag for source1
+    # session B's pre-post delete (scoped to model "other_model") must not have
+    # wiped the "asr" model's track_a tag for source1
     assert {t.text for t in ts.find_tags(q=q, track="track_a")} == {"A tag"}
     assert {t.text for t in ts.find_tags(q=q, track="track_b")} == {"B tag"}
 
