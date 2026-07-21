@@ -49,11 +49,6 @@ class UploadSession:
         tagged_sources: list[str]
     ) -> None:
         """Main upload method - formats and uploads tags to tagstore"""
-        # Mark sources as seen from both progress (tagged_sources) and the tags
-        # themselves. A source may be processed without producing tags, so progress
-        # matters; but a source's tags can also arrive a tick before its progress, so
-        # we must count those too, otherwise we'd delete the (track, source) pair on a
-        # later tick and wipe tags we already posted for it.
         self.seen_sources.update(tagged_sources)
         self.seen_sources.update(t.source_media for t in tags)
 

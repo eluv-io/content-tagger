@@ -158,7 +158,8 @@ def make_tag_args():
         run_config: dict | None = None,
         start_time: int = 0,
         end_time: int = 30,
-        max_fetch_retries: int = 3
+        max_fetch_retries: int = 3,
+        track_suffix: str = ""
     ) -> TagArgs:
         if stream is None:
             stream = "audio" if feature == "asr" else "video"
@@ -167,7 +168,7 @@ def make_tag_args():
             run_config=run_config or {},
             scope=VideoScope(stream=stream, start_time=start_time, end_time=end_time),
             replace=replace,
-            track_suffix="",
+            track_suffix=track_suffix,
             destination_qid=destination_qid,
             caller_info={},
             max_fetch_retries=max_fetch_retries

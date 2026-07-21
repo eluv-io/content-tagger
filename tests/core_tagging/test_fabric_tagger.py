@@ -563,14 +563,17 @@ def test_fetcher_returns_no_sources(fabric_tagger, q, make_tag_args):
     assert tag_count == 0
 
 def test_batch_report_on_success(fabric_tagger, q, make_tag_args):
-    """Batch additional_info should contain a tagger report with Completed status."""
-    args = make_tag_args(feature="caption", stream="video")
+    """Batch additional_info should contain a tagger report with Completed status.
+    
+    Also check suffix while we're at it
+    """
+    args = make_tag_args(feature="caption", stream="video", track_suffix="test suffix")
     result = fabric_tagger.tag(q, args)
     assert result.started
 
     wait_tag(fabric_tagger, q.qid, timeout=5)
 
-    batches = fabric_tagger.tagstore.find_batches(qid=q.qid, q=q)
+    batches = fabric_tagger.tagstore.find_batches(model="caption_test_suffix", q=q)
     assert len(batches) == 1
 
     batch = fabric_tagger.tagstore.get_batch(batches[0], q=q)

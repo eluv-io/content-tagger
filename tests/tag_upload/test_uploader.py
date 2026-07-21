@@ -42,6 +42,10 @@ def test_upload_tags(upload_session, get_tag):
     assert pretty_tag.start_time == 100
     assert pretty_tag.end_time == 200
 
+    # make sure the tags are in the same batch
+    batch = ts_tags[0].batch_id
+    assert all(t.batch_id == batch for t in ts_tags)
+
 def test_upload_report(upload_session, get_tag):
     tags = [
         get_tag(model_track="asr", text="hello world"),
@@ -62,13 +66,16 @@ def test_upload_report(upload_session, get_tag):
     upload_session.upload_report(report=report)
 
     ts = upload_session.tagstore
-    batch = upload_session._get_or_create_batch()
+    batch = ts.find_batches(q=upload_session.dest_q, model="asr")[0]
 
-    assert batch is not None
+    assert batch
 
     db_batch = ts.get_batch(batch_id=batch, q=upload_session.dest_q)
     assert db_batch is not None
     assert db_batch.additional_info == {"tagger": asdict(report)}
+    assert db_batch.model == "asr"
+    assert db_batch.additional_info["tagger"]
+    assert "params" in db_batch.additional_info["tagger"]
 
 def test_get_uploaded_sources(upload_session, get_tag):
     tags = [
@@ -310,10 +317,12 @@ def test_configured_track_deletion_respects_suffix(track_resolver, mock_q, files
         do_retry=False,
     )
     session.upload_tags(
-        tags=[get_tag(model_track="", text="stale tag", source_media="source1")],
+        tags=[get_tag(model_track="", text="stale tag", source_media="source1"),
+              get_tag(model_track="another_track", text="stale tag 2", source_media="source2")],
         tagged_sources=["source1"],
     )
     assert {t.text for t in ts.find_tags(q=q, track="speech_to_text_v2")} == {"stale tag"}
+    assert {t.text for t in ts.find_tags(q=q, track="another_track_v2")} == {"stale tag 2"}
 
     # a new session over the same suffixed track processes source1 with no tags
     session2 = UploadSession(
@@ -327,12 +336,22 @@ def test_configured_track_deletion_respects_suffix(track_resolver, mock_q, files
     session2.upload_tags(tags=[], tagged_sources=["source1"])
 
     assert ts.find_tags(q=q, track="speech_to_text_v2") == []
+    # we gave another source to this one
+    assert len(ts.find_tags(q=q, track="another_track_v2")) == 1
 
+    # check that we can upload a new tag and it will clear the old tag, even without passing in tagged_sources
+    session2.upload_tags(tags=[get_tag(model_track="another_track", text="new tag 2", source_media="source2")], tagged_sources=[])
+    assert {t.text for t in ts.find_tags(q=q, track="another_track_v2")} == {"new tag 2"}
+
+    # check that even after marking as tagged_source we still get back the previous tag (i.e the delete by batch happens during the first time the source is seen)
+    session2.upload_tags(tags=[], tagged_sources=["source2"])
+    assert {t.text for t in ts.find_tags(q=q, track="another_track_v2")} == {"new tag 2"}
+    assert ts.find_tags(q=q, track="speech_to_text_v2") == []
 
 def test_retry_on_upload_failure(upload_session, get_tag):
     upload_session.retry = True
     tags = [
-        get_tag(model_track="asr", text="hello world", source_media="/path/to/source1.mp4"),
+        get_tag(model_track="asr", text="hello world", source_media="/path/to/source1.mp4"),    
     ]
 
     tagged_sources = ["source1"]
