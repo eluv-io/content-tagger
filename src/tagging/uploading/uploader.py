@@ -119,15 +119,10 @@ class UploadSession:
         """Get the set of source media that have been tagged in this session."""
         return list(self.uploaded_sources)
     
-    def _apply_suffix(self, track: str) -> str:
-        if self.track_suffix:
-            return f"{track}_{self.track_suffix.replace(' ', '_')}"
-        return track
-
     def _model_name(self) -> str:
         """The model identifier recorded on the session's batch (and used to scope
         source deletions). The track suffix keeps distinct runs from colliding."""
-        return self._apply_suffix(self.feature)
+        return self.track_resolver.apply_suffix(self.feature, self.track_suffix)
 
     def _get_or_create_batch(self) -> str:
         """Return the single batch for this session, creating it on first use."""
@@ -149,7 +144,7 @@ class UploadSession:
         else:
             track_args = self.track_resolver.resolve(self.feature)[0]
 
-        track = self._apply_suffix(track_args.name)
+        track = self.track_resolver.apply_suffix(track_args.name, self.track_suffix)
         label = track_args.label
 
         if self.track_suffix:

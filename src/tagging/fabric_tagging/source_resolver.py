@@ -15,7 +15,7 @@ class SourceResolver:
         """Return the sources already tagged by a previous run of this (model,
         track_suffix), so a non-replace run can skip them.
         """
-        model_name = self._model_name(model, track_suffix)
+        model_name = self.track_resolver.apply_suffix(model, track_suffix)
 
         batch_ids = self.tagstore.find_batches(q=q, qid=q.qid, author="tagger", model=model_name)
 
@@ -30,10 +30,3 @@ class SourceResolver:
                 uploaded_sources.update(tagger_info.get("upload_status", {}).get("uploaded_sources", []))
 
         return sorted(uploaded_sources)
-
-    @staticmethod
-    def _model_name(model: str, track_suffix: str) -> str:
-        """Mirror UploadSession._model_name: the batch model for a suffixed run."""
-        if track_suffix:
-            return f"{model}_{track_suffix.replace(' ', '_')}"
-        return model

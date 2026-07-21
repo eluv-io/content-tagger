@@ -53,6 +53,13 @@ class TrackResolver:
         """
         return self.reverse_mapping.get(track_name, [track_name])[:]
     
+    def apply_suffix(self, base: str, suffix: str) -> str:
+        """Append a run's track suffix to a track or model name.
+        """
+        if suffix:
+            return f"{base}_{suffix.replace(' ', '_')}"
+        return base
+
     def get_label(self, track_name: str) -> str:
         if track_name in self.label_configs.mapping:
             return self.label_configs.mapping[track_name]
