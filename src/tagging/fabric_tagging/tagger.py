@@ -211,7 +211,7 @@ class TaggerWorker:
 
         ignore_sources = []
         if not args.replace:
-            ignore_sources = self.source_resolver.resolve(q, feature)
+            ignore_sources = self.source_resolver.resolve(q, feature, track_suffix=args.track_suffix)
 
         worker = self.fetcher.get_session(
             q, 
