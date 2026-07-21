@@ -21,21 +21,21 @@ class TaggingStatusService:
     def get_content_summary(self, q: Content) -> ContentStatusResponse:
         batch_ids = self.tagstore.find_batches(q=q, qid=q.qid, author="tagger")
 
-        # Collect all batches and group by track
-        batches_by_track: dict[str, list[Batch]] = defaultdict(list)
+        # Collect all batches and group by model
+        batches_by_model: dict[str, list[Batch]] = defaultdict(list)
         for batch_id in batch_ids:
             batch = self.tagstore.get_batch(batch_id, q=q)
             if batch is None or "tagger" not in batch.additional_info:
                 continue
-            batches_by_track[batch.track].append(batch)
+            batches_by_model[batch.model].append(batch)
 
-        # Build a summary per track, collating across all batches
+        # Build a summary per model, collating across all batches
         model_summaries: list[ModelStatus] = []
-        for track_name, batches in batches_by_track.items():
+        for model_name, batches in batches_by_model.items():
             latest_batch = max(batches, key=lambda b: b.timestamp)
 
-            # TODO: not ideal if multiple models write to same track
-            model_name = self.track_resolver.reverse_resolve(track_name)[0]
+            # the model's primary output track, for display
+            track_name = self.track_resolver.resolve(model_name)[0].name
 
             all_sources: set[str] = set()
             tagged_sources: set[str] = set()
@@ -71,12 +71,12 @@ class TaggingStatusService:
     ) -> ModelStatusResponse:
         track_name = self.track_resolver.resolve(model)[0].name
 
-        batch_ids = self.tagstore.find_batches(q=q, qid=q.qid, author="tagger")
+        batch_ids = self.tagstore.find_batches(q=q, qid=q.qid, author="tagger", model=model)
 
         batches: list[Batch] = []
         for batch_id in batch_ids:
             batch = self.tagstore.get_batch(batch_id, q=q)
-            if batch is not None and batch.track == track_name and "tagger" in batch.additional_info:
+            if batch is not None and batch.model == model and "tagger" in batch.additional_info:
                 batches.append(batch)
 
         if not batches:
