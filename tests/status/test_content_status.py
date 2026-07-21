@@ -4,11 +4,11 @@ from unittest.mock import Mock
 from src.tags.tagstore.model import Batch
 
 
-def make_batch(id: str, track: str, timestamp: float, all_sources: list, tagged_sources: list) -> Batch:
+def make_batch(id: str, model: str, timestamp: float, all_sources: list, tagged_sources: list) -> Batch:
     return Batch(
         id=id,
         qid="iq__test",
-        track=track,
+        model=model,
         timestamp=timestamp,
         author="tagger",
         additional_info={
@@ -25,7 +25,7 @@ def make_batch(id: str, track: str, timestamp: float, all_sources: list, tagged_
 
 def test_single_batch_full_completion(get_status_service):
     sources = ["s1", "s2", "s3"]
-    batches = [make_batch("b1", "llava_track", 1000.0, sources, sources)]
+    batches = [make_batch("b1", "llava", 1000.0, sources, sources)]
     service = get_status_service(batches)
 
     result = service.get_content_summary(Mock(qid="iq__test"))
@@ -39,7 +39,7 @@ def test_single_batch_full_completion(get_status_service):
 
 
 def test_single_batch_partial_completion(get_status_service):
-    batches = [make_batch("b1", "llava_track", 1000.0, ["s1", "s2", "s3", "s4"], ["s1", "s2"])]
+    batches = [make_batch("b1", "llava", 1000.0, ["s1", "s2", "s3", "s4"], ["s1", "s2"])]
     service = get_status_service(batches)
 
     result = service.get_content_summary(Mock(qid="iq__test"))
@@ -48,10 +48,10 @@ def test_single_batch_partial_completion(get_status_service):
 
 
 def test_multiple_batches_union_sources(get_status_service):
-    """Completion is computed by unioning sources across all batches for a track."""
+    """Completion is computed by unioning sources across all batches for a model."""
     batches = [
-        make_batch("b1", "llava_track", 1000.0, ["s1", "s2"], ["s1"]),
-        make_batch("b2", "llava_track", 2000.0, ["s3", "s4"], ["s3", "s4"]),
+        make_batch("b1", "llava", 1000.0, ["s1", "s2"], ["s1"]),
+        make_batch("b2", "llava", 2000.0, ["s3", "s4"], ["s3", "s4"]),
     ]
     service = get_status_service(batches)
 
@@ -64,10 +64,10 @@ def test_multiple_batches_union_sources(get_status_service):
     assert m.last_run.startswith('1970')
 
 
-def test_multiple_tracks(get_status_service):
+def test_multiple_models(get_status_service):
     batches = [
-        make_batch("b1", "llava_track", 1000.0, ["s1", "s2"], ["s1", "s2"]),
-        make_batch("b2", "whisper_track", 500.0, ["s1", "s2"], ["s1"]),
+        make_batch("b1", "llava", 1000.0, ["s1", "s2"], ["s1", "s2"]),
+        make_batch("b2", "whisper", 500.0, ["s1", "s2"], ["s1"]),
     ]
     service = get_status_service(batches)
 
@@ -84,7 +84,7 @@ def test_no_upload_status(get_status_service):
     batch = Batch(
         id="b1",
         qid="iq__test",
-        track="llava_track",
+        model="llava",
         timestamp=1000.0,
         author="tagger",
         additional_info={"tagger": {}},
@@ -96,8 +96,8 @@ def test_no_upload_status(get_status_service):
     assert result.models[0].percent_completion == 0.0
 
 
-def test_unmapped_track_falls_back_to_track_name(get_status_service):
-    """A track with no mapping in the resolver should use the track name as the model name."""
+def test_unmapped_model_uses_model_name(get_status_service):
+    """A model with no mapping in the resolver should surface under its own name."""
     batches = [make_batch("b1", "unknown_model", 1000.0, ["s1"], ["s1"])]
     service = get_status_service(batches)
 
