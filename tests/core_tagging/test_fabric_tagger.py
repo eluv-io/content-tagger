@@ -798,7 +798,7 @@ def test_content_aligned(fabric_tagger, q, make_tag_args, temp_dir):
 
     fabric_tagger.tag(q, args)
 
-    time.sleep(0.75)
+    time.sleep(1.5)
 
     job = list(fabric_tagger.jobstore.inactive_jobs.values())[0]
 

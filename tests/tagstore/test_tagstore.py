@@ -448,7 +448,8 @@ def test_create_track(tag_store, q):
     tag_store.create_track(
         name=track_name,
         label=track_label,
-        q=q
+        q=q,
+        additional_info={"description": "A test track"}
     )
 
     # Verify track was created
@@ -458,6 +459,7 @@ def test_create_track(tag_store, q):
     assert track.name == track_name
     assert track.label == track_label
     assert track.qid == q.qid
+    assert track.additional_info.get("description") == "A test track"
 
 def test_get_track_nonexistent(tag_store, q):
     """Test that getting a non-existent track returns None"""

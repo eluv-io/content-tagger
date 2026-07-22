@@ -92,7 +92,8 @@ class RestTagstore(Tagstore):
                 return Track(
                     name=track_data['name'],
                     label=track_data['label'],
-                    qid=track_data['qid']
+                    qid=track_data['qid'],
+                    additional_info=track_data.get('additional_info')
                 )
         
         return None
@@ -422,7 +423,7 @@ class RestTagstore(Tagstore):
                 id=str(batch_data['id']),
                 qid=qid,
                 model=batch_data['model'],
-                timestamp=parser.isoparse(batch_data['timestamp'].replace("Z", "+00:00")).timestamp(),
+                timestamp=parser.isoparse(batch_data['created_at'].replace("Z", "+00:00")).timestamp(),
                 author=batch_data['author'],
                 additional_info=batch_data.get("additional_info", {})
             )

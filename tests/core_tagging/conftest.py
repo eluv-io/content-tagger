@@ -57,7 +57,7 @@ def tagger_config(media_dir) -> TaggerWorkerConfig:
 class FakeTagContainer:
     """Fake TagContainer that simulates work and asynchronous behavior."""
     
-    def __init__(self, media_dir: str, feature, work_duration: float = 0.25, report_progress: bool = True):
+    def __init__(self, media_dir: str, feature, work_duration: float = 0.5, report_progress: bool = True):
         """
         Initialize the FakeTagContainer.
     
