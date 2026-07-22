@@ -279,10 +279,10 @@ class RestTagstore(Tagstore):
         
         return tags
 
-    def find_batches(self, q: Content, **filters) -> list[str]:
+    def find_batches(self, q: Content, **filters) -> list[Batch]:
         """
-        Find batch IDs with flexible filtering.
-        
+        Find batches with flexible filtering.
+
         Supported filters:
         - qid: str
         - stream: str
@@ -309,24 +309,21 @@ class RestTagstore(Tagstore):
             params['limit'] = filters['limit']
         if 'offset' in filters:
             params['start'] = filters['offset']
-        
+
         response = self.session.get(
-            f"{self.base_url}/{qid}/batches", 
+            f"{self.base_url}/{qid}/batches",
             params=params,
             headers=self._get_headers(q),
             timeout=self.timeout
         )
-        
+
         if not response.ok:
             self._log_response_and_raise(response)
-        
+
         result = response.json()
         batches = result.get('batches', [])
-        
-        # Extract batch IDs
-        batch_ids = [str(batch['id']) for batch in batches]
-        
-        return batch_ids
+
+        return [self._parse_batch(batch, qid) for batch in batches]
 
     def count_tags(self, q: Content, **filters) -> int:
         """Count tags matching the given filters"""
@@ -396,40 +393,39 @@ class RestTagstore(Tagstore):
         result = response.json()
         return result.get('meta', {}).get('total', 0)
 
+    def _parse_batch(self, batch_data: dict, qid: str) -> Batch:
+        """Convert an API batch payload into a Batch"""
+        return Batch(
+            id=str(batch_data['id']),
+            qid=qid,
+            model=batch_data['model'],
+            timestamp=parser.isoparse(batch_data['created_at'].replace("Z", "+00:00")).timestamp(),
+            author=batch_data['author'],
+            additional_info=batch_data.get("additional_info", {})
+        )
+
     def get_batch(self, batch_id: str, q: Content) -> Batch | None:
         """
         Get batch metadata
         """
         # Extract qid from batch_id (assuming format: qid/track/timestamp)
         qid = q.qid
-        
+
         try:
             response = self.session.get(
                 f"{self.base_url}/{qid}/batches/{batch_id}",
                 headers=self._get_headers(q),
                 timeout=self.timeout
             )
-            
+
             if response.status_code == 404:
                 return None
-                
+
             if not response.ok:
                 self._log_response_and_raise(response)
-            
-            batch_data = response.json()
-            
-            # Convert API batch to Batch
-            batch = Batch(
-                id=str(batch_data['id']),
-                qid=qid,
-                model=batch_data['model'],
-                timestamp=parser.isoparse(batch_data['created_at'].replace("Z", "+00:00")).timestamp(),
-                author=batch_data['author'],
-                additional_info=batch_data.get("additional_info", {})
-            )
-            
-            return batch
-            
+
+            return self._parse_batch(response.json(), qid)
+
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 404:
                 return None

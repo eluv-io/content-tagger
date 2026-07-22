@@ -576,7 +576,7 @@ def test_batch_report_on_success(fabric_tagger, q, make_tag_args):
     batches = fabric_tagger.tagstore.find_batches(model="caption_test_suffix", q=q)
     assert len(batches) == 1
 
-    batch = fabric_tagger.tagstore.get_batch(batches[0], q=q)
+    batch = batches[0]
     assert batch is not None
 
     report = batch.additional_info.get("tagger")
@@ -598,7 +598,7 @@ def test_replace(
     fabric_tagger.tag(q, args)
     wait_tag(fabric_tagger, q.qid, timeout=5)
 
-    first_batch = fabric_tagger.tagstore.find_batches(q=q, track="object_detection")[0]
+    first_batch = fabric_tagger.tagstore.find_batches(q=q, track="object_detection")[0].id
     tags = fabric_tagger.tagstore.find_tags(q=q, track="object_detection", batch_id=first_batch)
 
     timestamps = tuple(sorted(t.additional_info["timestamp_ms"] for t in tags if t.additional_info is not None))
@@ -607,7 +607,7 @@ def test_replace(
     fabric_tagger.tag(q, args)
     wait_tag(fabric_tagger, q.qid, timeout=5)
 
-    new_batches = fabric_tagger.tagstore.find_batches(q=q, track="object_detection")
+    new_batches = [b.id for b in fabric_tagger.tagstore.find_batches(q=q, track="object_detection")]
     new_batches.remove(first_batch)
     second_batch = new_batches[0]
 
@@ -623,8 +623,8 @@ def test_replace(
     wait_tag(fabric_tagger, q.qid, timeout=5)
 
     # doing this weird stuff for now cause prod tagstore does shadowing and local one doesn't
-    batches = fabric_tagger.tagstore.find_batches(q=q, track="object_detection")
-    
+    batches = [b.id for b in fabric_tagger.tagstore.find_batches(q=q, track="object_detection")]
+
     batches.remove(first_batch)
     batches.remove(second_batch)
 
@@ -842,7 +842,7 @@ def test_no_tags_still_creates_batch(fabric_tagger, q, make_tag_args):
     batches = fabric_tagger.tagstore.find_batches(q=q)
     assert len(batches) == 1
 
-    batch = fabric_tagger.tagstore.get_batch(batches[0], q=q)
+    batch = batches[0]
     assert batch is not None
 
     report = batch.additional_info.get("tagger")

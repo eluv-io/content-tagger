@@ -68,14 +68,11 @@ def test_upload_report(upload_session, get_tag):
     ts = upload_session.tagstore
     batch = ts.find_batches(q=upload_session.dest_q, model="asr")[0]
 
-    assert batch
-
-    db_batch = ts.get_batch(batch_id=batch, q=upload_session.dest_q)
-    assert db_batch is not None
-    assert db_batch.additional_info == {"tagger": asdict(report)}
-    assert db_batch.model == "asr"
-    assert db_batch.additional_info["tagger"]
-    assert "params" in db_batch.additional_info["tagger"]
+    assert batch is not None
+    assert batch.additional_info == {"tagger": asdict(report)}
+    assert batch.model == "asr"
+    assert batch.additional_info["tagger"]
+    assert "params" in batch.additional_info["tagger"]
 
 def test_get_uploaded_sources(upload_session, get_tag):
     tags = [

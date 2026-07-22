@@ -174,7 +174,7 @@ def test_find_batches_no_filters(tag_store, job_args, q):
 
     job_ids = tag_store.find_batches(q=q)
 
-    assert set(job_ids) == {sample_job.id, job2.id}
+    assert {b.id for b in job_ids} == {sample_job.id, job2.id}
 
 
 def test_find_batches_with_qhit_filter(filesystem_tagstore, job_args, q):
@@ -187,7 +187,7 @@ def test_find_batches_with_qhit_filter(filesystem_tagstore, job_args, q):
     tag_store.create_batch(model="asr", author="user2", q=q2)
     job_ids = tag_store.find_batches(qid=sample_job.qid, q=q)
 
-    assert job_ids == [sample_job.id]
+    assert [b.id for b in job_ids] == [sample_job.id]
 
 def test_find_batches_with_qhit_filter_rest(tag_store, job_args, q):
     """Test getting jobs filtered by qid
@@ -197,7 +197,7 @@ def test_find_batches_with_qhit_filter_rest(tag_store, job_args, q):
     sample_job = tag_store.create_batch(**job_args, q=q)
     job_ids = tag_store.find_batches(qid=sample_job.qid, q=q)
 
-    assert job_ids == [sample_job.id]
+    assert [b.id for b in job_ids] == [sample_job.id]
 
 def test_find_batches_with_model_filter(tag_store, job_args, q):
     """Test getting jobs filtered by model"""
@@ -208,7 +208,7 @@ def test_find_batches_with_model_filter(tag_store, job_args, q):
 
     job_ids = tag_store.find_batches(model="llava", q=q)
 
-    assert job_ids == [sample_job.id]
+    assert [b.id for b in job_ids] == [sample_job.id]
 
 
 def test_find_batches_with_multiple_filters(tag_store, job_args, q):
@@ -221,7 +221,7 @@ def test_find_batches_with_multiple_filters(tag_store, job_args, q):
 
     job_ids = tag_store.find_batches(qid=sample_job.qid, model=sample_job.model, author=sample_job.author, q=q)
 
-    assert job_ids == [sample_job.id]
+    assert [b.id for b in job_ids] == [sample_job.id]
 
 def test_upload_tags_handles_missing_job_directory(tag_store, sample_tags, q):
     """Test proper error when job directory doesn't exist"""
@@ -248,7 +248,7 @@ def test_filter_track(tag_store, q):
     job2 = tag_store.create_batch(**{"model": "asr", "author": "user2"}, q=q)
 
     job_ids = tag_store.find_batches(model="llava", q=q)
-    assert job_ids == [job1.id]
+    assert [b.id for b in job_ids] == [job1.id]
 
     # upload tags, each associated with a distinct track
     tags_job1 = [
@@ -307,11 +307,11 @@ def test_find_batches_with_filters(tag_store, q):
 
     # Test filtering by author
     job_ids = tag_store.find_batches(author="user1", q=q)
-    assert set(job_ids) == {job1.id, job3.id}
+    assert {b.id for b in job_ids} == {job1.id, job3.id}
 
     # Test multiple filters
     job_ids = tag_store.find_batches(model="caption", author="user1", q=q)
-    assert set(job_ids) == {job3.id}
+    assert {b.id for b in job_ids} == {job3.id}
 
 def test_pagination(tag_store, job_args, sample_tags, q):
     """Test pagination functionality"""

@@ -17,14 +17,10 @@ class SourceResolver:
         """
         model_name = self.track_resolver.apply_suffix(model, track_suffix)
 
-        batch_ids = self.tagstore.find_batches(q=q, qid=q.qid, author="tagger", model=model_name)
+        batches = self.tagstore.find_batches(q=q, qid=q.qid, author="tagger", model=model_name)
 
         uploaded_sources = set()
-        for bid in batch_ids:
-            batch = self.tagstore.get_batch(bid, q=q)
-            if batch is None:
-                # tiny chance it could have been deleted
-                continue
+        for batch in batches:
             if "tagger" in batch.additional_info:
                 tagger_info: dict = batch.additional_info["tagger"]
                 uploaded_sources.update(tagger_info.get("upload_status", {}).get("uploaded_sources", []))

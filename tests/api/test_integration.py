@@ -102,7 +102,7 @@ def test_video_model(client, q):
     completed = wait_for_jobs_completion(client, [q], timeout=30)
     assert completed
     tagstore: Tagstore = client.application.config["state"]["worker"].tagstore
-    jobid = tagstore.find_batches(q=q)[0]
+    jobid = tagstore.find_batches(q=q)[0].id
     tags = tagstore.find_tags(batch_id=jobid, q=q)
     tags = sorted(tags, key=lambda x: x.start_time)
     vtags = [t for t in tags if t.frame_info is None]
@@ -221,7 +221,7 @@ def test_live_video_model(app, last_res_has_media, q):
     assert fake_worker_ref[0].call_count == expected_calls, f"Expected {expected_calls} fetch calls, got {fake_worker_ref[0].call_count}"
     
     # Get tags and verify results
-    jobid = tagstore.find_batches(q=q)[0]
+    jobid = tagstore.find_batches(q=q)[0].id
     tags = tagstore.find_tags(batch_id=jobid, q=q)
     tags = sorted(tags, key=lambda x: x.start_time)
 
@@ -308,7 +308,7 @@ def test_real_live_stream(app, q_live):
     assert final_status in ['cancelled', 'succeeded'], f"Expected Stopped or Completed, got {final_status}"
     
     # verify we have some tags
-    jobid = tagstore.find_batches(q=q_live, qid=q_live.qid)[0]
+    jobid = tagstore.find_batches(q=q_live, qid=q_live.qid)[0].id
     tags = tagstore.find_tags(batch_id=jobid, q=q_live)
     tags = sorted(tags, key=lambda x: x.start_time)
     vtags = [ t for t in tags if t.frame_info is None and t.end_time > t.start_time]
@@ -353,7 +353,7 @@ def test_asset_tag(client, q_assets):
     print(status)
     assert status.get("jobs")[0].get("tagging_progress") and not status.get("jobs")[0].get("tagging_progress").startswith("0")
     tagstore: FilesystemTagStore = client.application.config["state"]["worker"].tagstore
-    jobid = tagstore.find_batches(q=q_assets)[0]
+    jobid = tagstore.find_batches(q=q_assets)[0].id
     tags = tagstore.find_tags(q=q_assets, batch_id=jobid)
     tags = sorted(tags, key=lambda x: x.start_time)
     assert len(tags) > 0
@@ -508,7 +508,7 @@ def test_stop_live_job(app, q_live):
                 if progress > 0:
                     # Check we actually have some tags
                     try:
-                        jobid = tagstore.find_batches(q=q_live, qid=q_live.qid)[0]
+                        jobid = tagstore.find_batches(q=q_live, qid=q_live.qid)[0].id
                         tags = tagstore.find_tags(batch_id=jobid, q=q_live)
                         if len(tags) > 0:
                             some_tags_found = True

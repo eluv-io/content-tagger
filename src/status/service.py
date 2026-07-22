@@ -19,13 +19,12 @@ class TaggingStatusService:
         self.track_resolver = track_resolver
 
     def get_content_summary(self, q: Content) -> ContentStatusResponse:
-        batch_ids = self.tagstore.find_batches(q=q, qid=q.qid, author="tagger")
+        batches = self.tagstore.find_batches(q=q, qid=q.qid, author="tagger")
 
-        # Collect all batches and group by model
+        # Group by model
         batches_by_model: dict[str, list[Batch]] = defaultdict(list)
-        for batch_id in batch_ids:
-            batch = self.tagstore.get_batch(batch_id, q=q)
-            if batch is None or "tagger" not in batch.additional_info:
+        for batch in batches:
+            if "tagger" not in batch.additional_info:
                 continue
             batches_by_model[batch.model].append(batch)
 
@@ -71,13 +70,12 @@ class TaggingStatusService:
     ) -> ModelStatusResponse:
         track_name = self.track_resolver.resolve(model)[0].name
 
-        batch_ids = self.tagstore.find_batches(q=q, qid=q.qid, author="tagger", model=model)
+        found_batches = self.tagstore.find_batches(q=q, qid=q.qid, author="tagger", model=model)
 
-        batches: list[Batch] = []
-        for batch_id in batch_ids:
-            batch = self.tagstore.get_batch(batch_id, q=q)
-            if batch is not None and batch.model == model and "tagger" in batch.additional_info:
-                batches.append(batch)
+        batches: list[Batch] = [
+            batch for batch in found_batches
+            if batch.model == model and "tagger" in batch.additional_info
+        ]
 
         if not batches:
             raise MissingResourceError(f"No jobs found for model '{model}' on content '{q.qid}'")

@@ -161,7 +161,8 @@ class FilesystemTagStore(Tagstore):
         if not sources or not model:
             return
 
-        for batch_id in self.find_batches(q, model=model):
+        for batch in self.find_batches(q, model=model):
+            batch_id = batch.id
             for track in self._get_track_dirs_for_batch(batch_id):
                 for source in sources:
                     tags_path = self._get_tags_path(batch_id, track, source)
@@ -203,7 +204,7 @@ class FilesystemTagStore(Tagstore):
             batch_ids = [filters['batch_id']]
         else:
             # Get all matching batches
-            batch_ids = self.find_batches(q, **batch_filters)
+            batch_ids = [batch.id for batch in self.find_batches(q, **batch_filters)]
 
         # track is a per-tag property, filtered at the file level
         track = filters.get('track')
@@ -248,10 +249,10 @@ class FilesystemTagStore(Tagstore):
         
         return filtered_tags
 
-    def find_batches(self, q: Content, **filters) -> list[str]:
+    def find_batches(self, q: Content, **filters) -> list[Batch]:
         """
-        Find batch IDs with flexible filtering.
-        
+        Find batches with flexible filtering.
+
         Supported filters:
         - stream: str
         - model: str
@@ -261,18 +262,18 @@ class FilesystemTagStore(Tagstore):
         - limit: int
         - offset: int
         """
-        batch_ids = []
-        
+        batches = []
+
         # Iterate through all directories in base_path
         if not os.path.exists(self.base_path):
-            return batch_ids
+            return batches
 
         for batch_id, batch_dir in self._get_batch_ids_with_paths():
 
             # Skip if not a directory
             if not os.path.isdir(batch_dir):
                 continue
-            
+
             # Get batch metadata to check filters
             try:
                 batch = self.get_batch(batch_id, q)
@@ -281,7 +282,7 @@ class FilesystemTagStore(Tagstore):
 
             if batch is None:
                 continue
-            
+
             # Apply filters
             if 'model' in filters and batch.model != filters['model']:
                 continue
@@ -291,19 +292,19 @@ class FilesystemTagStore(Tagstore):
                 continue
             if 'timestamp_lte' in filters and batch.timestamp > filters['timestamp_lte']:
                 continue
-            
-            batch_ids.append(batch_id)
-        
+
+            batches.append(batch)
+
         # Apply pagination
         if 'offset' in filters:
             offset = filters['offset']
-            batch_ids = batch_ids[offset:]
-        
+            batches = batches[offset:]
+
         if 'limit' in filters:
             limit = filters['limit']
-            batch_ids = batch_ids[:limit]
-        
-        return batch_ids
+            batches = batches[:limit]
+
+        return batches
 
     def delete_batch(self, batch_id: str, q: Content) -> None:
         dir = self._get_batch_dir(batch_id)

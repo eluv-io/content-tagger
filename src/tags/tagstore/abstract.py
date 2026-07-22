@@ -60,7 +60,7 @@ class Tagstore(Protocol):
     def get_batch(self, batch_id: str, q: Content) -> Batch | None:
         ...
 
-    def find_batches(self, q: Content, **filters) -> list[str]:
+    def find_batches(self, q: Content, **filters) -> list[Batch]:
         ...
 
     def count_tags(self, q: Content, **filters) -> int:
