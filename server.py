@@ -90,7 +90,7 @@ def _register_error_handlers(app: Flask) -> None:
     def handle_generic_exception(e):
         # let flask-smorest / werkzeug handle HTTP errors (validation 422, 404, ...)
         if isinstance(e, HTTPException):
-            return e
+            return e.get_response()
         logger.opt(exception=e).error("Unhandled exception in API")
         return jsonify({'message': "An unexpected error occurred", 'error': str(e)}), 500
 
