@@ -64,7 +64,7 @@ if __name__ == '__main__':
     parser.add_argument('--output-path', type=str, required=True)
     parser.add_argument('--params', type=str, required=False, help='Runtime configuration JSON')
 
-    print(f"GOT AUTH: {os.environ.get('ELV_TOKEN')}")
+    print(f"GOT AUTH SET: {bool(os.environ.get('ELV_TOKEN'))}")
     
     args = parser.parse_args()
 
