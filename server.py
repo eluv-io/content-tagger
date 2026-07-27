@@ -42,7 +42,7 @@ from app_config import AppConfig
 _SMOREST_DEFAULTS = {
     "API_TITLE": "Eluvio Tagger API",
     "API_VERSION": "1.0.0",
-    "OPENAPI_VERSION": "3.0.2",
+    "OPENAPI_VERSION": "3.2.0",
     # serve the spec + Swagger UI (replaces the old hand-maintained docs/api/openapi.html)
     "OPENAPI_URL_PREFIX": "/",
     "OPENAPI_JSON_PATH": "openapi.json",

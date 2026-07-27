@@ -71,9 +71,11 @@
             "name": "limit",
             "description": "Maximum number of jobs to return. Null for no limit.",
             "schema": {
-              "type": "integer",
-              "default": null,
-              "nullable": true
+              "type": [
+                "integer",
+                "null"
+              ],
+              "default": null
             },
             "required": false
           },
@@ -82,9 +84,11 @@
             "name": "qid",
             "description": "Filter by content id.",
             "schema": {
-              "type": "string",
-              "default": null,
-              "nullable": true
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
             },
             "required": false
           },
@@ -93,9 +97,11 @@
             "name": "status",
             "description": "Filter by job status.",
             "schema": {
-              "type": "string",
-              "default": null,
-              "nullable": true
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
             },
             "required": false
           },
@@ -104,9 +110,11 @@
             "name": "tenant",
             "description": "Filter by tenant. Requires tenant admin privileges.",
             "schema": {
-              "type": "string",
-              "default": null,
-              "nullable": true
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
             },
             "required": false
           },
@@ -115,9 +123,11 @@
             "name": "user",
             "description": "Filter by user address. Provided authorization must match the authenticated user unless querying as tenant admin.",
             "schema": {
-              "type": "string",
-              "default": null,
-              "nullable": true
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
             },
             "required": false
           },
@@ -126,9 +136,11 @@
             "name": "model",
             "description": "Filter by model name (e.g. \"asr\", \"celeb\").",
             "schema": {
-              "type": "string",
-              "default": null,
-              "nullable": true
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
             },
             "required": false
           },
@@ -137,9 +149,11 @@
             "name": "title",
             "description": "Filter by content title (case-insensitive substring match).",
             "schema": {
-              "type": "string",
-              "default": null,
-              "nullable": true
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
             },
             "required": false
           }
@@ -198,9 +212,11 @@
             "name": "limit",
             "description": "Maximum number of jobs to return. Null for no limit.",
             "schema": {
-              "type": "integer",
-              "default": null,
-              "nullable": true
+              "type": [
+                "integer",
+                "null"
+              ],
+              "default": null
             },
             "required": false
           },
@@ -209,9 +225,11 @@
             "name": "qid",
             "description": "Filter by content id.",
             "schema": {
-              "type": "string",
-              "default": null,
-              "nullable": true
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
             },
             "required": false
           },
@@ -220,9 +238,11 @@
             "name": "status",
             "description": "Filter by job status.",
             "schema": {
-              "type": "string",
-              "default": null,
-              "nullable": true
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
             },
             "required": false
           },
@@ -231,9 +251,11 @@
             "name": "tenant",
             "description": "Filter by tenant. Requires tenant admin privileges.",
             "schema": {
-              "type": "string",
-              "default": null,
-              "nullable": true
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
             },
             "required": false
           },
@@ -242,9 +264,11 @@
             "name": "user",
             "description": "Filter by user address. Provided authorization must match the authenticated user unless querying as tenant admin.",
             "schema": {
-              "type": "string",
-              "default": null,
-              "nullable": true
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
             },
             "required": false
           },
@@ -253,9 +277,11 @@
             "name": "model",
             "description": "Filter by model name (e.g. \"asr\", \"celeb\").",
             "schema": {
-              "type": "string",
-              "default": null,
-              "nullable": true
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
             },
             "required": false
           },
@@ -264,9 +290,11 @@
             "name": "title",
             "description": "Filter by content title (case-insensitive substring match).",
             "schema": {
-              "type": "string",
-              "default": null,
-              "nullable": true
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
             },
             "required": false
           }
@@ -404,9 +432,11 @@
             "in": "query",
             "name": "tenant",
             "schema": {
-              "type": "string",
-              "default": null,
-              "nullable": true
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
             },
             "required": false
           }
@@ -531,7 +561,7 @@
       "description": "Per-content tagging status summaries."
     }
   ],
-  "openapi": "3.0.2",
+  "openapi": "3.2.0",
   "components": {
     "schemas": {
       "Error": {
@@ -642,15 +672,19 @@
             "description": "Scope identifier to remove ambiguity"
           },
           "start_time": {
-            "type": "integer",
-            "description": "Start tagging at this point in the media stream (in seconds)",
-            "nullable": true
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Start tagging at this point in the media stream (in seconds)"
           },
           "end_time": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "description": "End tagging at this point in the media stream (in seconds)",
-            "example": 600,
-            "nullable": true
+            "example": 600
           },
           "chunk_size": {
             "type": "integer",
@@ -672,7 +706,10 @@
             "description": "Scope identifier to remove ambiguity"
           },
           "assets": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "description": "List of asset paths to tag",
             "example": [
               "assets/hello1.jpg",
@@ -680,8 +717,7 @@
             ],
             "items": {
               "type": "string"
-            },
-            "nullable": true
+            }
           }
         },
         "additionalProperties": false
@@ -703,9 +739,11 @@
             "description": "Tagging interval size (in seconds)"
           },
           "max_duration": {
-            "type": "integer",
-            "description": "Maximum amount of content from livestream to tag (in seconds)",
-            "nullable": true
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Maximum amount of content from livestream to tag (in seconds)"
           }
         },
         "additionalProperties": false
@@ -955,22 +993,28 @@
         "type": "object",
         "properties": {
           "destination_qid": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "default": null,
-            "description": "Content where tags should be written to. Leaving empty will write to the same content the model is running on.",
-            "nullable": true
+            "description": "Content where tags should be written to. Leaving empty will write to the same content the model is running on."
           },
           "replace": {
-            "type": "boolean",
+            "type": [
+              "boolean",
+              "null"
+            ],
             "default": null,
-            "description": "Replace already existing tagstore tags. Set to true to retag, set to false to enable diff-based tagging.",
-            "nullable": true
+            "description": "Replace already existing tagstore tags. Set to true to retag, set to false to enable diff-based tagging."
           },
           "max_fetch_retries": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "default": null,
-            "description": "If a fetch operation fails, we can retry this many times before the job is marked as failed.",
-            "nullable": true
+            "description": "If a fetch operation fails, we can retry this many times before the job is marked as failed."
           },
           "scope": {
             "type": "object",
@@ -1059,11 +1103,7 @@
                 "stream": "spanish_audio_5_1"
               }
             },
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/TaggerOptions"
-              }
-            ]
+            "$ref": "#/components/schemas/TaggerOptions"
           }
         },
         "required": [
@@ -1076,11 +1116,7 @@
         "properties": {
           "options": {
             "description": "Knobs that apply to all tagger jobs in the request.",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/TaggerOptions"
-              }
-            ]
+            "$ref": "#/components/schemas/TaggerOptions"
           },
           "jobs": {
             "type": "array",
@@ -1123,10 +1159,12 @@
             }
           },
           "error": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Error message if the job failed",
-            "example": null,
-            "nullable": true
+            "example": null
           }
         },
         "additionalProperties": false
@@ -1205,8 +1243,7 @@
                 "$ref": "#/components/schemas/WarningResponse"
               },
               {
-                "type": "object",
-                "nullable": true
+                "type": "null"
               }
             ]
           }
@@ -1278,10 +1315,12 @@
             "example": 0.56
           },
           "error": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Error message if the job failed or was cancelled",
-            "example": null,
-            "nullable": true
+            "example": null
           },
           "tag_details": {
             "description": "Detailed progress information for the tagging job. Null if the job is still on the queue.",
@@ -1290,8 +1329,7 @@
                 "$ref": "#/components/schemas/TagDetails"
               },
               {
-                "type": "object",
-                "nullable": true
+                "type": "null"
               }
             ]
           }
@@ -1312,10 +1350,12 @@
             "example": 0
           },
           "limit": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "description": "Maximum number of items requested, or null for no limit",
-            "example": null,
-            "nullable": true
+            "example": null
           },
           "count": {
             "type": "integer",
@@ -1561,8 +1601,7 @@
                 "$ref": "#/components/schemas/JobUploadStatusSummary"
               },
               {
-                "type": "object",
-                "nullable": true
+                "type": "null"
               }
             ]
           }
