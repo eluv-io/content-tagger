@@ -31,7 +31,6 @@ from src.common.logging import logger
 
 from src.api.tagging.handlers import tagging_blp
 from src.api.content_status.handlers import content_status_blp
-from src.api.extension.handlers import extension_blp
 from src.api.tagging.model_param_schemas import MODEL_PARAM_SCHEMAS, model_params_component_name
 from src.api.tagging.scope_schemas import SCOPE_SCHEMAS, ScopeSchema, scope_component_name
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
@@ -119,7 +118,6 @@ def configure_routes(app: Flask) -> None:
 
     api.register_blueprint(tagging_blp)
     api.register_blueprint(content_status_blp)
-    api.register_blueprint(extension_blp)
 
 def _build_worker(cfg: AppConfig) -> TaggerWorker:
     qfactory = QAPIFactory(cfg.content)

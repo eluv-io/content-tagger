@@ -6,6 +6,9 @@ from flask import request, current_app
 from flask_smorest import Blueprint
 
 from src.api.arg_resolver import ArgsResolver
+from src.api_extensions.jobs import DeleteJobQuerySchema, DeleteJobRequest, delete_job
+from src.api_extensions.models import ListingResponse, ListingResponseSchema, list_models
+from src.common.model import ModelConfig
 from src.service.abstract import TaggerService
 from src.api.tagging.request_format import (
     StartJobsRequestSchema,
@@ -27,9 +30,10 @@ from src.api.tagging.request_mapping import *
 from src.api.tagging.response_mapping import *
 from src.service.impl.queue_based import QueueService
 from src.status.get_info import UserInfoResolver
+from src.tagging.fabric_tagging.queue.abstract import JobStore
 
 tagging_blp = Blueprint(
-    "tagging", __name__, description="Start, query and stop tagging jobs."
+    "Operate Tagging", __name__, description="Start, query and stop tagging jobs."
 )
 
 
@@ -168,3 +172,29 @@ def handle_stop_content(qid: str) -> StopTaggingResponse:
     stop_res = tagger.stop(q.qid, None)
 
     return map_stop_results_to_response(stop_res)
+
+@tagging_blp.route("/models", methods=["GET"])
+@tagging_blp.response(200, ListingResponseSchema)
+def handle_list_models() -> ListingResponse:
+    """List available models"""
+    model_configs: dict[str, ModelConfig] = current_app.config["state"]["model_configs"]
+
+    return list_models(model_configs)
+
+@tagging_blp.route("/jobs/<job_id>", methods=["DELETE"])
+@tagging_blp.arguments(DeleteJobQuerySchema, location="query")
+@tagging_blp.response(204)
+def handle_delete_job(args: dict, job_id: str):
+    """Delete an inactive job"""
+    token = get_authorization(request)
+
+    req = DeleteJobRequest(
+        job_id=job_id,
+        tenant=args.get("tenant"),
+        authorization=token,
+    )
+
+    user_info_resolver: UserInfoResolver = current_app.config["state"]["user_info_resolver"]
+    js: JobStore = current_app.config["state"]["jobstore"]
+
+    delete_job(req, user_info_resolver=user_info_resolver, js=js)

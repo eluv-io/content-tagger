@@ -6,7 +6,7 @@ from src.status.format import ContentStatusResponse, ContentStatusResponseSchema
 from src.status.service import TaggingStatusService
 
 content_status_blp = Blueprint(
-    "content_status", __name__, description="Per-content tagging status summaries."
+    "Tagging History", __name__, description="Per-content tagging status summaries."
 )
 
 
