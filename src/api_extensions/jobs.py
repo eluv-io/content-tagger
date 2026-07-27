@@ -28,6 +28,7 @@ def delete_job(
     user_info_resolver: UserInfoResolver,
     js: JobStore
 ) -> None:
+    """Delete an inactive job"""
     user_info = user_info_resolver.get_user_info(
         auth=req.authorization,
         tenant_id=req.tenant

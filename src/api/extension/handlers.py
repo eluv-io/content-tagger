@@ -16,6 +16,7 @@ extension_blp = Blueprint(
 @extension_blp.route("/models", methods=["GET"])
 @extension_blp.response(200, ListingResponseSchema)
 def handle_list_models() -> ListingResponse:
+    """List available models"""
     model_configs: dict[str, ModelConfig] = current_app.config["state"]["model_configs"]
 
     return list_models(model_configs)
@@ -25,6 +26,7 @@ def handle_list_models() -> ListingResponse:
 @extension_blp.arguments(DeleteJobQuerySchema, location="query")
 @extension_blp.response(204)
 def handle_delete_job(args: dict, job_id: str):
+    """Delete an inactive job"""
     token = get_authorization(request)
 
     req = DeleteJobRequest(

@@ -13,6 +13,7 @@ content_status_blp = Blueprint(
 @content_status_blp.route("/<qid>/tag-status", methods=["GET"])
 @content_status_blp.response(200, ContentStatusResponseSchema)
 def handle_content_status(qid: str) -> ContentStatusResponse:
+    """Get tagging status summary for a content object"""
     q = authorize(qid, request)
 
     service: TaggingStatusService = current_app.config["state"]["status_service"]
@@ -23,6 +24,7 @@ def handle_content_status(qid: str) -> ContentStatusResponse:
 @content_status_blp.route("/<qid>/tag-status/<model>", methods=["GET"])
 @content_status_blp.response(200, ModelStatusResponseSchema)
 def handle_model_status(qid: str, model: str) -> ModelStatusResponse:
+    """Get tagging status for a specific model on a content object"""
     q = authorize(qid, request)
 
     service: TaggingStatusService = current_app.config["state"]["status_service"]

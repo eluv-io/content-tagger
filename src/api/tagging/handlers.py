@@ -37,6 +37,10 @@ tagging_blp = Blueprint(
 @tagging_blp.arguments(StartJobsRequestSchema)
 @tagging_blp.response(200, StartTaggingResponseSchema)
 def handle_tag(args: StartJobsRequest, qid: str) -> StartTaggingResponse:
+    """Start Tagging
+    
+    Start a batch of tagging jobs for a content object. The request body contains a list of models to run as well as any global options or model specific runtime parameters.
+    """
     q = authorize(qid, request)
 
     logger.debug(args)
@@ -77,6 +81,10 @@ def _execute_tagging(q: Content, tag_args: list[TagArgs]) -> StartTaggingRespons
 @tagging_blp.arguments(StatusRequestSchema, location="query")
 @tagging_blp.response(200, StatusResponseSchema)
 def handle_status_content(status_req: StatusRequest, qid: str) -> StatusResponse:
+    """Get job statuses for a content object
+
+    Get the status of all jobs for a content object. Requires the content's qid in the path and optional filters in the query string.
+    """
     status_secret = os.environ.get("STATUS_SECRET", None)
 
     if status_secret is not None and get_authorization(request) == status_secret:
@@ -99,11 +107,10 @@ def handle_status_content(status_req: StatusRequest, qid: str) -> StatusResponse
 @tagging_blp.arguments(StatusRequestSchema, location="query")
 @tagging_blp.response(200, StatusResponseSchema)
 def handle_status(status_req: StatusRequest) -> StatusResponse:
-    """Global job-status endpoint. Requires ?tenant= filter.
+    """Get job statuses for a tenant or user
 
-    Authentication: the caller's auth token is verified by picking the first
-    returned job's qid and confirming get_tenant(qid, auth) matches the
-    requested tenant.
+    Get the status of all jobs for a tenant or user. By default the API returns jobs for the authenticated user. 
+    If a tenant id is specified, the API will return jobs for that tenant only if the caller is a tenant admin.
     """
     auth = get_authorization(request)
 
@@ -134,20 +141,26 @@ def _get_status_args_and_authorize(status_req: StatusRequest, auth: str, user_in
 
     return args
 
-@tagging_blp.route("/<qid>/stop/<feature>", methods=["POST"])
+@tagging_blp.route("/<qid>/stop/<model>", methods=["POST"])
 @tagging_blp.response(200, StopTaggingResponseSchema)
-def handle_stop_model(qid: str, feature: str) -> StopTaggingResponse:
+def handle_stop_model(qid: str, model: str) -> StopTaggingResponse:
+    """Stop tagging jobs by model
+    
+    Stop a tagging job for a specific model on a given content object (qid).
+    """
     q = authorize(qid, request)
 
     tagger: TaggerService = current_app.config["state"]["service"]
 
-    stop_res = tagger.stop(q.qid, feature)
+    stop_res = tagger.stop(q.qid, model)
 
     return map_stop_results_to_response(stop_res)
 
 @tagging_blp.route("/<qid>/stop", methods=["POST"])
 @tagging_blp.response(200, StopTaggingResponseSchema)
 def handle_stop_content(qid: str) -> StopTaggingResponse:
+    """Stop all jobs for a content object
+    """
     q = authorize(qid, request)
 
     tagger: TaggerService = current_app.config["state"]["service"]
