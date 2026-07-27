@@ -1,4 +1,9 @@
 {
+  "servers": [
+    {
+      "url": "https://ai.contentfabric.io/tagging-live"
+    }
+  ],
   "paths": {
     "/{qid}/tag": {
       "post": {

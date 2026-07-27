@@ -48,6 +48,9 @@ _SMOREST_DEFAULTS = {
     "OPENAPI_JSON_PATH": "openapi.json",
     "OPENAPI_SWAGGER_UI_PATH": "/docs",
     "OPENAPI_SWAGGER_UI_URL": "https://cdn.jsdelivr.net/npm/swagger-ui-dist/",
+    "API_SPEC_OPTIONS": {
+        "servers": [{"url": "https://ai.contentfabric.io/tagging-live"}],
+    },
 }
 
 
