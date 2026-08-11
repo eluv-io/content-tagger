@@ -4,8 +4,10 @@ content:
   live_media_url: https://host-76-74-29-5.contentfabric.io/config?self&qspace=main
 
 tagstore:
-  base_url: https://ai.contentfabric.io/tagstore
-  
+
+vectorstore:
+  base_url: "https://ai-04.contentfabric.io/vector_store"
+
 tag_runner:
   poll_interval: 5.0
   max_jobs: 5

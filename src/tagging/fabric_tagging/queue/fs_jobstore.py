@@ -70,6 +70,7 @@ class FsJobStore:
             track_suffix=p.get("track_suffix", ""),
             replace=p["replace"],
             destination_qid=p["destination_qid"],
+            index_qid=p.get("index_qid", ""),
             max_fetch_retries=p["max_fetch_retries"],
             caller_info=p.get("caller_info", {})
         )

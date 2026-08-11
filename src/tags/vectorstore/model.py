@@ -4,8 +4,6 @@ from dataclasses import dataclass
 ## Config
 
 @dataclass
-class TagstoreConfig:
-    base_dir: str=""
+class VectorstoreConfig:
     base_url: str=""
     timeout: int=10
-    auth_token: str | None = None

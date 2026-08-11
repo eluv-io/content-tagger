@@ -25,6 +25,7 @@ from src.tagging.scheduling.model import SysConfig
 from src.tagging.tag_runner import TagRunner, TagRunnerConfig
 from src.tags.track_resolver import TrackArgs, LabelResolverConfig
 from src.tags.tagstore.model import TagstoreConfig
+from src.tags.vectorstore.model import VectorstoreConfig
 
 @pytest.fixture()
 def tagger_config(static_dir) -> TaggerWorkerConfig:
@@ -67,6 +68,7 @@ def app_config(static_dir, tagger_config, content_config, fetcher_config, contai
         tagstore=TagstoreConfig(
             base_dir=os.path.join(static_dir, "tags")
         ),
+        vectorstore=VectorstoreConfig(),
         system=SysConfig(gpus=["gpu", "disabled", "gpu"], resources={"cpu_juice": 16}),
         fetcher=fetcher_config,
         container_registry=container_registry_config,
@@ -270,6 +272,7 @@ class MockArgsResolver:
                 replace=False,
                 track_suffix=job.track_suffix,
                 destination_qid="",
+                index_qid=job.overrides.index_qid or "",
                 caller_info=job.caller_info,
                 max_fetch_retries=3,
             ))

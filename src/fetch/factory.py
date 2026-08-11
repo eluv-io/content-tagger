@@ -17,14 +17,14 @@ from src.fetch.cache import cache_by_qhash
 from src.fetch.rate_limit import FetchRateLimiter
 from src.tags.reader.abstract import TagReader
 from src.tags.reader.impl import INTERVAL_TRACK_PATTERN, IntervalTagReader, TagReaderImpl
-from src.tags.tagstore.abstract import Tagstore
+from src.tags.datastore.abstract import Datastore
 
 class FetchFactory:
     def __init__(
         self,
         config: FetcherConfig,
         # we need this dependency for the tag-aligned fetcher
-        ts: Tagstore,
+        ts: Datastore,
         qfactory: QAPIFactory
     ):
         self.config = config

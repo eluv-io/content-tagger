@@ -8,7 +8,6 @@ from src.tagging.fabric_tagging.queue.model import (
     ListJobArgs,
     UpdateJobRequest,
 )
-from src.service.model import TagDetails
 
 
 # ---------------------------------------------------------------------------
@@ -22,6 +21,7 @@ def _make_tag_args(feature: str = "test_feature") -> TagArgs:
         scope=VideoScope(stream="video", start_time=0, end_time=60),
         replace=False,
         destination_qid="iq__dest",
+        index_qid="iq__index",
         track_suffix="",
         caller_info={},
         max_fetch_retries=3,

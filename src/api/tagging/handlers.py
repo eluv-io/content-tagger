@@ -52,6 +52,9 @@ def handle_tag(args: StartJobsRequest, qid: str) -> StartTaggingResponse:
     if args.options.destination_qid:
         authorize(args.options.destination_qid, request)
 
+    if args.options.index_qid:
+        authorize(args.options.index_qid, request)
+
     arg_resolver: ArgsResolver = current_app.config["state"]["arg_resolver"]
 
     with timeit("resolving tag args"):

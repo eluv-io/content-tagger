@@ -8,9 +8,11 @@ import dotenv
 from src.fetch.model import FetcherConfig, VideoScope
 from src.tagging.fabric_tagging.model import TagArgs
 from src.tagging.fabric_tagging.queue.abstract import JobStore
-from src.tags.tagstore.abstract import Tagstore
+from src.tags.datastore.abstract import Datastore
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.tags.tagstore.rest_tagstore import RestTagstore
+from src.tags.vectorstore.factory import VectorstoreFactory
+from src.tags.vectorstore.model import VectorstoreConfig
 from src.common.content import Content, ContentConfig, QAPIFactory
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
 from src.status.get_info import UserInfo, UserInfoResolver
@@ -116,13 +118,29 @@ def filesystem_tagstore(temp_dir: str) -> FilesystemTagStore:
     return store
 
 @pytest.fixture
-def tag_store(rest_tagstore: RestTagstore, filesystem_tagstore: FilesystemTagStore) -> Tagstore:
+def tag_store(rest_tagstore: RestTagstore, filesystem_tagstore: FilesystemTagStore) -> Datastore:
     """Create appropriate tagstore based on TEST_TAGSTORE_HOST environment variable"""
     if os.getenv("TEST_TAGSTORE_HOST"):
         return rest_tagstore
     else:
         return filesystem_tagstore
-    
+
+"""Vectorstore Fixtures"""
+
+@pytest.fixture
+def index_qid() -> str:
+    return "iq__testvectorindex"
+
+@pytest.fixture
+def vectorstores() -> VectorstoreFactory:
+    """A factory backed by in-memory mock vectorstores"""
+    return VectorstoreFactory(VectorstoreConfig())
+
+@pytest.fixture
+def vector_store(vectorstores: VectorstoreFactory, index_qid: str) -> Datastore:
+    return vectorstores.create(index_qid)
+
+
 """Fetcher Fixtures"""
 
 @pytest.fixture
@@ -154,6 +172,7 @@ def make_tag_args():
         feature: str = "caption",
         stream: str | None = None,
         destination_qid: str = "",
+        index_qid: str = "",
         # default to true for testing, but in real prod it's false
         replace: bool = True,
         run_config: dict | None = None,
@@ -171,6 +190,7 @@ def make_tag_args():
             replace=replace,
             track_suffix=track_suffix,
             destination_qid=destination_qid,
+            index_qid=index_qid,
             caller_info={},
             max_fetch_retries=max_fetch_retries
         )

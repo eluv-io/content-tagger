@@ -8,10 +8,10 @@ import time
 import uuid
 
 from src.common.content import Content
-from src.tags.tagstore.model import *
-from src.tags.tagstore.abstract import Tagstore
+from src.tags.datastore.model import *
+from src.tags.datastore.abstract import Datastore
 
-class FilesystemTagStore(Tagstore):
+class FilesystemTagStore(Datastore):
     def __init__(self, base_dir: str):
         self.base_path = base_dir
         os.makedirs(self.base_path, exist_ok=True)
@@ -104,6 +104,9 @@ class FilesystemTagStore(Tagstore):
         """
         if not tags:
             return
+
+        if any(is_vector(tag.data) for tag in tags):
+            raise ValueError("a tagstore cannot store vectors, write them to a vectorstore instead")
 
         batch_dir = self._get_batch_dir(batch_id)
         if not os.path.exists(batch_dir):
@@ -233,7 +236,7 @@ class FilesystemTagStore(Tagstore):
             
             # Text search
             if 'text_contains' in filters:
-                if filters['text_contains'].lower() not in tag.text.lower():
+                if filters['text_contains'].lower() not in str(tag.data).lower():
                     continue
             
             filtered_tags.append(tag)

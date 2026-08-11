@@ -22,6 +22,10 @@ The main class providing a unified interface for running tagging containers.
 - `start()` – starts the container.  
 - `tags()` – reads the tag output directory and formats the data into internal tag structs. 
 
+**Tag output:** a `tag` message carries either text (`"tag": "a person"`) or an embedding
+(`"vector": [0.1, 0.2, ...]`); both land in the `data` field of a `ModelTag`. A model emitting
+vectors requires the caller to have specified an `index_qid`.
+
 ---
 
 ### **LiveTagContainer**

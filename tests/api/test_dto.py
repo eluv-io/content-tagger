@@ -677,3 +677,33 @@ def test_status_request_schema():
 
     req = schema.load({"start": "2", "status": "done", "tenant": "fox", "user": "bob"})
     assert req == StatusRequest(start=2, limit=None, status="done", tenant="fox", user="bob")
+
+def test_index_qid_defaults_empty(resolver, mock_content):
+    """index_qid comes from the request-level options and can be overridden per job."""
+    args = StartJobsRequest(
+        options=TaggerOptions(),
+        jobs=[
+            JobSpec(model="object_detection")
+        ],
+    )
+
+    resolver.is_live_content = Mock(return_value=False)
+    result = resolver.resolve(args, mock_content)
+
+    assert result[0].index_qid == ""
+
+def test_index_qid_from_request_options(resolver, mock_content):
+    """index_qid comes from the request-level options and can be overridden per job."""
+    args = StartJobsRequest(
+        options=TaggerOptions(index_qid="iq__index"),
+        jobs=[
+            JobSpec(model="object_detection"),
+            JobSpec(model="feature1", overrides=TaggerOptions(index_qid="iq__other_index")),
+        ],
+    )
+
+    resolver.is_live_content = Mock(return_value=False)
+    result = resolver.resolve(args, mock_content)
+
+    assert result[0].index_qid == "iq__index"
+    assert result[1].index_qid == "iq__other_index"

@@ -124,7 +124,7 @@ def test_upload_tags_appends_to_existing(tag_store, job_args, q):
     # Verify initial upload worked
     llava_tags = tag_store.find_tags(batch_id=sample_job.id, q=q)
     assert len(llava_tags) == 1
-    assert llava_tags[0].text == "person"
+    assert llava_tags[0].data == "person"
 
     # Upload additional tags
     additional_tags = [
@@ -135,7 +135,7 @@ def test_upload_tags_appends_to_existing(tag_store, job_args, q):
     # Check that both tags are present
     llava_tags = tag_store.find_tags(batch_id=sample_job.id, q=q)
     assert len(llava_tags) == 2
-    assert {tag.text for tag in llava_tags} == {"person", "car"}
+    assert {tag.data for tag in llava_tags} == {"person", "car"}
 
 
 def test_upload_empty_tags_list(tag_store, job_args, q):
@@ -155,7 +155,7 @@ def test_get_tags_returns_all_tags(tag_store, job_args, sample_tags, q):
     all_tags = tag_store.find_tags(batch_id=sample_job.id, q=q)
 
     assert len(all_tags) == 4
-    tags = {tag.text for tag in all_tags}
+    tags = {tag.data for tag in all_tags}
     assert tags == {"person", "car", "hello world", "building"}
 
 
@@ -264,10 +264,10 @@ def test_filter_track(tag_store, q):
     # filter tags by track
     tags = tag_store.find_tags(track="llava", q=q)
     assert len(tags) == 1
-    assert tags[0].text == "person"
+    assert tags[0].data == "person"
     tags = tag_store.find_tags(track="asr", q=q)
     assert len(tags) == 1
-    assert tags[0].text == "hello world"
+    assert tags[0].data == "hello world"
 
 
 def test_find_tags_basic_filters(tag_store, job_args, sample_tags, q):
@@ -282,7 +282,7 @@ def test_find_tags_basic_filters(tag_store, job_args, sample_tags, q):
     # Test filtering by text content
     tags = tag_store.find_tags(text_contains="hello", q=q)
     assert len(tags) == 1
-    assert tags[0].text == "hello world"
+    assert tags[0].data == "hello world"
 
 
 def test_find_tags_time_range_filters(tag_store, job_args, sample_tags, q):
@@ -383,7 +383,7 @@ def test_tag_appending(tag_store, job_args, q):
     # Check that both tags are present
     all_tags = tag_store.find_tags(batch_id=sample_job.id, q=q)
     assert len(all_tags) == 2
-    assert {tag.text for tag in all_tags} == {"person", "car"}
+    assert {tag.data for tag in all_tags} == {"person", "car"}
 
 
 def test_source_with_slash_encoding(filesystem_tagstore, job_args, q):
@@ -405,13 +405,13 @@ def test_source_with_slash_encoding(filesystem_tagstore, job_args, q):
     assert len(all_tags) == 3
 
     # Verify original source names are preserved in the tag data
-    tags = {tag.text for tag in all_tags}
+    tags = {tag.data for tag in all_tags}
     assert tags == {"person", "car", "building"}
 
     # Test filtering by source names with slashes works
     video_tags = tag_store.find_tags(sources=["video/segment_1"], q=q)
     assert len(video_tags) == 1
-    assert video_tags[0].text == "person"
+    assert video_tags[0].data == "person"
 
 def test_delete_tags_by_source(tag_store, q):
     """Test that delete_tags_by_source removes only tags matching the given sources
@@ -433,11 +433,11 @@ def test_delete_tags_by_source(tag_store, q):
 
     # source_a tags in the llava-model batch are gone
     llava_remaining = tag_store.find_tags(batch_id=llava_job.id, q=q)
-    assert {t.text for t in llava_remaining} == {"building"}
+    assert {t.data for t in llava_remaining} == {"building"}
 
     # source_a tags in the asr-model batch are untouched (different model)
     asr_remaining = tag_store.find_tags(batch_id=asr_job.id, q=q)
-    assert {t.text for t in asr_remaining} == {"hello world"}
+    assert {t.data for t in asr_remaining} == {"hello world"}
 
 
 def test_create_track(tag_store, q):

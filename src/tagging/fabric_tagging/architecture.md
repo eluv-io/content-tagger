@@ -33,13 +33,27 @@ This module is used to orchestrate the flow from downloading source media, runni
     - No synchronization needed between background tagstore uploader and the main job thread which uploads when done.
     - Status responses will never be in an inconsistent state. (arguably not that important)
 
-## Tagstore uploading
+## Datastore uploading
 - A `source` is a concept which represents some piece of a content: likely a part or an asset. (See `src/fetch/model.py:Source`)
     - It contains the source name (i.e asset path or part hash)
     - The associated local file path
     - Optionally an `offset` in the case of video parts which informs the uploader how to adjust the timestamps
 - The `TagContainer` returns a `ModelOutput` type (through it's `tags` method) which contains the local file path and it's associated tags (which are timestamped with respect the media chunk not the content object, since the `TagContainer` doesn't care about the fabric)
 - The tagger keeps a mapping from the source media path to the `Source` object returned by the `Fetcher`. This way, it can take the tags from the container and align their timestamps with the content object using the offset. So tags uplaoded to the tagstore contain the global timestamp not the local one. 
+
+### Uploader
+- A `ModelTag`'s payload is its `data` field, which is either text or an embedding.
+- Each job owns an `Uploader`, which routes those outputs to the store that can hold them:
+  text to the tagstore and vectors to the vectorstore given by the job's `index_qid`.
+- Each store gets its own `UploadSession`, and therefore its own batch. A model that emits both
+  kinds of output records the run's report on both batches; one that emits neither reports to the
+  tagstore.
+- A model that emits a vector on a job with no `index_qid` fails the job with an error naming the
+  missing option.
+- A source only counts as uploaded once it has landed in every store in play, so a partial failure
+  cannot let a diff-based re-run skip it.
+- Because a vector model reports against its index rather than the tagstore, the `SourceResolver`
+  reads previously uploaded sources out of both stores.
 
 
 ## Files

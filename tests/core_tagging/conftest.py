@@ -160,14 +160,14 @@ class FakeTagContainer:
                 ModelTag(
                     start_time=0,
                     end_time=5000,  # 5 seconds in ms
-                    text=f"{self.feature}_tag_{i}",
+                    data=f"{self.feature}_tag_{i}",
                     source_media=filepath,
                     model_track=""
                 ),
                 ModelTag(
                     start_time=5000,
                     end_time=10000,  # 5-10 seconds in ms
-                    text=f"{self.feature}_tag_{i}_2",
+                    data=f"{self.feature}_tag_{i}_2",
                     source_media=filepath,
                     model_track=""
                 )
@@ -341,18 +341,19 @@ def fake_container_registry():
     return FakeContainerRegistry()
 
 @pytest.fixture
-def source_resolver(tag_store, track_resolver):
-    """Create a SourceResolver using the provided tag store and track resolver."""
-    return SourceResolver(tagstore=tag_store, track_resolver=track_resolver)
+def source_resolver(tag_store, vectorstores, track_resolver):
+    """Create a SourceResolver using the provided stores and track resolver."""
+    return SourceResolver(tagstore=tag_store, vectorstores=vectorstores, track_resolver=track_resolver)
 
 
 @pytest.fixture
-def fabric_tagger(system_tagger, fake_container_registry, tag_store, fake_fetcher, track_resolver, tagger_config, source_resolver):
+def fabric_tagger(system_tagger, fake_container_registry, tag_store, vectorstores, fake_fetcher, track_resolver, tagger_config, source_resolver):
     """Create a TaggerWorker instance for testing"""
     tagger = TaggerWorker(
         system_tagger=system_tagger,
         cregistry=fake_container_registry,
         tagstore=tag_store,
+        vectorstores=vectorstores,
         fetcher=fake_fetcher,
         track_resolver=track_resolver,
         cfg=tagger_config,

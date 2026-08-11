@@ -1,9 +1,15 @@
 from typing import Protocol
 
 from src.common.content import Content
-from src.tags.tagstore.model import *
+from src.tags.datastore.model import *
 
-class Tagstore(Protocol):
+class Datastore(Protocol):
+    """Storage backend for model outputs.
+
+    Implemented by the tagstores (text tags) and the vectorstores (embeddings).
+    A vectorstore has no first class track type, so it stubs the track endpoints.
+    """
+
     def create_track(self,
         name: str,
         label: str,
@@ -41,10 +47,10 @@ class Tagstore(Protocol):
     def find_tags(self, q: Content, **filters) -> list[Tag]:
         """
         Find tags with flexible filtering.
-        
+
         Supported filters:
         - qid: str
-        - stream: str  
+        - stream: str
         - track: str
         - batch_id: str
         - sources: List[str] (tags with source in this list)

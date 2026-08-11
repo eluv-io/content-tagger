@@ -1,12 +1,11 @@
 import pytest
 import json
 import os
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from src.common.content import Content
 from src.tag_containers.containers import TagContainer
 from src.tag_containers.model import ContainerSpec, ModelConfig
-from src.common.model import SystemResources
 
 
 @pytest.fixture
@@ -95,13 +94,13 @@ def test_tags_basic(tag_container):
     assert tag1.source_media.endswith("video1.mp4")
     assert tag1.start_time == 0
     assert tag1.end_time == 5000
-    assert tag1.text == "person walking"
+    assert tag1.data == "person walking"
     
     tag2 = outputs[1]
     assert tag2.source_media.endswith("video1.mp4")
     assert tag2.start_time == 10000
     assert tag2.end_time == 15500
-    assert tag2.text == "car driving"
+    assert tag2.data == "car driving"
 
     # second call should return nothing
     assert len(tag_container.new_tags()) == 0
@@ -134,11 +133,11 @@ def test_tags_with_frame_info(tag_container):
     frame_tags = [t for t in outputs if t.frame_info is not None]
     
     assert len(video_tags) == 1
-    assert video_tags[0].text == "person walking"
+    assert video_tags[0].data == "person walking"
     
     assert len(frame_tags) == 2
     for ft in frame_tags:
-        assert ft.text == "person walking"
+        assert ft.data == "person walking"
         assert ft.start_time == ft.end_time
         assert ft.frame_info["box"] is not None
         assert ft.additional_info.get("confidence") is not None
@@ -160,10 +159,10 @@ def test_tags_multiple_sources(tag_container):
     video2_tags = [tag for tag in outputs if tag.source_media.endswith("video2.mp4")]
     
     assert len(video1_tags) == 1
-    assert video1_tags[0].text == "scene1"
+    assert video1_tags[0].data == "scene1"
     
     assert len(video2_tags) == 1
-    assert video2_tags[0].text == "scene2"
+    assert video2_tags[0].data == "scene2"
 
 
 def test_tags_image_files(tag_container):
@@ -190,12 +189,12 @@ def test_tags_image_files(tag_container):
     assert tag1.source_media.endswith("image1.jpg")
     assert tag1.start_time == 0
     assert tag1.end_time == 0
-    assert tag1.text == "cat"
+    assert tag1.data == "cat"
     assert tag1.frame_info["frame_idx"] == 0
     assert tag1.additional_info["confidence"] == 0.9
     
     tag2 = outputs[1]
-    assert tag2.text == "dog"
+    assert tag2.data == "dog"
     assert tag2.frame_info["frame_idx"] == 0
     assert tag2.additional_info["confidence"] == 0.8
 
@@ -224,7 +223,7 @@ def test_tags_incomplete_json_line_skipped(tag_container):
     
     outputs = tag_container.new_tags()
     assert len(outputs) == 1
-    assert outputs[0].text == "person walking"
+    assert outputs[0].data == "person walking"
 
 
 def test_errors_from_output(tag_container):
@@ -285,6 +284,25 @@ def test_progress_ratio_reports_most_recent(tag_container):
     ])
 
     assert tag_container.progress_ratio() == 1.0
+
+
+def test_vector_output(tag_container):
+    """A model emits an embedding by sending `vector` instead of `tag`."""
+    output_path = tag_container.cfg.output_path
+
+    write_jsonl(output_path, [
+        {"type": "tag", "data": {"start_time": 0, "end_time": 5000, "vector": [0.1, 0.2, 0.3], "track": "embedding", "source_media": "video1.mp4"}},
+        {"type": "tag", "data": {"start_time": 0, "end_time": 5000, "tag": "person walking", "source_media": "video1.mp4"}},
+    ])
+
+    vector_tag, text_tag = tag_container.new_tags()
+
+    assert vector_tag.is_vector()
+    assert vector_tag.data == [0.1, 0.2, 0.3]
+    assert vector_tag.model_track == "embedding"
+
+    assert not text_tag.is_vector()
+    assert text_tag.data == "person walking"
 
 
 def test_track_field(tag_container):

@@ -91,6 +91,8 @@ class ArgsResolver:
 
         destination_qid = overrides.destination_qid if overrides.destination_qid \
             is not None else defaults.destination_qid
+        index_qid = overrides.index_qid if overrides.index_qid \
+            is not None else defaults.index_qid
         replace = overrides.replace if overrides.replace \
             is not None else defaults.replace
         max_fetch_retries = overrides.max_fetch_retries if overrides.max_fetch_retries \
@@ -99,6 +101,8 @@ class ArgsResolver:
         # set defaults for options that are not provided in request
         if destination_qid is None:
             destination_qid = ""
+        if index_qid is None:
+            index_qid = ""
         if replace is None:
             replace = False
         if max_fetch_retries is None:
@@ -129,6 +133,7 @@ class ArgsResolver:
             replace=replace,
             track_suffix=job.track_suffix,
             destination_qid=destination_qid,
+            index_qid=index_qid,
             max_fetch_retries=max_fetch_retries,
             caller_info=job.caller_info
         )

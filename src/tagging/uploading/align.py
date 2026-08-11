@@ -66,7 +66,7 @@ def align_tags(tags: list[ModelTag], sources: list[Source], fps: float | None) -
             ModelTag(
                 start_time=start_time,
                 end_time=end_time,
-                text=tag.text,
+                data=tag.data,
                 additional_info=additional_info,
                 source_media=src_name,
                 model_track=tag.model_track,

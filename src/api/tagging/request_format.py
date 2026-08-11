@@ -10,6 +10,7 @@ from src.api.tagging.scope_schemas import scope_oneof_metadata
 @dataclass
 class TaggerOptions:
     destination_qid: str | None = None
+    index_qid: str | None = None
     replace: bool | None = None
     max_fetch_retries: int | None = None
     # unstructured dict to allow for flexible scope definitions - will be parsed into a ScopeDTO
@@ -50,6 +51,16 @@ class TaggerOptionsSchema(Schema):
         metadata={
             "description": (
                 "Content where tags should be written to. Leaving empty will write to the same content the model is running on."
+            )
+        },
+    )
+    index_qid = fields.Str(
+        load_default=None,
+        allow_none=True,
+        metadata={
+            "description": (
+                "Vector index where embeddings should be written to. Required for models "
+                "which output vectors, ignored by models which only output text tags."
             )
         },
     )

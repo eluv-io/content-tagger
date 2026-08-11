@@ -9,7 +9,7 @@ from loguru import logger
 from src.fetch.impl.vod import VodWorker
 from src.fetch.model import DownloadResult, FetchSession, MediaMetadata, Source
 from src.tags.reader.abstract import TagReader
-from src.tags.tagstore.model import Tag
+from src.tags.datastore.model import Tag
 
 logger = logger.bind(module="fetch tag_aligned")
 

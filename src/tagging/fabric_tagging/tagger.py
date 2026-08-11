@@ -19,14 +19,15 @@ from src.common.content import Content
 from src.common.errors import *
 from src.fetch.factory import FetchFactory
 from src.tagging.uploading.align import adjust_progress_sources, align_tags
-from src.tags.tagstore.abstract import Tagstore
+from src.tags.datastore.abstract import Datastore
 from src.tagging.fabric_tagging.message_types import *
 from src.tagging.fabric_tagging.job_state import *
 from src.tagging.fabric_tagging.model import *
-from src.tagging.uploading.uploader import UploadSession
+from src.tagging.uploading.uploader import Uploader
 
 from src.common.logging import logger
 from src.tags.track_resolver import TrackResolver
+from src.tags.vectorstore.factory import VectorstoreFactory
 
 logger = logger.bind(name="Fabric Tagger")
 
@@ -56,7 +57,8 @@ class TaggerWorker:
         self, 
         system_tagger: ContainerScheduler,
         cregistry: ContainerRegistry,
-        tagstore: Tagstore,
+        tagstore: Datastore,
+        vectorstores: VectorstoreFactory,
         fetcher: FetchFactory,
         track_resolver: TrackResolver,
         source_resolver: SourceResolver,
@@ -66,6 +68,7 @@ class TaggerWorker:
         self.system_tagger = system_tagger
         self.cregistry = cregistry
         self.tagstore = tagstore
+        self.vectorstores = vectorstores
         self.fetcher = fetcher
         self.track_resolver = track_resolver
         self.source_resolver = source_resolver
@@ -211,7 +214,9 @@ class TaggerWorker:
 
         ignore_sources = []
         if not args.replace:
-            ignore_sources = self.source_resolver.resolve(q, feature, track_suffix=args.track_suffix)
+            ignore_sources = self.source_resolver.resolve(
+                q, feature, track_suffix=args.track_suffix, index_qid=args.index_qid
+            )
 
         worker = self.fetcher.get_session(
             q, 
@@ -231,8 +236,9 @@ class TaggerWorker:
 
         dest_q = Content(args.destination_qid or q.qid, q.token)
 
-        upload_session = UploadSession(
+        uploader = Uploader(
             tagstore=self.tagstore,
+            vectorstore=self.vectorstores.create(args.index_qid) if args.index_qid else None,
             feature=feature,
             dest_q=dest_q,
             track_resolver=self.track_resolver,
@@ -253,7 +259,7 @@ class TaggerWorker:
         job = TagJob(
             state=JobState.starting(
                 media_state,
-                upload_session,
+                uploader,
                 container=container,
             ),
             args=JobArgs(
@@ -466,7 +472,7 @@ class TaggerWorker:
 
         tagged_sources = self._get_tagged_sources(job.state.media.downloaded, statuses)
 
-        uploaded_sources = job.state.upload_session.get_uploaded_sources()
+        uploaded_sources = job.state.uploader.get_uploaded_sources()
         
         upload_status = UploadStatus(
             all_sources=all_sources, 
@@ -486,6 +492,7 @@ class TaggerWorker:
             run_config=job.args.run_config,
             scope=job.args.scope,
             destination_qid=job.args.destination_qid,
+            index_qid=job.args.index_qid,
             replace=job.args.replace,
             track_suffix=job.args.track_suffix,
             max_fetch_retries=job.args.max_fetch_retries,
@@ -505,7 +512,7 @@ class TaggerWorker:
             ),
         )
         
-        job.state.upload_session.upload_report(report)
+        job.state.uploader.upload_report(report)
 
     def _handle_status_request(self, message: Message):
         assert isinstance(message.data, StatusRequest)
@@ -543,7 +550,7 @@ class TaggerWorker:
             total_sources=state.media.worker.metadata().sources,
             downloaded_sources=downloaded_sources,
             tagged_sources=tagged_sources,
-            uploaded_sources=state.upload_session.get_uploaded_sources(),
+            uploaded_sources=state.uploader.get_uploaded_sources(),
             container_progress_ratio=progress_ratio,
             warnings=state.warnings,
             error=state.error
@@ -700,11 +707,11 @@ class TaggerWorker:
         # we lock because _handle_enter_complete_phase and a thread spawned by _handle_upload_tick can run concurrently
         with self._upload_lock:
             try:
-                self.__upload_tags(job)
+                self.__upload(job)
             except Exception as e:
                 self._request_job_end(job.get_id(), "Failed", e)
 
-    def __upload_tags(self, job: TagJob) -> None:
+    def __upload(self, job: TagJob) -> None:
         if not job.state.taghandle:
             return
         with timeit("getting tags from container", min_duration=0.5):
@@ -721,7 +728,7 @@ class TaggerWorker:
         tagged_sources = adjust_progress_sources(statuses, job.state.media.downloaded)
 
         with timeit("uploading tags", min_duration=5):
-            job.state.upload_session.upload_tags(aligned_tags, [p.source_media for p in tagged_sources])
+            job.state.uploader.upload(aligned_tags, [p.source_media for p in tagged_sources])
 
     def _output_dir_from_q(self, q: Content) -> str:
         out = os.path.join(self.cfg.media_dir, q.qid)

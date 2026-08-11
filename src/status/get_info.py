@@ -2,11 +2,9 @@
 from dataclasses import dataclass
 
 import requests
-from loguru import logger
 from functools import lru_cache
 
 from src.common.errors import ExternalServiceError
-from src.tags.tagstore.abstract import Tagstore
 
 @dataclass(frozen=True)
 class UserInfo: 

@@ -22,6 +22,7 @@ from src.status.service import TaggingStatusService
 from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.tagging.fabric_tagging.tagger import TaggerWorker
 from src.tags.tagstore.factory import create_tagstore
+from src.tags.vectorstore.factory import VectorstoreFactory
 from src.tagging.fabric_tagging.source_resolver import SourceResolver
 from src.fetch.factory import FetchFactory
 from src.common.content import QAPIFactory
@@ -125,6 +126,7 @@ def configure_routes(app: Flask) -> None:
 def _build_worker(cfg: AppConfig) -> TaggerWorker:
     qfactory = QAPIFactory(cfg.content)
     tagstore = create_tagstore(cfg.tagstore)
+    vectorstores = VectorstoreFactory(cfg.vectorstore)
     track_resolver = TrackResolver(cfg.label_resolver, cfg.model_configs)
     model_configs = cfg.model_configs
     return TaggerWorker(
@@ -132,9 +134,14 @@ def _build_worker(cfg: AppConfig) -> TaggerWorker:
         fetcher=FetchFactory(cfg.fetcher, create_tagstore(cfg.tagstore), qfactory),
         cregistry=ContainerRegistry(cfg.container_registry, model_configs),
         tagstore=tagstore,
+        vectorstores=vectorstores,
         cfg=cfg.tagger,
         track_resolver=track_resolver,
-        source_resolver=SourceResolver(create_tagstore(cfg.tagstore), track_resolver=track_resolver)
+        source_resolver=SourceResolver(
+            create_tagstore(cfg.tagstore),
+            vectorstores=vectorstores,
+            track_resolver=track_resolver,
+        )
     )
 
 

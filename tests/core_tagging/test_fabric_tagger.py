@@ -4,7 +4,7 @@ from dataclasses import replace as dc_replace
 from unittest.mock import Mock, patch
 
 from src.fetch.model import MediaMetadata
-from src.tags.tagstore.model import Track
+from src.tags.datastore.model import Track
 from src.tags.tagstore.rest_tagstore import RestTagstore
 from src.tagging.fabric_tagging.tagger import TaggerWorker
 from src.tagging.fabric_tagging.model import TagStatusResult
@@ -519,7 +519,7 @@ def test_default_defer_to_model_track(fabric_tagger, q, make_tag_args):
                 tags.append(ModelTag(
                     start_time=0,
                     end_time=5000,
-                    text=f"default_track_tag_{i}",
+                    data=f"default_track_tag_{i}",
                     source_media=filepath,
                     model_track="random_track"
                 ))

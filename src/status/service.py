@@ -5,14 +5,14 @@ from datetime import datetime, timezone
 from src.common.content import Content
 from src.common.content import Content
 from src.common.errors import BadRequestError, MissingResourceError
-from src.tags.tagstore.abstract import Tagstore
-from src.tags.tagstore.model import Batch
+from src.tags.datastore.abstract import Datastore
+from src.tags.datastore.model import Batch
 from src.tags.track_resolver import TrackResolver
 from src.status.format import *
 
 class TaggingStatusService:
     def __init__(self,
-        tagstore: Tagstore,
+        tagstore: Datastore,
         track_resolver: TrackResolver,
     ):
         self.tagstore = tagstore

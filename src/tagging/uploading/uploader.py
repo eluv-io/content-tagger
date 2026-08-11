@@ -1,9 +1,10 @@
 
 from dataclasses import asdict
 
+from src.common.errors import BadRequestError
 from src.common.logging.timing import timeit
-from src.tags.tagstore.model import Tag
-from src.tags.tagstore.abstract import Tagstore
+from src.tags.datastore.model import Tag
+from src.tags.datastore.abstract import Datastore
 from src.tag_containers.model import ModelTag
 from src.common.content import Content
 from src.common.logging import logger
@@ -11,12 +12,11 @@ from src.tagging.fabric_tagging.model import TagContentStatusReport
 from src.tags.track_resolver import TrackArgs, TrackResolver
 
 class UploadSession:
-    
     def __init__(
         self,
         feature: str,
         track_resolver: TrackResolver,
-        tagstore: Tagstore,
+        datastore: Datastore,
         track_suffix: str,
         dest_q: Content,
         do_retry: bool,
@@ -25,7 +25,7 @@ class UploadSession:
 
         self.feature = feature
         self.track_resolver = track_resolver
-        self.tagstore = tagstore
+        self.datastore = datastore
         self.dest_q = dest_q
         self.track_suffix = track_suffix
         self.retry = do_retry
@@ -48,7 +48,7 @@ class UploadSession:
         tags: list[ModelTag],
         tagged_sources: list[str]
     ) -> None:
-        """Main upload method - formats and uploads tags to tagstore"""
+        """Main upload method - formats and uploads tags to the datastore"""
         self.seen_sources.update(tagged_sources)
         self.seen_sources.update(t.source_media for t in tags)
 
@@ -76,7 +76,7 @@ class UploadSession:
                         id="",
                         start_time=t.start_time,
                         end_time=t.end_time,
-                        text=t.text,
+                        data=t.data,
                         additional_info=t.additional_info,
                         source=t.source_media,
                         batch_id=batch_id,
@@ -91,7 +91,7 @@ class UploadSession:
 
         try:
             if sources_to_delete:
-                self.tagstore.delete_tags_by_source(
+                self.datastore.delete_tags_by_source(
                     sources=list(sources_to_delete),
                     model=self._model_name(),
                     q=self.dest_q,
@@ -111,9 +111,9 @@ class UploadSession:
         self.uploaded_tags.update(new_inputs)
 
     def upload_report(self, report: TagContentStatusReport) -> None:
-        """Upload a tagging report to the tagstore, recorded on the session's batch."""
+        """Upload a tagging report to the datastore, recorded on the session's batch."""
         batch = self._get_or_create_batch()
-        self.tagstore.update_batch(batch_id=batch, additional_info={"tagger": asdict(report)}, q=self.dest_q)
+        self.datastore.update_batch(batch_id=batch, additional_info={"tagger": asdict(report)}, q=self.dest_q)
 
     def get_uploaded_sources(self) -> list[str]:
         """Get the set of source media that have been tagged in this session."""
@@ -127,7 +127,7 @@ class UploadSession:
     def _get_or_create_batch(self) -> str:
         """Return the single batch for this session, creating it on first use."""
         if self.batch_id is None:
-            ts_batch = self.tagstore.create_batch(
+            ts_batch = self.datastore.create_batch(
                 model=self._model_name(),
                 author="tagger",
                 q=self.dest_q,
@@ -156,7 +156,7 @@ class UploadSession:
         additional_info = {"hidden": True} if self.hidden else None
 
         try:
-            self.tagstore.create_track(
+            self.datastore.create_track(
                 name=track,
                 label=label,
                 q=self.dest_q,
@@ -166,7 +166,7 @@ class UploadSession:
             # track may already exist
             pass
 
-        db_track = self.tagstore.get_track(
+        db_track = self.datastore.get_track(
             name=track,
             q=self.dest_q,
         )
@@ -176,7 +176,7 @@ class UploadSession:
         return track
 
     def _post_tags(self, tags_by_track: dict[str, list[Tag]], q: Content) -> None:
-        """Upload tags to tagstore, grouped by track under the session's batch."""
+        """Upload tags to the datastore, grouped by track under the session's batch."""
         total = sum(len(tags) for tags in tags_by_track.values())
         if not total:
             return
@@ -194,14 +194,99 @@ class UploadSession:
 
     def _upload_tags_with_batch(self, batch_id: str, tags: list[Tag], track: str, q: Content) -> None:
         """
-        Uploads a list of tags to the tagstore under the specified batch ID and track.
+        Uploads a list of tags to the datastore under the specified batch ID and track.
         Uploads in small increments to avoid sending too many tags in a single request.
         """
         chunk_size = 5000
         for i in range(0, len(tags), chunk_size):
             chunk = tags[i:i + chunk_size]
             try:
-                self.tagstore.upload_tags(chunk, batch_id, track, q=q)
+                self.datastore.upload_tags(chunk, batch_id, track, q=q)
             except Exception as e:
                 logger.opt(exception=e).error("error uploading tags chunk", destination_qid=q.qid, batch_id=batch_id)
                 raise
+
+
+class Uploader:
+    """Routes one model run's outputs to the stores that can hold them.
+
+    Text tags go to the tagstore and vectors to the vectorstore, each under its own
+    `UploadSession` (and so its own batch). A model that emits both writes to both.
+    """
+
+    def __init__(
+        self,
+        feature: str,
+        track_resolver: TrackResolver,
+        tagstore: Datastore,
+        vectorstore: Datastore | None,
+        track_suffix: str,
+        dest_q: Content,
+        do_retry: bool,
+        hidden: bool = False,
+    ):
+        self.feature = feature
+        self.dest_q = dest_q
+
+        def session(store: Datastore) -> UploadSession:
+            return UploadSession(
+                feature=feature,
+                track_resolver=track_resolver,
+                datastore=store,
+                track_suffix=track_suffix,
+                dest_q=dest_q,
+                do_retry=do_retry,
+                hidden=hidden,
+            )
+
+        self.tag_session = session(tagstore)
+        self.vector_session = session(vectorstore) if vectorstore is not None else None
+        # which stores this run has actually written to, decides where the report goes
+        self.wrote_tags = False
+        self.wrote_vectors = False
+
+    def upload(
+        self,
+        tags: list[ModelTag],
+        tagged_sources: list[str]
+    ) -> None:
+        """Dispatch the model's outputs to the tagstore, the vectorstore, or both."""
+        vectors = [t for t in tags if t.is_vector()]
+        texts = [t for t in tags if not t.is_vector()]
+
+        if vectors and self.vector_session is None:
+            raise BadRequestError(
+                f"model {self.feature} produced vectors but no index_qid was given: "
+                "specify index_qid in the tagger options to choose the vector index to write to"
+            )
+
+        # every session sees the progress so that a reprocessed source has its stale
+        # outputs cleared from both stores
+        self.tag_session.upload_tags(texts, tagged_sources)
+        self.wrote_tags = self.wrote_tags or bool(texts)
+
+        if self.vector_session is not None:
+            self.vector_session.upload_tags(vectors, tagged_sources)
+            self.wrote_vectors = self.wrote_vectors or bool(vectors)
+
+    def upload_report(self, report: TagContentStatusReport) -> None:
+        """Record the run's report on the batch of every store it wrote to.
+
+        A run that produced nothing still reports to the tagstore, which is where a
+        text model's empty run is expected to leave a trace.
+        """
+        if self.wrote_vectors and self.vector_session is not None:
+            self.vector_session.upload_report(report)
+        if self.wrote_tags or not self.wrote_vectors:
+            self.tag_session.upload_report(report)
+
+    def get_uploaded_sources(self) -> list[str]:
+        """Sources that landed in every store in play.
+
+        A source only counts as uploaded once all of the model's outputs for it have
+        been written, otherwise a partial failure would let a re-run skip it.
+        """
+        sources = set(self.tag_session.get_uploaded_sources())
+        if self.vector_session is not None:
+            sources &= set(self.vector_session.get_uploaded_sources())
+        return list(sources)

@@ -339,11 +339,13 @@ class TagContainer:
 
                 if msg_type == "tag":
                     # placate type checker
-                    assert local_media_path is not None                   
+                    assert local_media_path is not None
+                    # a model emits either text ("tag") or an embedding ("vector")
+                    vector = data.get("vector")
                     self._cached_tags.append(ModelTag(
                         start_time=data.get("start_time", 0),
                         end_time=data.get("end_time", 0),
-                        text=data.get("tag", ""),
+                        data=vector if vector is not None else data.get("tag", ""),
                         source_media=local_media_path,
                         model_track=data.get("track", ""),
                         frame_info=data.get("frame_info"),

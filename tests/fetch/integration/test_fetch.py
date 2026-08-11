@@ -7,11 +7,9 @@ import os
 from src.fetch.factory import *
 from src.fetch.impl.tag_aligned import TagAlignedFetcher
 from src.fetch.model import *
-from src.tags.reader.impl import TagReaderImpl
-from src.tags.tagstore.filesystem_tagstore import Tag
+from src.tags.datastore.model import Tag
 from src.common.content import Content
 from src.common.errors import MissingResourceError
-from src.tags.tagstore.rest_tagstore import RestTagstore
 
 
 @pytest.mark.parametrize("content_fixture", ["vod_content_with_tags_clean", "legacy_vod_content_with_tags_clean"])
@@ -218,7 +216,7 @@ def test_tag_aligned(fetcher: FetchFactory, q_legacy, temp_dir):
             id='1', 
             start_time=243400, 
             end_time=247320, 
-            text="That's what kitty said chas told her salesmen: make their own wins.", 
+            data="That's what kitty said chas told her salesmen: make their own wins.", 
             additional_info=None, 
             source='', 
             batch_id='', 
@@ -227,7 +225,7 @@ def test_tag_aligned(fetcher: FetchFactory, q_legacy, temp_dir):
             id='2', 
             start_time=248360, 
             end_time=249200, 
-            text='You gotta try harder.', 
+            data='You gotta try harder.', 
             additional_info=None, 
             source='', 
             batch_id='', 
@@ -236,7 +234,7 @@ def test_tag_aligned(fetcher: FetchFactory, q_legacy, temp_dir):
         Tag(id='3', 
             start_time=600000, 
             end_time=600100, 
-            text='TESTING 123.', 
+            data='TESTING 123.', 
             additional_info=None, 
             source='', 
             batch_id='', 
@@ -245,7 +243,7 @@ def test_tag_aligned(fetcher: FetchFactory, q_legacy, temp_dir):
             id='4', 
             start_time=248360, 
             end_time=420000, 
-            text='this is a very long tag', 
+            data='this is a very long tag', 
             additional_info=None, 
             source='', 
             batch_id='', 

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from src.tagging.fabric_tagging.model import *
 from src.tag_containers.containers import TagContainer
 from src.fetch.model import *
-from src.tagging.uploading.uploader import UploadSession
+from src.tagging.uploading.uploader import Uploader
 from src.tagging.fabric_tagging.media_state import MediaState
 
 @dataclass
@@ -14,7 +14,7 @@ class JobState:
     # internal handle used in the ContainerScheduler to identify the job
     taghandle: str
     media: MediaState
-    upload_session: UploadSession
+    uploader: Uploader
     container: TagContainer
     # callers can pass an event to be notified when tagging is done
     tagging_done: threading.Event
@@ -27,7 +27,7 @@ class JobState:
     @staticmethod
     def starting(
         media: MediaState,
-        upload_session: UploadSession,
+        uploader: Uploader,
         container: TagContainer,
     ) -> "JobState":
         """Create a JobState in starting state."""
@@ -35,7 +35,7 @@ class JobState:
             status="Queued",
             taghandle="",
             media=media,
-            upload_session=upload_session,
+            uploader=uploader,
             time_started=time.time(),
             time_ended=None,
             tagging_done=threading.Event(),

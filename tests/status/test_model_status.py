@@ -1,10 +1,7 @@
 import pytest
-from unittest.mock import Mock
 
 from src.common.content import Content
-from src.tags.tagstore.abstract import Tagstore
-from src.tags.tagstore.model import Batch
-from src.tags.track_resolver import TrackResolver, LabelResolverConfig, TrackArgs
+from src.tags.datastore.model import Batch
 from src.common.errors import BadRequestError, MissingResourceError
 
 

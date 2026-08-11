@@ -12,6 +12,7 @@ from src.tagging.scheduling.model import SysConfig
 from src.tagging.tag_runner import TagRunnerConfig
 from src.tagging.fabric_tagging.queue.model import JobStoreConfig
 from src.tags.tagstore.model import TagstoreConfig
+from src.tags.vectorstore.model import VectorstoreConfig
 from src.tagging.fabric_tagging.model import TaggerWorkerConfig
 from src.tags.track_resolver import LabelResolverConfig
 from src.status.get_info import UserInfoResolverConfig
@@ -30,6 +31,7 @@ class AppConfig:
     label_resolver: LabelResolverConfig
     tag_runner: TagRunnerConfig
     user_info_resolver: UserInfoResolverConfig
+    vectorstore: VectorstoreConfig = field(default_factory=VectorstoreConfig)
 
     @staticmethod
     def from_yaml(filename: str) -> 'AppConfig':

@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import Mock
 
-from src.tags.tagstore.model import Batch
+from src.tags.datastore.model import Batch
 
 
 def make_batch(id: str, model: str, timestamp: float, all_sources: list, tagged_sources: list) -> Batch:

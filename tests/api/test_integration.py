@@ -1,7 +1,7 @@
 import os
 
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 import time
 import json
 from src.common.logging import logger
@@ -12,10 +12,8 @@ from src.api.arg_resolver import ArgsResolver
 from src.fetch.model import DownloadRequest, FetchSession, VideoScope
 from src.tagging.fabric_tagging.model import TagArgs, TagStartResult
 from src.tagging.fabric_tagging.tagger import TaggerWorker
-from src.tags.tagstore.abstract import Tagstore
+from src.tags.datastore.abstract import Datastore
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
-from src.service.abstract import TaggerService
-from src.tagging.fabric_tagging.queue.abstract import JobStore
 from tests.api.conftest import FakeLiveWorker
 
 def is_queue_mode():
@@ -101,7 +99,7 @@ def test_video_model(client, q):
     assert response.status_code == 200
     completed = wait_for_jobs_completion(client, [q], timeout=30)
     assert completed
-    tagstore: Tagstore = client.application.config["state"]["worker"].tagstore
+    tagstore: Datastore = client.application.config["state"]["worker"].tagstore
     jobid = tagstore.find_batches(q=q)[0].id
     tags = tagstore.find_tags(batch_id=jobid, q=q)
     tags = sorted(tags, key=lambda x: x.start_time)
@@ -110,7 +108,7 @@ def test_video_model(client, q):
     assert len(vtags) == 122
     next_tag = 'hello1'
     for tag in vtags:
-        assert tag.text == next_tag
+        assert tag.data == next_tag
         next_tag = 'hello2' if next_tag == 'hello1' else 'hello1'
 
     ftags = [t for t in tags if t.frame_info is not None]
@@ -142,7 +140,7 @@ def test_track_suffix_and_caller_info(client, q):
     assert response.status_code == 200
     completed = wait_for_jobs_completion(client, [q], timeout=30)
     assert completed
-    tagstore: Tagstore = client.application.config["state"]["worker"].tagstore
+    tagstore: Datastore = client.application.config["state"]["worker"].tagstore
     track = tagstore.get_track(q=q, name="test_model_Hi_I_am_a_test")
     assert track
     assert track.label == "Test Model Hi I am a test"
@@ -233,7 +231,7 @@ def test_live_video_model(app, last_res_has_media, q):
     # Verify tags alternate between hello1 and hello2
     next_tag = 'hello1'
     for tag in vtags:
-        assert tag.text == next_tag, f"Expected {next_tag}, got {tag.text}"
+        assert tag.data == next_tag, f"Expected {next_tag}, got {tag.data}"
         next_tag = 'hello2' if next_tag == 'hello1' else 'hello1'
         
     logger.info(f"Live test completed successfully with {fake_worker_ref[0].call_count} fetch calls (last_res_has_media={last_res_has_media})")

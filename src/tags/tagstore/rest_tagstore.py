@@ -5,10 +5,10 @@ from dateutil import parser
 from src.common.logging import logger
 
 from src.common.content import Content
-from src.tags.tagstore.model import Tag, Batch, Track
-from src.tags.tagstore.abstract import Tagstore
+from src.tags.datastore.model import Tag, Batch, Track, is_vector
+from src.tags.datastore.abstract import Datastore
 
-class RestTagstore(Tagstore):
+class RestTagstore(Datastore):
     def __init__(self, base_url: str, timeout: int):
         self.base_url = base_url.rstrip('/')
         self.timeout = timeout
@@ -144,6 +144,9 @@ class RestTagstore(Tagstore):
         if not tags:
             return
 
+        if any(is_vector(tag.data) for tag in tags):
+            raise ValueError("a tagstore cannot store vectors, write them to a vectorstore instead")
+
         qid = q.qid
 
         # Convert tags to API format
@@ -152,7 +155,7 @@ class RestTagstore(Tagstore):
             api_tag = {
                 "start_time": tag.start_time,
                 "end_time": tag.end_time,
-                "tag": tag.text,
+                "tag": tag.data,
                 "source": tag.source,
             }
             if tag.additional_info is not None:
@@ -263,7 +266,7 @@ class RestTagstore(Tagstore):
                 id=api_tag['id'],
                 start_time=api_tag['start_time'],
                 end_time=api_tag['end_time'],
-                text=api_tag['tag'],
+                data=api_tag['tag'],
                 additional_info=api_tag.get('additional_info'),
                 source=api_tag.get('source', ''),
                 batch_id=api_tag['batch_id'],

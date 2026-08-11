@@ -1,14 +1,14 @@
 
 import pytest
 import uuid
-from src.tags.tagstore.model import Tag
+from src.tags.datastore.model import Tag
 
 def make_tag(start_time, end_time, text, additional_info, source, batch_id, frame_info=None):
     return Tag(
         id=str(uuid.uuid4()),
         start_time=start_time,
         end_time=end_time,
-        text=text,
+        data=text,
         additional_info=additional_info,
         source=source,
         batch_id=batch_id,

@@ -27,7 +27,13 @@ Manage the full workflow of a tagging job: 1. Fetching parts/data, 2. Scheduling
 ## 2. Data/Fabric Layer
 1. Keeps track of model configs: names of models, system requirements, corresponding container image name
 2. Downloads data from fabric for tagging.
-3. Uploads tags to TagsDB (or fabric for legacy)
+3. Uploads model outputs to a `Datastore`
+    - A `Datastore` is the storage protocol shared by the tagstore (text tags, filesystem or REST) and
+      the vectorstore (embeddings, in-memory mock or REST).
+    - A vectorstore has no first class track type, so it stubs the track endpoints and each vector
+      carries its own track name.
+    - A vectorstore is addressed per index, so it is built from the caller's `index_qid` rather than
+      configured once at startup.
 
 ## 3. Tagging Layer
 1. Keeps track of which gpu containers are running on

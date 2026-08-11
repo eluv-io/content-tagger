@@ -24,6 +24,8 @@ class TagArgs:
     destination_qid: str
     max_fetch_retries: int
     caller_info: dict[str, str]
+    # vector index to write embeddings to, required of models which output vectors
+    index_qid: str = ""
 
 JobStateDescription = Literal[
     "Queued",
@@ -62,7 +64,7 @@ class JobStatus:
             error=None,
         )
 
-@dataclass
+@dataclass(kw_only=True)
 class JobArgs(TagArgs):
     q: Content
     retry_upload: bool

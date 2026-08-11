@@ -3,8 +3,8 @@ import re
 
 from src.common.content import Content
 from src.tags.reader.abstract import TagReader
-from src.tags.tagstore.abstract import Tagstore
-from src.tags.tagstore.model import Tag
+from src.tags.datastore.abstract import Datastore
+from src.tags.datastore.model import Tag
 
 # matches tracks like "10s" requesting fixed-size intervals of N seconds
 INTERVAL_TRACK_PATTERN = re.compile(r"^(\d+)s$")
@@ -14,7 +14,7 @@ class TagReaderImpl(TagReader):
     def __init__(
         self,
         q: Content,
-        tagstore: Tagstore,
+        tagstore: Datastore,
         track: str
     ):
         self.q = q
@@ -50,7 +50,7 @@ class IntervalTagReader(TagReader):
                 id=f"interval_{start}_{end}",
                 start_time=start,
                 end_time=end,
-                text="",
+                data="",
                 additional_info=None,
                 source="interval",
                 batch_id="",
