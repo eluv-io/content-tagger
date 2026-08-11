@@ -870,3 +870,17 @@ def test_vector_tagging(fabric_tagger, q, make_tag_args):
     vs = fabric_tagger.vectorstores.create("iq__test")
     vectors = vs.find_tags(q=q, limit=10)
     assert len(vectors) > 0
+
+    # check that a report was added
+    assert vs.find_batches(q=q, model="caption")[0].additional_info
+
+    # tag again and check that no new parts are tagged
+    args = make_tag_args(feature="caption", stream="video", destination_qid=q.qid, index_qid="iq__test", replace=False)
+    result = fabric_tagger.tag(q, args)
+    assert result.started is True
+
+    wait_tag(fabric_tagger, q.qid, timeout=2)
+    final_status = fabric_tagger.status(q.qid)
+    job_status = _status_for(final_status, "caption").status
+    assert job_status.status == "Completed"
+    assert len(job_status.total_sources) == 0
