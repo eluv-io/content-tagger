@@ -851,3 +851,22 @@ def test_no_tags_still_creates_batch(fabric_tagger, q, make_tag_args):
     assert report["upload_status"] is not None
     # even though we have no tags we still mark the sources tagged
     assert len(report["upload_status"]["tagged_sources"]) > 0
+
+def test_vector_tagging(fabric_tagger, q, make_tag_args):
+    fabric_tagger.cregistry.get = lambda req: FakeTagContainer(req.media_dir, req.model_id, output_vectors=True)
+
+    args = make_tag_args(feature="caption", stream="video", destination_qid=q.qid, index_qid="iq__test")
+
+    result = fabric_tagger.tag(q, args)
+    assert result.started is True
+
+    wait_tag(fabric_tagger, q.qid, timeout=5)
+
+    final_status = fabric_tagger.status(q.qid)
+    job_status = _status_for(final_status, "caption").status
+    assert _status_for(final_status, "caption").status.status == "Completed"
+    assert len(job_status.uploaded_sources) > 0
+
+    vs = fabric_tagger.vectorstores.create("iq__test")
+    vectors = vs.find_tags(q=q, limit=10)
+    assert len(vectors) > 0

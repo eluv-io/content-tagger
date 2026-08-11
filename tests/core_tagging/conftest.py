@@ -57,7 +57,14 @@ def tagger_config(media_dir) -> TaggerWorkerConfig:
 class FakeTagContainer:
     """Fake TagContainer that simulates work and asynchronous behavior."""
     
-    def __init__(self, media_dir: str, feature, work_duration: float = 0.5, report_progress: bool = True):
+    def __init__(
+        self, 
+        media_dir: str, 
+        feature, 
+        work_duration: float = 0.5, 
+        report_progress: bool = True,
+        output_vectors: bool = False
+    ):
         """
         Initialize the FakeTagContainer.
     
@@ -78,6 +85,7 @@ class FakeTagContainer:
         self.media_files = []
         self.worker_thread = None
         self._tag_cursor = 0
+        self._output_vectors = output_vectors
 
     def start(self, gpu_idx: int | None = None) -> None:
         """
@@ -156,18 +164,25 @@ class FakeTagContainer:
 
         for i, filepath in enumerate(finished_files):
             # Create fake tags based on the feature
+            if not self._output_vectors:
+                data1 = f"{self.feature}_tag_{i}"
+                data2 = f"{self.feature}_tag_{i}_2"
+            else:
+                data1 = [i, i + 0.1, i + 0.2]
+                data2 = [i + 0.3, i + 0.4, i + 0.5]
+
             fake_tags = [
                 ModelTag(
                     start_time=0,
                     end_time=5000,  # 5 seconds in ms
-                    data=f"{self.feature}_tag_{i}",
+                    data=data1,
                     source_media=filepath,
                     model_track=""
                 ),
                 ModelTag(
                     start_time=5000,
                     end_time=10000,  # 5-10 seconds in ms
-                    data=f"{self.feature}_tag_{i}_2",
+                    data=data2,
                     source_media=filepath,
                     model_track=""
                 )
