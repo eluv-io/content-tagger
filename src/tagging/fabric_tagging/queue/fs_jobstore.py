@@ -1,5 +1,6 @@
 import json
 import os
+import threading
 import time
 import uuid
 from dataclasses import asdict
@@ -34,6 +35,9 @@ class FsJobStore:
     ):
         self.store_dir = store_dir
         self.user_info_resolver = user_info_resolver
+        # serializes read-modify-write on job files: API threads and the TagRunner
+        # poll thread mutate the same job concurrently
+        self._lock = threading.Lock()
         os.makedirs(store_dir, exist_ok=True)
 
     def _job_path(self, id: str) -> str:
@@ -48,7 +52,9 @@ class FsJobStore:
 
     def _write_job(self, id: str, data: dict) -> None:
         path = self._job_path(id)
-        tmp = path + ".tmp"
+        # temp name must be unique per write, otherwise concurrent writers
+        # interleave into the same file and corrupt the job
+        tmp = f"{path}.{uuid.uuid4().hex}.tmp"
         with open(tmp, "w") as f:
             json.dump(data, f, indent=2)
         os.replace(tmp, path)  # atomic on Linux
@@ -113,12 +119,13 @@ class FsJobStore:
         return self._convert_job_dict(job_data)
 
     def claim_job(self, id: str, auth: str) -> bool:
-        job = self._read_job(id)
-        if job["status"] == "queued":
-            job["status"] = "running"
-            self._write_job(id, job)
-            return True
-        return False
+        with self._lock:
+            job = self._read_job(id)
+            if job["status"] == "queued":
+                job["status"] = "running"
+                self._write_job(id, job)
+                return True
+            return False
 
     def get_job(self, id: str) -> QueueItem:
         return self._convert_job_dict(self._read_job(id))
@@ -145,15 +152,20 @@ class FsJobStore:
         return results
 
     def update_job(self, args: UpdateJobRequest, auth: str) -> None:
-        job = self._read_job(args.id)
-        job["status"] = args.status
-        if args.status_details is not None:
-            job["status_details"] = asdict(args.status_details)
-        if args.error is not None:
-            job["error"] = args.error
-        self._write_job(args.id, job)
+        with self._lock:
+            job = self._read_job(args.id)
+            if job["status"] == "deleted" and args.status != "deleted":
+                # a late status update must not resurrect a deleted job
+                return
+            job["status"] = args.status
+            if args.status_details is not None:
+                job["status_details"] = asdict(args.status_details)
+            if args.error is not None:
+                job["error"] = args.error
+            self._write_job(args.id, job)
 
     def stop_job(self, id: str, auth: str) -> None:
-        job = self._read_job(id)
-        job["stop_requested"] = True
-        self._write_job(id, job)
+        with self._lock:
+            job = self._read_job(id)
+            job["stop_requested"] = True
+            self._write_job(id, job)

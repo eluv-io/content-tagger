@@ -382,8 +382,8 @@ def test_stop_workflow(client, q):
     assert response.status_code == 200
     assert len(response.get_json()["jobs"]) == 1
 
-    time.sleep(1)
-    
+    assert wait_for_jobs_completion(client, [q]), "job did not reach a terminal state after stop"
+
     # Check status - job should be stopped
     response = client.get(f"/{q.qid}/job-status?authorization={video_auth}")
     assert response.status_code == 200
@@ -588,10 +588,10 @@ def test_stop_all_jobs(client, q):
     assert stop_response.status_code == 200
 
     assert len(stop_response.get_json()["jobs"]) == 2
-    
-    # Wait a moment for stop to take effect
-    time.sleep(1)
-    
+
+    # Wait for the stops to take effect
+    assert wait_for_jobs_completion(client, [q]), "jobs did not reach a terminal state after stop"
+
     # Check that all jobs are now stopped
     response = client.get(f"/{q.qid}/job-status?authorization={auth}")
     assert response.status_code == 200
@@ -712,7 +712,7 @@ def test_delete_job(client, q):
     assert response.status_code == 200
     response = client.post(f"/{q.qid}/stop/test_model?authorization={q.token}")
     assert response.status_code == 200
-    time.sleep(1)
+    assert wait_for_jobs_completion(client, [q]), "job did not reach a terminal state after stop"
     response = client.get(f"/{q.qid}/job-status?authorization={q.token}")
     assert response.status_code == 200
     data = response.get_json()
