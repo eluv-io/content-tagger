@@ -16,7 +16,8 @@ class MockVectorstore(Datastore):
     """In-memory vectorstore for a single index, used for local runs and tests.
 
     Mirrors the semantics of the filesystem tagstore so the two are interchangeable
-    behind the `Datastore` protocol.
+    behind the `Datastore` protocol. It does serve the reads the real service refuses,
+    which is what tests inspect it through.
     """
 
     def __init__(self, index_qid: str):

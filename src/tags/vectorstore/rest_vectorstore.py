@@ -1,7 +1,6 @@
 import json
 import time
 import requests
-from dateutil import parser
 
 from src.common.content import Content
 from src.common.logging import logger
@@ -14,8 +13,8 @@ class RestVectorstore(Datastore):
     `index_qid` is the content that holds the index; the `q` passed to each method is
     the content being embedded, which is what a vector's `qid` refers to.
 
-    The batch read/update endpoints mirror the tagstore's (`vector-batches/{id}`) and
-    are not part of the published vectorstore spec yet.
+    The service writes and deletes vectors but never lists them, so the read side of
+    the protocol (find_tags, count_tags, get_batch, find_batches) is unsupported.
     """
 
     def __init__(self, base_url: str, timeout: int, index_qid: str):
@@ -59,7 +58,7 @@ class RestVectorstore(Datastore):
         q: Content
     ) -> Batch:
         response = self.session.post(
-            self._index_url("/vector-batches"),
+            self._index_url("/batches"),
             json={"model": model, "author": author, "qid": q.qid},
             headers=self._get_headers(q),
             timeout=self.timeout
@@ -85,7 +84,7 @@ class RestVectorstore(Datastore):
         q: Content,
     ) -> None:
         response = self.session.patch(
-            self._index_url(f"/vector-batches/{batch_id}"),
+            self._index_url(f"/batches/{batch_id}"),
             json={"additional_info": additional_info},
             headers=self._get_headers(q),
             timeout=self.timeout
@@ -101,26 +100,32 @@ class RestVectorstore(Datastore):
         if any(not is_vector(tag.data) for tag in tags):
             raise ValueError("a vectorstore only stores vectors, write text tags to a tagstore instead")
 
-        # the vectorstore schema has no additional_info on a vector, so only the
-        # frame index survives the write
+        # the service accepts an unbatched vector, but nothing can ever delete one
+        # require that we pass a batch
+        if not batch_id:
+            raise ValueError("vectors must be written under a batch")
+
+        # a vector has no frame_info field, only the frame index survives the write
         vectors = []
         for tag in tags:
             vector = {
-                "batch_id": batch_id,
-                "qid": q.qid,
                 "track": track,
                 "source": tag.source,
                 "start_time": tag.start_time,
                 "end_time": tag.end_time,
                 "vector": tag.data,
             }
+            if tag.additional_info is not None:
+                vector["additional_info"] = tag.additional_info
             if tag.frame_info is not None and "frame_idx" in tag.frame_info:
                 vector["frame_idx"] = tag.frame_info["frame_idx"]
             vectors.append(vector)
 
+        # one request is one batch over one content, so both are given once, at the top
+        # level - a vector carrying its own qid or batch_id is silently dropped
         response = self.session.post(
             self._index_url("/vectors"),
-            json={"vectors": vectors},
+            json={"qid": q.qid, "batch_id": batch_id, "vectors": vectors},
             headers=self._get_headers(q),
             timeout=self.timeout
         )
@@ -142,26 +147,10 @@ class RestVectorstore(Datastore):
         if not response.ok:
             self._log_response_and_raise(response)
 
-    def find_batches(self, q: Content, **filters) -> list[Batch]:
-        """
-        Find vector batches with flexible filtering.
-
-        Supported filters:
-        - model: str
-        - author: str
-        - limit: int
-        - offset: int
-        """
-        params = {}
-        for key in ('model', 'author', 'limit'):
-            if key in filters:
-                params[key] = filters[key]
-        if 'offset' in filters:
-            params['start'] = filters['offset']
-
-        response = self.session.get(
-            self._index_url("/vector-batches"),
-            params=params,
+    def delete_batch(self, batch_id: str, q: Content) -> None:
+        """Delete a batch and every vector written under it."""
+        response = self.session.delete(
+            self._index_url(f"/batches/{batch_id}"),
             headers=self._get_headers(q),
             timeout=self.timeout
         )
@@ -169,25 +158,9 @@ class RestVectorstore(Datastore):
         if not response.ok:
             self._log_response_and_raise(response)
 
-        batches = response.json().get('batches', [])
-
-        # the index can span several contents, only this one's batches are relevant
-        return [self._parse_batch(b) for b in batches if b.get("qid", q.qid) == q.qid]
-
-    def get_batch(self, batch_id: str, q: Content) -> Batch | None:
-        response = self.session.get(
-            self._index_url(f"/vector-batches/{batch_id}"),
-            headers=self._get_headers(q),
-            timeout=self.timeout
-        )
-
-        if response.status_code == 404:
-            return None
-
-        if not response.ok:
-            self._log_response_and_raise(response)
-
-        return self._parse_batch(response.json())
+    # The vectorstore is write-only from here down: a batch can be written, amended and
+    # deleted but never read back, and vectors are only reachable by search. Nothing
+    # reads a run back out of the index - the tagstore is the system of record for that.
 
     def find_tags(self, q: Content, **filters) -> list[Tag]:
         raise NotImplementedError("the vectorstore has no filtered vector listing, use search instead")
@@ -195,15 +168,8 @@ class RestVectorstore(Datastore):
     def count_tags(self, q: Content, **filters) -> int:
         raise NotImplementedError("the vectorstore has no filtered vector listing, use search instead")
 
-    def delete_batch(self, batch_id: str, q: Content) -> None:
-        raise NotImplementedError("the vectorstore deletes vectors by model and source, not by batch")
+    def get_batch(self, batch_id: str, q: Content) -> Batch | None:
+        raise NotImplementedError("the vectorstore does not serve vector batches for reading")
 
-    def _parse_batch(self, batch_data: dict) -> Batch:
-        return Batch(
-            id=str(batch_data['id']),
-            qid=batch_data['qid'],
-            model=batch_data['model'],
-            timestamp=parser.isoparse(batch_data['created_at'].replace("Z", "+00:00")).timestamp(),
-            author=batch_data['author'],
-            additional_info=batch_data.get("additional_info", {})
-        )
+    def find_batches(self, q: Content, **filters) -> list[Batch]:
+        raise NotImplementedError("the vectorstore does not serve vector batches for reading")

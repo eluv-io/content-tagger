@@ -1,0 +1,415 @@
+basePath: /
+definitions:
+  CompleteJobRequest:
+    properties:
+      error:
+        type: string
+      status:
+        $ref: '#/definitions/TagStatus'
+      status_details:
+        additionalProperties: true
+        type: object
+    required:
+    - status
+    type: object
+  CreateJobRequest:
+    properties:
+      additional_info:
+        additionalProperties: true
+        type: object
+      dependencies:
+        description: |-
+          Dependencies is an optional list of job ids that must succeed before
+          this job becomes ready to be claimed.
+        items:
+          type: string
+        type: array
+      params:
+        additionalProperties: true
+        type: object
+      status_details:
+        additionalProperties: true
+        type: object
+      type:
+        type: string
+    required:
+    - type
+    type: object
+  JobDependenciesResponse:
+    properties:
+      dependencies:
+        items:
+          $ref: '#/definitions/JobDependencyResponse'
+        type: array
+    type: object
+  JobDependencyResponse:
+    properties:
+      dependency:
+        type: string
+      dependent:
+        type: string
+      satisfied:
+        type: boolean
+    type: object
+  JobResponse:
+    properties:
+      additional_info:
+        additionalProperties: true
+        type: object
+      created_at:
+        type: string
+      error:
+        type: string
+      id:
+        type: string
+      last_heartbeat:
+        type: string
+      params:
+        additionalProperties: true
+        type: object
+      qid:
+        type: string
+      ready:
+        type: boolean
+      status:
+        $ref: '#/definitions/TagStatus'
+      status_details:
+        additionalProperties: true
+        type: object
+      stop_requested:
+        type: boolean
+      tenant:
+        type: string
+      type:
+        type: string
+      updated_at:
+        type: string
+      user:
+        type: string
+    type: object
+  ListJobsResponse:
+    properties:
+      jobs:
+        items:
+          $ref: '#/definitions/JobResponse'
+        type: array
+      meta:
+        $ref: '#/definitions/Meta'
+    type: object
+  Meta:
+    properties:
+      count:
+        type: integer
+      limit:
+        type: integer
+      start:
+        type: integer
+      total:
+        type: integer
+    type: object
+  UpdateJobRequest:
+    properties:
+      status_details:
+        additionalProperties: true
+        type: object
+    required:
+    - status_details
+    type: object
+  TagStatus:
+    enum:
+    - queued
+    - running
+    - succeeded
+    - failed
+    - cancelled
+    - deleted
+    type: string
+    x-enum-varnames:
+    - StatusQueued
+    - StatusRunning
+    - StatusSucceeded
+    - StatusFailed
+    - StatusCancelled
+    - StatusDeleted
+host: localhost:8106
+info:
+  contact: {}
+  description: REST API for submitting and managing content-fabric job queues.
+  title: Queue Manager API
+  version: "1.0"
+paths:
+  /jobs:
+    get:
+      description: 'Filters: status, qid, user, tenant, type. Authorization falls
+        back to the caller''s own jobs when the requested scope is not allowed.'
+      parameters:
+      - description: 'filter by status: queued, running, succeeded, failed, cancelled,
+          deleted'
+        in: query
+        name: status
+        type: string
+      - description: filter by qid
+        in: query
+        name: qid
+        type: string
+      - description: filter by user address
+        in: query
+        name: user
+        type: string
+      - description: filter by tenant
+        in: query
+        name: tenant
+        type: string
+      - description: filter by job type
+        in: query
+        name: type
+        type: string
+      - description: pagination offset
+        in: query
+        name: start
+        type: integer
+      - description: pagination limit
+        in: query
+        name: limit
+        type: integer
+      - description: include jobs blocked on unmet dependencies (default false)
+        in: query
+        name: include_unready
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ListJobsResponse'
+      summary: List jobs
+      tags:
+      - Jobs
+  /jobs/{id}:
+    delete:
+      description: Hard-deletes the row. For a soft delete, PATCH the job with status="deleted".
+      parameters:
+      - description: job id (uuid)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: no content
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Delete a job by id
+      tags:
+      - Jobs
+    get:
+      parameters:
+      - description: job id (uuid)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/JobResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get a job by id
+      tags:
+      - Jobs
+    patch:
+      consumes:
+      - application/json
+      description: Status transitions are not allowed here; use POST /jobs/{id}/complete
+        to move a running job to a terminal state.
+      parameters:
+      - description: job id (uuid)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: update spec
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/UpdateJobRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/JobResponse'
+      summary: Update a running job's progress (status_details only)
+      tags:
+      - Jobs
+  /jobs/{id}/claim:
+    post:
+      parameters:
+      - description: job id (uuid)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/JobResponse'
+        "400":
+          description: job not in queued state
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Atomically claim a queued job (transition queued -> running)
+      tags:
+      - Jobs
+  /jobs/{id}/complete:
+    post:
+      consumes:
+      - application/json
+      description: status must be one of "succeeded", "failed", "cancelled". On success,
+        dependents are advanced; otherwise the failure cascades to all transitively-dependent
+        queued/running jobs.
+      parameters:
+      - description: job id (uuid)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: completion spec
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/CompleteJobRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/JobResponse'
+        "400":
+          description: job not in running state, or invalid status
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Move a running job to a terminal state and resolve dependencies
+      tags:
+      - Jobs
+  /jobs/{id}/dependencies:
+    get:
+      parameters:
+      - description: job id (uuid)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/JobDependenciesResponse'
+      summary: List a job's dependencies and their satisfied state
+      tags:
+      - Jobs
+  /jobs/{id}/heartbeat:
+    post:
+      parameters:
+      - description: job id (uuid)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Renew lease (update last_heartbeat to now)
+      tags:
+      - Jobs
+  /jobs/{id}/stop:
+    post:
+      parameters:
+      - description: job id (uuid)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/JobResponse'
+      summary: Request a job to stop (sets stop_requested = true)
+      tags:
+      - Jobs
+  /q/{qid}/jobs:
+    post:
+      consumes:
+      - application/json
+      description: Creates a queued job for the given content id. The user is resolved
+        from the bearer token; the tenant is resolved from the fabric.
+      parameters:
+      - description: content id
+        in: path
+        name: qid
+        required: true
+        type: string
+      - description: job spec
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/CreateJobRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/JobResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Submit a new job to the queue
+      tags:
+      - Jobs
+swagger: "2.0"

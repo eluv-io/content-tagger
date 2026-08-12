@@ -1,4 +1,9 @@
 {
+    "servers": [
+        {
+            "url": "https://ai.contentfabric.io/tagging-live"
+        }
+    ],
     "paths": {
         "/{qid}/tag": {
             "post": {
@@ -30,8 +35,10 @@
                         }
                     }
                 },
+                "summary": "Start Tagging",
+                "description": "Start a batch of tagging jobs for a content object. The request body contains a list of models to run as well as any global options or model specific runtime parameters.",
                 "tags": [
-                    "tagging"
+                    "Operate Tagging"
                 ]
             },
             "parameters": [
@@ -64,9 +71,11 @@
                         "name": "limit",
                         "description": "Maximum number of jobs to return. Null for no limit.",
                         "schema": {
-                            "type": "integer",
-                            "default": null,
-                            "nullable": true
+                            "type": [
+                                "integer",
+                                "null"
+                            ],
+                            "default": null
                         },
                         "required": false
                     },
@@ -75,9 +84,11 @@
                         "name": "qid",
                         "description": "Filter by content id.",
                         "schema": {
-                            "type": "string",
-                            "default": null,
-                            "nullable": true
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "default": null
                         },
                         "required": false
                     },
@@ -86,9 +97,11 @@
                         "name": "status",
                         "description": "Filter by job status.",
                         "schema": {
-                            "type": "string",
-                            "default": null,
-                            "nullable": true
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "default": null
                         },
                         "required": false
                     },
@@ -97,9 +110,11 @@
                         "name": "tenant",
                         "description": "Filter by tenant. Requires tenant admin privileges.",
                         "schema": {
-                            "type": "string",
-                            "default": null,
-                            "nullable": true
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "default": null
                         },
                         "required": false
                     },
@@ -108,9 +123,11 @@
                         "name": "user",
                         "description": "Filter by user address. Provided authorization must match the authenticated user unless querying as tenant admin.",
                         "schema": {
-                            "type": "string",
-                            "default": null,
-                            "nullable": true
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "default": null
                         },
                         "required": false
                     },
@@ -119,9 +136,11 @@
                         "name": "model",
                         "description": "Filter by model name (e.g. \"asr\", \"celeb\").",
                         "schema": {
-                            "type": "string",
-                            "default": null,
-                            "nullable": true
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "default": null
                         },
                         "required": false
                     },
@@ -130,9 +149,11 @@
                         "name": "title",
                         "description": "Filter by content title (case-insensitive substring match).",
                         "schema": {
-                            "type": "string",
-                            "default": null,
-                            "nullable": true
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "default": null
                         },
                         "required": false
                     }
@@ -155,8 +176,10 @@
                         "$ref": "#/components/responses/DEFAULT_ERROR"
                     }
                 },
+                "summary": "Get job statuses for a content object",
+                "description": "Get the status of all jobs for a content object. Requires the content's qid in the path and optional filters in the query string.",
                 "tags": [
-                    "tagging"
+                    "Operate Tagging"
                 ]
             },
             "parameters": [
@@ -189,9 +212,11 @@
                         "name": "limit",
                         "description": "Maximum number of jobs to return. Null for no limit.",
                         "schema": {
-                            "type": "integer",
-                            "default": null,
-                            "nullable": true
+                            "type": [
+                                "integer",
+                                "null"
+                            ],
+                            "default": null
                         },
                         "required": false
                     },
@@ -200,9 +225,11 @@
                         "name": "qid",
                         "description": "Filter by content id.",
                         "schema": {
-                            "type": "string",
-                            "default": null,
-                            "nullable": true
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "default": null
                         },
                         "required": false
                     },
@@ -211,9 +238,11 @@
                         "name": "status",
                         "description": "Filter by job status.",
                         "schema": {
-                            "type": "string",
-                            "default": null,
-                            "nullable": true
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "default": null
                         },
                         "required": false
                     },
@@ -222,9 +251,11 @@
                         "name": "tenant",
                         "description": "Filter by tenant. Requires tenant admin privileges.",
                         "schema": {
-                            "type": "string",
-                            "default": null,
-                            "nullable": true
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "default": null
                         },
                         "required": false
                     },
@@ -233,9 +264,11 @@
                         "name": "user",
                         "description": "Filter by user address. Provided authorization must match the authenticated user unless querying as tenant admin.",
                         "schema": {
-                            "type": "string",
-                            "default": null,
-                            "nullable": true
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "default": null
                         },
                         "required": false
                     },
@@ -244,9 +277,11 @@
                         "name": "model",
                         "description": "Filter by model name (e.g. \"asr\", \"celeb\").",
                         "schema": {
-                            "type": "string",
-                            "default": null,
-                            "nullable": true
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "default": null
                         },
                         "required": false
                     },
@@ -255,9 +290,11 @@
                         "name": "title",
                         "description": "Filter by content title (case-insensitive substring match).",
                         "schema": {
-                            "type": "string",
-                            "default": null,
-                            "nullable": true
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "default": null
                         },
                         "required": false
                     }
@@ -280,14 +317,14 @@
                         "$ref": "#/components/responses/DEFAULT_ERROR"
                     }
                 },
-                "summary": "Global job-status endpoint. Requires ?tenant= filter.",
-                "description": "Authentication: the caller's auth token is verified by picking the first\nreturned job's qid and confirming get_tenant(qid, auth) matches the\nrequested tenant.",
+                "summary": "Get job statuses for a tenant or user",
+                "description": "Get the status of all jobs for a tenant or user. By default the API returns jobs for the authenticated user.\nIf a tenant id is specified, the API will return jobs for that tenant only if the caller is a tenant admin.",
                 "tags": [
-                    "tagging"
+                    "Operate Tagging"
                 ]
             }
         },
-        "/{qid}/stop/{feature}": {
+        "/{qid}/stop/{model}": {
             "post": {
                 "responses": {
                     "200": {
@@ -304,8 +341,10 @@
                         "$ref": "#/components/responses/DEFAULT_ERROR"
                     }
                 },
+                "summary": "Stop tagging jobs by model",
+                "description": "Stop a tagging job for a specific model on a given content object (qid).",
                 "tags": [
-                    "tagging"
+                    "Operate Tagging"
                 ]
             },
             "parameters": [
@@ -320,7 +359,7 @@
                 },
                 {
                     "in": "path",
-                    "name": "feature",
+                    "name": "model",
                     "required": true,
                     "schema": {
                         "type": "string",
@@ -346,14 +385,82 @@
                         "$ref": "#/components/responses/DEFAULT_ERROR"
                     }
                 },
+                "summary": "Stop all jobs for a content object",
                 "tags": [
-                    "tagging"
+                    "Operate Tagging"
                 ]
             },
             "parameters": [
                 {
                     "in": "path",
                     "name": "qid",
+                    "required": true,
+                    "schema": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                }
+            ]
+        },
+        "/models": {
+            "get": {
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ListingResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/DEFAULT_ERROR"
+                    }
+                },
+                "summary": "List available models",
+                "tags": [
+                    "Operate Tagging"
+                ]
+            }
+        },
+        "/jobs/{job_id}": {
+            "delete": {
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "tenant",
+                        "schema": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "default": null
+                        },
+                        "required": false
+                    }
+                ],
+                "responses": {
+                    "422": {
+                        "$ref": "#/components/responses/UNPROCESSABLE_ENTITY"
+                    },
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/DEFAULT_ERROR"
+                    }
+                },
+                "summary": "Delete an inactive job",
+                "tags": [
+                    "Operate Tagging"
+                ]
+            },
+            "parameters": [
+                {
+                    "in": "path",
+                    "name": "job_id",
                     "required": true,
                     "schema": {
                         "type": "string",
@@ -379,8 +486,9 @@
                         "$ref": "#/components/responses/DEFAULT_ERROR"
                     }
                 },
+                "summary": "Get tagging status summary for a content object",
                 "tags": [
-                    "content_status"
+                    "Tagging History"
                 ]
             },
             "parameters": [
@@ -412,8 +520,9 @@
                         "$ref": "#/components/responses/DEFAULT_ERROR"
                     }
                 },
+                "summary": "Get tagging status for a specific model on a content object",
                 "tags": [
-                    "content_status"
+                    "Tagging History"
                 ]
             },
             "parameters": [
@@ -436,69 +545,6 @@
                     }
                 }
             ]
-        },
-        "/models": {
-            "get": {
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ListingResponse"
-                                }
-                            }
-                        }
-                    },
-                    "default": {
-                        "$ref": "#/components/responses/DEFAULT_ERROR"
-                    }
-                },
-                "tags": [
-                    "extension"
-                ]
-            }
-        },
-        "/jobs/{job_id}": {
-            "delete": {
-                "parameters": [
-                    {
-                        "in": "query",
-                        "name": "tenant",
-                        "schema": {
-                            "type": "string",
-                            "default": null,
-                            "nullable": true
-                        },
-                        "required": false
-                    }
-                ],
-                "responses": {
-                    "422": {
-                        "$ref": "#/components/responses/UNPROCESSABLE_ENTITY"
-                    },
-                    "204": {
-                        "description": "No Content"
-                    },
-                    "default": {
-                        "$ref": "#/components/responses/DEFAULT_ERROR"
-                    }
-                },
-                "tags": [
-                    "extension"
-                ]
-            },
-            "parameters": [
-                {
-                    "in": "path",
-                    "name": "job_id",
-                    "required": true,
-                    "schema": {
-                        "type": "string",
-                        "minLength": 1
-                    }
-                }
-            ]
         }
     },
     "info": {
@@ -507,19 +553,15 @@
     },
     "tags": [
         {
-            "name": "tagging",
+            "name": "Operate Tagging",
             "description": "Start, query and stop tagging jobs."
         },
         {
-            "name": "content_status",
+            "name": "Tagging History",
             "description": "Per-content tagging status summaries."
-        },
-        {
-            "name": "extension",
-            "description": "Model listing and job management."
         }
     ],
-    "openapi": "3.0.2",
+    "openapi": "3.2.0",
     "components": {
         "schemas": {
             "Error": {
@@ -630,15 +672,19 @@
                         "description": "Scope identifier to remove ambiguity"
                     },
                     "start_time": {
-                        "type": "integer",
-                        "description": "Start tagging at this point in the media stream (in seconds)",
-                        "nullable": true
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "Start tagging at this point in the media stream (in seconds)"
                     },
                     "end_time": {
-                        "type": "integer",
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
                         "description": "End tagging at this point in the media stream (in seconds)",
-                        "example": 600,
-                        "nullable": true
+                        "example": 600
                     },
                     "chunk_size": {
                         "type": "integer",
@@ -660,7 +706,10 @@
                         "description": "Scope identifier to remove ambiguity"
                     },
                     "assets": {
-                        "type": "array",
+                        "type": [
+                            "array",
+                            "null"
+                        ],
                         "description": "List of asset paths to tag",
                         "example": [
                             "assets/hello1.jpg",
@@ -668,8 +717,7 @@
                         ],
                         "items": {
                             "type": "string"
-                        },
-                        "nullable": true
+                        }
                     }
                 },
                 "additionalProperties": false
@@ -691,9 +739,11 @@
                         "description": "Tagging interval size (in seconds)"
                     },
                     "max_duration": {
-                        "type": "integer",
-                        "description": "Maximum amount of content from livestream to tag (in seconds)",
-                        "nullable": true
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "Maximum amount of content from livestream to tag (in seconds)"
                     }
                 },
                 "additionalProperties": false
@@ -943,22 +993,36 @@
                 "type": "object",
                 "properties": {
                     "destination_qid": {
-                        "type": "string",
+                        "type": [
+                            "string",
+                            "null"
+                        ],
                         "default": null,
-                        "description": "Content where tags should be written to. Leaving empty will write to the same content the model is running on.",
-                        "nullable": true
+                        "description": "Content where tags should be written to. Leaving empty will write to the same content the model is running on."
+                    },
+                    "index_qid": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "default": null,
+                        "description": "Vector index where embeddings should be written to. Required for models which output vectors, ignored by models which only output text tags."
                     },
                     "replace": {
-                        "type": "boolean",
+                        "type": [
+                            "boolean",
+                            "null"
+                        ],
                         "default": null,
-                        "description": "Replace already existing tagstore tags. Set to true to retag, set to false to enable diff-based tagging.",
-                        "nullable": true
+                        "description": "Replace already existing tagstore tags. Set to true to retag, set to false to enable diff-based tagging."
                     },
                     "max_fetch_retries": {
-                        "type": "integer",
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
                         "default": null,
-                        "description": "If a fetch operation fails, we can retry this many times before the job is marked as failed.",
-                        "nullable": true
+                        "description": "If a fetch operation fails, we can retry this many times before the job is marked as failed."
                     },
                     "scope": {
                         "type": "object",
@@ -1047,11 +1111,7 @@
                                 "stream": "spanish_audio_5_1"
                             }
                         },
-                        "allOf": [
-                            {
-                                "$ref": "#/components/schemas/TaggerOptions"
-                            }
-                        ]
+                        "$ref": "#/components/schemas/TaggerOptions"
                     }
                 },
                 "required": [
@@ -1064,11 +1124,7 @@
                 "properties": {
                     "options": {
                         "description": "Knobs that apply to all tagger jobs in the request.",
-                        "allOf": [
-                            {
-                                "$ref": "#/components/schemas/TaggerOptions"
-                            }
-                        ]
+                        "$ref": "#/components/schemas/TaggerOptions"
                     },
                     "jobs": {
                         "type": "array",
@@ -1111,10 +1167,12 @@
                         }
                     },
                     "error": {
-                        "type": "string",
+                        "type": [
+                            "string",
+                            "null"
+                        ],
                         "description": "Error message if the job failed",
-                        "example": null,
-                        "nullable": true
+                        "example": null
                     }
                 },
                 "additionalProperties": false
@@ -1193,8 +1251,7 @@
                                 "$ref": "#/components/schemas/WarningResponse"
                             },
                             {
-                                "type": "object",
-                                "nullable": true
+                                "type": "null"
                             }
                         ]
                     }
@@ -1266,10 +1323,12 @@
                         "example": 0.56
                     },
                     "error": {
-                        "type": "string",
+                        "type": [
+                            "string",
+                            "null"
+                        ],
                         "description": "Error message if the job failed or was cancelled",
-                        "example": null,
-                        "nullable": true
+                        "example": null
                     },
                     "tag_details": {
                         "description": "Detailed progress information for the tagging job. Null if the job is still on the queue.",
@@ -1278,8 +1337,7 @@
                                 "$ref": "#/components/schemas/TagDetails"
                             },
                             {
-                                "type": "object",
-                                "nullable": true
+                                "type": "null"
                             }
                         ]
                     }
@@ -1300,10 +1358,12 @@
                         "example": 0
                     },
                     "limit": {
-                        "type": "integer",
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
                         "description": "Maximum number of items requested, or null for no limit",
-                        "example": null,
-                        "nullable": true
+                        "example": null
                     },
                     "count": {
                         "type": "integer",
@@ -1357,6 +1417,65 @@
                     "message": {
                         "type": "string",
                         "description": "Top level message"
+                    }
+                },
+                "additionalProperties": false
+            },
+            "TrackOutput": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Track name as stored in the tag store",
+                        "example": "celebrity_detection"
+                    }
+                },
+                "additionalProperties": false
+            },
+            "ModelSpec": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Model identifier",
+                        "example": "celeb"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Human readable description of what the model does",
+                        "example": "Celebrity Identification"
+                    },
+                    "type": {
+                        "type": "string",
+                        "description": "Model type",
+                        "example": "frame"
+                    },
+                    "tag_tracks": {
+                        "type": "array",
+                        "description": "Tag tracks this model writes to",
+                        "items": {
+                            "$ref": "#/components/schemas/TrackOutput"
+                        }
+                    },
+                    "dependencies": {
+                        "type": "array",
+                        "description": "Tag tracks that must exist before this model can be run",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "additionalProperties": false
+            },
+            "ListingResponse": {
+                "type": "object",
+                "properties": {
+                    "models": {
+                        "type": "array",
+                        "description": "List of available models",
+                        "items": {
+                            "$ref": "#/components/schemas/ModelSpec"
+                        }
                     }
                 },
                 "additionalProperties": false
@@ -1490,8 +1609,7 @@
                                 "$ref": "#/components/schemas/JobUploadStatusSummary"
                             },
                             {
-                                "type": "object",
-                                "nullable": true
+                                "type": "null"
                             }
                         ]
                     }
@@ -1509,65 +1627,6 @@
                         "description": "Chronological list of every job that has been run for this model",
                         "items": {
                             "$ref": "#/components/schemas/JobDetail"
-                        }
-                    }
-                },
-                "additionalProperties": false
-            },
-            "TrackOutput": {
-                "type": "object",
-                "properties": {
-                    "name": {
-                        "type": "string",
-                        "description": "Track name as stored in the tag store",
-                        "example": "celebrity_detection"
-                    }
-                },
-                "additionalProperties": false
-            },
-            "ModelSpec": {
-                "type": "object",
-                "properties": {
-                    "name": {
-                        "type": "string",
-                        "description": "Model identifier",
-                        "example": "celeb"
-                    },
-                    "description": {
-                        "type": "string",
-                        "description": "Human readable description of what the model does",
-                        "example": "Celebrity Identification"
-                    },
-                    "type": {
-                        "type": "string",
-                        "description": "Model type",
-                        "example": "frame"
-                    },
-                    "tag_tracks": {
-                        "type": "array",
-                        "description": "Tag tracks this model writes to",
-                        "items": {
-                            "$ref": "#/components/schemas/TrackOutput"
-                        }
-                    },
-                    "dependencies": {
-                        "type": "array",
-                        "description": "Tag tracks that must exist before this model can be run",
-                        "items": {
-                            "type": "string"
-                        }
-                    }
-                },
-                "additionalProperties": false
-            },
-            "ListingResponse": {
-                "type": "object",
-                "properties": {
-                    "models": {
-                        "type": "array",
-                        "description": "List of available models",
-                        "items": {
-                            "$ref": "#/components/schemas/ModelSpec"
                         }
                     }
                 },

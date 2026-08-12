@@ -106,7 +106,8 @@ class TaggingStatusService:
                         num_tagged_parts=num_tagged,
                     )
 
-                params = TagArgs(**tagger_info["params"])
+                # reports written before a field existed simply omit it
+                params = TagArgs(**{"index_qid": "", **tagger_info["params"]})
                 job_status = JobRunStatus(**tagger_info["job_status"])
 
                 jobs.append(

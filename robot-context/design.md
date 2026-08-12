@@ -34,6 +34,8 @@ Manage the full workflow of a tagging job: 1. Fetching parts/data, 2. Scheduling
       carries its own track name.
     - A vectorstore is addressed per index, so it is built from the caller's `index_qid` rather than
       configured once at startup.
+    - A vectorstore is write-only: vectors and batches are written, amended and deleted but never
+      listed, so the tagstore stays the system of record for what a run produced.
 
 ## 3. Tagging Layer
 1. Keeps track of which gpu containers are running on

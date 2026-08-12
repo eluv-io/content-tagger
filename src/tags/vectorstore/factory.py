@@ -14,6 +14,7 @@ class VectorstoreFactory:
     def __init__(self, cfg: VectorstoreConfig):
         self.cfg = cfg
         # mocks are kept per index so their contents survive across jobs
+        # it's convenient to dispatch the mocks in the factory even though they aren't used in production
         self._mocks: dict[str, MockVectorstore] = {}
 
     def create(self, index_qid: str) -> Datastore:

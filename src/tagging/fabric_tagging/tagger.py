@@ -53,7 +53,7 @@ class TaggerWorker:
     """
 
     def __init__(
-        self, 
+        self,
         system_tagger: ContainerScheduler,
         cregistry: ContainerRegistry,
         tagstore: Datastore,
