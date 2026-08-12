@@ -19,7 +19,6 @@ class UploadSession:
         datastore: Datastore,
         track_suffix: str,
         dest_q: Content,
-        do_retry: bool,
         hidden: bool = False,
     ):
 
@@ -28,14 +27,12 @@ class UploadSession:
         self.datastore = datastore
         self.dest_q = dest_q
         self.track_suffix = track_suffix
-        self.retry = do_retry
         self.hidden = hidden
         # Mutable state
         # a single batch spans the whole session (one model run over many tracks)
         self.batch_id: str | None = None
         self.created_tracks: set[str] = set()
         self.uploaded_tags: set[ModelTag] = set()
-        self.uploaded_sources = set()
         # every source we've seen this session, from progress (tagged_sources) or from
         # the tags themselves, used to delete pre-existing tags for those sources
         self.seen_sources: set[str] = set()
@@ -89,24 +86,16 @@ class UploadSession:
         # covers every track the model produces in one call.
         sources_to_delete = self.seen_sources - self.deleted_sources
 
-        try:
-            if sources_to_delete:
-                self.datastore.delete_tags_by_source(
-                    sources=list(sources_to_delete),
-                    model=self._model_name(),
-                    q=self.dest_q,
-                )
-            self._post_tags(tags_by_track, q=self.dest_q)
-        except Exception as e:
-            if self.retry:
-                logger.opt(exception=e).error("error uploading tags, but retry is set to true, will retry on next upload tick", destination_qid=self.dest_q.qid, feature=self.feature)
-                return
-            else:
-                raise
+        # a failure leaves the session's state untouched so the caller can retry
+        if sources_to_delete:
+            self.datastore.delete_tags_by_source(
+                sources=list(sources_to_delete),
+                model=self._model_name(),
+                q=self.dest_q,
+            )
+        self._post_tags(tags_by_track, q=self.dest_q)
 
         self.deleted_sources.update(sources_to_delete)
-
-        self.uploaded_sources.update(tagged_sources)
 
         self.uploaded_tags.update(new_inputs)
 
@@ -115,10 +104,10 @@ class UploadSession:
         batch = self._get_or_create_batch()
         self.datastore.update_batch(batch_id=batch, additional_info={"tagger": asdict(report)}, q=self.dest_q)
 
-    def get_uploaded_sources(self) -> list[str]:
-        """Get the set of source media that have been tagged in this session."""
-        return list(self.uploaded_sources)
-    
+    def has_batch(self) -> bool:
+        """Whether this session has written anything to its store yet."""
+        return self.batch_id is not None
+
     def _model_name(self) -> str:
         """The model identifier recorded on the session's batch (and used to scope
         source deletions). The track suffix keeps distinct runs from colliding."""
@@ -227,6 +216,7 @@ class Uploader:
     ):
         self.feature = feature
         self.dest_q = dest_q
+        self.retry = do_retry
 
         def session(store: Datastore) -> UploadSession:
             return UploadSession(
@@ -235,15 +225,12 @@ class Uploader:
                 datastore=store,
                 track_suffix=track_suffix,
                 dest_q=dest_q,
-                do_retry=do_retry,
                 hidden=hidden,
             )
 
         self.tag_session = session(tagstore)
         self.vector_session = session(vectorstore) if vectorstore is not None else None
-        # which stores this run has actually written to, decides where the report goes
-        self.wrote_tags = False
-        self.wrote_vectors = False
+        self.uploaded_sources: set[str] = set()
 
     def upload(
         self,
@@ -260,33 +247,31 @@ class Uploader:
                 "specify index_qid in the tagger options to choose the vector index to write to"
             )
 
-        # every session sees the progress so that a reprocessed source has its stale
-        # outputs cleared from both stores
-        self.tag_session.upload_tags(texts, tagged_sources)
-        self.wrote_tags = self.wrote_tags or bool(texts)
+        try:
+            self.tag_session.upload_tags(texts, tagged_sources)
+            if self.vector_session is not None:
+                self.vector_session.upload_tags(vectors, tagged_sources)
+        except Exception as e:
+            if not self.retry:
+                raise
+            logger.opt(exception=e).error(
+                "error uploading tags, but retry is set to true, will retry on next upload tick",
+                destination_qid=self.dest_q.qid,
+                feature=self.feature,
+            )
+            return
 
-        if self.vector_session is not None:
-            self.vector_session.upload_tags(vectors, tagged_sources)
-            self.wrote_vectors = self.wrote_vectors or bool(vectors)
+        self.uploaded_sources.update(tagged_sources)
 
     def upload_report(self, report: TagContentStatusReport) -> None:
-        """Record the run's report on the batch of every store it wrote to.
+        """Record the run's report.
 
-        A run that produced nothing still reports to the tagstore, which is where a
-        text model's empty run is expected to leave a trace.
+        The tagstore is the system of record - every run reports there. But the vectorstore also gets a copy.
         """
-        if self.wrote_vectors and self.vector_session is not None:
+        self.tag_session.upload_report(report)
+        if self.vector_session is not None and self.vector_session.has_batch():
             self.vector_session.upload_report(report)
-        if self.wrote_tags or not self.wrote_vectors:
-            self.tag_session.upload_report(report)
 
     def get_uploaded_sources(self) -> list[str]:
-        """Sources that landed in every store in play.
-
-        A source only counts as uploaded once all of the model's outputs for it have
-        been written, otherwise a partial failure would let a re-run skip it.
-        """
-        sources = set(self.tag_session.get_uploaded_sources())
-        if self.vector_session is not None:
-            sources &= set(self.vector_session.get_uploaded_sources())
-        return list(sources)
+        """Get the set of source media that have been tagged in this run."""
+        return list(self.uploaded_sources)

@@ -874,6 +874,11 @@ def test_vector_tagging(fabric_tagger, q, make_tag_args):
     # check that a report was added
     assert vs.find_batches(q=q, model="caption")[0].additional_info
 
+    # check we get some tags too, cause we configured the fake container to produce both
+    ts = fabric_tagger.tagstore
+    tags = ts.find_tags(q=q, track="object_detection")
+    assert len(tags) > 0
+
     # tag again and check that no new parts are tagged
     args = make_tag_args(feature="caption", stream="video", destination_qid=q.qid, index_qid="iq__test", replace=False)
     result = fabric_tagger.tag(q, args)

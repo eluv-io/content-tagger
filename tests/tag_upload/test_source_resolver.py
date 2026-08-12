@@ -16,10 +16,9 @@ class MockReport:
 
 
 @pytest.fixture
-def source_resolver(tag_store, vectorstores, track_resolver):
+def source_resolver(tag_store, track_resolver):
     return SourceResolver(
         tagstore=tag_store,
-        vectorstores=vectorstores,
         track_resolver=track_resolver
     )
 
@@ -55,7 +54,6 @@ def _run_and_report(tag_store, track_resolver, q, track_suffix, sources, get_tag
         datastore=tag_store,
         dest_q=q,
         track_suffix=track_suffix,
-        do_retry=False,
     )
     session.upload_tags(
         tags=[get_tag(model_track="", data="t", source_media=s) for s in sources],
@@ -66,16 +64,16 @@ def _run_and_report(tag_store, track_resolver, q, track_suffix, sources, get_tag
             all_sources=sources,
             downloaded_sources=sources,
             tagged_sources=sources,
-            uploaded_sources=session.get_uploaded_sources(),
+            uploaded_sources=sources,
         )
     ))
 
 
-def test_source_resolver_respects_track_suffix(q, tag_store, vectorstores, track_resolver, get_tag):
+def test_source_resolver_respects_track_suffix(q, tag_store, track_resolver, get_tag):
     """A track_suffix scopes the run to a distinct batch model, so a suffixed run's
     sources resolve independently from the unsuffixed run's. This also pins the
     uploader and resolver to the same model-name convention end to end."""
-    resolver = SourceResolver(tagstore=tag_store, vectorstores=vectorstores, track_resolver=track_resolver)
+    resolver = SourceResolver(tagstore=tag_store, track_resolver=track_resolver)
 
     # unsuffixed run tags source1; a "v2" run tags source2
     _run_and_report(tag_store, track_resolver, q, track_suffix="", sources=["source1"], get_tag=get_tag)

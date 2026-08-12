@@ -110,8 +110,13 @@ def test_report_goes_to_the_vectorstore_for_a_vector_model(uploader, vector_stor
     vector_batches = vector_store.find_batches(q=q, model="asr")
     assert len(vector_batches) == 1
     assert vector_batches[0].additional_info["tagger"]["upload_status"]["uploaded_sources"] == ["source1"]
-    # no text tags were produced, so the tagstore holds nothing for this run
-    assert ts.find_batches(q=q, model="asr") == []
+
+    # the tagstore is the system of record, so it carries the report even though the
+    # run produced no text tags - this is what the diff and the status API read
+    tag_batches = ts.find_batches(q=q, model="asr")
+    assert len(tag_batches) == 1
+    assert tag_batches[0].additional_info["tagger"]["upload_status"]["uploaded_sources"] == ["source1"]
+    assert ts.find_tags(q=q) == []
 
 
 def test_report_goes_to_both_stores_for_a_mixed_model(uploader, vector_store, get_tag, get_vector_tag):
@@ -191,7 +196,7 @@ def test_uploaded_sources_requires_every_store_to_succeed(uploader, vector_store
     assert uploader.get_uploaded_sources() == []
 
 
-def test_uploaded_sources_unions_the_progress_of_both_stores(uploader, get_tag, get_vector_tag):
+def test_uploaded_sources_tracks_progress_across_both_stores(uploader, get_tag, get_vector_tag):
     uploader.upload(
         tags=[
             get_tag(model_track="speech_to_text", data="hello", source_media="source1"),
@@ -201,6 +206,42 @@ def test_uploaded_sources_unions_the_progress_of_both_stores(uploader, get_tag, 
     )
 
     assert set(uploader.get_uploaded_sources()) == {"source1", "source2"}
+
+
+def test_uploaded_sources_empty_when_the_tagstore_fails(uploader, get_tag):
+    uploader.tag_session.datastore.create_track = Mock(side_effect=Exception("upload failed"))
+
+    with pytest.raises(Exception):
+        uploader.upload(
+            tags=[get_tag(model_track="asr", data="hello world", source_media="source1")],
+            tagged_sources=["source1"],
+        )
+
+    assert uploader.get_uploaded_sources() == []
+
+
+def test_upload_with_no_tags_still_records_progress(uploader):
+    """A source can be processed without producing anything and still count as done."""
+    uploader.upload(tags=[], tagged_sources=["source1", "source2"])
+
+    assert set(uploader.get_uploaded_sources()) == {"source1", "source2"}
+
+
+def test_retry_defers_a_failed_upload_to_the_next_tick(uploader, get_tag):
+    uploader.retry = True
+    ts = uploader.tag_session.datastore
+    tags = [get_tag(model_track="asr", data="hello world", source_media="source1")]
+
+    healthy = ts.upload_tags
+    ts.upload_tags = Mock(side_effect=Exception("upload failed"))
+
+    uploader.upload(tags=tags, tagged_sources=["source1"])
+    assert uploader.get_uploaded_sources() == []
+
+    ts.upload_tags = healthy
+
+    uploader.upload(tags=tags, tagged_sources=["source1"])
+    assert uploader.get_uploaded_sources() == ["source1"]
 
 
 def test_tagstore_rejects_vectors(filesystem_tagstore, q):

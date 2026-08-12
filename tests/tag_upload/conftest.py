@@ -70,8 +70,7 @@ def upload_session(track_resolver, mock_q, filesystem_tagstore):
         track_resolver=track_resolver,
         datastore=filesystem_tagstore,
         dest_q=mock_q,
-        track_suffix="",
-        do_retry=False
+        track_suffix=""
     )
 
 @pytest.fixture

@@ -1,8 +1,7 @@
 import threading
 import time
 import queue
-from copy import deepcopy
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Any
 from datetime import datetime
 from uuid import uuid4 as uuid
@@ -214,9 +213,7 @@ class TaggerWorker:
 
         ignore_sources = []
         if not args.replace:
-            ignore_sources = self.source_resolver.resolve(
-                q, feature, track_suffix=args.track_suffix, index_qid=args.index_qid
-            )
+            ignore_sources = self.source_resolver.resolve(q, feature, track_suffix=args.track_suffix)
 
         worker = self.fetcher.get_session(
             q, 

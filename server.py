@@ -137,11 +137,7 @@ def _build_worker(cfg: AppConfig) -> TaggerWorker:
         vectorstores=vectorstores,
         cfg=cfg.tagger,
         track_resolver=track_resolver,
-        source_resolver=SourceResolver(
-            create_tagstore(cfg.tagstore),
-            vectorstores=vectorstores,
-            track_resolver=track_resolver,
-        )
+        source_resolver=SourceResolver(create_tagstore(cfg.tagstore), track_resolver=track_resolver)
     )
 
 

@@ -188,6 +188,18 @@ class FakeTagContainer:
                 )
             ]
 
+            if self._output_vectors:
+                # Add a regular tag too for fun
+                fake_tags.append(
+                    ModelTag(
+                        start_time=10000,
+                        end_time=15000,  # 10-15 seconds in ms
+                        data=f"{self.feature}_tag_{i}_3",
+                        source_media=filepath,
+                        model_track=""
+                    )
+                )
+
             tags.extend(fake_tags)
 
         return tags
@@ -356,9 +368,9 @@ def fake_container_registry():
     return FakeContainerRegistry()
 
 @pytest.fixture
-def source_resolver(tag_store, vectorstores, track_resolver):
-    """Create a SourceResolver using the provided stores and track resolver."""
-    return SourceResolver(tagstore=tag_store, vectorstores=vectorstores, track_resolver=track_resolver)
+def source_resolver(tag_store, track_resolver):
+    """Create a SourceResolver using the provided tag store and track resolver."""
+    return SourceResolver(tagstore=tag_store, track_resolver=track_resolver)
 
 
 @pytest.fixture

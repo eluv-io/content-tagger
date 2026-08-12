@@ -74,44 +74,6 @@ def test_upload_report(upload_session, get_tag):
     assert batch.additional_info["tagger"]
     assert "params" in batch.additional_info["tagger"]
 
-def test_get_uploaded_sources(upload_session, get_tag):
-    tags = [
-        get_tag(model_track="asr", data="hello world", source_media="/path/to/source1.mp4"),
-        get_tag(model_track="caption", data="test tag", start_time=100, end_time=200, source_media="/path/to/source2.mp4")
-    ]
-
-    tagged_sources = ["source1", "source2"]
-
-    upload_session.upload_tags(tags=tags, tagged_sources=tagged_sources)
-
-    uploaded_sources = upload_session.get_uploaded_sources()
-
-    assert set(uploaded_sources) == {"source1", "source2"}
-
-def test_get_uploaded_sources_upload_fails(upload_session, get_tag):
-    tags = [
-        get_tag(model_track="asr", data="hello world", source_media="/path/to/source1.mp4"),
-    ]
-
-    tagged_sources = ["source1"]
-
-    upload_session.datastore.create_track = Mock(side_effect=Exception("upload failed"))
-
-    with pytest.raises(Exception):
-        upload_session.upload_tags(tags=tags, tagged_sources=tagged_sources)
-    
-    uploaded_sources = upload_session.get_uploaded_sources()
-    assert not uploaded_sources
-
-def test_upload_empty_tags_get_sources(upload_session):
-    tagged_sources = ["source1", "source2"]
-
-    upload_session.upload_tags(tags=[], tagged_sources=tagged_sources)
-
-    uploaded_sources = upload_session.get_uploaded_sources()
-
-    assert set(uploaded_sources) == {"source1", "source2"}
-
 def test_reupload_replaces_tags_for_source(upload_session, track_resolver, get_tag):
     ts = upload_session.datastore
     q = upload_session.dest_q
@@ -133,7 +95,6 @@ def test_reupload_replaces_tags_for_source(upload_session, track_resolver, get_t
         datastore=ts,
         dest_q=q,
         track_suffix="",
-        do_retry=False,
     )
     new_tags = [
         get_tag(model_track="asr", data="new tag 1", source_media="source1"),
@@ -231,7 +192,6 @@ def test_delete_by_source_is_scoped_to_model(upload_session, track_resolver, get
         datastore=ts,
         dest_q=q,
         track_suffix="",
-        do_retry=False,
     )
     session_b.upload_tags(
         tags=[get_tag(model_track="track_b", data="B tag", source_media="source1")],
@@ -263,7 +223,6 @@ def test_reupload_replaces_tags_no_model_track(upload_session, track_resolver, g
         datastore=ts,
         dest_q=q,
         track_suffix="",
-        do_retry=False,
     )
     second_session.upload_tags(
         tags=[get_tag(model_track="", data="new tag", source_media="source1")],
@@ -292,7 +251,6 @@ def test_processed_sources_without_tags_clears_configured_tracks(upload_session,
         datastore=ts,
         dest_q=q,
         track_suffix="",
-        do_retry=False,
     )
     second_session.upload_tags(tags=[], tagged_sources=["source1"])
 
@@ -311,7 +269,6 @@ def test_configured_track_deletion_respects_suffix(track_resolver, mock_q, files
         datastore=ts,
         dest_q=q,
         track_suffix="v2",
-        do_retry=False,
     )
     session.upload_tags(
         tags=[get_tag(model_track="", data="stale tag", source_media="source1"),
@@ -328,7 +285,6 @@ def test_configured_track_deletion_respects_suffix(track_resolver, mock_q, files
         datastore=ts,
         dest_q=q,
         track_suffix="v2",
-        do_retry=False,
     )
     session2.upload_tags(tags=[], tagged_sources=["source1"])
 
@@ -344,28 +300,3 @@ def test_configured_track_deletion_respects_suffix(track_resolver, mock_q, files
     session2.upload_tags(tags=[], tagged_sources=["source2"])
     assert {t.data for t in ts.find_tags(q=q, track="another_track_v2")} == {"new tag 2"}
     assert ts.find_tags(q=q, track="speech_to_text_v2") == []
-
-def test_retry_on_upload_failure(upload_session, get_tag):
-    upload_session.retry = True
-    tags = [
-        get_tag(model_track="asr", data="hello world", source_media="/path/to/source1.mp4"),    
-    ]
-
-    tagged_sources = ["source1"]
-
-    original_fn = upload_session.datastore.upload_tags
-
-    upload_session.datastore.upload_tags = Mock(side_effect=Exception("upload failed"))
-
-    upload_session.upload_tags(tags=tags, tagged_sources=tagged_sources)
-    
-    uploaded_sources = upload_session.get_uploaded_sources()
-    assert not uploaded_sources
-
-    # Restore the original function
-    upload_session.datastore.upload_tags = original_fn
-
-    # Retry should allow subsequent uploads to succeed
-    upload_session.upload_tags(tags=tags, tagged_sources=tagged_sources)
-    uploaded_sources = upload_session.get_uploaded_sources()
-    assert set(uploaded_sources) == {"source1"}
