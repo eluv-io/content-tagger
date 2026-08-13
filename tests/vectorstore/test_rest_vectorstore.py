@@ -76,6 +76,44 @@ def test_frame_index_round_trips(live_vectorstore, vector_api, q, vector_model, 
     assert hits[0]["frame_idx"] == 42
 
 
+def test_short_vectors_are_padded(live_vectorstore, vector_api, q, vector_model, make_vector, vector_size):
+    """A model emitting a smaller embedding than the index is configured for still writes:
+    the service rejects any vector whose dimension does not match the index exactly."""
+    track = f"{vector_model}_embedding"
+    tag = make_vector(seed=1.0, dims=vector_size // 2)
+
+    _upload(live_vectorstore, q, vector_model, track, [tag])
+
+    assert vector_api.tracks().get(track) == 1
+    # padding happens on the way out, the caller's tag is left as the model produced it
+    assert len(tag.data) == vector_size // 2
+    hits = vector_api.search(tag.data + [0.0] * (vector_size - len(tag.data)), track=track)
+    assert len(hits) == 1
+    assert hits[0]["source"] == SOURCES[0]
+
+
+def test_oversized_vectors_are_refused(live_vectorstore, vector_api, q, vector_model, make_vector, vector_size):
+    """Trimming a too-long vector would silently corrupt the embedding, so nothing is sent."""
+    track = f"{vector_model}_embedding"
+    batch = live_vectorstore.create_batch(model=vector_model, author="tagger", q=q)
+
+    with pytest.raises(ValueError):
+        live_vectorstore.upload_tags([make_vector(seed=1.0, dims=vector_size + 1)], batch.id, track, q=q)
+
+    assert track not in vector_api.tracks()
+
+
+def test_empty_vectors_are_refused(live_vectorstore, vector_api, q, vector_model, make_vector):
+    """All-zero padding of an empty vector would store a vector carrying no embedding."""
+    track = f"{vector_model}_embedding"
+    batch = live_vectorstore.create_batch(model=vector_model, author="tagger", q=q)
+
+    with pytest.raises(ValueError):
+        live_vectorstore.upload_tags([make_vector(seed=0.0, dims=0)], batch.id, track, q=q)
+
+    assert track not in vector_api.tracks()
+
+
 def test_upload_rejects_text(live_vectorstore, q, vector_model):
     text_tag = Tag(
         id="", start_time=0, end_time=1, data="hello",

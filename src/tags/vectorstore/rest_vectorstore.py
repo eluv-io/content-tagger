@@ -1,5 +1,7 @@
 import json
 import time
+from typing import cast
+
 import requests
 
 from src.common.content import Content
@@ -15,6 +17,9 @@ class RestVectorstore(Datastore):
 
     The service writes and deletes vectors but never lists them, so the read side of
     the protocol (find_tags, count_tags, get_batch, find_batches) is unsupported.
+
+    Every vector written is fitted to the index's configured `vector_size`: a model that
+    emits a shorter embedding is zero padded, a longer one is refused.
     """
 
     def __init__(self, base_url: str, timeout: int, index_qid: str):
@@ -22,6 +27,7 @@ class RestVectorstore(Datastore):
         self.timeout = timeout
         self.index_qid = index_qid
         self.session = requests.Session()
+        self._vector_size: int | None = None
 
     def _index_url(self, path: str = "") -> str:
         return f"{self.base_url}/indexes/{self.index_qid}{path}"
@@ -35,6 +41,38 @@ class RestVectorstore(Datastore):
         except Exception:
             logger.error(f"HTTP {response.status_code} response (non-JSON): {response.text}")
         response.raise_for_status()
+
+    def _get_vector_size(self, q: Content) -> int:
+        """Dimension the index is configured for, read once and cached for the store's life.
+        """
+        if self._vector_size is None:
+            response = self.session.get(
+                self._index_url(),
+                headers=self._get_headers(q),
+                timeout=self.timeout
+            )
+
+            if not response.ok:
+                self._log_response_and_raise(response)
+
+            self._vector_size = int(response.json()["vector_size"])
+
+        return self._vector_size
+
+    def _fit_vector(self, vector: list[float], size: int) -> list[float]:
+        if size <= 0 or len(vector) == size:
+            return vector
+
+        if len(vector) > size:
+            raise ValueError(
+                f"vector of dimension {len(vector)} exceeds the vector_size {size} "
+                f"configured on index {self.index_qid}"
+            )
+
+        if not vector:
+            raise ValueError("empty vector, nothing to pad to the index's dimension")
+
+        return vector + [0.0] * (size - len(vector))
 
     def create_track(self,
         name: str,
@@ -105,21 +143,31 @@ class RestVectorstore(Datastore):
         if not batch_id:
             raise ValueError("vectors must be written under a batch")
 
+        vector_size = self._get_vector_size(q)
+        num_padded = 0
+
         # a vector has no frame_info field, only the frame index survives the write
         vectors = []
         for tag in tags:
+            data = self._fit_vector(cast(list[float], tag.data), vector_size)
+            if len(data) != len(tag.data):
+                num_padded += 1
             vector = {
                 "track": track,
                 "source": tag.source,
                 "start_time": tag.start_time,
                 "end_time": tag.end_time,
-                "vector": tag.data,
+                "vector": data,
             }
             if tag.additional_info is not None:
                 vector["additional_info"] = tag.additional_info
             if tag.frame_info is not None and "frame_idx" in tag.frame_info:
                 vector["frame_idx"] = tag.frame_info["frame_idx"]
             vectors.append(vector)
+
+        if num_padded:
+            logger.warning("padded vectors to the index dimension", num_vectors=num_padded,
+                           vector_size=vector_size, index_qid=self.index_qid, track=track)
 
         # one request is one batch over one content, so both are given once, at the top
         # level - a vector carrying its own qid or batch_id is silently dropped

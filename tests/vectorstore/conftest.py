@@ -134,11 +134,17 @@ def live_vectorstore(vectorstore_host, index_qid, vector_index, q):
 @pytest.fixture
 def make_vector(vector_size: int):
     """Build a vector of the index's dimension. Each seed picks its own dimension, so
-    vectors from different seeds are orthogonal and a search cannot confuse them."""
+    vectors from different seeds are orthogonal and a search cannot confuse them.
+
+    `dims` overrides the length, for the cases where a model's output does not match
+    what the index expects."""
     def fn(seed: float = 1.0, source: str = SOURCES[0], start_time: int = 0,
-           end_time: int = 1000, frame_info=None, batch_id: str = "") -> Tag:
-        data = [0.0] * vector_size
-        data[int(seed) % vector_size] = 1.0
+           end_time: int = 1000, frame_info=None, batch_id: str = "",
+           dims: int | None = None) -> Tag:
+        dims = vector_size if dims is None else dims
+        data = [0.0] * dims
+        if dims:
+            data[int(seed) % dims] = 1.0
         return Tag(
             id="",
             start_time=start_time,
