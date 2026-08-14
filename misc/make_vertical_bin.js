@@ -90,10 +90,11 @@ async function processIq(client, objectId, libraryId) {
 
 }
 
+// this function is designed to be lifted from the middle of EVIE's code that does this
+// so it has some weirdnesses (like this.client is the client)
+
 async function doStuff(objectId, libraryId, defaultOfferings, shotTags, verticalVideoTags) {
 
-  debugDir(this)
-  
       // Sort both tag arrays by start_time and end_time to ensure chronological processing
       // (tagstore returns in order but not sure if that is guaranteed)
       shotTags = shotTags.sort((a, b) => {
