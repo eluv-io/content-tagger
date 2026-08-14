@@ -4,6 +4,7 @@
   "description": "JavaScript driver for content tagging",
   "main": "driver.js",
   "dependencies": {
+    "@eluvio/elv-client-js": "^4.2.27",
     "fraction.js": "^5.3.4",
     "yargs": "^17.7.2"
   },
