@@ -23,6 +23,7 @@ class TagAlignedFetcher(FetchSession):
         self.tr = tr
         self.fetcher = vod
         self._completed_tag_ids: set[str] = set()
+        self.all_sources: list[Source] = []
 
     @property
     def path(self) -> str:
@@ -46,8 +47,10 @@ class TagAlignedFetcher(FetchSession):
                 done=vod_result.done,
             )
 
+        self.all_sources += vod_result.sources
+
         # Build a time-sorted list of available media segments
-        segments = sorted(vod_result.sources, key=lambda s: s.offset)
+        segments = sorted(self.all_sources, key=lambda s: s.offset)
 
         tags = self._get_tags()
         output_dir = os.path.join(self.fetcher.path, "tag_aligned")
