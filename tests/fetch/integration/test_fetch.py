@@ -273,3 +273,35 @@ def test_tag_aligned(fetcher: FetchFactory, q_legacy, temp_dir):
     assert len(dl.failed) == 0
     assert len(dl.sources) == 3
     assert set(s.name for s in dl.sources) == {"243400_247320", "248360_249200", "248360_420000"}
+
+def test_tag_aligned_handles_bad_range(black_frame_fetcher):
+    # these are sentence aligned tags - 
+    # can also check temp_dir and listen to the files and make sure they match the audio
+    tags = [
+        Tag(
+            id='1', 
+            start_time=0, 
+            end_time=5000, 
+            data="", 
+            additional_info=None, 
+            source='', 
+            batch_id='', 
+        ), 
+        Tag(
+            id='2', 
+            start_time=12000, 
+            end_time=15000, 
+            data='', 
+            additional_info=None, 
+            source='', 
+            batch_id='', 
+        ),
+    ]
+    fake_tag_reader = Mock(read=Mock(return_value=tags))
+
+    tag_aligned = TagAlignedFetcher(fake_tag_reader, black_frame_fetcher)
+
+    dl = tag_aligned.download()
+    assert len(dl.failed) == 1
+    assert len(dl.sources) == 1
+    assert set(s.name for s in dl.sources) == {"0_5000"}

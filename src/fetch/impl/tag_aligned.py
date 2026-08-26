@@ -241,3 +241,25 @@ class TagAlignedFetcher(FetchSession):
                 check=True,
                 capture_output=True,
             )
+            
+            # check that output is valid
+            probe = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v", "error",
+                    "-show_entries", "format=duration",
+                    "-of", "default=noprint_wrappers=1:nokey=1",
+                    output_path,
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            actual_duration = float(probe.stdout.strip())
+
+            if actual_duration <= 0:
+                raise RuntimeError(
+                    f"ffmpeg produced empty output for range "
+                    f"[{start_ms}, {end_ms}) from segments starting at {seg_offset}"
+                )
