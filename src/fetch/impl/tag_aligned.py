@@ -210,8 +210,6 @@ class TagAlignedFetcher(FetchSession):
         Use ffmpeg to concatenate and trim the overlapping segments to produce
         a media file that exactly covers [start_ms, end_ms).
         """
-        if os.path.exists(output_path):
-            return
 
         seg_offset = segments[0].offset
         ss = (start_ms - seg_offset) / 1000.0
@@ -259,6 +257,7 @@ class TagAlignedFetcher(FetchSession):
             actual_duration = float(probe.stdout.strip())
 
             if actual_duration <= 0:
+                os.remove(output_path)
                 raise RuntimeError(
                     f"ffmpeg produced empty output for range "
                     f"[{start_ms}, {end_ms}) from segments starting at {seg_offset}"

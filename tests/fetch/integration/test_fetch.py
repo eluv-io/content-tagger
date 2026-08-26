@@ -305,3 +305,11 @@ def test_tag_aligned_handles_bad_range(black_frame_fetcher):
     assert len(dl.failed) == 1
     assert len(dl.sources) == 1
     assert set(s.name for s in dl.sources) == {"0_5000"}
+
+    # get a new one and run again
+    tag_aligned = TagAlignedFetcher(fake_tag_reader, black_frame_fetcher)
+
+    dl = tag_aligned.download()
+    assert len(dl.failed) == 1
+    assert len(dl.sources) == 1
+    assert set(s.name for s in dl.sources) == {"0_5000"}
