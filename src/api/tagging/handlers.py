@@ -14,13 +14,7 @@ from src.api.tagging.request_format import (
     StartJobsRequestSchema,
     StatusRequestSchema,
 )
-from src.api.tagging.response_format import (
-    StartStatus,
-    StartTaggingResponse,
-    StartTaggingResponseSchema,
-    StatusResponseSchema,
-    StopTaggingResponseSchema,
-)
+from src.api.tagging.response_format import *
 from src.common.logging import logger
 
 from src.common.errors import *
@@ -31,6 +25,7 @@ from src.api.tagging.response_mapping import *
 from src.service.impl.queue_based import QueueService
 from src.status.get_info import UserInfoResolver
 from src.tagging.fabric_tagging.queue.abstract import JobStore
+from src.tags.datastore.abstract import Datastore
 
 tagging_blp = Blueprint(
     "Operate Tagging", __name__, description="Start, query and stop tagging jobs."
@@ -201,3 +196,36 @@ def handle_delete_job(args: dict, job_id: str):
     js: JobStore = current_app.config["state"]["jobstore"]
 
     delete_job(req, user_info_resolver=user_info_resolver, js=js)
+
+class DeleteTagsByModelResponseSchema(Schema):
+    message = fields.Str(metadata={"description": "Top level message"})
+    batches_deleted = fields.Int(
+        metadata={"description": "Number of tagstore batches deleted", "example": 3}
+    )
+
+
+@tagging_blp.route("/<qid>/tags/<model>", methods=["DELETE"])
+@tagging_blp.response(200, DeleteTagsByModelResponseSchema)
+def handle_delete_tags_by_model(qid: str, model: str) -> dict:
+    """Delete tags by model
+
+    Deletes every tagstore batch produced by the given model on the content object, along with all of the tags belonging to those batches.
+    """
+    q = authorize(qid, request)
+
+    tagstore: Datastore = current_app.config["state"]["worker"].tagstore
+
+    # high limit so we aren't restricted to the tagstore's default page size
+    batches = tagstore.find_batches(q, model=model, limit=100)
+
+    # guard against the tagstore ignoring the model filter
+    batches = [b for b in batches if b.model == model]
+
+    for batch in batches:
+        logger.debug(f"Deleting batch {batch.id} (model={model}, qid={q.qid})")
+        tagstore.delete_batch(batch.id, q)
+
+    return {
+        "message": f"Deleted {len(batches)} batches for model {model}",
+        "batches_deleted": len(batches),
+    }

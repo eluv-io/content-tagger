@@ -4,7 +4,9 @@ content:
   live_media_url: https://host-76-74-29-5.contentfabric.io/config?self&qspace=main
 
 tagstore:
-
+  base_url: "https://ai.contentfabric.io/tagstore"
+  timeout: 30
+  
 vectorstore:
   base_url: "https://ai-04.contentfabric.io/vector_store"
 
