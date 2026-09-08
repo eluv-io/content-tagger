@@ -75,11 +75,11 @@ def align_tags(tags: list[ModelTag], sources: list[Source], fps: float | None) -
         )
     return aligned
 
-def get_duration_tagged(uploaded_sources: list[str], all_sources: list[Source]) -> int:
-    """Return the latest offset across the uploaded_sources"""
+def get_duration_tagged(uploaded_sources: list[str], all_sources: list[Source]) -> float:
+    """Return the latest offset across the uploaded_sources in seconds"""
 
     name_to_offset = {s.name: s.offset for s in all_sources}
 
     offsets = [name_to_offset[sname] for sname in uploaded_sources]
 
-    return max(offsets)
+    return max(offsets, default=0) / 1000

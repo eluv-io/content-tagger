@@ -136,6 +136,12 @@ class TagDetailsSchema(Schema):
             "example": "120/214",
         }
     )
+    tagged_duration = fields.Float(
+        metadata={
+            "description": "Number of seconds tagged",
+            "example": 2000.0,
+        }
+    )
     total_parts = fields.Int(
         metadata={
             "description": "Total number of parts in scope for the tag request",

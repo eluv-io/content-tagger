@@ -115,7 +115,7 @@ def test_video_model(client, q):
     assert len(ftags) == 122
 
     status = client.get(f"/{q.qid}/job-status?authorization={q.token}")
-    assert status.get_json()["jobs"][0]["tagged_duration"] > 0
+    assert status.get_json()["jobs"][0]["tag_details"]["tagged_duration"] > 0
 
 # testing both of these features in one unit test cause i'm lazy sorry not sorry
 def test_track_suffix_and_caller_info(client, q):
