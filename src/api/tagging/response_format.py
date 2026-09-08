@@ -32,8 +32,11 @@ class JobStatus:
     tagging_progress: str
     # between 0 and 1
     progress: float
+    tagged_duration: float
     error: str | None
     tag_details: TagDetails | None
+    # whether the content being tagged is a livestream
+    is_live: bool
 
 @dataclass(frozen=True)
 class StatusMeta:
@@ -218,6 +221,12 @@ class JobStatusSchema(Schema):
             "description": "Error message if the job failed or was cancelled",
             "example": None,
         },
+    )
+    is_live = fields.Bool(
+        metadata={
+            "description": "Whether the content being tagged is a livestream",
+            "example": False,
+        }
     )
     tag_details = fields.Nested(
         TagDetailsSchema,

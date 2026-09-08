@@ -9,6 +9,7 @@ from dacite import from_dict
 from src.common.errors import MissingResourceError
 from src.status.get_info import UserInfoResolver
 from src.tagging.fabric_tagging.model import TagArgs
+from src.tagging.fabric_tagging.queue.dto import TagDetailsRaw
 from src.tagging.fabric_tagging.queue.model import *
 from src.fetch.model import *
 
@@ -86,7 +87,7 @@ class FsJobStore:
             params=params,
             created_at=job["created_at"],
             status=job["status"],
-            status_details=from_dict(TagDetails, job["status_details"]) if job["status_details"] else None,
+            status_details=from_dict(TagDetailsRaw, job["status_details"]).to_model() if job["status_details"] else None,
             error=job.get("error"),
             stop_requested=job["stop_requested"],
             auth=job["auth"],

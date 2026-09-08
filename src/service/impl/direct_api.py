@@ -32,9 +32,9 @@ class DirectAPI(TaggerService):
         if not req.qid:
             raise BadRequestError("qid parameter must be specified for direct api")
         
-        worker_statuis = self.tagger.status(req.qid)
+        worker_status = self.tagger.status(req.qid)
         res = []
-        for r in worker_statuis:
+        for r in worker_status:
             tr = TagJobStatusResult(
                 qid=req.qid,
                 job_id=f"<{req.qid}, {r.model}, {r.stream}>",
@@ -52,6 +52,7 @@ class DirectAPI(TaggerService):
                     time_running=r.status.time_ended - r.status.time_started if r.status.time_ended else time.time() - r.status.time_started,
                     progress=(0.3 * len(r.status.downloaded_sources) + 0.7 * len(r.status.uploaded_sources)) / len(r.status.total_sources) if r.status.total_sources else 0,
                     tagging_progress=f"{len(r.status.uploaded_sources)}/{len(r.status.total_sources)}",
+                    tagged_duration=r.status.tagged_duration or 0,
                     total_parts=len(r.status.total_sources),
                     downloaded_parts=len(r.status.downloaded_sources),
                     tagged_parts=len(r.status.tagged_sources),

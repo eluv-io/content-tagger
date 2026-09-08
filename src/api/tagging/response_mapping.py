@@ -48,6 +48,7 @@ def map_job_status_to_response(js: TagJobStatusResult) -> JobStatus:
     progress = js.tagger_details.progress if js.tagger_details else 0
     # legacy compatibility
     tagging_progress = js.tagger_details.tagging_progress if js.tagger_details else "0/0"
+    tagged_duration = js.tagger_details.tagged_duration if js.tagger_details else 0
     return JobStatus(
         qid=js.qid,
         job_id=str(js.job_id),
@@ -62,7 +63,9 @@ def map_job_status_to_response(js: TagJobStatusResult) -> JobStatus:
         error=js.error,
         progress=progress,
         tagging_progress=tagging_progress,
+        tagged_duration=tagged_duration,
         tag_details=js.tagger_details,
+        is_live=js.params.get("scope", {}).get("type") == "livestream",
     )
 
 def map_stop_results_to_response(stop_results: list[TagStopResult]) -> StopTaggingResponse:

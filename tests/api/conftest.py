@@ -217,6 +217,7 @@ class MockTaggerService:
                 total_parts=1,
                 downloaded_parts=1,
                 tagged_parts=1 if job["status"] == "Completed" else 0,
+                tagged_duration=0,
                 warnings=None,
             )
             results.append(TagJobStatusResult(

@@ -29,6 +29,7 @@ class TagDetails:
     progress: float
     # legacy
     tagging_progress: str
+    tagged_duration: float
 
     # extra detail
     total_parts: int

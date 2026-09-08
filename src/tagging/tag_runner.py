@@ -239,6 +239,7 @@ class TagRunner:
                     time_running=r.status.time_ended - r.status.time_started if r.status.time_ended else time.time() - r.status.time_started,
                     progress=0.3 * fetch_progress + 0.7 * tag_progress,
                     tagging_progress=f"{len(r.status.uploaded_sources)}/{len(r.status.total_sources)}",
+                    tagged_duration=r.status.tagged_duration,
                     total_parts=len(r.status.total_sources),
                     downloaded_parts=len(r.status.downloaded_sources),
                     tagged_parts=len(r.status.tagged_sources),

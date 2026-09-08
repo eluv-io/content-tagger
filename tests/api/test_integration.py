@@ -98,7 +98,7 @@ def test_video_model(client, q):
     )
     assert response.status_code == 200
     completed = wait_for_jobs_completion(client, [q], timeout=30)
-    assert completed
+    assert completed, "Timeout waiting for jobs to complete"
     tagstore: Datastore = client.application.config["state"]["worker"].tagstore
     jobid = tagstore.find_batches(q=q)[0].id
     tags = tagstore.find_tags(batch_id=jobid, q=q)
@@ -114,7 +114,8 @@ def test_video_model(client, q):
     ftags = [t for t in tags if t.frame_info is not None]
     assert len(ftags) == 122
 
-    assert completed, "Timeout waiting for jobs to complete"
+    status = client.get(f"/{q.qid}/job-status?authorization={q.token}")
+    assert status.get_json()["jobs"][0]["tagged_duration"] > 0
 
 # testing both of these features in one unit test cause i'm lazy sorry not sorry
 def test_track_suffix_and_caller_info(client, q):
@@ -645,7 +646,7 @@ def test_start_two_jobs_one_fails_partial_failure_response(client, q):
     assert data["jobs"][1]["error"] == 'boom'
 
 def test_status(client, q):
-    """Test the job status endpoint with no jobs."""
+    """Test the job status endpoint."""
     if not is_queue_mode():
         pytest.skip()
 

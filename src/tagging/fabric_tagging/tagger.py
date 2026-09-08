@@ -17,7 +17,7 @@ from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.common.content import Content
 from src.common.errors import *
 from src.fetch.factory import FetchFactory
-from src.tagging.uploading.align import adjust_progress_sources, align_tags
+from src.tagging.uploading.align import adjust_progress_sources, align_tags, get_duration_tagged
 from src.tags.datastore.abstract import Datastore
 from src.tagging.fabric_tagging.message_types import *
 from src.tagging.fabric_tagging.job_state import *
@@ -540,6 +540,10 @@ class TaggerWorker:
 
         progress_ratio = state.container.progress_ratio()
 
+        uploaded_sources = state.uploader.get_uploaded_sources()
+
+        tagged_duration = get_duration_tagged(uploaded_sources, state.media.downloaded)
+
         job_status = JobStatus(
             status=state.status,
             time_started=state.time_started,
@@ -547,8 +551,9 @@ class TaggerWorker:
             total_sources=state.media.worker.metadata().sources,
             downloaded_sources=downloaded_sources,
             tagged_sources=tagged_sources,
-            uploaded_sources=state.uploader.get_uploaded_sources(),
+            uploaded_sources=uploaded_sources,
             container_progress_ratio=progress_ratio,
+            tagged_duration=tagged_duration,
             warnings=state.warnings,
             error=state.error
         )
