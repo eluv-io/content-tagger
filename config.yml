@@ -8,7 +8,7 @@ tagstore:
   timeout: 30
   
 vectorstore:
-  base_url: "https://ai-04.contentfabric.io/vector_store"
+  base_url: "http://localhost:8108"
 
 tag_runner:
   poll_interval: 5.0
@@ -36,7 +36,7 @@ system:
   resources: 
     cpu_juice: 100
     ollama: 3
-  gpus: ["gpu", "disabled", "disabled", "disabled", "disabled"]
+  gpus: ["gpu", "disabled", "gpu", "gpu", "gpu"]
 
 fetcher:
   author: tagger
@@ -53,22 +53,47 @@ container_registry:
   cache_dir: data/cache
 
 model_configs:
+  player_jersey_ocr:
+    image: "localhost/player_jersey_ocr:latest"
+    type: "frame"
+    description: "Player Jersey Number"
+    category: "Frame Level Detection"
+    resources: {
+      gpu: 1
+    }
+    track_outputs: ["player_jersey_number_ocr"]
+    track_dependencies: []
   scene_description:
     image: "localhost/qwenvl:latest"
     type: "video"
     description: Scene Description
+    category: "Description & Transcription"
     resources: {
       "gpu": 1
     }
-    scope: 
+    scope:
+      type: "tag-aligned"
+      track: 10s
+    track_outputs: ["scene_description"]
+    track_dependencies: ["shot_detection"]
+  videocaption_gameevents:
+    image: "localhost/qwenvl:latest"
+    type: "video"
+    description: Sports In-Play Detection
+    category: "Special"
+    resources: {
+      "gpu": 1
+    }
+    scope:
       type: "tag-aligned"
       track: shot_detection
-    track_outputs: ["scene_description"]
+    track_outputs: ["game_events_auto"]
     track_dependencies: ["shot_detection"]
   llava:
     image: "localhost/llava:latest"
     type: "frame"
     description: Frame Description
+    category: "Description & Transcription"
     resources: {
       "ollama": 1
     }
@@ -77,6 +102,7 @@ model_configs:
     image: "localhost/asr:latest"
     type: "audio"
     description: Speech to Text
+    category: "Description & Transcription"
     resources: {
       "gpu": 1
     }
@@ -85,14 +111,16 @@ model_configs:
     image: "localhost/multilingual:latest"
     type: "audio"
     description: Multilingual Speech to Text
+    category: "Description & Transcription"
     resources: {
       "gpu": 1
     }
-    track_outputs: ["euro_asr", "auto_captions"]
+    track_outputs: ["euro_asr"]
   caption:
     image: "localhost/caption:latest"
     type: "frame"
     description: Object Identification
+    category: "Frame Level Detection"
     resources: {
       "gpu": 1
     }
@@ -101,6 +129,7 @@ model_configs:
     image: "localhost/shot:latest"
     type: "video"
     description: Shot Detection
+    category: "Segmentation"
     resources: {
       "gpu": 1
     }
@@ -109,6 +138,7 @@ model_configs:
     image: "localhost/celeb:latest"
     type: "frame"
     description: Celebrity Identification
+    category: "Frame Level Detection"
     resources: {
       "gpu": 1,
       "cpu_juice": 35
@@ -118,6 +148,7 @@ model_configs:
     image: "localhost/ocr:latest"
     type: "frame"
     description: OCR
+    category: "Frame Level Detection"
     resources: {
       "gpu": 1
     }
@@ -126,25 +157,79 @@ model_configs:
     image: "localhost/logo:latest"
     type: "frame"
     description: Logo Identification
+    category: "Frame Level Detection"
     resources: {
       "gpu": 1
     }
     track_outputs: ["logo_detection"]
-  vertical_video:
-    image: "localhost/verticalvideo:latest"
+  live_vertical_video:
+    image: "localhost/vv-live:latest"
     type: "video"
-    description: Focus Identification
+    description: Live Vertical Focus
+    category: "Special"
+    resources: {
+      "cpu_juice": 0
+    }
+    tags:
+      hidden: true
+  vertical_video:
+    image: "localhost/verticalvideo:v1"
+    type: "video"
+    description: Vertical Focus
+    category: "Special"
     resources: {
       "gpu": 1
     }
-    tags:
-      hidden: True
     track_outputs: ["vertical_video", "focus_detection"]
     track_dependencies: ["shot_detection"]
+    tags:
+      hidden: true
+  vertical_video_v2:
+    image: "localhost/verticalvideo:latest"
+    type: "video"
+    description: Vertical Focus V2 Beta
+    category: "Special"
+    resources: {
+      "gpu": 1
+    }
+    scope:
+      type: "tag-aligned"
+      track: shot_detection
+    track_outputs: ["vertical_video", "focus_detection"]
+    track_dependencies: ["shot_detection"]
+    tags:
+      hidden: true
+  vertical_video_latest:
+    image: "localhost/verticalvideo-v2.5:latest"
+    type: "video"
+    description: Vertical Focus V2 Beta (Sports)
+    category: "Special"
+    resources: {
+      "gpu": 1
+    }
+    scope:
+      type: "tag-aligned"
+      track: 4s
+    track_outputs: ["vertical_video", "focus_detection"]
+    track_dependencies: []
+    tags:
+      hidden: true
+  focus:
+    image: "localhost/model-focus-track:latest"
+    type: "video"
+    description: Focus Identification
+    category: "Special"
+    resources: {
+      "gpu": 1
+    }
+    track_dependencies: ["shot_detection"]
+    tags:
+      hidden: true
   chapters:
     image: "localhost/chapter:latest"
     type: "processor"
     description: Chapter Generation
+    category: "Special"
     resources: {
       "ollama": 1
     }
@@ -155,39 +240,68 @@ model_configs:
     image: "localhost/pose:latest"
     type: "video"
     description: Pose Detection
+    category: "Special"
     resources: {
       "gpu": 1
     }
-    tags:
-      hidden: True
     track_dependencies: ["shot_detection"]
+    tags:
+      hidden: true
   speaker:
     image: "localhost/speaker:latest"
     type: "audio"
     description: Speaker Identification
+    category: "Frame Level Detection"
     resources: {
       "gpu": 1
     }
     content_aligned: True
     track_dependencies: ["auto_captions"]
     track_outputs: ["speaker_detection", "transcription"]
+  evidence:
+    image: "localhost/evidence:latest"
+    type: "processor"
+    description: Scene Segmentation & Analysis
+    category: "Special"
+    resources: {
+      "vllm": 1
+    }
+    content_aligned: True
+    track_dependencies: ["auto_captions", "llava_caption", "shot_detection", "celebrity_detection"]
+    track_outputs: ["evidence", "scene", "scene_keyword"]
+  video_vectors:
+    image: "localhost/qwen3vl-embedding-video-vector"
+    type: "video"
+    description: Video Vectors
+    category: "Special"
+    resources: {
+      "gpu": 1
+    }
+  frame_vectors:
+    image: "localhost/siglip2-frame-vectors"
+    type: "frame"
+    description: Frame Vectors
+    category: "Special"
+    resources: {
+      "gpu": 1
+    }
   music:
     image: "localhost/music:latest"
     type: "audio"
     description: Music Identification
+    category: "Frame Level Detection"
     resources: {
       "cpu_juice": 8
     }
     track_outputs: ["music_detection"]
-  evidence:
-      image: "localhost/evidence:latest"
-      type: "processor"
-      description: Evidence Generation
-      resources: {
-        "ollama": 1
-      }
-      content_aligned: True
-      track_outputs: ["evidence_v2"]
+  detection:
+    image: "localhost/general_detection:latest"
+    type: "frame"
+    description: General Detection
+    category: "Frame Level Detection"
+    resources: {
+      "gpu": 1
+    }
 
 # used to map track name to human friendly label for UI display
 label_resolver:

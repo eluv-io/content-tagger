@@ -15,6 +15,7 @@ class ModelSpec:
     type: str
     tag_tracks: list[TrackOutput]
     dependencies: list[str]
+    category: str
 
 
 @dataclass
@@ -40,6 +41,12 @@ class ModelSpecSchema(Schema):
         }
     )
     type = fields.Str(metadata={"description": "Model type", "example": "frame"})
+    category = fields.Str(
+        metadata={
+            "description": "Model category for grouping",
+            "example": "Frame Level Detection",
+        },
+    )
     tag_tracks = fields.List(
         fields.Nested(TrackOutputSchema),
         metadata={"description": "Tag tracks this model writes to"},
@@ -74,7 +81,8 @@ def list_models(
                 type=cfg.type,
                 # TODO: might break evie
                 tag_tracks=[TrackOutput(name=output) for output in cfg.track_outputs],
-                dependencies=cfg.track_dependencies
+                dependencies=cfg.track_dependencies,
+                category=cfg.category
             )
         )
     return ListingResponse(

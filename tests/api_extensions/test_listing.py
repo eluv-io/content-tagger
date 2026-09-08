@@ -21,6 +21,7 @@ def fake_registry(temp_dir):
             "test_model": ModelConfig(
                 type="frame",
                 description="Test model",
+                category="Frame Level Detection",
                 resources={"gpu": 1},
                 image="localhost/test_model:latest",
                 track_outputs=["test_model"]
@@ -65,8 +66,11 @@ def test_listing(fake_registry):
     assert models[0].description == "Test model"
     assert models[0].tag_tracks[0].name == "test_model"
     assert models[0].dependencies == []
+    assert models[0].category == "Frame Level Detection"
     assert models[1].name == "test_model2"
     assert models[1].type == "processor"
     assert models[1].description == "Test model 2"
     assert models[1].tag_tracks[0].name == "another_model"
     assert models[1].dependencies == ["test_model"]
+    # empty category means unset
+    assert models[1].category == ""

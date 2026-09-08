@@ -19,6 +19,7 @@ class ModelConfig:
     description: str
     type: Literal["audio", "video", "frame", "processor"]
     resources: SystemResources
+    category: str = ""
     # indicates that the model will output tags aligned to the full content rather than individual parts
     scope: dict | None = None
     content_aligned: bool = False
