@@ -1,6 +1,9 @@
 
+from common_ml.video_processing import get_fps
 from requests.exceptions import HTTPError
 from fractions import Fraction
+import os
+import tempfile
 import threading
 
 from src.common.logging import logger
@@ -65,8 +68,10 @@ class FetchFactory:
                 exit=exit
             )
         elif isinstance(req.scope, LiveScope):
-            # TODO: fix fps
-            meta = MediaMetadata(sources=[], fps=50)
+            meta = MediaMetadata(
+                sources=[],
+                fps=self._probe_live_fps(qapi, req.scope.stream, req.scope.segment_length)
+            )
             return LiveWorker(
                 qapi=qapi,
                 scope=req.scope,
@@ -374,6 +379,25 @@ class FetchFactory:
         return VideoMetadata(
             parts=parts, part_duration=part_duration, fps=fps, codec_type=codec_type
         )
+
+    @cache_by_qhash
+    def _probe_live_fps(self, qapi: QAPI, stream: str, segment_length: int) -> float | None:
+        """Determine the fps of a live stream by downloading and discarding its first segment."""
+        if stream.startswith("audio"):
+            return None
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            segment_path = os.path.join(tmp_dir, "fps_probe.mp4")
+            qapi.live_media_segment(
+                object_id=qapi.id(),
+                dest_path=segment_path,
+                segment_idx=0,
+                segment_length=segment_length,
+                stream=stream
+            )
+            fps = get_fps(segment_path)
+        logger.info(f"Probed live stream fps for {qapi.id()}", stream=stream, fps=fps)
+        return fps
 
     @cache_by_qhash
     def _is_live(self, qapi: QAPI) -> bool:
