@@ -376,7 +376,7 @@ class TagContainer:
                 raise ValueError(f"{f} is not in media directory {self.media_dir}")
             
             rel_path = os.path.relpath(f, self.media_dir)
-            relative_paths.append(f"media/{rel_path}")
+            relative_paths.append(f"/elv/media/{rel_path}")
         return relative_paths
     
     def _get_args(self, output_filename: str) -> list[str]:

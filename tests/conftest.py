@@ -56,7 +56,7 @@ def q_legacy(qid_legacy):
 
 @pytest.fixture
 def qid_live():
-    return "iq__3A3bGWiJfAd2N9v4LLooinK1WZMm"
+    return "iq__4ENkNifgv9sHqUr448aB1S4B3vma"
 
 @pytest.fixture
 def q_live(qid_live):
@@ -101,9 +101,10 @@ def rest_tagstore(q: Content) -> RestTagstore:
     ts = RestTagstore(base_url=host, timeout=10)
 
     if host:
-        jobids = ts.find_batches(q=q, limit=1000)
-        for jobid in jobids:
-            ts.delete_batch(jobid, q=q)
+        batches = ts.find_batches(q=q, limit=1000)
+        for batch in batches:
+            ts.delete_batch(batch.id, q=q)
+        print(f"Cleared {len(batches)} batches from RestTagstore at {host}")
 
     return ts
 
@@ -158,7 +159,8 @@ def make_tag_args():
         run_config: dict | None = None,
         start_time: int = 0,
         end_time: int = 30,
-        max_fetch_retries: int = 3
+        max_fetch_retries: int = 3,
+        track_suffix: str = ""
     ) -> TagArgs:
         if stream is None:
             stream = "audio" if feature == "asr" else "video"
@@ -167,7 +169,7 @@ def make_tag_args():
             run_config=run_config or {},
             scope=VideoScope(stream=stream, start_time=start_time, end_time=end_time),
             replace=replace,
-            track_suffix="",
+            track_suffix=track_suffix,
             destination_qid=destination_qid,
             caller_info={},
             max_fetch_retries=max_fetch_retries

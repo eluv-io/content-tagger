@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from loguru import logger
+from marshmallow import EXCLUDE, Schema, fields
 
 from src.common.errors import BadRequestError, ForbiddenError
 from src.status.get_info import UserInfoResolver
@@ -13,11 +14,21 @@ class DeleteJobRequest:
     authorization: str
 
 
+class DeleteJobQuerySchema(Schema):
+    """Query parameters for DELETE /jobs/<job_id>."""
+    class Meta:
+        # the request also carries ?authorization=...; ignore it here
+        unknown = EXCLUDE
+
+    tenant = fields.Str(load_default=None, allow_none=True)
+
+
 def delete_job(
     req: DeleteJobRequest,
     user_info_resolver: UserInfoResolver,
     js: JobStore
 ) -> None:
+    """Delete an inactive job"""
     user_info = user_info_resolver.get_user_info(
         auth=req.authorization,
         tenant_id=req.tenant

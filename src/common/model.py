@@ -5,6 +5,11 @@ from typing import Literal
 SystemResources = dict[str, int]
 
 @dataclass
+class TagsConfig:
+    # when true, tracks created for this model's outputs are marked hidden
+    hidden: bool = False
+
+@dataclass
 class ModelConfig:
     """
     Describes static attributes of a model
@@ -19,3 +24,4 @@ class ModelConfig:
     content_aligned: bool = False
     track_outputs: list[str] = field(default_factory=list)
     track_dependencies: list[str] = field(default_factory=list)
+    tags: TagsConfig = field(default_factory=TagsConfig)

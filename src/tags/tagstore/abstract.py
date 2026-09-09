@@ -4,10 +4,11 @@ from src.common.content import Content
 from src.tags.tagstore.model import *
 
 class Tagstore(Protocol):
-    def create_track(self, 
+    def create_track(self,
         name: str,
         label: str,
-        q: Content
+        q: Content,
+        additional_info: dict | None = None,
     ) -> None:
         ...
 
@@ -18,20 +19,23 @@ class Tagstore(Protocol):
         ...
 
     def create_batch(self,
-        track: str,
+        model: str,
         author: str,
         q: Content
     ) -> Batch:
         ...
-        
-    def update_batch(self, 
+
+    def update_batch(self,
         batch_id: str,
         additional_info: dict,
         q: Content
     ) -> None:
         ...
 
-    def upload_tags(self, tags: list[Tag], batch_id: str, q: Content) -> None:
+    def upload_tags(self, tags: list[Tag], batch_id: str, track: str, q: Content) -> None:
+        ...
+
+    def delete_tags_by_source(self, sources: list[str], model: str, q: Content) -> None:
         ...
 
     def find_tags(self, q: Content, **filters) -> list[Tag]:
@@ -56,7 +60,7 @@ class Tagstore(Protocol):
     def get_batch(self, batch_id: str, q: Content) -> Batch | None:
         ...
 
-    def find_batches(self, q: Content, **filters) -> list[str]:
+    def find_batches(self, q: Content, **filters) -> list[Batch]:
         ...
 
     def count_tags(self, q: Content, **filters) -> int:

@@ -20,20 +20,29 @@ class FilesystemTagStore(Tagstore):
         name: str,
         label: str,
         q: Content,
+        additional_info: dict | None = None,
     ) -> None:
         """
-        Create a new track with metadata
+        Create a new track with metadata (idempotent).
+
+        The track directory may already exist as a batch directory when a model
+        shares its name with one of its tracks, so we tolerate that and only write
+        the metadata when it is not already present.
         """
         track_dir = self._get_track_dir(q.qid, name)
-        os.makedirs(track_dir)
+        os.makedirs(track_dir, exist_ok=True)
+
+        metadata_path = self._get_track_metadata_path(q.qid, name)
+        if os.path.exists(metadata_path):
+            return
 
         track = Track(
             name=name,
             label=label,
-            qid=q.qid
+            qid=q.qid,
+            additional_info=additional_info,
         )
 
-        metadata_path = self._get_track_metadata_path(q.qid, name)
         with open(metadata_path, 'w') as f:
             json.dump(asdict(track), f, indent=2)
 
@@ -57,21 +66,21 @@ class FilesystemTagStore(Tagstore):
             return None
 
     def create_batch(self,
-        track: str,
+        model: str,
         author: str,
         q: Content
     ) -> Batch:
         """
-        Starts a new batch with provided metadata
+        Starts a new batch for a single run identified by (qid, author, model)
         """
-        batch_id = q.qid + "/" + track + "/" + datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + str(uuid.uuid4())[0:4]
+        batch_id = q.qid + "/" + model + "/" + datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + str(uuid.uuid4())[0:4]
         batch_dir = self._get_batch_dir(batch_id)
         os.makedirs(batch_dir, exist_ok=True)
 
         batch = Batch(
             id=batch_id,
             qid=q.qid,
-            track=track,
+            model=model,
             timestamp=time.time(),
             author=author,
             additional_info={}
@@ -83,21 +92,26 @@ class FilesystemTagStore(Tagstore):
 
         return batch
 
-    def upload_tags(self, 
-        tags: list[Tag], 
+    def upload_tags(self,
+        tags: list[Tag],
         batch_id: str,
+        track: str,
         q: Content
     ) -> None:
         """
-        Upload tags for a specific batch, grouped by source
+        Upload tags for a specific batch, associated with the given track,
+        grouped by source
         """
         if not tags:
             return
-        
+
         batch_dir = self._get_batch_dir(batch_id)
         if not os.path.exists(batch_dir):
             raise ValueError(f"Batch {batch_id} not found. Call start_batch() first.")
-        
+
+        # Tags for a track live under a per-track subdirectory of the batch
+        os.makedirs(self._get_track_tags_dir(batch_id, track), exist_ok=True)
+
         # Group tags by source
         tags_by_source = {}
         for tag in tags:
@@ -105,10 +119,10 @@ class FilesystemTagStore(Tagstore):
             if tag.source not in tags_by_source:
                 tags_by_source[tag.source] = []
             tags_by_source[tag.source].append(tag)
-        
+
         # Write each source group to its own file
         for source, source_tags in tags_by_source.items():
-            tags_path = self._get_tags_path(batch_id, source)
+            tags_path = self._get_tags_path(batch_id, track, source)
             
             # Load existing tags if file exists
             existing_tags = []
@@ -136,6 +150,25 @@ class FilesystemTagStore(Tagstore):
                     os.remove(temp_path)
                 raise e
 
+    def delete_tags_by_source(self, sources: list[str], model: str, q: Content) -> None:
+        """
+        Permanently delete all tags whose source matches one of the provided sources
+        and that belong to batches with the given model.
+
+        Tags are stored one file per source per track per batch, so we remove the
+        matching source file from every track of every batch of the given model.
+        """
+        if not sources or not model:
+            return
+
+        for batch in self.find_batches(q, model=model):
+            batch_id = batch.id
+            for track in self._get_track_dirs_for_batch(batch_id):
+                for source in sources:
+                    tags_path = self._get_tags_path(batch_id, track, source)
+                    if os.path.exists(tags_path):
+                        os.remove(tags_path)
+
     def find_tags(self, q: Content, **filters) -> list[Tag]:
         """
         Find tags with flexible filtering.
@@ -143,9 +176,10 @@ class FilesystemTagStore(Tagstore):
         NOTE: the filesystem implementation does not implement the shadowing logic.
         
         Supported filters:
-        - stream: str  
+        - stream: str
+        - model: str
         - track: str
-        - batch_id: str  
+        - batch_id: str
         - sources: List[str] (tags with source in this list)
         - start_time_gte: float
         - start_time_lte: float
@@ -155,26 +189,29 @@ class FilesystemTagStore(Tagstore):
         - offset: int
         """
         all_tags = []
-        
+
         # First, get all batches that match batch-level filters
         batch_filters = {}
         if 'stream' in filters:
             batch_filters['stream'] = filters['stream']
-        if 'track' in filters:
-            batch_filters['track'] = filters['track']
+        if 'model' in filters:
+            batch_filters['model'] = filters['model']
         if 'author' in filters:
             batch_filters['author'] = filters['author']
-        
+
         if 'batch_id' in filters:
             # If specific batch_id requested, only check that batch
             batch_ids = [filters['batch_id']]
         else:
             # Get all matching batches
-            batch_ids = self.find_batches(q, **batch_filters)
-        
+            batch_ids = [batch.id for batch in self.find_batches(q, **batch_filters)]
+
+        # track is a per-tag property, filtered at the file level
+        track = filters.get('track')
+
         # Collect tags from matching batches
         for batch_id in batch_ids:
-            tags = self._get_tags_for_batch(batch_id)
+            tags = self._get_tags_for_batch(batch_id, track=track)
             all_tags.extend(tags)
         
         # Apply tag-level filters
@@ -212,31 +249,31 @@ class FilesystemTagStore(Tagstore):
         
         return filtered_tags
 
-    def find_batches(self, q: Content, **filters) -> list[str]:
+    def find_batches(self, q: Content, **filters) -> list[Batch]:
         """
-        Find batch IDs with flexible filtering.
-        
+        Find batches with flexible filtering.
+
         Supported filters:
         - stream: str
-        - track: str 
+        - model: str
         - author: str
         - timestamp_gte: float
         - timestamp_lte: float
         - limit: int
         - offset: int
         """
-        batch_ids = []
-        
+        batches = []
+
         # Iterate through all directories in base_path
         if not os.path.exists(self.base_path):
-            return batch_ids
+            return batches
 
         for batch_id, batch_dir in self._get_batch_ids_with_paths():
 
             # Skip if not a directory
             if not os.path.isdir(batch_dir):
                 continue
-            
+
             # Get batch metadata to check filters
             try:
                 batch = self.get_batch(batch_id, q)
@@ -245,9 +282,9 @@ class FilesystemTagStore(Tagstore):
 
             if batch is None:
                 continue
-            
+
             # Apply filters
-            if 'track' in filters and batch.track != filters['track']:
+            if 'model' in filters and batch.model != filters['model']:
                 continue
             if 'author' in filters and batch.author != filters['author']:
                 continue
@@ -255,19 +292,19 @@ class FilesystemTagStore(Tagstore):
                 continue
             if 'timestamp_lte' in filters and batch.timestamp > filters['timestamp_lte']:
                 continue
-            
-            batch_ids.append(batch_id)
-        
+
+            batches.append(batch)
+
         # Apply pagination
         if 'offset' in filters:
             offset = filters['offset']
-            batch_ids = batch_ids[offset:]
-        
+            batches = batches[offset:]
+
         if 'limit' in filters:
             limit = filters['limit']
-            batch_ids = batch_ids[:limit]
-        
-        return batch_ids
+            batches = batches[:limit]
+
+        return batches
 
     def delete_batch(self, batch_id: str, q: Content) -> None:
         dir = self._get_batch_dir(batch_id)
@@ -324,24 +361,26 @@ class FilesystemTagStore(Tagstore):
         if not os.path.exists(self.base_path):
             return []
         
-        # batch_ids are represented by qid/track/batch_name
+        # batch_ids are represented by qid/model/batch_name. Track metadata dirs
+        # (qid/track/trackmeta.json) share the qid namespace but hold no batch
+        # subdirectories, so they contribute nothing here.
         batch_ids = []
         for qid in os.listdir(self.base_path):
             qhit_path = os.path.join(self.base_path, qid)
             if not os.path.isdir(qhit_path):
                 continue
-                
-            for track in os.listdir(qhit_path):
-                track_path = os.path.join(qhit_path, track)
-                if not os.path.isdir(track_path):
+
+            for model in os.listdir(qhit_path):
+                model_path = os.path.join(qhit_path, model)
+                if not os.path.isdir(model_path):
                     continue
-                    
-                for batch_name in os.listdir(track_path):
-                    batch_path = os.path.join(track_path, batch_name)
-                    # Skip the trackmeta.json file
+
+                for batch_name in os.listdir(model_path):
+                    batch_path = os.path.join(model_path, batch_name)
+                    # Skip files such as trackmeta.json
                     if not os.path.isdir(batch_path):
                         continue
-                    batch_ids.append((f"{qid}/{track}/{batch_name}", batch_path))
+                    batch_ids.append((f"{qid}/{model}/{batch_name}", batch_path))
 
         return batch_ids
 
@@ -369,23 +408,48 @@ class FilesystemTagStore(Tagstore):
         """Get the path to batch metadata file"""
         return os.path.join(self._get_batch_dir(batch_id), "batchmetadata.json")
 
-    def _get_tags_path(self, batch_id: str, source: str) -> str:
-        """Get the path to tags file for a specific source"""
-        encoded_source = self._encode_source_for_filename(source)
-        return os.path.join(self._get_batch_dir(batch_id), f"{encoded_source}.json")
+    def _get_track_tags_dir(self, batch_id: str, track: str) -> str:
+        """Get the directory holding a batch's tag files for a specific track"""
+        return os.path.join(self._get_batch_dir(batch_id), track)
 
-    def _get_tags_for_batch(self, batch_id: str) -> list[Tag]:
-        """Helper method to get all tags for a specific batch without filtering"""
+    def _get_track_dirs_for_batch(self, batch_id: str) -> list[str]:
+        """List the track names that have tag files within a batch"""
+        batch_dir = self._get_batch_dir(batch_id)
+        if not os.path.exists(batch_dir):
+            return []
+        return [
+            name for name in os.listdir(batch_dir)
+            if os.path.isdir(os.path.join(batch_dir, name))
+        ]
+
+    def _get_tags_path(self, batch_id: str, track: str, source: str) -> str:
+        """Get the path to tags file for a specific track and source"""
+        encoded_source = self._encode_source_for_filename(source)
+        return os.path.join(self._get_track_tags_dir(batch_id, track), f"{encoded_source}.json")
+
+    def _get_tags_for_batch(self, batch_id: str, track: str | None = None) -> list[Tag]:
+        """Helper method to get all tags for a specific batch without filtering.
+
+        Tags are stored one file per source under a per-track subdirectory. If
+        `track` is given, only that track's tags are returned.
+        """
         all_tags = []
         batch_dir = self._get_batch_dir(batch_id)
-        
+
         if not os.path.exists(batch_dir):
             return all_tags
-        
-        # Iterate through all tag files in the batch directory
-        for filename in os.listdir(batch_dir):
-            if filename.endswith('.json') and filename != 'batchmetadata.json':
-                tags_path = os.path.join(batch_dir, filename)
+
+        tracks = [track] if track is not None else self._get_track_dirs_for_batch(batch_id)
+
+        # Iterate through all tag files under each track subdirectory
+        for track_name in tracks:
+            track_dir = self._get_track_tags_dir(batch_id, track_name)
+            if not os.path.isdir(track_dir):
+                continue
+            for filename in os.listdir(track_dir):
+                if not filename.endswith('.json'):
+                    continue
+                tags_path = os.path.join(track_dir, filename)
                 try:
                     with open(tags_path, 'r') as f:
                         tag_data = json.load(f)

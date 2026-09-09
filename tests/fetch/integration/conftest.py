@@ -14,9 +14,9 @@ def fetcher(fetcher_config: FetcherConfig, tag_store, qfactory) -> FetchFactory:
 @pytest.fixture
 def legacy_vod_content_with_tags_clean(q_legacy, tag_store) -> Content:
 
-    batch_ids = tag_store.find_batches(q=q_legacy)
-    for batch_id in batch_ids:
-        tag_store.delete_batch(batch_id, q=q_legacy)
+    batches = tag_store.find_batches(q=q_legacy)
+    for batch in batches:
+        tag_store.delete_batch(batch.id, q=q_legacy)
 
     return q_legacy
 
@@ -24,16 +24,16 @@ def legacy_vod_content_with_tags_clean(q_legacy, tag_store) -> Content:
 @pytest.fixture
 def vod_content_with_tags_clean(q, tag_store) -> Content:
 
-    batch_ids = tag_store.find_batches(q=q)
-    for batch_id in batch_ids:
-        tag_store.delete_batch(batch_id, q=q)
+    batches = tag_store.find_batches(q=q)
+    for batch in batches:
+        tag_store.delete_batch(batch.id, q=q)
 
     return q
 
 @pytest.fixture
 def assets_content_with_tags_clean(q_assets, tag_store) -> Content:
-    batch_ids = tag_store.find_batches(q=q_assets)
-    for batch_id in batch_ids:
-        tag_store.delete_batch(batch_id, q=q_assets)
+    batches = tag_store.find_batches(q=q_assets)
+    for batch in batches:
+        tag_store.delete_batch(batch.id, q=q_assets)
 
     return q_assets

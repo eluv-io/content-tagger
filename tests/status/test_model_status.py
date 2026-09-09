@@ -10,7 +10,7 @@ from src.common.errors import BadRequestError, MissingResourceError
 
 def make_batch(
     id: str,
-    track: str,
+    model: str,
     timestamp: float,
     all_sources: list,
     downloaded_sources: list,
@@ -21,7 +21,7 @@ def make_batch(
     return Batch(
         id=id,
         qid="iq__test",
-        track=track,
+        model=model,
         timestamp=timestamp,
         author="tagger",
         additional_info={
@@ -40,7 +40,7 @@ def make_batch(
 
 def test_single_batch_full_completion(get_status_service):
     sources = ["s1", "s2", "s3"]
-    batches = [make_batch("b1", "llava_track", 1000.0, sources, sources, sources)]
+    batches = [make_batch("b1", "llava", 1000.0, sources, sources, sources)]
     service = get_status_service(batches)
 
     result = service.get_model_status(Content(qid="iq__test", token=""), "llava")
@@ -52,7 +52,7 @@ def test_single_batch_full_completion(get_status_service):
 
 
 def test_single_batch_partial_completion(get_status_service):
-    batches = [make_batch("b1", "llava_track", 1000.0, ["s1", "s2", "s3", "s4"], ["s1", "s2"], ["s1"])]
+    batches = [make_batch("b1", "llava", 1000.0, ["s1", "s2", "s3", "s4"], ["s1", "s2"], ["s1"])]
     service = get_status_service(batches)
 
     result = service.get_model_status(Content(qid="iq__test", token=""), "llava")
@@ -64,8 +64,8 @@ def test_single_batch_partial_completion(get_status_service):
 def test_multiple_batches_union_sources(get_status_service):
     """tagging_progress and num_content_parts are computed across all batches."""
     batches = [
-        make_batch("b1", "llava_track", 1000.0, ["s1", "s2", "s3", "s4"], ["s1", "s2"], ["s1"]),
-        make_batch("b2", "llava_track", 2000.0, ["s1", "s2", "s3"], ["s3"], ["s3", "s4"]),
+        make_batch("b1", "llava", 1000.0, ["s1", "s2", "s3", "s4"], ["s1", "s2"], ["s1"]),
+        make_batch("b2", "llava", 2000.0, ["s1", "s2", "s3"], ["s3"], ["s3", "s4"]),
     ]
     service = get_status_service(batches)
 
@@ -79,8 +79,8 @@ def test_multiple_batches_union_sources(get_status_service):
 def test_num_content_parts_is_max_not_union(get_status_service):
     """num_content_parts takes the max batch size, not the union count."""
     batches = [
-        make_batch("b1", "llava_track", 1000.0, ["s1", "s2", "s3"], [], []),
-        make_batch("b2", "llava_track", 2000.0, ["s1", "s2"], [], []),
+        make_batch("b1", "llava", 1000.0, ["s1", "s2", "s3"], [], []),
+        make_batch("b2", "llava", 2000.0, ["s1", "s2"], [], []),
     ]
     service = get_status_service(batches)
 
@@ -90,7 +90,7 @@ def test_num_content_parts_is_max_not_union(get_status_service):
 
 
 def test_job_detail_fields(get_status_service):
-    batches = [make_batch("b1", "llava_track", 1000.0, ["s1", "s2"], ["s1", "s2"], ["s1"], source_qid="iq__src1", job_status="Completed")]
+    batches = [make_batch("b1", "llava", 1000.0, ["s1", "s2"], ["s1", "s2"], ["s1"], source_qid="iq__src1", job_status="Completed")]
     service = get_status_service(batches)
 
     result = service.get_model_status(Content(qid="iq__test", token=""), "llava")
@@ -105,7 +105,7 @@ def test_job_detail_fields(get_status_service):
 
 
 def test_job_upload_status_shows_counts_not_lists(get_status_service):
-    batches = [make_batch("b1", "llava_track", 1000.0, ["s1", "s2", "s3"], ["s1", "s2"], ["s1"])]
+    batches = [make_batch("b1", "llava", 1000.0, ["s1", "s2", "s3"], ["s1", "s2"], ["s1"])]
     service = get_status_service(batches)
 
     result = service.get_model_status(Content(qid="iq__test", token=""), "llava")
@@ -125,8 +125,8 @@ def test_no_batches_raises_missing_resource(get_status_service):
         service.get_model_status(Content(qid="iq__test", token=""), "llava")
 
 
-def test_only_other_track_batches_raises_missing_resource(get_status_service):
-    batches = [make_batch("b1", "whisper_track", 1000.0, ["s1"], ["s1"], ["s1"])]
+def test_only_other_model_batches_raises_missing_resource(get_status_service):
+    batches = [make_batch("b1", "whisper", 1000.0, ["s1"], ["s1"], ["s1"])]
     service = get_status_service(batches)
 
     with pytest.raises(MissingResourceError):
@@ -138,7 +138,7 @@ def test_no_upload_status_in_batch(get_status_service):
     batch = Batch(
         id="b1",
         qid="iq__test",
-        track="llava_track",
+        model="llava",
         timestamp=1000.0,
         author="tagger",
         additional_info={

@@ -35,14 +35,17 @@ class RestTagstore(Tagstore):
     def create_track(self,
         name: str,
         label: str,
-        q: Content
+        q: Content,
+        additional_info: dict | None = None,
     ) -> None:
         """
         Create a new track with metadata (idempotent)
         """
-        track_data = {
+        track_data: dict = {
             "label": label
         }
+        if additional_info is not None:
+            track_data["additional_info"] = additional_info
         
         response = self.session.post(
             f"{self.base_url}/{q.qid}/tracks/{name}",
@@ -89,59 +92,60 @@ class RestTagstore(Tagstore):
                 return Track(
                     name=track_data['name'],
                     label=track_data['label'],
-                    qid=track_data['qid']
+                    qid=track_data['qid'],
+                    additional_info=track_data.get('additional_info')
                 )
         
         return None
 
     def create_batch(self,
-        track: str,
+        model: str,
         author: str,
         q: Content
     ) -> Batch:
         """
-        Starts a new batch with provided metadata
+        Starts a new batch for a single run identified by (qid, author, model)
         """
         # Create batch via REST API
         batch_data = {
-            "track": track,
+            "model": model,
             "author": author
         }
-        
+
         response = self.session.post(
-            f"{self.base_url}/{q.qid}/batches", 
+            f"{self.base_url}/{q.qid}/batches",
             json=batch_data,
             headers=self._get_headers(q),
             timeout=self.timeout
         )
-        
+
         if not response.ok:
             self._log_response_and_raise(response)
-        
+
         result = response.json()
         batch_id = result["batch_id"]
-        
+
         # Create Batch object with the returned batch_id
         batch = Batch(
             id=batch_id,
             qid=q.qid,
-            track=track,
+            model=model,
             timestamp=time.time(),
             author=author,
             additional_info=result.get("additional_info", {})
         )
-        
+
         return batch
 
-    def upload_tags(self, tags: list[Tag], batch_id: str, q: Content) -> None:
+    def upload_tags(self, tags: list[Tag], batch_id: str, track: str, q: Content) -> None:
         """
-        Upload tags for a specific batch
+        Upload tags for a specific batch, associated with the given track
         """
         if not tags:
             return
-        
+
         qid = q.qid
-        
+
         # Convert tags to API format
         api_tags = []
         for tag in tags:
@@ -156,13 +160,14 @@ class RestTagstore(Tagstore):
             if tag.frame_info is not None:
                 api_tag["frame_info"] = tag.frame_info
             api_tags.append(api_tag)
-        
+
         # Upload tags
         upload_data = {
             "batch_id": batch_id,
+            "track": track,
             "tags": api_tags
         }
-        
+
         response = self.session.post(
             f"{self.base_url}/{qid}/tags", 
             json=upload_data,
@@ -170,6 +175,24 @@ class RestTagstore(Tagstore):
             timeout=self.timeout
         )
         
+        if not response.ok:
+            self._log_response_and_raise(response)
+
+    def delete_tags_by_source(self, sources: list[str], model: str, q: Content) -> None:
+        """
+        Permanently delete all tags whose source matches one of the provided sources
+        and that belong to batches with the given model.
+        """
+        if not sources or not model:
+            return
+
+        response = self.session.delete(
+            f"{self.base_url}/{q.qid}/tags",
+            json={"sources": sources, "model": model},
+            headers=self._get_headers(q),
+            timeout=self.timeout
+        )
+
         if not response.ok:
             self._log_response_and_raise(response)
 
@@ -256,54 +279,51 @@ class RestTagstore(Tagstore):
         
         return tags
 
-    def find_batches(self, q: Content, **filters) -> list[str]:
+    def find_batches(self, q: Content, **filters) -> list[Batch]:
         """
-        Find batch IDs with flexible filtering.
-        
+        Find batches with flexible filtering.
+
         Supported filters:
         - qid: str
         - stream: str
-        - track: str 
+        - model: str
         - author: str
         - timestamp_gte: float
         - timestamp_lte: float
         - limit: int
         - offset: int
         """
-        
+
         if 'qid' in filters:
             assert filters['qid'] == q.qid
         qid = q.qid
-        
+
         # Build query parameters
         params = {}
-        
-        if 'track' in filters:
-            params['track'] = filters['track']
+
+        if 'model' in filters:
+            params['model'] = filters['model']
         if 'author' in filters:
             params['author'] = filters['author']
         if 'limit' in filters:
             params['limit'] = filters['limit']
         if 'offset' in filters:
             params['start'] = filters['offset']
-        
+
         response = self.session.get(
-            f"{self.base_url}/{qid}/batches", 
+            f"{self.base_url}/{qid}/batches",
             params=params,
             headers=self._get_headers(q),
             timeout=self.timeout
         )
-        
+
         if not response.ok:
             self._log_response_and_raise(response)
-        
+
         result = response.json()
         batches = result.get('batches', [])
-        
-        # Extract batch IDs
-        batch_ids = [str(batch['id']) for batch in batches]
-        
-        return batch_ids
+
+        return [self._parse_batch(batch, qid) for batch in batches]
 
     def count_tags(self, q: Content, **filters) -> int:
         """Count tags matching the given filters"""
@@ -353,15 +373,15 @@ class RestTagstore(Tagstore):
         
         # Build query parameters
         params = {}
-        
-        if 'track' in query_filters:
-            params['track'] = query_filters['track']
+
+        if 'model' in query_filters:
+            params['model'] = query_filters['model']
         if 'author' in query_filters:
             params['author'] = query_filters['author']
         params['limit'] = 1
-        
+
         response = self.session.get(
-            f"{self.base_url}/{qid}/batches", 
+            f"{self.base_url}/{qid}/batches",
             params=params,
             headers=self._get_headers(q),
             timeout=self.timeout
@@ -373,40 +393,39 @@ class RestTagstore(Tagstore):
         result = response.json()
         return result.get('meta', {}).get('total', 0)
 
+    def _parse_batch(self, batch_data: dict, qid: str) -> Batch:
+        """Convert an API batch payload into a Batch"""
+        return Batch(
+            id=str(batch_data['id']),
+            qid=qid,
+            model=batch_data['model'],
+            timestamp=parser.isoparse(batch_data['created_at'].replace("Z", "+00:00")).timestamp(),
+            author=batch_data['author'],
+            additional_info=batch_data.get("additional_info", {})
+        )
+
     def get_batch(self, batch_id: str, q: Content) -> Batch | None:
         """
         Get batch metadata
         """
         # Extract qid from batch_id (assuming format: qid/track/timestamp)
         qid = q.qid
-        
+
         try:
             response = self.session.get(
                 f"{self.base_url}/{qid}/batches/{batch_id}",
                 headers=self._get_headers(q),
                 timeout=self.timeout
             )
-            
+
             if response.status_code == 404:
                 return None
-                
+
             if not response.ok:
                 self._log_response_and_raise(response)
-            
-            batch_data = response.json()
-            
-            # Convert API batch to Batch
-            batch = Batch(
-                id=str(batch_data['id']),
-                qid=qid,
-                track=batch_data['track'],
-                timestamp=parser.isoparse(batch_data['created_at'].replace("Z", "+00:00")).timestamp(),
-                author=batch_data['author'],
-                additional_info=batch_data.get("additional_info", {})
-            )
-            
-            return batch
-            
+
+            return self._parse_batch(response.json(), qid)
+
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 404:
                 return None

@@ -211,7 +211,7 @@ class TaggerWorker:
 
         ignore_sources = []
         if not args.replace:
-            ignore_sources = self.source_resolver.resolve(q, feature)
+            ignore_sources = self.source_resolver.resolve(q, feature, track_suffix=args.track_suffix)
 
         worker = self.fetcher.get_session(
             q, 
@@ -238,6 +238,7 @@ class TaggerWorker:
             track_resolver=self.track_resolver,
             track_suffix=args.track_suffix,
             do_retry=is_live,
+            hidden=self.cregistry.get_model_config(feature).tags.hidden,
         )
 
         container = self.cregistry.get(ContainerRequest(

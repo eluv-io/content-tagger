@@ -57,7 +57,7 @@ def tagger_config(media_dir) -> TaggerWorkerConfig:
 class FakeTagContainer:
     """Fake TagContainer that simulates work and asynchronous behavior."""
     
-    def __init__(self, media_dir: str, feature, work_duration: float = 0.25, report_progress: bool = True):
+    def __init__(self, media_dir: str, feature, work_duration: float = 0.5, report_progress: bool = True):
         """
         Initialize the FakeTagContainer.
     
@@ -228,6 +228,10 @@ class FakeContainerRegistry:
         return self.containers[container_key]
     
     def get_model_config(self, feature: str) -> ModelConfig:
+        if feature == "caption":
+            return Mock(resources={"gpu": 1, "cpu_juice": 5}, tags=Mock(hidden=False))
+        elif feature == "asr":
+            return Mock(resources={"gpu": 1, "cpu_juice": 5}, tags=Mock(hidden=True))
         return Mock(resources={"gpu": 1, "cpu_juice": 5})
     
     def services(self) -> list[str]:

@@ -13,7 +13,7 @@ from src.tags.track_resolver import TrackResolver, LabelResolverConfig, TrackArg
 def mock_tagstore():
     def _mock_tagstore(batches: list[Batch]) -> Tagstore:
         tagstore = Mock(spec=Tagstore)
-        tagstore.find_batches.return_value = [b.id for b in batches]
+        tagstore.find_batches.return_value = batches
         def get_batch_side_effect(batch_id: str, q=None):
             for b in batches:
                 if b.id == batch_id:

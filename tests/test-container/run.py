@@ -63,6 +63,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--output-path', type=str, required=True)
     parser.add_argument('--params', type=str, required=False, help='Runtime configuration JSON')
+
+    print(f"GOT AUTH SET: {bool(os.environ.get('ELV_TOKEN'))}")
     
     args = parser.parse_args()
 
@@ -73,4 +75,4 @@ if __name__ == '__main__':
     if params["report_progress"]:
         model = get_progress_producer(model)
     
-    run_default(model, args.output_path)
+    run_default(model)

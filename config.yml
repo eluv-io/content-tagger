@@ -1,5 +1,5 @@
 content:
-  parts_url: http://192.168.90.218/config?self&qspace=main
+  parts_url: http://192.168.96.203/config?self&qspace=main
   config_url: https://host-154-14-185-98.contentfabric.io/config?self&qspace=main
   live_media_url: https://host-76-74-29-5.contentfabric.io/config?self&qspace=main
 
@@ -133,6 +133,8 @@ model_configs:
     resources: {
       "gpu": 1
     }
+    tags:
+      hidden: True
     track_outputs: ["vertical_video", "focus_detection"]
     track_dependencies: ["shot_detection"]
   chapters:
@@ -152,6 +154,8 @@ model_configs:
     resources: {
       "gpu": 1
     }
+    tags:
+      hidden: True
     track_dependencies: ["shot_detection"]
   speaker:
     image: "localhost/speaker:latest"

@@ -255,6 +255,13 @@ def test_tags_uploaded_during_and_after_job(
     assert 2 in tag_counts
     assert 4 in tag_counts
 
+    # check that we set the asr additional info to hidden
+    assert fabric_tagger.tagstore.get_track(q=q, name="speech_to_text").additional_info is not None
+    assert fabric_tagger.tagstore.get_track(q=q, name="speech_to_text").additional_info["hidden"] is True
+
+    # we set hidden to false
+    assert fabric_tagger.tagstore.get_track(q=q, name="object_detection").additional_info is None
+
 
 def test_tags_uploaded_during_and_after_job_through_status(
     fabric_tagger, 
@@ -556,17 +563,20 @@ def test_fetcher_returns_no_sources(fabric_tagger, q, make_tag_args):
     assert tag_count == 0
 
 def test_batch_report_on_success(fabric_tagger, q, make_tag_args):
-    """Batch additional_info should contain a tagger report with Completed status."""
-    args = make_tag_args(feature="caption", stream="video")
+    """Batch additional_info should contain a tagger report with Completed status.
+    
+    Also check suffix while we're at it
+    """
+    args = make_tag_args(feature="caption", stream="video", track_suffix="test suffix")
     result = fabric_tagger.tag(q, args)
     assert result.started
 
     wait_tag(fabric_tagger, q.qid, timeout=5)
 
-    batches = fabric_tagger.tagstore.find_batches(qid=q.qid, q=q)
+    batches = fabric_tagger.tagstore.find_batches(model="caption_test_suffix", q=q)
     assert len(batches) == 1
 
-    batch = fabric_tagger.tagstore.get_batch(batches[0], q=q)
+    batch = batches[0]
     assert batch is not None
 
     report = batch.additional_info.get("tagger")
@@ -588,7 +598,7 @@ def test_replace(
     fabric_tagger.tag(q, args)
     wait_tag(fabric_tagger, q.qid, timeout=5)
 
-    first_batch = fabric_tagger.tagstore.find_batches(q=q, track="object_detection")[0]
+    first_batch = fabric_tagger.tagstore.find_batches(q=q, track="object_detection")[0].id
     tags = fabric_tagger.tagstore.find_tags(q=q, track="object_detection", batch_id=first_batch)
 
     timestamps = tuple(sorted(t.additional_info["timestamp_ms"] for t in tags if t.additional_info is not None))
@@ -597,7 +607,7 @@ def test_replace(
     fabric_tagger.tag(q, args)
     wait_tag(fabric_tagger, q.qid, timeout=5)
 
-    new_batches = fabric_tagger.tagstore.find_batches(q=q, track="object_detection")
+    new_batches = [b.id for b in fabric_tagger.tagstore.find_batches(q=q, track="object_detection")]
     new_batches.remove(first_batch)
     second_batch = new_batches[0]
 
@@ -613,8 +623,8 @@ def test_replace(
     wait_tag(fabric_tagger, q.qid, timeout=5)
 
     # doing this weird stuff for now cause prod tagstore does shadowing and local one doesn't
-    batches = fabric_tagger.tagstore.find_batches(q=q, track="object_detection")
-    
+    batches = [b.id for b in fabric_tagger.tagstore.find_batches(q=q, track="object_detection")]
+
     batches.remove(first_batch)
     batches.remove(second_batch)
 
@@ -788,7 +798,7 @@ def test_content_aligned(fabric_tagger, q, make_tag_args, temp_dir):
 
     fabric_tagger.tag(q, args)
 
-    time.sleep(0.75)
+    time.sleep(1.5)
 
     job = list(fabric_tagger.jobstore.inactive_jobs.values())[0]
 
@@ -832,7 +842,7 @@ def test_no_tags_still_creates_batch(fabric_tagger, q, make_tag_args):
     batches = fabric_tagger.tagstore.find_batches(q=q)
     assert len(batches) == 1
 
-    batch = fabric_tagger.tagstore.get_batch(batches[0], q=q)
+    batch = batches[0]
     assert batch is not None
 
     report = batch.additional_info.get("tagger")
