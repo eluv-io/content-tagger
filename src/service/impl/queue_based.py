@@ -1,15 +1,13 @@
 from dataclasses import asdict
-from functools import lru_cache
-from time import time
 
 from src.common.content import Content
 from src.common.errors import MissingResourceError
 from src.common.logging import logger
-from src.fetch.model import AssetScope, LiveScope, TimeRangeScope, VideoScope
+from src.fetch.model import LiveScope
 from src.service.job_poster import JobPoster
 from src.service.model import *
 from src.tagging.fabric_tagging.model import TagArgs
-from src.tagging.fabric_tagging.queue.model import CreateQueueItem, ListJobArgs, QueueItem
+from src.tagging.fabric_tagging.queue.model import ListJobArgs, QueueItem
 from src.service.abstract import TaggerService
 
 logger = logger.bind(name="Queue Service")
@@ -68,12 +66,18 @@ class QueueService(TaggerService):
     
     def _items_to_reports(self, items: list[QueueItem]) -> list[TagJobStatusResult]:
         """Convert a list of QueueItems to TagJobStatusResult objects."""
+
+        def report_status(status: str, is_live: bool) -> str:
+            if is_live and status == "failed":
+                return "cancelled"
+            return status
+
         reports: list[TagJobStatusResult] = []
         for item in items:
             reports.append(TagJobStatusResult(
                 qid=item.qid,
                 job_id=item.id,
-                status=item.status,
+                status=report_status(item.status, isinstance(item.params.scope, LiveScope)),
                 created_at=item.created_at,
                 model=item.params.feature,
                 stream=item.params.scope.get_stream(),

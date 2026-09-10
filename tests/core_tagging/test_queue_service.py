@@ -1,12 +1,14 @@
 import pytest
+from dataclasses import replace as dc_replace
 from unittest.mock import Mock
 
 from src.common.errors import MissingResourceError
 from src.service.impl.queue_based import QueueService
 from src.service.job_poster import JobPoster
 from src.service.model import StatusArgs
-from src.tagging.fabric_tagging.queue.model import CreateQueueItem, ListJobArgs
+from src.tagging.fabric_tagging.queue.model import CreateQueueItem, ListJobArgs, UpdateJobRequest
 from src.common.content import Content
+from src.fetch.model import LiveScope
 
 class TestQAPIFactory:
     def __init__(self):
@@ -106,3 +108,27 @@ def test_job_filter(queue_service: QueueService, make_tag_args):
         title="ANG"
     ))[0].title == "12 Angry Men"
 
+
+def test_live_error_reported_as_cancelled(queue_service: QueueService, make_tag_args):
+    """An errored live job reports 'cancelled' but keeps its error; vod still reports 'failed'."""
+    content = Content(qid="test", token="")
+    live_args = dc_replace(make_tag_args(feature="caption"), scope=LiveScope(stream="video"))
+    queue_service.tag(content, [make_tag_args(feature="asr"), live_args])
+
+    items = queue_service.jobstore.list_jobs(
+        ListJobArgs(qid=content.qid, include_unready=True), content.token
+    )
+    for item in items:
+        queue_service.jobstore.update_job(
+            UpdateJobRequest(id=item.id, status="failed", error="404 Client Error"),
+            auth=content.token,
+        )
+
+    by_model = {
+        r.model: r
+        for r in queue_service.status(StatusArgs(qid=content.qid, user=None, tenant=None, title=None))
+    }
+
+    assert by_model["caption"].status == "cancelled"
+    assert by_model["caption"].error == "404 Client Error"
+    assert by_model["asr"].status == "failed"
