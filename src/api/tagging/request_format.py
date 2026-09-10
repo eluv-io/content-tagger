@@ -70,7 +70,9 @@ class TaggerOptionsSchema(Schema):
         metadata={
             "description": (
                 "Replace already existing tagstore tags. Set to true to retag, set to "
-                "false to enable diff-based tagging."
+                "false to enable diff-based tagging. In the case of a livestream, setting to true"
+                "deletes all existing tags at the start of the job. In the case of VOD, setting to true"
+                "deletes old tags progressively as new ones are added."
             )
         },
     )

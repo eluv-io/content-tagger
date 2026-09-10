@@ -19,6 +19,7 @@ from src.common.errors import *
 from src.fetch.factory import FetchFactory
 from src.tagging.uploading.align import adjust_progress_sources, align_tags, get_duration_tagged
 from src.tags.datastore.abstract import Datastore
+from src.tags.delete import delete_tags_by_model
 from src.tagging.fabric_tagging.message_types import *
 from src.tagging.fabric_tagging.job_state import *
 from src.tagging.fabric_tagging.model import *
@@ -211,6 +212,8 @@ class TaggerWorker:
 
         output_dir = self._output_dir_from_q(q)
 
+        dest_q = Content(args.destination_qid or q.qid, q.token)
+
         ignore_sources = []
         if not args.replace:
             ignore_sources = self.source_resolver.resolve(q, feature, track_suffix=args.track_suffix)
@@ -231,8 +234,6 @@ class TaggerWorker:
             output_dir=output_dir,
         )
 
-        dest_q = Content(args.destination_qid or q.qid, q.token)
-
         uploader = Uploader(
             tagstore=self.tagstore,
             vectorstore=self.vectorstores.create(args.index_qid) if args.index_qid else None,
@@ -252,6 +253,10 @@ class TaggerWorker:
             # pass the token and qid in case they're needed for specialized use cases
             q=q,
         ))
+
+        if is_live and args.replace:
+            num_deleted = delete_tags_by_model(self.tagstore, dest_q, feature)
+            logger.info("cleared existing tags for live job", model=feature, qid=dest_q.qid, batches_deleted=num_deleted)
 
         job = TagJob(
             state=JobState.starting(

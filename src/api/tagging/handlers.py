@@ -26,6 +26,7 @@ from src.service.impl.queue_based import QueueService
 from src.status.get_info import UserInfoResolver
 from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tags.datastore.abstract import Datastore
+from src.tags.delete import delete_tags_by_model
 
 tagging_blp = Blueprint(
     "Operate Tagging", __name__, description="Start, query and stop tagging jobs."
@@ -215,17 +216,9 @@ def handle_delete_tags_by_model(qid: str, model: str) -> dict:
 
     tagstore: Datastore = current_app.config["state"]["worker"].tagstore
 
-    # high limit so we aren't restricted to the tagstore's default page size
-    batches = tagstore.find_batches(q, model=model, limit=100)
-
-    # guard against the tagstore ignoring the model filter
-    batches = [b for b in batches if b.model == model]
-
-    for batch in batches:
-        logger.debug(f"Deleting batch {batch.id} (model={model}, qid={q.qid})")
-        tagstore.delete_batch(batch.id, q)
+    num_deleted = delete_tags_by_model(tagstore, q, model)
 
     return {
-        "message": f"Deleted {len(batches)} batches for model {model}",
-        "batches_deleted": len(batches),
+        "message": f"Deleted {num_deleted} batches for model {model}",
+        "batches_deleted": num_deleted,
     }
