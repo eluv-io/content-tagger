@@ -1,37 +1,64 @@
 
 from functools import lru_cache
 from copy import deepcopy
+import dataclasses
 
 from common_ml.utils.dictionary import nested_update
+from marshmallow import ValidationError
 from requests import HTTPError
 
-from src.common.content import QAPI, Content, QAPIFactory
+from src.common.content import Content, QAPIFactory
 from src.common.model import ModelConfig
 from src.fetch.model import *
-from src.tag_containers.registry import ContainerRegistry
 from src.api.tagging.request_format import *
 from src.tagging.fabric_tagging.model import TagArgs, Scope
 from src.common.errors import BadRequestError, MissingResourceError
+from src.api.tenant_defaults import TenantDefaultsResolver
 
 class ArgsResolver:
     """Class to resolve arguments for tagging features."""
 
-    def __init__(self, model_configs: dict[str, ModelConfig], api_factory: QAPIFactory):
+    def __init__(
+        self,
+        model_configs: dict[str, ModelConfig],
+        api_factory: QAPIFactory,
+        tenant_defaults: TenantDefaultsResolver
+    ):
         self.model_configs = model_configs
         self.api_factory = api_factory
+        self.tenant_defaults = tenant_defaults
 
     def resolve(self, args: StartJobsRequest, q: Content) -> list[TagArgs]:
         """
         Resolve API arguments to internal TagArgs structures.
         """
-        defaults = args.options
         if len(args.jobs) == 0:
             raise BadRequestError("Please specify at least one job to run.")
+        tenant_defaults = self.tenant_defaults.get(q)
         res = []
         for job in args.jobs:
-            tag_arg = self._set_defaults(q, defaults, job)
+            job = self._apply_tenant_defaults(job, args.options, tenant_defaults.get(job.model, {}))
+            tag_arg = self._set_defaults(q, TaggerOptions(), job)
             res.append(tag_arg)
         return res
+
+    def _apply_tenant_defaults(
+        self,
+        job: JobSpec,
+        options: TaggerOptions,
+        tenant_job: dict[str, Any]
+    ) -> JobSpec:
+        TENANT_EXCLUDED_FIELDS = {"model", "caller_info"}
+
+        tenant_job = {k: v for k, v in tenant_job.items() if k not in TENANT_EXCLUDED_FIELDS}
+        merged = nested_update(tenant_job, {"overrides": _explicit(options)})
+        merged = nested_update(merged, _explicit(job))
+
+        try:
+            res: JobSpec = JobSpecSchema().load(merged)  # type: ignore
+            return res
+        except ValidationError as e:
+            raise BadRequestError(f"Invalid job parameters for {job.model} after applying tenant defaults: {e.messages}") from e
     
     @lru_cache(maxsize=1024)
     def find_default_audio_stream(self, q: Content) -> str:
@@ -131,7 +158,7 @@ class ArgsResolver:
             run_config=run_config,
             scope=scope,
             replace=replace,
-            track_suffix=job.track_suffix,
+            track_suffix=job.track_suffix or "",
             destination_qid=destination_qid,
             index_qid=index_qid,
             max_fetch_retries=max_fetch_retries,
@@ -178,3 +205,14 @@ class ArgsResolver:
                 res["stream"] = "video"
 
         return res
+
+def _explicit(obj: Any) -> dict[str, Any]:
+    """Fields of a request dataclass which were explicitly set (i.e. not None). Recurses into
+    nested request dataclasses but leaves plain dict values (e.g. model_params) untouched."""
+    res = {}
+    for f in dataclasses.fields(obj):
+        value = getattr(obj, f.name)
+        if value is None:
+            continue
+        res[f.name] = _explicit(value) if dataclasses.is_dataclass(value) else deepcopy(value)
+    return res

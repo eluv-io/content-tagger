@@ -20,7 +20,7 @@ class TaggerOptions:
 class JobSpec:
     model: str
     model_params: dict[str, Any] = field(default_factory=dict)
-    track_suffix: str = ""
+    track_suffix: str | None = None
     caller_info: dict[str, str] = field(default_factory=dict)
     overrides: TaggerOptions = field(default_factory=TaggerOptions)
 
@@ -104,7 +104,8 @@ class JobSpecSchema(Schema):
     )
     model_params = fields.Dict(load_default=dict, metadata=model_params_oneof_metadata())
     track_suffix = fields.Str(
-        load_default="",
+        load_default=None,
+        allow_none=True,
         metadata={
             "description": (
                 "If set this will be appended to the track name that the tagger "

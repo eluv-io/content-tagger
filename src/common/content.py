@@ -143,7 +143,7 @@ class QAPI:
                 if self.qwt:
                     kwargs["write_token"] = self.qwt
                 else:
-                    kwargs["version_hash"] = self.qhash
+                    kwargs["object_id"] = self.qid
                 return attr(*args, library_id=self.qlib, **kwargs)
             return wrapper
         return attr

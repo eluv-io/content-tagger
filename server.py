@@ -13,6 +13,7 @@ from waitress.server import create_server
 import os
 
 from src.api.arg_resolver import ArgsResolver
+from src.api.tenant_defaults import TenantDefaultsResolver
 from src.api.auth import Authenticator
 from src.service.impl.direct_api import DirectAPI
 from src.service.impl.queue_based import QueueService
@@ -149,7 +150,9 @@ def create_app_direct(config: AppConfig) -> Flask:
     app = Flask(__name__)
 
     worker = _build_worker(config)
-    arg_resolver = ArgsResolver(config.model_configs, QAPIFactory(config.content))
+    qfactory = QAPIFactory(config.content)
+    tenant_defaults = TenantDefaultsResolver(UserInfoResolver(config.user_info_resolver), qfactory)
+    arg_resolver = ArgsResolver(config.model_configs, qfactory, tenant_defaults)
     app.config["state"] = {
         "service": DirectAPI(worker),
         "status_service": TaggingStatusService(
@@ -185,7 +188,8 @@ def create_app_queue_based(config: AppConfig) -> Flask:
     user_info_resolver = UserInfoResolver(config.user_info_resolver)
     job_store: JobStore = FsJobStore(config.jobstore.base_url, user_info_resolver=user_info_resolver)
     qfactory = QAPIFactory(config.content)
-    arg_resolver = ArgsResolver(config.model_configs, api_factory=qfactory)
+    tenant_defaults = TenantDefaultsResolver(user_info_resolver, qfactory)
+    arg_resolver = ArgsResolver(config.model_configs, api_factory=qfactory, tenant_defaults=tenant_defaults)
     job_poster = JobPoster(job_store, worker.track_resolver, config.model_configs, qfactory)
 
     app.config["state"] = {

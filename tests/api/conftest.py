@@ -271,7 +271,7 @@ class MockArgsResolver:
                 run_config=job.model_params,
                 scope=VideoScope(stream="video", start_time=0, end_time=10**16),
                 replace=False,
-                track_suffix=job.track_suffix,
+                track_suffix=job.track_suffix or "",
                 destination_qid="",
                 index_qid=job.overrides.index_qid or "",
                 caller_info=job.caller_info,
