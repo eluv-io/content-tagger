@@ -20,7 +20,7 @@ def test_center_segment(segment: str) -> None:
     def get_pts_info(file_path: str) -> float:
         result = subprocess.run(
             ["ffprobe", "-v", "error", "-select_streams", "v:0", 
-             "-show_entries", "frame=pkt_pts_time", "-of", "csv=p=0", file_path],
+             "-show_entries", "frame=pts_time", "-of", "csv=p=0", file_path],
             capture_output=True,
             text=True,
             check=True

@@ -252,6 +252,7 @@ class TaggerWorker:
             job_id=q.qid + "-" + datetime.now().strftime("%Y%m%d%H%M") + "-" + str(uuid())[0:6],
             # pass the token and qid in case they're needed for specialized use cases
             q=q,
+            index_qid=args.index_qid or None,
         ))
 
         if is_live and args.replace:

@@ -145,6 +145,13 @@ class TagContainer:
 
         cmd = self._get_args(output_filename)
 
+        env = {
+            "ELV_TOKEN": self.cfg.q.token,
+            "ELV_CONTENT": self.cfg.q.qid
+        }
+        if self.cfg.index_qid:
+            env["ELV_INDEX_QID"] = self.cfg.index_qid
+
         kwargs = {
             "image": self.cfg.model_config.image,
             "command": cmd,
@@ -155,10 +162,7 @@ class TagContainer:
             "ulimits": [{"Name": "nproc", "Soft": 65535, "Hard": 65535}],
             "stdin_open": True,
             "tty": False,
-            "environment": {
-                "ELV_TOKEN": self.cfg.q.token,
-                "ELV_CONTENT": self.cfg.q.qid
-            },
+            "environment": env,
             "log_config": {
                 "Type": "k8s-file",
                 "Config": {

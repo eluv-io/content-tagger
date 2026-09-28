@@ -50,6 +50,7 @@ class ContainerRegistry:
             output_path=output_path,
             model_config=modelcfg,
             q=req.q,
+            index_qid=req.index_qid,
         )
 
         return TagContainer(self.pclient, ccfg)

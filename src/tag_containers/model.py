@@ -31,6 +31,8 @@ class ContainerSpec:
     q: Content
     # static attributes of the container to run
     model_config: ModelConfig
+    # vector index content, passed to the container if specified
+    index_qid: str | None = None
 
 @dataclass
 class ContainerRequest:
@@ -48,6 +50,8 @@ class ContainerRequest:
     q: Content
     # handle passed to the container for tracking
     job_id: str | None
+    # vector index content, passed to the container if specified
+    index_qid: str | None = None
 
 @dataclass
 class RegistryConfig:
