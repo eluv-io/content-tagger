@@ -25,8 +25,13 @@ def authorize(qid: str, request: Request) -> Content:
 
 def get_authorization(req: Request) -> str:
     """Get the authorization token from the request headers or query parameters."""
-    auth = req.headers.get('Authorization', None) or req.args.get(
-        'authorization', None)
+    auth = req.headers.get('Authorization', None) 
+    if auth:
+        return auth.removeprefix("Bearer ").strip()
+
+    # else try params
+    auth = req.args.get('authorization', None)
+    
     if not auth:
         raise BadRequestError("Authorization token is required")
     return auth
