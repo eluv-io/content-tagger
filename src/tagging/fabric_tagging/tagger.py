@@ -230,6 +230,7 @@ class TaggerWorker:
 
         media_state = MediaState(
             downloaded=[],
+            failed=[],
             worker=worker,
             output_dir=output_dir,
         )
@@ -373,12 +374,20 @@ class TaggerWorker:
 
         job.state.media.downloaded.extend(new_sources)
 
+        job.state.media.failed.extend(dl_res.failed)
         for src in dl_res.failed:
             job.state.warnings.append(f"Failed to download {src}")
 
         job.state.status = "Tagging content"
 
         if not job.state.taghandle and dl_res.done and not new_sources:
+            if job.state.media.failed and not job.state.media.downloaded:
+                self._request_job_end(
+                    jobid,
+                    "Failed",
+                    RuntimeError(f"All {len(job.state.media.failed)} part downloads failed")
+                )
+                return
             # end early
             log.info("Fetcher finished with no media, aborting the job.")
             self._submit_async(EnterCompletePhase(job_id=jobid))

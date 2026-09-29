@@ -755,6 +755,34 @@ def test_part_download_warnings(fabric_tagger, q, make_tag_args):
     assert report.status.error is None
     assert len(report.status.warnings) == 1
 
+def test_all_part_downloads_fail(fabric_tagger, q, make_tag_args):
+    """Test that if every part fails to download, the job is marked as failed"""
+
+    class AllFailFetchWorker(FetchSession):
+        def download(self) -> DownloadResult:
+            return DownloadResult(sources=[], failed=["video1", "video2"], done=True)
+
+        def metadata(self) -> MediaMetadata:
+            return MediaMetadata(sources=["video1", "video2"], fps=30.0)
+
+        @property
+        def path(self) -> str:
+            return "/fake/path"
+
+    fabric_tagger.fetcher.get_session = Mock(return_value=AllFailFetchWorker())
+
+    args = make_tag_args(feature="caption", stream="video")
+
+    fabric_tagger.tag(q, args)
+
+    time.sleep(1)
+
+    status = fabric_tagger.status(q.qid)
+    report = _status_for(status, "caption")
+    assert report.status.status == "Failed"
+    assert report.status.error == "All 2 part downloads failed"
+    assert len(report.status.warnings) == 2
+
 def test_unknown_container(fabric_tagger, q, make_tag_args):
     """Test that if container registry returns a container that doesn't match the requested model, job fails gracefully"""
 
