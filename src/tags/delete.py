@@ -11,7 +11,7 @@ def delete_tags_by_model(tagstore: Datastore, q: Content, model: str) -> int:
     batches = [b for b in batches if b.model == model]
 
     for batch in batches:
-        logger.debug(f"Deleting batch {batch.id} (model={model}, qid={q.qid})")
+        logger.info(f"Deleting batch {batch.id} (model={model}, qid={q.qid})")
         tagstore.delete_batch(batch.id, q)
 
     return len(batches)

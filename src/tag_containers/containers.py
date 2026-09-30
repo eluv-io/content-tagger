@@ -176,7 +176,7 @@ class TagContainer:
 
         container = self.pclient.containers.create(**kwargs)
 
-        logger.debug("starting container:", args=kwargs)
+        logger.info("starting container", args=kwargs)
         container.start()
         self.container = container
 

@@ -472,7 +472,7 @@ class ContainerScheduler:
 
         resources.update(cfg.resources)
 
-        logger.debug(f"System resources: {dict(resources)}")
+        logger.info(f"System resources: {dict(resources)}")
 
         return ResourceState(
             total=SystemResources(dict(resources)),

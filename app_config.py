@@ -5,6 +5,7 @@ import os
 from dacite import from_dict
 
 from src.common.content import ContentConfig
+from src.common.logging import LoggingConfig
 from src.common.model import ModelConfig
 from src.fetch.model import FetcherConfig
 from src.tag_containers.model import RegistryConfig
@@ -32,6 +33,7 @@ class AppConfig:
     tag_runner: TagRunnerConfig
     user_info_resolver: UserInfoResolverConfig
     vectorstore: VectorstoreConfig = field(default_factory=VectorstoreConfig)
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
 
     @staticmethod
     def from_yaml(filename: str) -> 'AppConfig':

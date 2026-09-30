@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any
 import base64
@@ -14,7 +14,8 @@ from src.common.logging import logger
 @dataclass(frozen=True)
 class Content:
     qid: str
-    token: str
+    # avoid logging
+    token: str = field(repr=False)
 
 @dataclass
 class ContentConfig:

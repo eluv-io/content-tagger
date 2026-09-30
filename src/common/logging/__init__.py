@@ -1,1 +1,1 @@
-from .logconfig import logger
+from .logconfig import logger, LoggingConfig, configure_logging

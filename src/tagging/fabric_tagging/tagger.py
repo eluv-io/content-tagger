@@ -107,7 +107,8 @@ class TaggerWorker:
     
     def _submit(self, req: Request) -> Any:
         """synchronous request - adds a message to the mailbox and blocks till it gets a response"""
-        logger.info("submitting synchronous request", extra={"request": req, "queue_size": self.mailbox.qsize()})
+        if not isinstance(req, StatusRequest):
+            logger.info("submitting synchronous request", request=req, queue_size=self.mailbox.qsize())
         if self.shutdown_requested():
             raise RuntimeError("TaggerWorker received shutdown signal, cannot accept new requests")
         caller_mailbox = queue.Queue()

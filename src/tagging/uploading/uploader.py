@@ -53,7 +53,7 @@ class UploadSession:
             new_inputs = [t for t in tags if t not in self.uploaded_tags]
 
         if new_inputs:
-            logger.info(
+            logger.debug(
                 "uploading new tags",
                 num_new_tags=len(new_inputs),
                 feature=self.feature,
@@ -172,7 +172,7 @@ class UploadSession:
 
         batch_id = self._get_or_create_batch()
 
-        logger.info("uploading tags", num_tags=total, qid=q.qid, num_tracks=len(tags_by_track))
+        logger.debug("uploading tags", num_tags=total, qid=q.qid, num_tracks=len(tags_by_track))
 
         for track, tags in tags_by_track.items():
             try:

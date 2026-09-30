@@ -30,7 +30,7 @@ from src.fetch.factory import FetchFactory
 from src.common.content import QAPIFactory
 from src.tag_containers.registry import ContainerRegistry
 from src.tags.track_resolver import TrackResolver
-from src.common.logging import logger
+from src.common.logging import logger, configure_logging
 
 from src.api.tagging.handlers import tagging_blp
 from src.api.content_status.handlers import content_status_blp
@@ -239,6 +239,7 @@ def main():
         logger.info(f"changed directory to {args.directory}")
 
     cfg = AppConfig.from_yaml(args.config)
+    configure_logging(cfg.logging)
 
     if args.standalone:
         logger.info("starting in standalone mode")
