@@ -231,6 +231,27 @@ class ParamsSceneDescriptionSchema(Schema):
     )
 
 
+class ParamsEvidenceSchema(Schema):
+    """`model: "evidence"`"""
+    output_tracks = fields.List(
+        fields.Str(
+            metadata={
+                "enum": [
+                    "Beat Summary",
+                    "Characters",
+                    "Dialogue Highlights",
+                    "Location",
+                    "Political Topic",
+                ],
+            },
+        ),
+        metadata={
+            "description": "Which evidence tracks to output.",
+            "example": ["Beat Summary", "Characters"],
+        },
+    )
+
+
 # Maps the `model` discriminator to its params schema. Registered in the OpenAPI
 # spec in server.py. Models not listed here take no documented parameters.
 MODEL_PARAM_SCHEMAS = {
@@ -242,6 +263,7 @@ MODEL_PARAM_SCHEMAS = {
     "logo": ParamsLogoSchema,
     "caption": ParamsCaptionSchema,
     "scene_description": ParamsSceneDescriptionSchema,
+    "evidence": ParamsEvidenceSchema,
 }
 
 
