@@ -1,11 +1,10 @@
 
 import requests
-from elv_client_py import ElvClient
 from flask import Request, Response, current_app, make_response
 from requests.exceptions import HTTPError
 
 from src.common.errors import BadRequestError
-from src.common.content import Content, parse_qhit
+from src.common.content import Content, create_client, parse_qhit
 
 class Authenticator:
     def __init__(self, config_url: str):
@@ -13,7 +12,7 @@ class Authenticator:
 
     def authenticate(self, q: Content) -> None:
         """Basic authentication against the content. Returns None if successful, raises HTTPError if authentication fails."""
-        client = ElvClient.from_configuration_url(config_url=self.config_url, static_token=q.token)
+        client = create_client(self.config_url, q.token)
         client.content_object(**parse_qhit(q.qid))
 
 def authorize(qid: str, request: Request) -> Content:

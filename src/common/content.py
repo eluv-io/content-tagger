@@ -6,10 +6,18 @@ import dacite
 import json
 import requests
 
+from cachetools.func import ttl_cache
 from elv_client_py import ElvClient
 
 from src.common.errors import BadRequestError, ExternalServiceError
 from src.common.logging import logger
+
+CONFIG_TTL = 300
+
+@ttl_cache(maxsize=1024, ttl=CONFIG_TTL)
+def create_client(config_url: str, token: str) -> ElvClient:
+    """Same as ElvClient.from_configuration_url, but cached for CONFIG_TTL seconds so the fabric config isn't refetched."""
+    return ElvClient.from_configuration_url(config_url, static_token=token)
 
 @dataclass(frozen=True)
 class Content:
@@ -39,21 +47,18 @@ class QAPI:
         cfg: ContentConfig
     ):
         try:
-            client = ElvClient.from_configuration_url(
-                cfg.config_url, static_token=q.token)
+            client = create_client(cfg.config_url, q.token)
         except Exception as e:
             raise ExternalServiceError("Failed to create content client") from e
         
         try:
-            parts_client = ElvClient.from_configuration_url(
-                cfg.parts_url, static_token=q.token)
+            parts_client = create_client(cfg.parts_url, q.token)
         except Exception as e:
             logger.opt(exception=e).error("Failed to create parts client")
             parts_client = None
         
         try:
-            live_client = ElvClient.from_configuration_url(
-                cfg.live_media_url, static_token=q.token)
+            live_client = create_client(cfg.live_media_url, q.token)
         except Exception as e:
             logger.opt(exception=e).error("Failed to create live media client")
             live_client = None

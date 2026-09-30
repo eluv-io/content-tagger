@@ -1,4 +1,6 @@
 
+from concurrent.futures import ThreadPoolExecutor
+import contextvars
 from functools import lru_cache
 from copy import deepcopy
 import dataclasses
@@ -27,6 +29,7 @@ class ArgsResolver:
         self.model_configs = model_configs
         self.api_factory = api_factory
         self.tenant_defaults = tenant_defaults
+        self._pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="args-prefetch")
 
     def resolve(self, args: StartJobsRequest, q: Content) -> list[TagArgs]:
         """
@@ -34,13 +37,26 @@ class ArgsResolver:
         """
         if len(args.jobs) == 0:
             raise BadRequestError("Please specify at least one job to run.")
+        # tenant defaults and the content lookups are independent fabric round trips, so run them concurrently
+        prefetch = self._pool.submit(contextvars.copy_context().run, self._prefetch_content_info, q, args)
         tenant_defaults = self.tenant_defaults.get(q)
+        prefetch.result()
         res = []
         for job in args.jobs:
             job = self._apply_tenant_defaults(job, args.options, tenant_defaults.get(job.model, {}))
             tag_arg = self._set_defaults(q, TaggerOptions(), job)
             res.append(tag_arg)
         return res
+
+    def _prefetch_content_info(self, q: Content, args: StartJobsRequest) -> None:
+        """Warm the is_live_content and find_default_audio_stream caches. Errors are left for the real call to raise."""
+        try:
+            if self.is_live_content(q):
+                return
+            if any(self.model_configs[job.model].type == "audio" for job in args.jobs if job.model in self.model_configs):
+                self.find_default_audio_stream(q)
+        except Exception:
+            pass
 
     def _apply_tenant_defaults(
         self,
