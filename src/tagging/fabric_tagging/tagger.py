@@ -1,3 +1,4 @@
+import contextvars
 import threading
 import time
 import queue
@@ -84,9 +85,10 @@ class TaggerWorker:
 
         self._upload_lock = threading.Lock()
         self._schedule_upload_tick()
+        self._schedule_heartbeat()
 
-    def tag(self, q: Content, args: TagArgs) -> TagStartResult:
-        request = TagRequest(q=q, args=args)
+    def tag(self, q: Content, args: TagArgs, job_id: str | None = None) -> TagStartResult:
+        request = TagRequest(q=q, args=args, job_id=job_id)
         return self._submit(request)
 
     def status(self, qid: str) -> list[TagStatusResult]:
@@ -122,7 +124,7 @@ class TaggerWorker:
 
     def _submit_async(self, req: Request) -> None:
         """asynchronous request - adds a message to the mailbox and returns immediately."""
-        if not isinstance(req, UploadTick):
+        if not isinstance(req, (UploadTick, HeartbeatTick)):
             logger.info("submitting async request", request=req, queue_size=self.mailbox.qsize())
         message = Message(req, queue.Queue())
         self.mailbox.put(message)
@@ -131,6 +133,15 @@ class TaggerWorker:
         if not self.shutdown_requested():
             self.upload_timer = threading.Timer(0.2, lambda: self._submit_async(UploadTick()))
             self.upload_timer.start()
+
+    def _schedule_heartbeat(self):
+        if not self.shutdown_requested():
+            self.heartbeat_timer = threading.Timer(
+                self.cfg.heartbeat_interval,
+                lambda: self._submit_async(HeartbeatTick(created_at=time.time()))
+            )
+            self.heartbeat_timer.daemon = True
+            self.heartbeat_timer.start()
 
     def _actor_loop(self):
         """Main actor loop - processes all messages sequentially"""
@@ -144,12 +155,41 @@ class TaggerWorker:
             try:
                 self._handle_message(message)
             except Exception as e:
-                logger.opt(exception=e).error("error in actor loop", extra={"message": message.data})
+                logger.opt(exception=e).error("error in actor loop", request=str(message.data))
                 time.sleep(0.2)
 
         logger.info("TaggerWorker actor shutting down")
 
     def _handle_message(self, message: Message):
+        with logger.contextualize(**self._message_log_context(message.data)):
+            self._dispatch_message(message)
+
+    def _message_log_context(self, req: Request) -> dict:
+        if isinstance(req, TagRequest):
+            ctx = {"qid": req.q.qid, "model": req.args.feature}
+            if req.job_id:
+                ctx["job_id"] = req.job_id
+            return ctx
+        jobid = getattr(req, "job_id", None)
+        if isinstance(jobid, JobID):
+            job = self.jobstore.active_jobs.get(jobid) or self.jobstore.inactive_jobs.get(jobid)
+            return job.log_context() if job else {"qid": jobid.qid, "model": jobid.feature}
+        if isinstance(req, StopRequest):
+            matches = [j for jid, j in self.jobstore.active_jobs.items()
+                       if jid.qid == req.qid and req.feature in (None, jid.feature)]
+            if len(matches) == 1:
+                return matches[0].log_context()
+            return {"qid": req.qid, "model": req.feature}
+        if isinstance(req, StatusRequest):
+            return {"qid": req.qid}
+        return {}
+
+    def _spawn(self, target, *args) -> None:
+        """Start a daemon thread that inherits the caller's log context."""
+        ctx = contextvars.copy_context()
+        threading.Thread(target=ctx.run, args=(target, *args), daemon=True).start()
+
+    def _dispatch_message(self, message: Message):
         try:
             if isinstance(message.data, TagRequest):
                 with timeit(f"handling tag request: {message.data}", min_duration=0.25):
@@ -171,10 +211,15 @@ class TaggerWorker:
                     self._handle_enter_tagging_phase(message)
             elif isinstance(message.data, EnterCompletePhase):
                 self._handle_enter_complete_phase(message)
+            elif isinstance(message.data, HeartbeatTick):
+                self._handle_heartbeat(message)
             else:
-                logger.warning("received unknown message type", extra={"type": type(message.data), "message": message.data})
+                logger.warning("received unknown message type", type=str(type(message.data)), request=str(message.data))
+        except (BadRequestError, MissingResourceError, ForbiddenError) as e:
+            logger.debug(f"rejected {type(message.data).__name__}: {e.message}")
+            message.response_mailbox.put(Response(data=None, error=e))
         except Exception as e:
-            logger.opt(exception=e).error("error handling message", extra={"message": message.data})
+            logger.opt(exception=e).error("error handling message", request=str(message.data))
             message.response_mailbox.put(Response(data=None, error=e))
 
     def _handle_tag_request(self, message: Message):
@@ -187,7 +232,7 @@ class TaggerWorker:
         self._validate_args(args)
         logger.info("processing tag request", qid=q.qid)
 
-        job = self._initialize_job(q, args.feature, args)
+        job = self._initialize_job(q, args.feature, args, queue_id=request.job_id)
 
         # human readable id for the job (qid, feature, stream)
         jobid = job.get_id()
@@ -200,7 +245,7 @@ class TaggerWorker:
 
             message.response_mailbox.put(Response(data=TagStartResult(job_id=jobid, started=True, message="Job started successfully"), error=None))
 
-    def _initialize_job(self, q: Content, feature: str, args: TagArgs) -> TagJob:
+    def _initialize_job(self, q: Content, feature: str, args: TagArgs, queue_id: str | None = None) -> TagJob:
         """
         Initialize the starting state for a job and important context for its runtime
         """
@@ -273,6 +318,7 @@ class TaggerWorker:
                 retry_upload=is_live,
             ),
             stop_event=stop_event,
+            queue_id=queue_id,
         )
 
         return job
@@ -282,22 +328,16 @@ class TaggerWorker:
         assert isinstance(message.data, EnterFetchingPhase)
         jobid = message.data.job_id
 
-        log = logger.bind(job_id=jobid)
-
         if jobid not in self.jobstore.active_jobs:
-            log.warning("received EnterFetchingPhase for inactive job")
+            logger.warning("received EnterFetchingPhase for inactive job")
             message.response_mailbox.put(Response(data=None, error=None))
             return
 
         job = self.jobstore.active_jobs[jobid]
-        log.info("entering fetching phase")
+        logger.info("entering fetching phase")
         job.state.status = "Fetching content"
 
-        threading.Thread(
-            target=self._do_fetching, 
-            args=(job,), 
-            daemon=True
-        ).start()
+        self._spawn(self._do_fetching, job)
 
         message.response_mailbox.put(Response(data=None, error=None))
 
@@ -310,7 +350,6 @@ class TaggerWorker:
         """
         with timeit("fetching work", min_duration=5.5):
             jobid = job.get_id()
-            log = logger.bind(job_id=jobid)
 
             try:
                 dl_res = job.state.media.worker.download()
@@ -320,8 +359,9 @@ class TaggerWorker:
                 if job.state.fetch_retry_count < job.args.max_fetch_retries:
                     job.state.fetch_retry_count += 1
                     retry_delay = 5
-                    log.error(
+                    logger.error(
                         "Error during fetching; retrying...", 
+                        error=str(e),
                         retry_count=job.state.fetch_retry_count, 
                         max_retries=job.args.max_fetch_retries
                     )
@@ -363,8 +403,7 @@ class TaggerWorker:
     def _process_tagging_phase(self, job: TagJob, dl_res: DownloadResult) -> None:
         """Process download results and update tagging state"""
         jobid = job.get_id()
-        log = logger.bind(job_id=jobid)
-        log.info("entering tagging phase")
+        logger.info("entering tagging phase")
 
         new_sources = []
         for s in dl_res.sources:
@@ -390,7 +429,7 @@ class TaggerWorker:
                 )
                 return
             # end early
-            log.info("Fetcher finished with no media, aborting the job.")
+            logger.info("Fetcher finished with no media, aborting the job.")
             self._submit_async(EnterCompletePhase(job_id=jobid))
             return
 
@@ -400,11 +439,7 @@ class TaggerWorker:
             job.state.taghandle = uid
 
             # spawn thread to wait for tagging to finish
-            threading.Thread(
-                target=self._await_tagging,
-                args=(job,),
-                daemon=True
-            ).start()
+            self._spawn(self._await_tagging, job)
 
         if new_sources:
             self._send_media(job.state.container, new_sources)
@@ -424,14 +459,13 @@ class TaggerWorker:
     def _await_tagging(self, job: TagJob) -> None:
         """Waits for tagging to complete, then uploads tags and requests transition to complete phase"""
         jobid = job.get_id()
-        log = logger.bind(job_id=jobid)
 
-        log.info("waiting for tagging to complete")
+        logger.info("waiting for tagging to complete")
 
         job.state.tagging_done.wait()
 
         if job.stop_event.is_set():
-            log.info("tagging was stopped via stop event")
+            logger.info("tagging was stopped via stop event")
             return
 
         status = self.system_tagger.status(job.state.taghandle)
@@ -441,28 +475,41 @@ class TaggerWorker:
                 error = RuntimeError(container_errors[-1].message)
             else:
                 error = status.error or RuntimeError("Container exited unsuccessfully")
+            if status.status == "Failed":
+                self._log_container_failure(job.state.container, status.error, container_errors)
             self._request_job_end(jobid, "Failed", error=error)
             return
 
         # Request transition to complete phase
         self._submit(EnterCompletePhase(job_id=jobid))
 
+    def _log_container_failure(self, container: TagContainer, reason: Exception | None, container_errors: list) -> None:
+        report = [f"reason: {reason}"]
+        if container_errors:
+            report.append("errors reported by container:")
+            report.extend(f"  {e.source_media or '-'}: {e.message}" for e in container_errors[-5:])
+        try:
+            tail = container.log_tail()
+            report.append(f"last {len(tail)} lines of {container.cfg.logs_path}:")
+            report.extend(f"  {line}" for line in tail)
+        except Exception as e:
+            report.append(f"could not read container logs: {e}")
+        logger.error("tagging container failed\n{}", "\n".join(report), container=container.name())
+
     def _handle_enter_complete_phase(self, message: Message):
         """Phase 3: Update state to complete (actor thread)"""
         assert isinstance(message.data, EnterCompletePhase)
         jobid = message.data.job_id
 
-        log = logger.bind(job_id=jobid)
-
         if jobid not in self.jobstore.active_jobs:
             # TODO: test we should hit here if we stop a job during tagging
-            log.warning("Received EnterCompletePhase for inactive job")
+            logger.warning("Received EnterCompletePhase for inactive job")
             message.response_mailbox.put(Response(data=None, error=None))
             return
 
         job = self.jobstore.active_jobs[jobid]
 
-        log.info("entering complete phase")
+        logger.info("entering complete phase")
 
         # catch any remaining tags - this blocks the main thread briefly but it's not called very often
         # NOTE: this cannot error, so we will not get a stuck job
@@ -474,8 +521,6 @@ class TaggerWorker:
 
     def _update_batches_with_report(self, job: TagJob, status: str) -> None:
         """Persist a status report into every batch the job created."""
-        log = logger.bind(job_id=job.get_id())
-
         metadata = job.state.media.worker.metadata()
         
         all_sources = metadata.sources
@@ -497,7 +542,7 @@ class TaggerWorker:
         try:
             container_info = job.state.container.info()
         except Exception as e:
-            log.opt(exception=e).warning("failed to get container info")
+            logger.opt(exception=e).warning("failed to get container info")
             container_info = ContainerInfo(image_name="", annotations={})
 
         tag_args = TagArgs(
@@ -622,6 +667,7 @@ class TaggerWorker:
             self._set_stop_state(job, "Stopped", RuntimeError("Tagger worker was shutdown"))
         
         self.shutdown_signal = True
+        self.heartbeat_timer.cancel()
         self.system_tagger.cleanup()
 
         message.response_mailbox.put(Response(data=None, error=None))
@@ -635,6 +681,44 @@ class TaggerWorker:
         ).start()
         
         message.response_mailbox.put(Response(data=None, error=None))
+
+    def _handle_heartbeat(self, message: Message):
+        assert isinstance(message.data, HeartbeatTick)
+        try:
+            self._log_heartbeat(message.data)
+        except Exception as e:
+            logger.opt(exception=e).warning("failed to log heartbeat")
+        finally:
+            self._schedule_heartbeat()
+        message.response_mailbox.put(Response(data=None, error=None))
+
+    def _log_heartbeat(self, tick: HeartbeatTick) -> None:
+        jobs = list(self.jobstore.active_jobs.values())
+        sched = self.system_tagger.summary()
+        logger.info(
+            "heartbeat",
+            active_jobs=len(jobs),
+            mailbox_size=self.mailbox.qsize(),
+            actor_lag_ms=round((time.time() - tick.created_at) * 1000),
+            containers_running=len(sched.running),
+            containers_queued=len(sched.queued),
+            gpus=f"{sched.gpus_used}/{sched.gpus_total}",
+            resources_available=sched.available,
+        )
+        for job in jobs:
+            s = self._summarize_status(job).status
+            with logger.contextualize(**job.log_context()):
+                logger.info(
+                    "job heartbeat",
+                    status=s.status,
+                    running_for=f"{time.time() - s.time_started:.0f}s",
+                    downloaded=f"{len(s.downloaded_sources)}/{len(s.total_sources)}",
+                    tagged=len(s.tagged_sources),
+                    uploaded=len(s.uploaded_sources),
+                    failed_downloads=len(job.state.media.failed),
+                    fetch_retries=job.state.fetch_retry_count,
+                    warnings=len(s.warnings),
+                )
 
     def _upload_all_background(self) -> None:
         """Upload tags for all jobs in background thread"""
@@ -661,16 +745,23 @@ class TaggerWorker:
         """Sets all the necessary state and performs cleanup for a stopped/failed/completed job
         """
 
+        with logger.contextualize(**job.log_context()):
+            self.__set_stop_state(job, status, error)
+
+    def __set_stop_state(
+        self, 
+        job: TagJob,
+        status: Literal["Stopped", "Failed", "Completed"],
+        error: Exception | None = None
+    ) -> None:
         jobid = job.get_id()
 
-        log = logger.bind(job_id=jobid)
-
         if jobid not in self.jobstore.active_jobs:
-            log.warning("Trying to set stop state for inactive job")
+            logger.warning("Trying to set stop state for inactive job")
             return
         
         if error:
-            log.opt(exception=error).error(f"Job ended with error, setting status to {status}")
+            logger.opt(exception=error).error(f"Job ended with error, setting status to {status}")
 
         job.state.error = str(error) if error else None
 
@@ -696,10 +787,10 @@ class TaggerWorker:
             try:
                 self.system_tagger.stop(job.state.taghandle)
             except Exception as e:
-                log.opt(exception=e).error("error stopping job")
+                logger.opt(exception=e).error("error stopping job")
 
         if job.state.taghandle:
-            threading.Thread(target=cleanup, daemon=True).start()
+            self._spawn(cleanup)
 
     def _request_job_end(
         self, 
@@ -723,7 +814,7 @@ class TaggerWorker:
         """Run upload for a job"""
 
         # we lock because _handle_enter_complete_phase and a thread spawned by _handle_upload_tick can run concurrently
-        with self._upload_lock:
+        with self._upload_lock, logger.contextualize(**job.log_context()):
             try:
                 self.__upload(job)
             except Exception as e:

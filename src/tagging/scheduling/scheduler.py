@@ -101,6 +101,12 @@ class ContainerScheduler:
         self.mailbox.put(message)
         return response_queue.get()
 
+    def summary(self, timeout: float = 5.0) -> SchedulerSummary:
+        """Snapshot of running/queued containers and resource usage."""
+        response_queue = queue.Queue()
+        self.mailbox.put(Message(MessageType.GET_SUMMARY, {}, response_queue))
+        return response_queue.get(timeout=timeout)
+
     def shutdown(self) -> None:
         """Shuts down the actor and all running jobs."""
         logger.info("Shutdown requested for ContainerScheduler")
@@ -188,6 +194,8 @@ class ContainerScheduler:
             self._handle_shutdown(message)
         elif message.type == MessageType.CONTAINER_FINISHED:
             self._handle_container_finished(message)
+        elif message.type == MessageType.GET_SUMMARY:
+            self._handle_get_summary(message)
         else:
             logger.warning(f"Unknown message type: {message.type}")
 
@@ -283,6 +291,19 @@ class ContainerScheduler:
         logger.info("Returning job status", extra=log_fields)
         assert message.response_queue is not None
         message.response_queue.put(status)
+
+    def _handle_get_summary(self, message: Message):
+        running = [job.container.name() for job in self.jobs.values()
+                   if job.jobstatus.status == "Running" and not job.jobstatus.time_ended]
+        queued = [self.jobs[jobid].container.name() for jobid in self.job_queue if jobid in self.jobs]
+        assert message.response_queue is not None
+        message.response_queue.put(SchedulerSummary(
+            running=running,
+            queued=queued,
+            gpus_used=sum(1 for used in self.resource_state.gpu_status if used),
+            gpus_total=len(self.sys_config.gpus),
+            available=dict(self.resource_state.available),
+        ))
 
     def _handle_shutdown(self, message: Message):
         logger.info("shutdown requested")

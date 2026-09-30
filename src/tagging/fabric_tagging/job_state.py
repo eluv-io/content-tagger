@@ -52,10 +52,18 @@ class TagJob:
     state: JobState
     # asynchronous stop event to signal the job to stop
     stop_event: threading.Event
+    # id of the queue job driving this job, if any
+    queue_id: str | None = None
 
     def get_id(self) -> JobID:
         """Get a human-readable identifier for the job (qid, feature, stream)."""
         return JobID(qid=self.args.q.qid, feature=self.args.feature, stream=self.args.scope.get_stream())
+
+    def log_context(self) -> dict:
+        ctx = {"qid": self.args.q.qid, "model": self.args.feature}
+        if self.queue_id:
+            ctx["job_id"] = self.queue_id
+        return ctx
 
 @dataclass
 class JobStore:

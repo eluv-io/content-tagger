@@ -1,3 +1,4 @@
+from collections import deque
 from podman import PodmanClient
 from src.common.logging import logger
 import json
@@ -101,6 +102,11 @@ class TagContainer:
     def name(self) -> str:
         with self._lock:
             return self._name()
+
+    def log_tail(self, n: int = 50) -> list[str]:
+        """Last n lines of the container's stdout/stderr"""
+        with self._lock:
+            return self._log_tail(n)
 
     def required_resources(self) -> SystemResources:
         with self._lock:
@@ -283,6 +289,12 @@ class TagContainer:
     def _name(self) -> str:
         """A human friendly name for the container, useful for logging"""
         return f"{self.cfg.id}_{self.cfg.model_config.image}"
+
+    def _log_tail(self, n: int) -> list[str]:
+        if not os.path.exists(self.cfg.logs_path):
+            return []
+        with open(self.cfg.logs_path, errors="replace") as f:
+            return [line.rstrip("\n") for line in deque(f, maxlen=n)]
 
     def _required_resources(self) -> SystemResources:
         """Returns the system resources required by this container to run."""

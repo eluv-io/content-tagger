@@ -14,6 +14,7 @@ class MessageType(Enum):
     GET_STATUS = "get_status"
     SHUTDOWN = "shutdown"
     CONTAINER_FINISHED = "container_finished"
+    GET_SUMMARY = "get_summary"
 
 @dataclass
 class Message:

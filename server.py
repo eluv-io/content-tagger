@@ -1,5 +1,5 @@
 import argparse
-from flask import Flask, jsonify
+from flask import Flask, jsonify, g, request
 from flask_cors import CORS
 from flask_smorest import Api
 from apispec.ext.marshmallow import MarshmallowPlugin
@@ -12,6 +12,8 @@ import setproctitle
 import sys
 from waitress.server import create_server
 import os
+import time
+import uuid
 
 from src.api.arg_resolver import ArgsResolver
 from src.api.tenant_defaults import TenantDefaultsResolver
@@ -66,24 +68,30 @@ def _register_error_handlers(app: Flask) -> None:
 
     @app.errorhandler(BadRequestError)
     def handle_bad_request(e):
-        logger.opt(exception=e).error("Got bad request error")
+        logger.warning(f"Bad request: {e.message}")
         return jsonify({'error': e.message}), 400
 
     @app.errorhandler(HTTPError)
     def handle_http_error(e):
-        logger.error(f"Got HTTP error: {e}")
         status_code = e.response.status_code
-        error_resp = json.loads(e.response.text)
+        if status_code >= 500:
+            logger.opt(exception=e).error("Upstream HTTP error")
+        else:
+            logger.warning(f"Upstream HTTP error: {e}")
+        try:
+            error_resp = json.loads(e.response.text)
+        except ValueError:
+            error_resp = e.response.text
         return jsonify({'code': status_code, 'error': error_resp}), status_code
 
     @app.errorhandler(MissingResourceError)
     def handle_missing_resource(e):
-        logger.error(f"Missing resource error: {e}")
+        logger.info(f"Missing resource: {e.message}")
         return jsonify({'code': 404, 'message': e.message}), 404
 
     @app.errorhandler(ForbiddenError)
     def handle_forbidden(e):
-        logger.opt(exception=e).error("Forbidden error")
+        logger.warning(f"Forbidden: {e.message}")
         return jsonify({'code': 403, 'message': e.message}), 403
 
     @app.errorhandler(ExternalServiceError)
@@ -100,12 +108,46 @@ def _register_error_handlers(app: Flask) -> None:
         return jsonify({'message': "An unexpected error occurred", 'error': str(e)}), 500
 
 
+def _register_request_logging(app: Flask) -> None:
+    """Log one line per request and tag every log line emitted while handling it with a request id."""
+
+    @app.before_request
+    def _start_request():
+        g.request_id = (request.headers.get("X-Request-ID") or uuid.uuid4().hex[:12])[:64]
+        g.request_start = time.monotonic()
+        g.log_ctx = logger.contextualize(request_id=g.request_id)
+        g.log_ctx.__enter__()
+
+    @app.after_request
+    def _log_request(response):
+        if "request_start" not in g:
+            return response
+        duration_ms = round((time.monotonic() - g.request_start) * 1000)
+
+        quiet = request.method == "GET" and response.status_code < 400 and duration_ms < 1000
+
+        logger.log(
+            "DEBUG" if quiet else "INFO",
+            "{} {} {} {}ms", request.method, request.path, response.status_code, duration_ms,
+            remote_addr=request.headers.get("X-Forwarded-For", request.remote_addr),
+        )
+        response.headers["X-Request-ID"] = g.request_id
+        return response
+
+    @app.teardown_request
+    def _end_request(_exc):
+        ctx = g.pop("log_ctx", None)
+        if ctx is not None:
+            ctx.__exit__(None, None, None)
+
+
 def configure_routes(app: Flask) -> None:
     # Configure the Flask app: error handlers, the flask-smorest Api, and the blueprints.
     for key, value in _SMOREST_DEFAULTS.items():
         app.config.setdefault(key, value)
 
     _register_error_handlers(app)
+    _register_request_logging(app)
 
     api = Api(app)
 

@@ -47,6 +47,7 @@ fetcher:
 
 tagger:
   media_dir: data/parts
+  heartbeat_interval: 60
 
 jobstore:
   base_url: data/jobstore

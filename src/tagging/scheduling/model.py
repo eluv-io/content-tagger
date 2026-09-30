@@ -29,3 +29,11 @@ class SysConfig:
     gpus: list[str]
     # arbitrary key-value pairs for other resources
     resources: SystemResources
+    
+@dataclass(frozen=True)
+class SchedulerSummary:
+    running: list[str]
+    queued: list[str]
+    gpus_used: int
+    gpus_total: int
+    available: dict

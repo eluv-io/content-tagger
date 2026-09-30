@@ -11,12 +11,15 @@ fmt_console = "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8
 fmt_file    = "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message} | {extra}"
 
 # matches e.g. ?authorization=..., token='...', 'ELV_TOKEN': '...', Authorization: Bearer ...
-_SECRET_PATTERN = re.compile(
+_KEYED_SECRET = re.compile(
     r"""(?i)((?<!write_)(?:authorization|token)\\?['"]?\s*[:=]\s*\\?['"]?(?:bearer[+ ])?)[^\s'"\\&,)}\]]+"""
 )
+# bare fabric tokens (e.g. ascsj_..., atxsjc...) and base64 JSON tokens
+_BARE_SECRET = re.compile(r"\b(?:a[a-z]{3}j[a-z]?_?[1-9A-HJ-NP-Za-km-z]{30,}|eyJ[A-Za-z0-9_\-+/=]{30,})")
 
 def redact(text: str) -> str:
-    return _SECRET_PATTERN.sub(r"\1<redacted>", text)
+    text = _KEYED_SECRET.sub(r"\1<redacted>", text)
+    return _BARE_SECRET.sub("<redacted>", text)
 
 class _RedactingStream:
     def __init__(self, stream):
@@ -33,7 +36,6 @@ class _RedactingStream:
 
 def configure_logging(cfg: LoggingConfig) -> None:
     logger.remove()
-    # diagnose=False: tracebacks would otherwise dump local variable values (including tokens)
-    logger.add(_RedactingStream(sys.stderr), format=fmt_console, level=cfg.level.upper(), diagnose=False)
+    logger.add(_RedactingStream(sys.stderr), format=fmt_console, level=cfg.level.upper(), backtrace=True, diagnose=True)
 
 configure_logging(LoggingConfig())

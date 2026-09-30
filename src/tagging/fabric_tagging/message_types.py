@@ -9,6 +9,8 @@ from src.fetch.model import DownloadResult
 class TagRequest:
     q: Content
     args: TagArgs
+    # id of the queue job driving this request, if any (for log context)
+    job_id: str | None = None
 
     def __str__(self):
         return f"TagRequest(q={self.q}, args={self.args})"
@@ -66,8 +68,16 @@ class UploadTick:
         return "UploadTick()"
 
 @dataclass
+class HeartbeatTick:
+    """Request to log a periodic summary of the worker's state."""
+    created_at: float
+
+    def __str__(self):
+        return "HeartbeatTick()"
+
+@dataclass
 class CleanupRequest:
     def __str__(self):
         return "CleanupRequest()"
 
-Request = TagRequest | StatusRequest | StopRequest | EnterFetchingPhase | EnterTaggingPhase | EnterCompletePhase | CleanupRequest | UploadTick
+Request = TagRequest | StatusRequest | StopRequest | EnterFetchingPhase | EnterTaggingPhase | EnterCompletePhase | CleanupRequest | UploadTick | HeartbeatTick

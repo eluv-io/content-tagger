@@ -11,6 +11,7 @@ from src.tag_containers.model import ContainerInfo
 @dataclass
 class TaggerWorkerConfig:
     media_dir: str
+    heartbeat_interval: float = 60.0
 
 @dataclass
 class TagArgs:
