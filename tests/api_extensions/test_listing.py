@@ -57,7 +57,8 @@ def fake_resolver(model_configs):
     )
 
 def test_listing(fake_registry):
-    res = list_models(fake_registry.model_configs)
+    params_schema = {"type": "object", "properties": {"fps": {"type": "integer"}}}
+    res = list_models(fake_registry.model_configs, {"test_model": params_schema})
     models = res.models
 
     assert len(models) == 2
@@ -74,3 +75,5 @@ def test_listing(fake_registry):
     assert models[1].dependencies == ["test_model"]
     # empty category means unset
     assert models[1].category == ""
+    assert models[0].params_schema == params_schema
+    assert models[1].params_schema is None

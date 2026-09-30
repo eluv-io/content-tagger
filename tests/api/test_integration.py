@@ -698,6 +698,8 @@ def test_listing(client):
     data = response.get_json()
     assert "models" in data
     assert len(data["models"]) > 0
+    for m in data["models"]:
+        assert "params_schema" in m
 
 def test_delete_job(client, q):
     response = client.post(

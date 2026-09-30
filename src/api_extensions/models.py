@@ -16,6 +16,8 @@ class ModelSpec:
     tag_tracks: list[TrackOutput]
     dependencies: list[str]
     category: str
+    # JSON schema for model_params, None if the model has no documented params
+    params_schema: dict | None
 
 
 @dataclass
@@ -57,6 +59,15 @@ class ModelSpecSchema(Schema):
             "description": "Tag tracks that must exist before this model can be run"
         },
     )
+    params_schema = fields.Dict(
+        allow_none=True,
+        metadata={
+            "description": (
+                "OpenAPI schema for the model's `model_params`. Null if the model "
+                "has no documented parameters."
+            ),
+        },
+    )
 
 
 class ListingResponseSchema(Schema):
@@ -67,7 +78,8 @@ class ListingResponseSchema(Schema):
 
 
 def list_models(
-    model_configs: dict[str, ModelConfig]      
+    model_configs: dict[str, ModelConfig],
+    params_schemas: dict[str, dict],
 ) -> ListingResponse:
     specs = []
     for m, cfg in model_configs.items():
@@ -82,7 +94,8 @@ def list_models(
                 # TODO: might break evie
                 tag_tracks=[TrackOutput(name=output) for output in cfg.track_outputs],
                 dependencies=cfg.track_dependencies,
-                category=cfg.category
+                category=cfg.category,
+                params_schema=params_schemas.get(m),
             )
         )
     return ListingResponse(

@@ -178,7 +178,9 @@ def handle_list_models() -> ListingResponse:
     """List available models"""
     model_configs: dict[str, ModelConfig] = current_app.config["state"]["model_configs"]
 
-    return list_models(model_configs)
+    params_schemas: dict[str, dict] = current_app.config["state"]["model_params_schemas"]
+
+    return list_models(model_configs, params_schemas)
 
 @tagging_blp.route("/jobs/<job_id>", methods=["DELETE"])
 @tagging_blp.arguments(DeleteJobQuerySchema, location="query")

@@ -2,6 +2,7 @@ import argparse
 from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_smorest import Api
+from apispec.ext.marshmallow import MarshmallowPlugin
 from werkzeug.exceptions import HTTPException
 import json
 from requests.exceptions import HTTPError
@@ -120,6 +121,13 @@ def configure_routes(app: Flask) -> None:
     # (see model_params_oneof_metadata) resolve.
     for model_name, params_schema in MODEL_PARAM_SCHEMAS.items():
         api.spec.components.schema(model_params_component_name(model_name), schema=params_schema)
+
+    # same schemas, rendered inline for the /models listing
+    converter = next(p for p in api.spec.plugins if isinstance(p, MarshmallowPlugin)).converter
+    app.config["state"]["model_params_schemas"] = {
+        model_name: converter.schema2jsonschema(params_schema)
+        for model_name, params_schema in MODEL_PARAM_SCHEMAS.items()
+    }
 
     api.register_blueprint(tagging_blp)
     api.register_blueprint(content_status_blp)
