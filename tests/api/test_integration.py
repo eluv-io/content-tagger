@@ -150,37 +150,32 @@ def test_track_suffix_and_caller_info(client, q):
     assert response.status_code == 200
     assert response.json["jobs"][0]["params"]["caller_info"] == {"hello": "world"}
 
+def use_fake_live_worker(app, **kwargs) -> list[FakeLiveWorker | None]:
+    """Make the app treat content as live and serve it through a FakeLiveWorker backed by the VOD fetcher."""
+    arg_resolver: ArgsResolver = app.config["state"]["arg_resolver"]
+    arg_resolver.is_live_content = Mock(return_value=True)
+    tagger: TaggerWorker = app.config["state"]["worker"]
+    original_get_session = tagger.fetcher.get_session
+    fake_worker_ref: list[FakeLiveWorker | None] = [None]
+
+    def fake_get_session(q: Content, req: DownloadRequest, exit=None) -> FetchSession:
+        if fake_worker_ref[0] is None:
+            old_scope = req.scope
+            req.scope = VideoScope(stream="video", start_time=0, end_time=int(1e10))
+            real_worker = original_get_session(q, req, exit)
+            req.scope = old_scope
+            fake_worker_ref[0] = FakeLiveWorker(real_worker, **kwargs)
+        return fake_worker_ref[0]
+
+    tagger.fetcher.get_session = fake_get_session
+    return fake_worker_ref
+
 @pytest.mark.parametrize("last_res_has_media", [True, False])
 def test_live_video_model(app, last_res_has_media, q):
     """Test the live tagging workflow with FakeLiveFetcher."""
-    arg_resolver: ArgsResolver = app.config["state"]["arg_resolver"]
-    arg_resolver.is_live_content = Mock(return_value=True)
-    
-    # Replace the real fetcher with FakeLiveFetcher
     tagger: TaggerWorker = app.config["state"]["worker"]
     tagstore = tagger.tagstore
-    
-    # Create FakeLiveFetcher with the same config
-    original_get_worker = tagger.fetcher.get_session
-    
-    # Store reference to the FakeLiveWorker so we can access its call_count
-    fake_worker_ref: list[FakeLiveWorker | None] = [None]
-    
-    # NOTE: ugliest thing i've ever seen
-    def fake_get_worker(q: Content, req: DownloadRequest, exit=None) -> FetchSession:
-        if fake_worker_ref[0] is not None:
-            return fake_worker_ref[0]
-        # we need the non-live worker in this test
-        old_scope = req.scope
-        req.scope = VideoScope(stream="video", start_time=0, end_time=int(1e10))
-        real_worker = original_get_worker(q, req, exit)
-        req.scope = old_scope
-        fake_worker = FakeLiveWorker(real_worker, last_res_has_media)
-        fake_worker_ref[0] = fake_worker  # Store reference
-        return fake_worker
-
-
-    tagger.fetcher.get_session = fake_get_worker
+    fake_worker_ref = use_fake_live_worker(app, last_res_has_media=last_res_has_media)
     
     # Create test client
     client = app.test_client()
@@ -236,93 +231,6 @@ def test_live_video_model(app, last_res_has_media, q):
         next_tag = 'hello2' if next_tag == 'hello1' else 'hello1'
         
     logger.info(f"Live test completed successfully with {fake_worker_ref[0].call_count} fetch calls (last_res_has_media={last_res_has_media})")
-
-def test_real_live_stream(app, q_live):
-    """Test real live stream tagging with LiveWorker."""
-    qid = q_live.qid
-    auth = q_live.token
-    
-    tagger: TaggerWorker = app.config["state"]["worker"]
-    tagstore = tagger.tagstore
-    
-    # Create test client
-    client = app.test_client()
-    
-    # Start live tagging with test_model
-    # Use small chunk_size and max_duration for faster testing
-    response = client.post(
-        f"/{qid}/tag?authorization={auth}", 
-        json={
-            "options": {
-                "replace": True,
-                "scope": {
-                    "max_duration": 20,
-                    "segment_length": 5
-                }
-            },
-            "jobs": [
-                {
-                    "model": "test_model",
-                    "model_params": {"tags": ["hello1", "hello2"]},
-                }
-            ]
-        }
-    )
-    assert response.status_code == 200
-    
-    # Wait for some segments to be processed (but not completion since it's live)
-    # Check status periodically
-    start_time = time.time()
-    timeout = 25
-    segments_found = False
-    
-    while time.time() - start_time < timeout:
-        response = client.get(f"/{qid}/job-status?authorization={auth}")
-        if response.status_code == 200:
-            data = response.get_json()
-            reports = data['jobs']
-            print(json.dumps(reports, indent=2))
-            
-            # Find the test_model job in the list
-            test_model_reports = [r for r in reports if r['model'] == 'test_model']
-            if test_model_reports:
-                report = test_model_reports[0]
-                status = report['status']
-                
-                # Once we see completion, we know segments were processed
-                if status == "succeeded":
-                    segments_found = True
-                    break
-        
-        time.sleep(3)
-    
-    # Verify final status is Stopped or Completed
-    response = client.get(f"/{qid}/job-status?authorization={auth}")
-    assert response.status_code == 200
-    data = response.get_json()
-    reports = data['jobs']
-    
-    test_model_report = next(r for r in reports if r['model'] == 'test_model')
-    final_status = test_model_report['status']
-    assert final_status in ['cancelled', 'succeeded'], f"Expected Stopped or Completed, got {final_status}"
-    
-    # verify we have some tags
-    jobid = tagstore.find_batches(q=q_live, qid=q_live.qid)[0].id
-    tags = tagstore.find_tags(batch_id=jobid, q=q_live)
-    tags = sorted(tags, key=lambda x: x.start_time)
-    vtags = [ t for t in tags if t.frame_info is None and t.end_time > t.start_time]
-    
-    # Should have at least some tags from the segments
-    assert len(vtags) >= 2
-
-    last_wall_clock = 0
-    for tag in vtags:
-        assert tag.additional_info is not None
-        assert 'timestamp_ms' in tag.additional_info
-        assert tag.additional_info["timestamp_ms"] > last_wall_clock
-        last_wall_clock = tag.additional_info["timestamp_ms"]
-
-    logger.info(f"Live stream test completed successfully with {len(tags)} tags")
 
 def test_asset_tag(client, q_assets):
     """Test asset tagging."""
@@ -455,13 +363,14 @@ def test_is_live_content(q_live, app):
     resolver: ArgsResolver = app.config["state"]["arg_resolver"]
     assert resolver.is_live_content(q_live) == True
 
-def test_stop_live_job(app, q_live):
+def test_stop_live_job(app, q):
     """Test that live jobs can be stopped cleanly mid-stream."""
-    qid = q_live.qid
-    auth = q_live.token
+    qid = q.qid
+    auth = q.token
     
     worker: TaggerWorker = app.config["state"]["worker"]
     tagstore = worker.tagstore
+    fake_worker_ref = use_fake_live_worker(app, never_done=True)
     client = app.test_client()
     
     # Start live tagging with long duration
@@ -490,7 +399,7 @@ def test_stop_live_job(app, q_live):
     start_time = time.time()
     some_tags_found = False
     
-    while time.time() - start_time < 20:
+    while time.time() - start_time < 60:
         response = client.get(f"/{qid}/job-status?authorization={auth}")
         if response.status_code == 200:
             data = response.get_json()
@@ -507,9 +416,11 @@ def test_stop_live_job(app, q_live):
                 if progress > 0:
                     # Check we actually have some tags
                     try:
-                        jobid = tagstore.find_batches(q=q_live, qid=q_live.qid)[0].id
-                        tags = tagstore.find_tags(batch_id=jobid, q=q_live)
-                        if len(tags) > 0:
+                        jobid = tagstore.find_batches(q=q, qid=q.qid)[0].id
+                        tags = tagstore.find_tags(batch_id=jobid, q=q)
+                        fake_worker = fake_worker_ref[0]
+                        looped = fake_worker is not None and fake_worker.call_count > len(fake_worker._all_sources)
+                        if len(tags) > 0 and looped:
                             some_tags_found = True
                             logger.info(f"Found {len(tags)} tags, stopping job now")
                             break

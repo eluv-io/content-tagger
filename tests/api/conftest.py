@@ -1,4 +1,5 @@
 
+from dataclasses import replace
 import os
 import shutil
 import time
@@ -13,7 +14,7 @@ from server import configure_routes, create_app_direct, create_app_queue_based
 from src.api.auth import Authenticator
 from src.api.tagging.request_format import StartJobsRequest
 from src.common.content import Content
-from src.fetch.model import DownloadResult, FetchSession, MediaMetadata, VideoScope
+from src.fetch.model import DownloadResult, FetchSession, MediaMetadata, Source, VideoScope
 from src.service.model import StatusArgs, TagDetails, TagJobStatusResult, TagStartResult
 from src.status.get_info import UserInfoResolverConfig
 from src.tag_containers.model import ModelConfig, RegistryConfig
@@ -111,11 +112,12 @@ def client(app):
 class FakeLiveWorker(FetchSession):
     """Fake DownloadWorker that simulates live streaming by returning one source at a time"""
     
-    def __init__(self, real_worker: FetchSession, last_res_has_media: bool=False):
+    def __init__(self, real_worker: FetchSession, last_res_has_media: bool=False, never_done: bool=False):
         self.real_worker = real_worker
         self.call_count = 0
         self._all_sources = None
         self.last_res_has_media = last_res_has_media
+        self.never_done = never_done
     
     def metadata(self) -> MediaMetadata:
         return self.real_worker.metadata()
@@ -137,6 +139,9 @@ class FakeLiveWorker(FetchSession):
         self.call_count += 1
 
         idx = self.call_count - 1
+
+        if self.never_done:
+            return DownloadResult(sources=[self._looped_source(idx)], failed=[], done=False)
         
         # Return one source at a time
         if idx < len(self._all_sources):
@@ -162,6 +167,12 @@ class FakeLiveWorker(FetchSession):
                 failed=self._failed,
                 done=True
             )
+
+    def _looped_source(self, idx: int) -> Source:
+        """Replays the sources forever under fresh names"""
+        loop, i = divmod(idx, len(self._all_sources))
+        src = self._all_sources[i]
+        return replace(src, name=f"{src.name}_loop{loop}") if loop else src
         
 class MockTaggerService:
     """In-memory mock implementation of TaggerService for use in tests."""
