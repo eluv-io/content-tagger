@@ -103,10 +103,13 @@ def rest_tagstore(q: Content) -> RestTagstore:
     ts = RestTagstore(base_url=host, timeout=10)
 
     if host:
+        headers = {**ts._get_headers(q), "X-Confirm-Delete": q.qid}
+        ts.session.delete(f"{host}/{q.qid}/content", headers=headers, timeout=10).raise_for_status()
+        # deleted content is re-synced from the fabric, so clear the batches it brings back
         batches = ts.find_batches(q=q, limit=1000)
         for batch in batches:
             ts.delete_batch(batch.id, q=q)
-        print(f"Cleared {len(batches)} batches from RestTagstore at {host}")
+        print(f"Cleared content and {len(batches)} batches from RestTagstore at {host}")
 
     return ts
 
