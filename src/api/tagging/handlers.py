@@ -43,8 +43,6 @@ def handle_tag(args: StartJobsRequest, qid: str) -> StartTaggingResponse:
     """
     q = authorize(qid, request)
 
-    logger.debug(args)
-
     if args.options.destination_qid:
         authorize(args.options.destination_qid, request)
 
@@ -55,6 +53,9 @@ def handle_tag(args: StartJobsRequest, qid: str) -> StartTaggingResponse:
 
     with timeit("resolving tag args"):
         tag_args = arg_resolver.resolve(args, q)
+
+    for arg in tag_args:
+        logger.info("resolved tag args", qid=q.qid, model=arg.feature, args=arg)
 
     return _execute_tagging(q, tag_args)
 
