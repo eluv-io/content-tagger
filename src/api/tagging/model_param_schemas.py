@@ -237,17 +237,17 @@ class ParamsEvidenceSchema(Schema):
         fields.Str(
             metadata={
                 "enum": [
-                    "Beat Summary",
-                    "Characters",
-                    "Dialogue Highlights",
-                    "Location",
-                    "Political Topic",
+                    "location",
+                    "dialogue_highlights",
+                    "political_topic",
+                    "game_context",
+                    "key_moment"
                 ],
             },
         ),
         metadata={
             "description": "Which evidence tracks to output.",
-            "example": ["Beat Summary", "Characters"],
+            "example": ["location", "dialogue_highlights"],
         },
     )
 
