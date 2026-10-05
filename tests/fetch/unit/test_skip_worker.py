@@ -31,6 +31,7 @@ def test_skip_worker(temp_dir: str) -> None:
     )
 
     meta = worker.metadata()
+    assert meta.fps == 30
 
     result = worker.download()
 

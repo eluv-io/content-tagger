@@ -289,6 +289,27 @@ model_configs:
     resources: {
       "gpu": 1
     }
+  face_vectors:
+    image: "localhost/celeb-vector:latest"
+    type: "frame"
+    description: Face Embedding Generation
+    category: "Frame Level Detection"
+    resources: {
+      "gpu": 1,
+      "cpu_juice": 35
+    }
+    track_outputs: ["face_vectors"]
+  face_tagger:
+    image: "localhost/celeb-vector-tagger:latest"
+    type: "processor"
+    description: Face Tagger
+    category: "Special"
+    resources: {
+      "cpu_juice": 10
+    }
+    content_aligned: True
+    track_dependencies: ["face_vectors"]
+    track_outputs: ["celebrity_detection"]
   music:
     image: "localhost/music:latest"
     type: "audio"
