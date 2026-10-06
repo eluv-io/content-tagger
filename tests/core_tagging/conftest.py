@@ -5,22 +5,27 @@ from unittest.mock import Mock
 import pytest
 
 from src.common.content import Content
-from src.fetch.model import DownloadRequest, DownloadResult, FetchSession, MediaMetadata, Source, VideoMetadata, VideoScope
-from src.fetch.model import VideoScope
-from src.service.job_poster import JobPoster
+from src.fetch.model import *
+from src.service.dependency_resolver import DependencyResolver
 from src.service.model import StatusArgs
-from src.status.get_info import UserInfo
 from src.tag_containers.model import *
 from src.tagging.fabric_tagging.model import TaggerWorkerConfig, TagArgs
 from src.tagging.fabric_tagging.source_resolver import SourceResolver
 from src.tagging.fabric_tagging.tagger import TaggerWorker
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
+from src.tagging.fabric_tagging.queue.model import CreateQueueItem
 from src.tagging.tag_runner import TagRunner, TagRunnerConfig
 from src.service.impl.queue_based import QueueService
 from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.tagging.scheduling.model import SysConfig
 from src.tags.track_resolver import TrackArgs, TrackResolver, LabelResolverConfig
 
+
+def enqueue(queue_service: QueueService, q: Content, args: list[TagArgs]) -> list[str]:
+    """Create pending jobs for already resolved args and release them, as QueueService.tag does. Returns the job ids."""
+    ids = [queue_service.jobstore.create_job(CreateQueueItem(qid=q.qid, model=arg.feature), auth=q.token).id for arg in args]
+    queue_service.release(q, ids, args)
+    return ids
 
 @pytest.fixture
 def media_dir(temp_dir: str) -> str:
@@ -403,16 +408,6 @@ def queue_jobstore(tmp_path, fake_user_info_resolver) -> FsJobStore:
     return FsJobStore(store_dir=str(tmp_path / "jobstore"), user_info_resolver=fake_user_info_resolver)
 
 @pytest.fixture
-def simple_job_poster(queue_jobstore, track_resolver, model_configs, fake_qapifactory) -> JobPoster:
-    """Create a simple JobPoster for testing."""
-    return JobPoster(
-        job_store=queue_jobstore,
-        track_resolver=track_resolver,
-        model_configs=model_configs,
-        qfactory=fake_qapifactory
-    )
-
-@pytest.fixture
 def fake_qapifactory():
     # for the queue client, all we need is to get the display title and add this to the job info
     return Mock(
@@ -426,19 +421,13 @@ def fake_qapifactory():
     )
 
 @pytest.fixture
-def job_poster(queue_jobstore, track_resolver, fake_qapifactory, model_configs) -> JobPoster:
-    """Create a JobPoster for testing, using the queue_jobstore and other dependencies."""
-    return JobPoster(
-        job_store=queue_jobstore,
-        track_resolver=track_resolver,
-        model_configs=model_configs,
-        qfactory=fake_qapifactory
-    )
+def dependency_resolver(queue_jobstore, track_resolver, model_configs) -> DependencyResolver:
+    return DependencyResolver(job_store=queue_jobstore, track_resolver=track_resolver, model_configs=model_configs)
 
 
 @pytest.fixture
-def queue_client(job_poster) -> QueueService:
-    return QueueService(job_poster=job_poster)
+def queue_client(queue_jobstore, dependency_resolver, fake_qapifactory) -> QueueService:
+    return QueueService(queue_jobstore, dependency_resolver, arg_resolver=Mock(), qfactory=fake_qapifactory)
 
 
 @pytest.fixture

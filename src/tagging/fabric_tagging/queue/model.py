@@ -4,7 +4,7 @@ from typing import Literal
 from src.service.model import TagDetails
 from src.tagging.fabric_tagging.model import TagArgs
 
-job_status = Literal["queued", "running", "succeeded", "failed", "cancelled", "deleted"]
+job_status = Literal["pending", "queued", "running", "succeeded", "failed", "cancelled", "deleted"]
 
 @dataclass
 class JobStoreConfig:
@@ -14,8 +14,10 @@ class JobStoreConfig:
 class QueueItem:
     id: str
     qid: str
+    model: str
     created_at: float
-    params: TagArgs
+    # None while the job is pending
+    params: TagArgs | None
     status: job_status
     status_details: TagDetails | None
     error: str | None
@@ -29,8 +31,12 @@ class QueueItem:
 @dataclass
 class CreateQueueItem:
     qid: str
+    model: str
+
+@dataclass
+class ReleaseJobRequest:
+    id: str
     params: TagArgs
-    status_details: TagDetails | None
     deps: list[str]
     additional_info: dict
 

@@ -1,4 +1,3 @@
-import os
 
 import pytest
 from unittest.mock import Mock
@@ -10,14 +9,10 @@ from src.common.content import Content
 import podman
 from src.api.arg_resolver import ArgsResolver
 from src.fetch.model import DownloadRequest, FetchSession, VideoScope
-from src.tagging.fabric_tagging.model import TagArgs, TagStartResult
 from src.tagging.fabric_tagging.tagger import TaggerWorker
 from src.tags.datastore.abstract import Datastore
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from tests.api.conftest import FakeLiveWorker
-
-def is_queue_mode():
-    return os.getenv("USE_QUEUE") == "true"
 
 def is_job_success(client, q: Content):
     """Check if all jobs for content_id completed successfully."""
@@ -338,9 +333,7 @@ def test_double_run(client, q):
             ]
         }
     )
-    data = response.get_json()
-    assert response.status_code == 200
-    assert data["jobs"][0]["started"] is False
+    assert response.status_code == 400
 
     # stop the job
     start = time.time()
@@ -513,54 +506,8 @@ def test_stop_all_jobs(client, q):
     for report in reports:
         assert report['status'] == 'cancelled', f"Expected cancelled, got {report['status']}"
 
-def test_start_two_jobs_one_fails_partial_failure_response(client, q):
-    """
-    Start two jobs in one request; force tagger.tag() to raise for feature == 'fail_model'.
-    Expect HTTP 200 with per-job start statuses (one success, one failure).
-    """
-    if is_queue_mode():
-        pytest.skip()
-
-    auth = q.token
-
-    tagger: TaggerWorker = client.application.config["state"]["worker"]
-    original_tag = tagger.tag
-
-    def tag_wrapper(q: Content, args: TagArgs) -> TagStartResult:
-        if args.feature == "test_model2":
-            raise RuntimeError("boom")
-        return original_tag(q, args)
-
-    tagger.tag = tag_wrapper
-    
-    response = client.post(
-        f"/{q.qid}/tag?authorization={auth}",
-        json={
-            "jobs": [
-                {
-                    "model": "test_model",
-                    "model_params": {"tags": ["ok1", "ok2"]}
-                },
-                {
-                    "model": "test_model2",
-                    "model_params": {"tags": ["nope"]},
-                }
-            ]
-        },
-    )
-    assert response.status_code == 200
-
-    data = response.get_json()
-
-    assert data["jobs"][0]["started"] is True
-    assert data["jobs"][1]["started"] is False
-    assert data["jobs"][1]["error"] == 'boom'
-
 def test_status(client, q):
     """Test the job status endpoint."""
-    if not is_queue_mode():
-        pytest.skip()
-
     response = client.get(f"/job-status?authorization={q.token}")
     assert response.status_code == 404
 

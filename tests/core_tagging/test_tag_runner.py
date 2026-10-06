@@ -14,7 +14,7 @@ from src.service.model import *
 from src.tag_containers.containers import TagContainer
 from src.tagging.fabric_tagging.queue.model import ListJobArgs
 from src.common.content import Content
-from tests.core_tagging.conftest import FakeTagContainer
+from tests.core_tagging.conftest import FakeTagContainer, enqueue
 
 def _wait_for_status(
     client: QueueService,
@@ -56,20 +56,19 @@ def _status_for(
 class TestQueueTag:
     def test_tag_returns_started(self, queue_client, q, make_tag_args, tag_runner):
         args = make_tag_args(feature="caption", stream="video")
-        result = queue_client.tag(q, [args])[0]
-        assert result.started is True
-        assert result.message == "Job enqueued"
+        job_id = enqueue(queue_client, q, [args])[0]
+        assert queue_client.jobstore.get_job(job_id).status in ("queued", "running", "succeeded")
 
     def test_job_completes(self, queue_client, q, make_tag_args, tag_runner):
         args = make_tag_args(feature="caption", stream="video")
-        queue_client.tag(q, [args])
+        enqueue(queue_client, q, [args])
         
         reports = _wait_for_status(queue_client, q.qid, "succeeded")
         assert len(reports) >= 1
         assert any(r.status == "succeeded" for r in reports)
 
     def test_multiple_jobs_complete(self, queue_client, q, sample_tag_args, tag_runner):
-        queue_client.tag(q, sample_tag_args)
+        enqueue(queue_client, q, sample_tag_args)
 
         reports = _wait_for_status(queue_client, q.qid, "succeeded")
         completed = [r for r in reports if r.status == "succeeded"]
@@ -80,7 +79,7 @@ class TestQueueStatus:
     def test_status_after_enqueue(self, queue_client, q, make_tag_args, make_status_args, tag_runner):
         """Before the runner picks it up we get a synthesised status."""
         args = make_tag_args(feature="caption", stream="video")
-        queue_client.tag(q, [args])
+        enqueue(queue_client, q, [args])
 
         reports = queue_client.status(make_status_args(qid=q.qid))
         assert len(reports) == 1
@@ -92,7 +91,7 @@ class TestQueueStatus:
 
     def test_status_with_completed_jobs(self, queue_client, q, sample_tag_args, tag_runner):
         for args in sample_tag_args:
-            queue_client.tag(q, [args])
+            enqueue(queue_client, q, [args])
 
         reports = _wait_for_status(queue_client, q.qid, "succeeded")
         assert len(reports) == 2
@@ -103,7 +102,7 @@ class TestQueueStatus:
 class TestQueueStop:
     def test_stop_marks_cancelled(self, queue_client, q, make_tag_args, tag_runner):
         args = make_tag_args(feature="caption", stream="video")
-        queue_client.tag(q, [args])
+        enqueue(queue_client, q, [args])
 
         results = queue_client.stop(q.qid, "caption")
         assert len(results) == 1
@@ -115,7 +114,7 @@ class TestQueueStop:
 
     def test_stop_wrong_feature_raises_exception(self, queue_client, q, make_tag_args, tag_runner):
         args = make_tag_args(feature="caption", stream="video")
-        queue_client.tag(q, [args])
+        enqueue(queue_client, q, [args])
 
         with pytest.raises(MissingResourceError):
             queue_client.stop(q.qid, "nonexistent")
@@ -123,7 +122,7 @@ class TestQueueStop:
 
 def test_stop_runner(queue_client, q, make_tag_args, tag_runner):
     args = make_tag_args(feature="caption", stream="video")
-    queue_client.tag(q, [args])
+    enqueue(queue_client, q, [args])
     time.sleep(0.25)
     tag_runner.stop()
     # check that job is marked cancelled in jobstore
@@ -132,7 +131,7 @@ def test_stop_runner(queue_client, q, make_tag_args, tag_runner):
 
 def test_stop_running_job(queue_client, q, make_tag_args, tag_runner):
     args = make_tag_args(feature="caption", stream="video")
-    queue_client.tag(q, [args])
+    enqueue(queue_client, q, [args])
     time.sleep(0.25)
     queue_client.stop(q.qid, "caption")
     time.sleep(0.5)
@@ -146,7 +145,7 @@ def test_job_progress(queue_client, q, make_tag_args, tag_runner):
     #    container.report_progress = True
     #    return container
     #tag_runner.tagger.cregistry.get = 
-    queue_client.tag(q, [args])
+    enqueue(queue_client, q, [args])
     time.sleep(2)
     status = queue_client.status(StatusArgs(q.qid, None, None, None))[0]
     assert status.tagger_details.progress == 1.0
@@ -155,7 +154,7 @@ def test_worker_tag_fails(queue_client, q, make_tag_args, tag_runner):
     tag_runner.tagger.tag = Mock(side_effect=Exception("Tagging failed"))
 
     args = make_tag_args(feature="caption", stream="video")
-    queue_client.tag(q, [args])
+    enqueue(queue_client, q, [args])
     time.sleep(0.25)
 
     # check that job is marked failed in jobstore
@@ -172,7 +171,7 @@ def test_max_jobs_limits_concurrency(queue_client, make_tag_args, tag_runner):
     contents = [Content(qid=f"iq__maxjobs_{i}", token="tok") for i in range(3)]
     args = make_tag_args(feature="caption", stream="video")
     for c in contents:
-        queue_client.tag(c, [args])
+        enqueue(queue_client, c, [args])
 
     # Wait for the runner to poll once but not long enough for jobs to finish
     time.sleep(0.15)
@@ -188,7 +187,7 @@ def test_two_streams_gives_different_status(queue_client, q, make_tag_args, tag_
     """Jobs with different stream names should be tracked separately."""
     args1 = make_tag_args(feature="caption", stream="video")
     args2 = make_tag_args(feature="caption", stream="audio")
-    queue_client.tag(q, [args1, args2])
+    enqueue(queue_client, q, [args1, args2])
 
     reports = _wait_for_status(queue_client, q.qid, "running")
     assert len(reports) == 2

@@ -81,7 +81,7 @@ class FsJobStore:
     def _convert_job_dict(self, job: dict) -> QueueItem:
         job = deepcopy(job)
         p = job["params"]
-        params = TagArgs(
+        params = None if p is None else TagArgs(
             feature=p["feature"],
             run_config=p["run_config"],
             scope=_convert_scope(p["scope"]),
@@ -95,6 +95,8 @@ class FsJobStore:
         return QueueItem(
             id=job["id"],
             qid=job["qid"],
+            # jobs written before the model field existed only have it in params
+            model=job.get("model") or p["feature"], # type: ignore
             params=params,
             created_at=job["created_at"],
             status=job["status"],
@@ -115,21 +117,34 @@ class FsJobStore:
         job = {
             "id": id,
             "qid": args.qid,
-            "status": "queued",
+            "model": args.model,
+            "status": "pending",
             "created_at": time.time(),
-            "params": asdict(args.params),
-            "status_details": asdict(args.status_details) if args.status_details else None,
+            "params": None,
+            "status_details": None,
             "error": None,
             "stop_requested": False,
             "user": user_info.user_adr,
             "tenant": tenant,
             "auth": auth,
-            "additional_info": args.additional_info,
-            "deps": args.deps,
+            "additional_info": {},
+            "deps": [],
         }
         with self._lock:
             self._write_job(id, deepcopy(job))
         return self._convert_job_dict(job)
+
+    def release_job(self, args: ReleaseJobRequest, auth: str) -> bool:
+        with self._lock:
+            job = deepcopy(self._read_job(args.id))
+            if job["status"] != "pending":
+                return False
+            job["status"] = "queued"
+            job["params"] = asdict(args.params)
+            job["deps"] = list(args.deps)
+            job["additional_info"] = {**job["additional_info"], **deepcopy(args.additional_info)}
+            self._write_job(args.id, job)
+            return True
 
     def claim_job(self, id: str, auth: str) -> bool:
         with self._lock:
@@ -158,7 +173,7 @@ class FsJobStore:
                 continue
             # filter if unmet dependencies
             if job["status"] == "queued" and not args.include_unready:
-                unmet_deps = [dep for dep in job.get("deps", []) if self._read_job(dep)["status"] in ("running", "queued")]
+                unmet_deps = [dep for dep in job.get("deps", []) if self._read_job(dep)["status"] in ("pending", "queued", "running")]
                 if unmet_deps:
                     continue
             results.append(self._convert_job_dict(job))
@@ -177,8 +192,12 @@ class FsJobStore:
                 job["error"] = args.error
             self._write_job(args.id, job)
 
-    def stop_job(self, id: str, auth: str) -> None:
+    def stop_job(self, id: str, auth: str, reason: str | None = None) -> None:
         with self._lock:
             job = deepcopy(self._read_job(id))
             job["stop_requested"] = True
+            if job["status"] in ("pending", "queued"):
+                job["status"] = "cancelled"
+            if reason is not None:
+                job["error"] = reason
             self._write_job(id, job)

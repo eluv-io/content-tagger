@@ -20,7 +20,7 @@ from src.api.tenant_defaults import TenantDefaultsResolver
 from src.api.auth import Authenticator
 from src.service.impl.direct_api import DirectAPI
 from src.service.impl.queue_based import QueueService
-from src.service.job_poster import JobPoster
+from src.service.dependency_resolver import DependencyResolver
 from src.status.get_info import UserInfoResolver
 from src.status.service import TaggingStatusService
 from src.tagging.scheduling.scheduler import ContainerScheduler
@@ -126,9 +126,8 @@ def _register_request_logging(app: Flask) -> None:
 
         response.headers["X-Request-ID"] = g.request_id
 
-        quiet = request.method == "GET" and response.status_code < 400 and duration_ms < 1000
-        if quiet and request.path.endswith("/job-status"):
-            return response
+        quiet = request.method == "GET" and response.status_code < 400
+
         body = request.get_json(silent=True) if request.method != "GET" else None
 
         logger.log(
@@ -209,7 +208,7 @@ def create_app_direct(config: AppConfig) -> Flask:
     tenant_defaults = TenantDefaultsResolver(UserInfoResolver(config.user_info_resolver), qfactory)
     arg_resolver = ArgsResolver(config.model_configs, qfactory, tenant_defaults)
     app.config["state"] = {
-        "service": DirectAPI(worker),
+        "service": DirectAPI(worker, arg_resolver),
         "status_service": TaggingStatusService(
             tagstore=worker.tagstore, 
             track_resolver=worker.track_resolver
@@ -245,10 +244,10 @@ def create_app_queue_based(config: AppConfig) -> Flask:
     qfactory = QAPIFactory(config.content)
     tenant_defaults = TenantDefaultsResolver(user_info_resolver, qfactory)
     arg_resolver = ArgsResolver(config.model_configs, api_factory=qfactory, tenant_defaults=tenant_defaults)
-    job_poster = JobPoster(job_store, worker.track_resolver, config.model_configs, qfactory)
+    dependency_resolver = DependencyResolver(job_store, worker.track_resolver, config.model_configs)
 
     app.config["state"] = {
-        "service": QueueService(job_poster=job_poster),
+        "service": QueueService(job_store, dependency_resolver, arg_resolver, qfactory),
         "status_service": TaggingStatusService(
             tagstore=worker.tagstore, 
             track_resolver=worker.track_resolver

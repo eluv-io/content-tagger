@@ -6,6 +6,7 @@ from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tagging.fabric_tagging.queue.model import (
     CreateQueueItem,
     ListJobArgs,
+    ReleaseJobRequest,
     UpdateJobRequest,
 )
 
@@ -28,14 +29,13 @@ def _make_tag_args(feature: str = "test_feature") -> TagArgs:
     )
 
 
-def _make_create_item(qid: str = "iq__test", feature: str = "test_feature", deps: list = [], additional_info: dict = {}) -> CreateQueueItem:
-    return CreateQueueItem(
-        qid=qid,
-        params=_make_tag_args(feature),
-        status_details=None,
-        additional_info=additional_info,
-        deps=deps,
+def _create_queued(jobstore, qid: str = "iq__test", feature: str = "test_feature", deps: list = [], additional_info: dict = {}):
+    job = jobstore.create_job(CreateQueueItem(qid=qid, model=feature), auth="test-auth")
+    jobstore.release_job(
+        ReleaseJobRequest(id=job.id, params=_make_tag_args(feature), deps=deps, additional_info=additional_info),
+        auth="test-auth",
     )
+    return jobstore.get_job(job.id)
 
 
 def _list_all(jobstore) -> list:
@@ -48,36 +48,36 @@ def _list_all(jobstore) -> list:
 
 class TestCreateAndList:
     def test_create_job_appears_in_list(self, jobstore):
-        jobstore.create_job(_make_create_item(), auth="test-auth")
+        _create_queued(jobstore)
         jobs = _list_all(jobstore)
         assert len(jobs) == 1
 
     def test_created_job_has_correct_qid(self, jobstore):
-        jobstore.create_job(_make_create_item(qid="iq__abc"), auth="test-auth")
+        _create_queued(jobstore, qid="iq__abc")
         jobs = _list_all(jobstore)
         assert jobs[0].qid == "iq__abc"
 
     def test_created_job_has_correct_feature(self, jobstore):
-        jobstore.create_job(_make_create_item(feature="my_feature"), auth="test-auth")
+        _create_queued(jobstore, feature="my_feature")
         jobs = _list_all(jobstore)
         assert jobs[0].params.feature == "my_feature"
 
     def test_created_job_initial_status_is_queued(self, jobstore):
-        jobstore.create_job(_make_create_item(), auth="test-auth")
+        _create_queued(jobstore)
         # list_jobs returns QueueItem which doesn't carry status directly,
         # so verify via listing with status filter
         queued = jobstore.list_jobs(ListJobArgs(status="queued"), auth="test-auth")
         assert len(queued) == 1
 
     def test_multiple_jobs_all_listed(self, jobstore):
-        jobstore.create_job(_make_create_item(qid="iq__a"), auth="test-auth")
-        jobstore.create_job(_make_create_item(qid="iq__b"), auth="test-auth")
+        _create_queued(jobstore, qid="iq__a")
+        _create_queued(jobstore, qid="iq__b")
         jobs = _list_all(jobstore)
         assert len(jobs) == 2
 
     def test_additional_info_is_stored_and_retrieved(self, jobstore):
         info = {"key1": "value1", "key2": 42}
-        jobstore.create_job(_make_create_item(additional_info=info), auth="test-auth")
+        _create_queued(jobstore, additional_info=info)
         jobs = _list_all(jobstore)
         assert len(jobs) == 1
         assert jobs[0].additional_info == info
@@ -85,20 +85,20 @@ class TestCreateAndList:
 
 class TestListFiltering:
     def test_filter_by_qid(self, jobstore):
-        jobstore.create_job(_make_create_item(qid="iq__alpha"), auth="test-auth")
-        jobstore.create_job(_make_create_item(qid="iq__beta"), auth="test-auth")
+        _create_queued(jobstore, qid="iq__alpha")
+        _create_queued(jobstore, qid="iq__beta")
 
         results = jobstore.list_jobs(ListJobArgs(qid="iq__alpha"), auth="test-auth")
         assert len(results) == 1
         assert results[0].qid == "iq__alpha"
 
     def test_filter_by_status_returns_empty_when_no_match(self, jobstore):
-        jobstore.create_job(_make_create_item(), auth="test-auth")
+        _create_queued(jobstore)
         results = jobstore.list_jobs(ListJobArgs(status="running"), auth="test-auth")
         assert results == []
 
     def test_filter_by_status_after_claim(self, jobstore):
-        jobstore.create_job(_make_create_item(), auth="test-auth")
+        _create_queued(jobstore)
         job_id = _list_all(jobstore)[0].id
         jobstore.claim_job(job_id, auth="test-auth")
 
@@ -109,12 +109,12 @@ class TestListFiltering:
 
 class TestClaimJob:
     def test_claim_queued_job_returns_true(self, jobstore):
-        jobstore.create_job(_make_create_item(), auth="test-auth")
+        _create_queued(jobstore)
         job_id = _list_all(jobstore)[0].id
         assert jobstore.claim_job(job_id, auth="test-auth") is True
 
     def test_claim_moves_job_to_running(self, jobstore):
-        jobstore.create_job(_make_create_item(), auth="test-auth")
+        _create_queued(jobstore)
         job_id = _list_all(jobstore)[0].id
         jobstore.claim_job(job_id, auth="test-auth")
 
@@ -124,7 +124,7 @@ class TestClaimJob:
         assert len(running) == 1
 
     def test_claim_already_running_job_returns_false(self, jobstore):
-        jobstore.create_job(_make_create_item(), auth="test-auth")
+        _create_queued(jobstore)
         job_id = _list_all(jobstore)[0].id
         jobstore.claim_job(job_id, auth="test-auth")
         assert jobstore.claim_job(job_id, auth="test-auth") is False
@@ -132,7 +132,7 @@ class TestClaimJob:
 
 class TestUpdateJob:
     def test_update_status_to_succeeded(self, jobstore):
-        jobstore.create_job(_make_create_item(), auth="test-auth")
+        _create_queued(jobstore)
         job_id = _list_all(jobstore)[0].id
         jobstore.claim_job(job_id, auth="test-auth")
 
@@ -150,7 +150,7 @@ class TestUpdateJob:
         assert succeeded[0].id == job_id
 
     def test_update_status_to_failed_with_error(self, jobstore):
-        jobstore.create_job(_make_create_item(), auth="test-auth")
+        _create_queued(jobstore)
         job_id = _list_all(jobstore)[0].id
 
         jobstore.update_job(
@@ -170,7 +170,7 @@ class TestUpdateJob:
 
 class TestStopJob:
     def test_stop_sets_stop_requested(self, jobstore):
-        jobstore.create_job(_make_create_item(), auth="test-auth")
+        _create_queued(jobstore)
         job_id = _list_all(jobstore)[0].id
 
         jobstore.stop_job(job_id, auth="test-auth")
@@ -179,15 +179,79 @@ class TestStopJob:
         assert jobs[0].stop_requested is True
 
     def test_stop_requested_is_false_before_stop(self, jobstore):
-        jobstore.create_job(_make_create_item(), auth="test-auth")
+        _create_queued(jobstore)
         jobs = _list_all(jobstore)
         assert jobs[0].stop_requested is False
 
 def test_dependency_listing(jobstore: JobStore):
-    job = jobstore.create_job(_make_create_item(), auth="test-auth")
-    child = jobstore.create_job(_make_create_item(deps=[job.id]), "test-auth")
+    job = _create_queued(jobstore)
+    child = _create_queued(jobstore, deps=[job.id])
     jobs = jobstore.list_jobs(ListJobArgs(), auth="test-auth")
     assert len(jobs) == 1
     assert jobs[0].id == job.id
     all_jobs = jobstore.list_jobs(ListJobArgs(include_unready=True), auth="test-auth")
     assert len(all_jobs) == 2
+
+
+class TestPendingJobs:
+    def test_pending_job_is_not_claimable(self, jobstore):
+        job = jobstore.create_job(CreateQueueItem(qid="iq__test", model="m"), auth="test-auth")
+        assert job.status == "pending"
+        assert job.model == "m"
+        assert job.params is None
+        assert jobstore.list_jobs(ListJobArgs(status="queued"), auth="test-auth") == []
+        assert jobstore.claim_job(job.id, auth="test-auth") is False
+
+    def test_release_sets_params_and_queues(self, jobstore):
+        dep = _create_queued(jobstore)
+        job = jobstore.create_job(CreateQueueItem(qid="iq__test", model="m"), auth="test-auth")
+
+        released = jobstore.release_job(
+            ReleaseJobRequest(id=job.id, params=_make_tag_args("m"), deps=[dep.id], additional_info={"title": "t"}),
+            auth="test-auth",
+        )
+
+        assert released is True
+        job = jobstore.get_job(job.id)
+        assert job.status == "queued"
+        assert job.params == _make_tag_args("m")
+        assert job.deps == [dep.id]
+        assert job.additional_info == {"title": "t"}
+
+    def test_release_fails_if_not_pending(self, jobstore):
+        job = jobstore.create_job(CreateQueueItem(qid="iq__test", model="m"), auth="test-auth")
+        jobstore.stop_job(job.id, auth="test-auth")
+
+        released = jobstore.release_job(
+            ReleaseJobRequest(id=job.id, params=_make_tag_args("m"), deps=[], additional_info={}),
+            auth="test-auth",
+        )
+
+        assert released is False
+        assert jobstore.get_job(job.id).status == "cancelled"
+
+    def test_pending_dependency_blocks_child(self, jobstore):
+        parent = jobstore.create_job(CreateQueueItem(qid="iq__test", model="m"), auth="test-auth")
+        _create_queued(jobstore, deps=[parent.id])
+        assert jobstore.list_jobs(ListJobArgs(status="queued"), auth="test-auth") == []
+
+
+class TestStopCancels:
+    def test_stop_pending_job_cancels(self, jobstore):
+        job = jobstore.create_job(CreateQueueItem(qid="iq__test", model="m"), auth="test-auth")
+        jobstore.stop_job(job.id, auth="test-auth")
+        assert jobstore.get_job(job.id).status == "cancelled"
+
+    def test_stop_queued_job_cancels(self, jobstore):
+        job = _create_queued(jobstore)
+        jobstore.stop_job(job.id, auth="test-auth")
+        assert jobstore.get_job(job.id).status == "cancelled"
+        assert jobstore.claim_job(job.id, auth="test-auth") is False
+
+    def test_stop_running_job_only_flags_it(self, jobstore):
+        job = _create_queued(jobstore)
+        jobstore.claim_job(job.id, auth="test-auth")
+        jobstore.stop_job(job.id, auth="test-auth")
+        job = jobstore.get_job(job.id)
+        assert job.status == "running"
+        assert job.stop_requested is True

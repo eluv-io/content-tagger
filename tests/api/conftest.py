@@ -10,7 +10,7 @@ from flask import Flask
 import pytest
 
 from app_config import AppConfig
-from server import configure_routes, create_app_direct, create_app_queue_based
+from server import configure_routes, create_app_queue_based
 from src.api.auth import Authenticator
 from src.api.tagging.request_format import StartJobsRequest
 from src.common.content import Content
@@ -21,7 +21,6 @@ from src.tag_containers.model import ModelConfig, RegistryConfig
 from src.tagging.fabric_tagging.model import TaggerWorkerConfig, JobID, TagArgs, TagStopResult
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
 from src.tagging.fabric_tagging.queue.model import JobStoreConfig
-from src.tagging.fabric_tagging.tagger import TaggerWorker
 from src.tagging.scheduling.model import SysConfig
 from src.tagging.tag_runner import TagRunner, TagRunnerConfig
 from src.tags.track_resolver import TrackArgs, LabelResolverConfig
@@ -87,19 +86,10 @@ def app_config(static_dir, tagger_config, content_config, fetcher_config, contai
 @pytest.fixture()
 def app(static_dir, app_config):
     shutil.rmtree(static_dir, ignore_errors=True)
-    if os.getenv("USE_QUEUE") == "true":
-        app = create_app_queue_based(app_config)
-    else:
-        app = create_app_direct(app_config)
+    app = create_app_queue_based(app_config)
     app.config["TESTING"] = True
     yield app
-    state = app.config["state"]
-    if "loop" in state:
-        state["loop"].stop()
-        return
-    tagger: TaggerWorker = state["worker"]
-    if not tagger.shutdown_requested:
-        tagger.cleanup()
+    app.config["state"]["loop"].stop()
 
 @pytest.fixture
 def authenticator(app_config):
@@ -181,10 +171,10 @@ class MockTaggerService:
         # job_id -> dict with job info
         self._jobs: dict[str, dict] = {}
 
-    def tag(self, q: Content, args: list[TagArgs]) -> list[TagStartResult]:
+    def tag(self, q: Content, req: StartJobsRequest) -> list[TagStartResult]:
         job_id = str(uuid.uuid4())
         res = []
-        for i, arg in enumerate(args):
+        for i, arg in enumerate(MockArgsResolver().resolve(req, q)):
             self._jobs[job_id] = {
                 "job_id": job_id,
                 "qid": q.qid,

@@ -49,29 +49,21 @@ def handle_tag(args: StartJobsRequest, qid: str) -> StartTaggingResponse:
     if args.options.index_qid:
         authorize(args.options.index_qid, request)
 
-    arg_resolver: ArgsResolver = current_app.config["state"]["arg_resolver"]
+    return _execute_tagging(q, args)
 
-    with timeit("resolving tag args"):
-        tag_args = arg_resolver.resolve(args, q)
-
-    for arg in tag_args:
-        logger.info("resolved tag args", qid=q.qid, model=arg.feature, args=arg)
-
-    return _execute_tagging(q, tag_args)
-
-def _execute_tagging(q: Content, tag_args: list[TagArgs]) -> StartTaggingResponse:
+def _execute_tagging(q: Content, args: StartJobsRequest) -> StartTaggingResponse:
     """Execute tagging for multiple features and return start status response."""
     tagger: TaggerService = current_app.config["state"]["service"]
 
     jobs: list[StartStatus] = []
 
-    start_results = tagger.tag(q, tag_args)
+    start_results = tagger.tag(q, args)
 
-    for arg, result in zip(tag_args, start_results):
+    for job, result in zip(args.jobs, start_results):
         jobs.append(
             StartStatus(
                 job_id=result.job_id,
-                model=arg.feature,
+                model=job.model,
                 started=result.started,
                 message=result.message,
                 dependencies=result.dependencies,

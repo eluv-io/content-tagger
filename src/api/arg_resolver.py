@@ -31,12 +31,19 @@ class ArgsResolver:
         self.tenant_defaults = tenant_defaults
         self._pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="args-prefetch")
 
+    def validate(self, args: StartJobsRequest) -> None:
+        """Cheap checks which don't need the fabric."""
+        if len(args.jobs) == 0:
+            raise BadRequestError("Please specify at least one job to run.")
+        for job in args.jobs:
+            if job.model not in self.model_configs:
+                raise BadRequestError(f"Model {job.model} not found.")
+
     def resolve(self, args: StartJobsRequest, q: Content) -> list[TagArgs]:
         """
         Resolve API arguments to internal TagArgs structures.
         """
-        if len(args.jobs) == 0:
-            raise BadRequestError("Please specify at least one job to run.")
+        self.validate(args)
         # tenant defaults and the content lookups are independent fabric round trips, so run them concurrently
         prefetch = self._pool.submit(contextvars.copy_context().run, self._prefetch_content_info, q, args)
         tenant_defaults = self.tenant_defaults.get(q)
