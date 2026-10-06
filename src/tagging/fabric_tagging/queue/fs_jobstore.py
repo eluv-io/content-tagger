@@ -1,3 +1,4 @@
+from copy import deepcopy
 import json
 import os
 import threading
@@ -29,6 +30,9 @@ def _convert_scope(data: dict) -> Scope:
         raise ValueError(f"Unknown scope type: {type}")
 
 class FsJobStore:
+    """Job store backed by one json file per job. All jobs are held in memory and files are write-through,
+    so this process must be the only writer to store_dir."""
+
     def __init__(
         self, 
         store_dir: str,
@@ -40,16 +44,25 @@ class FsJobStore:
         # poll thread mutate the same job concurrently
         self._lock = threading.Lock()
         os.makedirs(store_dir, exist_ok=True)
+        self._jobs = self._load_jobs()
 
     def _job_path(self, id: str) -> str:
         return os.path.join(self.store_dir, f"{id}.json")
 
+    def _load_jobs(self) -> dict[str, dict]:
+        jobs = {}
+        for fname in os.listdir(self.store_dir):
+            if fname.endswith(".json"):
+                with open(os.path.join(self.store_dir, fname), "r") as f:
+                    jobs[fname[:-5]] = json.load(f)
+        return jobs
+
     def _read_job(self, id: str) -> dict:
-        path = self._job_path(id)
-        if not os.path.exists(path):
+        """Returns the cached job dict. Callers must not mutate it."""
+        job = self._jobs.get(id)
+        if job is None:
             raise MissingResourceError(f"Job {id} not found")
-        with open(path, "r") as f:
-            return json.load(f)
+        return job
 
     def _write_job(self, id: str, data: dict) -> None:
         path = self._job_path(id)
@@ -59,16 +72,14 @@ class FsJobStore:
         with open(tmp, "w") as f:
             json.dump(data, f, indent=2)
         os.replace(tmp, path)  # atomic on Linux
+        self._jobs[id] = data
 
     def _all_jobs(self) -> list[dict]:
-        jobs = []
-        for fname in os.listdir(self.store_dir):
-            if fname.endswith(".json"):
-                id = fname[:-5]
-                jobs.append(self._read_job(id))
-        return jobs
+        with self._lock:
+            return list(self._jobs.values())
     
     def _convert_job_dict(self, job: dict) -> QueueItem:
+        job = deepcopy(job)
         p = job["params"]
         params = TagArgs(
             feature=p["feature"],
@@ -101,7 +112,7 @@ class FsJobStore:
         id = str(uuid.uuid4())
         tenant = self.user_info_resolver.get_tenant(args.qid, auth)
         user_info = self.user_info_resolver.get_user_info(auth=auth, tenant_id=None)
-        self._write_job(id, {
+        job = {
             "id": id,
             "qid": args.qid,
             "status": "queued",
@@ -115,13 +126,14 @@ class FsJobStore:
             "auth": auth,
             "additional_info": args.additional_info,
             "deps": args.deps,
-        })
-        job_data = self._read_job(id)
-        return self._convert_job_dict(job_data)
+        }
+        with self._lock:
+            self._write_job(id, deepcopy(job))
+        return self._convert_job_dict(job)
 
     def claim_job(self, id: str, auth: str) -> bool:
         with self._lock:
-            job = self._read_job(id)
+            job = deepcopy(self._read_job(id))
             if job["status"] == "queued":
                 job["status"] = "running"
                 self._write_job(id, job)
@@ -154,7 +166,7 @@ class FsJobStore:
 
     def update_job(self, args: UpdateJobRequest, auth: str) -> None:
         with self._lock:
-            job = self._read_job(args.id)
+            job = deepcopy(self._read_job(args.id))
             if job["status"] == "deleted" and args.status != "deleted":
                 # a late status update must not resurrect a deleted job
                 return
@@ -167,6 +179,6 @@ class FsJobStore:
 
     def stop_job(self, id: str, auth: str) -> None:
         with self._lock:
-            job = self._read_job(id)
+            job = deepcopy(self._read_job(id))
             job["stop_requested"] = True
             self._write_job(id, job)

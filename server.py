@@ -124,7 +124,11 @@ def _register_request_logging(app: Flask) -> None:
             return response
         duration_ms = round((time.monotonic() - g.request_start) * 1000)
 
+        response.headers["X-Request-ID"] = g.request_id
+
         quiet = request.method == "GET" and response.status_code < 400 and duration_ms < 1000
+        if quiet and request.path.endswith("/job-status"):
+            return response
         body = request.get_json(silent=True) if request.method != "GET" else None
 
         logger.log(
@@ -133,7 +137,6 @@ def _register_request_logging(app: Flask) -> None:
             remote_addr=request.headers.get("X-Forwarded-For", request.remote_addr),
             **({"body": body} if body is not None else {}),
         )
-        response.headers["X-Request-ID"] = g.request_id
         return response
 
     @app.teardown_request
