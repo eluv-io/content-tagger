@@ -152,6 +152,7 @@ class TagContainer:
         cmd = self._get_args(output_filename)
 
         env = {
+            **self.cfg.env,
             "ELV_TOKEN": self.cfg.q.token,
             "ELV_CONTENT": self.cfg.q.qid
         }

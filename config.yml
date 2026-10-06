@@ -55,6 +55,9 @@ jobstore:
 container_registry:
   base_dir: data/containers
   cache_dir: data/cache
+  # extra env passed to every container
+  env:
+    ELV_GROUND_TRUTH_URL: ""
 
 model_configs:
   player_jersey_ocr:

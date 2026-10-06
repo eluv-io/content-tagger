@@ -16,6 +16,7 @@ def fake_registry(temp_dir):
         cfg=RegistryConfig(
             base_dir=temp_dir,
             cache_dir=temp_dir,
+            env={},
         ),
         model_configs={
             "test_model": ModelConfig(

@@ -42,7 +42,18 @@ class AppConfig:
         if "root_dir" not in data:
             data["root_dir"] = os.getcwd()
         data = AppConfig._resolve_paths(data, data["root_dir"])
-        return from_dict(AppConfig, data)
+        cfg = from_dict(AppConfig, data)
+        cfg._inject_container_env()
+        return cfg
+
+    def _inject_container_env(self) -> None:
+        """Default service URLs passed to containers; explicit container_registry.env wins"""
+        defaults = {
+            "ELV_TAGSTORE_URL": self.tagstore.base_url,
+            "ELV_VECTORSTORE_URL": self.vectorstore.base_url,
+        }
+        env = {**defaults, **self.container_registry.env}
+        self.container_registry.env = {k: v for k, v in env.items() if v}
     
     @staticmethod
     def _resolve_paths(data: dict, root: str) -> dict:

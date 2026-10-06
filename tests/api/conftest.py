@@ -56,6 +56,7 @@ def container_registry_config(static_dir) -> RegistryConfig:
     return RegistryConfig(
             base_dir=os.path.join(static_dir, "stuff"),
             cache_dir=os.path.join(static_dir, "cache"),
+            env={},
         )
 
 @pytest.fixture()

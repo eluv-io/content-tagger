@@ -77,7 +77,8 @@ def container_spec(temp_dir):
             image="localhost/test_model:latest",
             resources=SystemResources()
         ),
-        q=Content(qid="q123", token="auth12345")
+        q=Content(qid="q123", token="auth12345"),
+        env={},
     )
 
 @pytest.fixture

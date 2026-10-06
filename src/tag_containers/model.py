@@ -31,6 +31,8 @@ class ContainerSpec:
     q: Content
     # static attributes of the container to run
     model_config: ModelConfig
+    # extra env vars from config (e.g. service URLs); reserved ELV_* vars take precedence
+    env: dict[str, str]
     # vector index content, passed to the container if specified
     index_qid: str | None = None
 
@@ -57,6 +59,8 @@ class ContainerRequest:
 class RegistryConfig:
     base_dir: str
     cache_dir: str
+    # env vars passed to every container, e.g. ELV_GROUND_TRUTH_URL
+    env: dict[str, str]
 
 @dataclass(frozen=True)
 class Progress:

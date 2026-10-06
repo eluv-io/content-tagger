@@ -51,6 +51,7 @@ class ContainerRegistry:
             model_config=modelcfg,
             q=req.q,
             index_qid=req.index_qid,
+            env=self.cfg.env,
         )
 
         return TagContainer(self.pclient, ccfg)

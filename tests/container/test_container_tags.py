@@ -52,7 +52,8 @@ def container_spec(temp_dir):
             image="test/model:latest",
             resources={}
         ),
-        q=Content(qid="", token="")
+        q=Content(qid="", token=""),
+        env={},
     )
 
 
