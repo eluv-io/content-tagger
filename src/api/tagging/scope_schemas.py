@@ -78,6 +78,11 @@ class LiveScopeSchema(Schema):
             "description": "Maximum amount of content from livestream to tag (in seconds)"
         },
     )
+    start_timeout = fields.Int(
+        metadata={
+            "description": "If the livestream has not started yet, wait up to this long (in seconds) for it to start before failing. The tagging container is started immediately so it is ready when the stream begins."
+        }
+    )
 
 
 class TagAlignedScopeSchema(Schema):

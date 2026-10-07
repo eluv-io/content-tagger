@@ -139,6 +139,31 @@ class QAPI:
         )
         return segment_info
 
+    def playout_options(self) -> dict[str, Any]:
+        url = '/'.join([self._client.fabric_uris[0], 'q', self.qid, 'rep', 'playout', 'options.json'])
+        resp = requests.get(url, params={"authorization": self._client.token})
+        resp.raise_for_status()
+        return resp.json()
+
+    def is_live(self) -> bool:
+        """True if the content is a livestream object, whether or not the stream is currently running."""
+        try:
+            options = self.playout_options()
+        except (requests.HTTPError, ValueError):
+            return False
+        return any(o.get("properties", {}).get("live", False) for o in options.values() if isinstance(o, dict))
+
+    def is_live_running(self) -> bool:
+        """True if the livestream is currently running (has an edge write token)."""
+        try:
+            edge_write_token = self.content_object_metadata(
+                metadata_subtree="live_recording/status/edge_write_token",
+                resolve_links=False,
+            )
+        except requests.HTTPError:
+            return False
+        return isinstance(edge_write_token, str) and edge_write_token.startswith("tqw__")
+
     def __getattr__(self, name):
         attr = getattr(self._client, name)
         if not callable(attr):

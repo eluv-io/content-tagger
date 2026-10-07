@@ -7,7 +7,6 @@ import dataclasses
 
 from common_ml.utils.dictionary import nested_update
 from marshmallow import ValidationError
-from requests import HTTPError
 
 from src.common.content import Content, QAPIFactory
 from src.common.model import ModelConfig
@@ -118,16 +117,7 @@ class ArgsResolver:
 
     @lru_cache(maxsize=1024)
     def is_live_content(self, q: Content) -> bool:
-        qapi = self.api_factory.create(q)
-        try:
-            edge_write_token = qapi.content_object_metadata(
-                metadata_subtree="live_recording/status/edge_write_token",
-                resolve_links=False,
-            )
-        except HTTPError:
-            return False
-
-        return isinstance(edge_write_token, str) and edge_write_token.startswith("tqw__")
+        return self.api_factory.create(q).is_live()
 
     def _set_defaults(
         self,

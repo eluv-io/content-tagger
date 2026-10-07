@@ -917,3 +917,40 @@ def test_vector_tagging(fabric_tagger, q, make_tag_args):
     job_status = _status_for(final_status, "caption").status
     assert job_status.status == "Completed"
     assert len(job_status.total_sources) == 0
+
+def test_container_starts_before_media(fabric_tagger, q, make_tag_args):
+    """Test that the container is started while the fetcher has no media yet but isn't done (e.g. livestream not started)"""
+
+    class WaitingFetchWorker(FetchSession):
+        def download(self) -> DownloadResult:
+            time.sleep(0.05)
+            return DownloadResult(sources=[], failed=[], done=False)
+
+        def metadata(self) -> MediaMetadata:
+            return MediaMetadata(sources=[], fps=None)
+
+        @property
+        def path(self) -> str:
+            return "/fake/path"
+
+    fabric_tagger.fetcher.get_session = Mock(return_value=WaitingFetchWorker())
+
+    containers = []
+    def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
+        c = FakeTagContainer(req.media_dir, req.model_id, work_duration=10)
+        containers.append(c)
+        return c
+    
+    fabric_tagger.cregistry.get = get_side_effect
+
+    fabric_tagger.tag(q, make_tag_args(feature="caption", stream="video"))
+
+    time.sleep(0.5)
+
+    assert len(containers) == 1
+    assert containers[0].is_started
+    assert containers[0].media_files == []
+    report = _status_for(fabric_tagger.status(q.qid), "caption")
+    assert report.status.status in ("Fetching content", "Tagging content")
+
+    fabric_tagger.stop(q.qid, "caption")

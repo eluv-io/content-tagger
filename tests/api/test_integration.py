@@ -351,10 +351,11 @@ def test_find_default_audio_stream(q, app):
 
     assert result == "stereo"
 
-def test_is_live_content(q_live, app):
+def test_is_live_content(q_live, q, app):
     """Test the _is_live_content function."""
     resolver: ArgsResolver = app.config["state"]["arg_resolver"]
     assert resolver.is_live_content(q_live) == True
+    assert resolver.is_live_content(q) == False
 
 def test_stop_live_job(app, q):
     """Test that live jobs can be stopped cleanly mid-stream."""

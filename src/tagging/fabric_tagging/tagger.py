@@ -433,8 +433,8 @@ class TaggerWorker:
             self._submit_async(EnterCompletePhase(job_id=jobid))
             return
 
-        if not job.state.taghandle and new_sources:
-            # schedule tagging
+        if not job.state.taghandle and (new_sources or not dl_res.done):
+            # schedule tagging even without media if more is coming (e.g. a livestream that hasn't started)
             uid = self.system_tagger.start(job.state.container, job.state.tagging_done)
             job.state.taghandle = uid
 

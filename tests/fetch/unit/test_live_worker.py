@@ -77,3 +77,12 @@ def test_live_worker_exit(temp_dir: str):
     result = worker.download()
     assert result.sources == []
     assert result.done is True
+
+def test_live_worker_fps_from_first_segment(temp_dir: str, monkeypatch):
+    monkeypatch.setattr("src.fetch.impl.live.get_fps", lambda path: 25.0)
+    worker = make_worker(temp_dir)
+    worker.meta.fps = None
+
+    assert worker.metadata().fps is None
+    worker.download()
+    assert worker.metadata().fps == 25.0

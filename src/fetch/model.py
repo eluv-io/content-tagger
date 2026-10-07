@@ -50,6 +50,8 @@ class LiveScope(Scope):
     stream: str = ""
     segment_length: int = 4
     max_duration: int | None = None
+    # seconds to wait for the stream to start before failing
+    start_timeout: int = 3600
     type: str = "livestream"
 
 @dataclass
