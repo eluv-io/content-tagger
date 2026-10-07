@@ -4,11 +4,18 @@ from typing import Literal
 from src.service.model import TagDetails
 from src.tagging.fabric_tagging.model import TagArgs
 
-job_status = Literal["pending", "queued", "running", "succeeded", "failed", "cancelled", "deleted"]
+job_status = Literal["pending", "queued", "running", "cancelling", "succeeded", "failed", "cancelled"]
+
+TERMINAL_JOB_STATUSES: set[job_status] = {"succeeded", "failed", "cancelled"}
 
 @dataclass
 class JobStoreConfig:
-    base_url: str
+    # queue manager url; if empty, jobs are stored as files under base_dir
+    base_url: str = ""
+    base_dir: str = ""
+    # sent as X-Worker-Secret
+    worker_secret: str | None = None
+    timeout: int = 30
 
 @dataclass
 class QueueItem:
@@ -21,7 +28,6 @@ class QueueItem:
     status: job_status
     status_details: TagDetails | None
     error: str | None
-    stop_requested: bool
     auth: str
     user: str
     tenant: str
@@ -39,6 +45,8 @@ class ReleaseJobRequest:
     params: TagArgs
     deps: list[str]
     additional_info: dict
+    # jobs with the same resource can't run at once, and release is refused while another one is active
+    resource: str
 
 @dataclass
 class ListJobArgs:
@@ -46,11 +54,14 @@ class ListJobArgs:
     qid: str | None = None
     user: str | None = None
     tenant: str | None = None
+    # include queued jobs that can't be claimed yet: unmet dependencies or their resource in use
     include_unready: bool = False
+    limit: int | None = None
 
 @dataclass
-class UpdateJobRequest:
+class CompleteJobRequest:
     id: str
+    # succeeded/failed for a running or pending job, cancelled for a cancelling one
     status: job_status
     status_details: TagDetails | None = None
     error: str | None = None

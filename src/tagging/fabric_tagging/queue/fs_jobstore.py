@@ -4,37 +4,25 @@ import os
 import threading
 import time
 import uuid
-from dataclasses import asdict
-from dacite import from_dict
 
-from src.common.errors import MissingResourceError
+from src.common.errors import BadRequestError, MissingResourceError
 from src.status.get_info import UserInfoResolver
-from src.tagging.fabric_tagging.model import TagArgs
-from src.tagging.fabric_tagging.queue.dto import TagDetailsRaw
 from src.tagging.fabric_tagging.queue.model import *
-from src.fetch.model import *
+from src.tagging.fabric_tagging.queue.serialize import details_from_dict, details_to_dict, params_from_dict, params_to_dict
 
-def _convert_scope(data: dict) -> Scope:
-    type = data.get("type")
-    if type == "processor":
-        return TimeRangeScope(**data)
-    elif type == "assets":
-        return AssetScope(**data)
-    elif type == "video":
-        return VideoScope(**data)
-    elif type == "livestream":
-        return LiveScope(**data)
-    elif type == "tag-aligned":
-        return TagAlignedScope(**data)
-    else:
-        raise ValueError(f"Unknown scope type: {type}")
+# statuses each status may be completed as, matching the queue manager
+_COMPLETIONS: dict[str, set[str]] = {
+    "pending": {"succeeded", "failed"},
+    "running": {"succeeded", "failed"},
+    "cancelling": {"succeeded", "failed", "cancelled"},
+}
 
 class FsJobStore:
-    """Job store backed by one json file per job. All jobs are held in memory and files are write-through,
-    so this process must be the only writer to store_dir."""
+    """Job store backed by one json file per job, following the queue manager's job lifecycle. All jobs are held
+    in memory and files are write-through, so this process must be the only writer to store_dir."""
 
     def __init__(
-        self, 
+        self,
         store_dir: str,
         user_info_resolver: UserInfoResolver,
     ):
@@ -54,7 +42,10 @@ class FsJobStore:
         for fname in os.listdir(self.store_dir):
             if fname.endswith(".json"):
                 with open(os.path.join(self.store_dir, fname), "r") as f:
-                    jobs[fname[:-5]] = json.load(f)
+                    job = json.load(f)
+                # soft-deleted by older versions of this store
+                if job["status"] != "deleted":
+                    jobs[fname[:-5]] = job
         return jobs
 
     def _read_job(self, id: str) -> dict:
@@ -74,35 +65,52 @@ class FsJobStore:
         os.replace(tmp, path)  # atomic on Linux
         self._jobs[id] = data
 
+    def _set(self, id: str, **changes) -> None:
+        job = deepcopy(self._read_job(id))
+        job.update(changes)
+        self._write_job(id, job)
+
     def _all_jobs(self) -> list[dict]:
         with self._lock:
             return list(self._jobs.values())
-    
+
+    def _is_ready(self, job: dict) -> bool:
+        # deleted dependencies had ended, so they don't block
+        return all(self._jobs[dep]["status"] == "succeeded" for dep in job.get("deps", []) if dep in self._jobs)
+
+    def _resource_in_use(self, job: dict, statuses: set[str]) -> bool:
+        resource = job.get("resource")
+        return resource is not None and any(
+            other["id"] != job["id"] and other.get("resource") == resource and other["status"] in statuses
+            for other in self._jobs.values()
+        )
+
+    def _is_claimable(self, job: dict) -> bool:
+        return self._is_ready(job) and not self._resource_in_use(job, {"running", "cancelling"})
+
+    def _cascade(self, id: str, from_statuses: set[str], to_status: job_status) -> None:
+        """Moves the jobs transitively depending on id that are in from_statuses to to_status."""
+        parents = [id]
+        while parents:
+            parent = parents.pop()
+            for job in list(self._jobs.values()):
+                if parent in job.get("deps", []) and job["status"] in from_statuses:
+                    self._set(job["id"], status=to_status, error=f"parent job {parent} {to_status}")
+                    parents.append(job["id"])
+
     def _convert_job_dict(self, job: dict) -> QueueItem:
         job = deepcopy(job)
-        p = job["params"]
-        params = None if p is None else TagArgs(
-            feature=p["feature"],
-            run_config=p["run_config"],
-            scope=_convert_scope(p["scope"]),
-            track_suffix=p.get("track_suffix", ""),
-            replace=p["replace"],
-            destination_qid=p["destination_qid"],
-            index_qid=p.get("index_qid", ""),
-            max_fetch_retries=p["max_fetch_retries"],
-            caller_info=p.get("caller_info", {})
-        )
+        params = params_from_dict(job["params"])
         return QueueItem(
             id=job["id"],
             qid=job["qid"],
             # jobs written before the model field existed only have it in params
-            model=job.get("model") or p["feature"], # type: ignore
+            model=job.get("model") or params.feature, # type: ignore
             params=params,
             created_at=job["created_at"],
             status=job["status"],
-            status_details=from_dict(TagDetailsRaw, job["status_details"]).to_model() if job["status_details"] else None,
+            status_details=details_from_dict(job["status_details"]),
             error=job.get("error"),
-            stop_requested=job["stop_requested"],
             auth=job["auth"],
             user=job["user"],
             tenant=job["tenant"],
@@ -123,7 +131,6 @@ class FsJobStore:
             "params": None,
             "status_details": None,
             "error": None,
-            "stop_requested": False,
             "user": user_info.user_adr,
             "tenant": tenant,
             "auth": auth,
@@ -139,8 +146,11 @@ class FsJobStore:
             job = deepcopy(self._read_job(args.id))
             if job["status"] != "pending":
                 return False
+            job["resource"] = args.resource
+            if self._resource_in_use(job, {"pending", "queued", "running", "cancelling"}):
+                return False
             job["status"] = "queued"
-            job["params"] = asdict(args.params)
+            job["params"] = params_to_dict(args.params)
             job["deps"] = list(args.deps)
             job["additional_info"] = {**job["additional_info"], **deepcopy(args.additional_info)}
             self._write_job(args.id, job)
@@ -148,12 +158,11 @@ class FsJobStore:
 
     def claim_job(self, id: str, auth: str) -> bool:
         with self._lock:
-            job = deepcopy(self._read_job(id))
-            if job["status"] == "queued":
-                job["status"] = "running"
-                self._write_job(id, job)
-                return True
-            return False
+            job = self._read_job(id)
+            if job["status"] != "queued" or not self._is_claimable(job):
+                return False
+            self._set(id, status="running")
+            return True
 
     def get_job(self, id: str) -> QueueItem:
         return self._convert_job_dict(self._read_job(id))
@@ -161,8 +170,8 @@ class FsJobStore:
     def list_jobs(self, args: ListJobArgs, auth: str) -> list[QueueItem]:
         results = []
         for job in self._all_jobs():
-            if args.status != "deleted" and job["status"] == "deleted":
-                continue
+            if args.limit is not None and len(results) >= args.limit:
+                break
             if args.qid and job["qid"] != args.qid:
                 continue
             if args.user and job["user"] != args.user:
@@ -171,33 +180,47 @@ class FsJobStore:
                 continue
             if args.status and job["status"] != args.status:
                 continue
-            # filter if unmet dependencies
-            if job["status"] == "queued" and not args.include_unready:
-                unmet_deps = [dep for dep in job.get("deps", []) if self._read_job(dep)["status"] in ("pending", "queued", "running")]
-                if unmet_deps:
-                    continue
+            if job["status"] == "queued" and not args.include_unready and not self._is_claimable(job):
+                continue
             results.append(self._convert_job_dict(job))
         return results
 
-    def update_job(self, args: UpdateJobRequest, auth: str) -> None:
+    def update_progress(self, id: str, status_details: TagDetails, auth: str) -> QueueItem:
         with self._lock:
-            job = deepcopy(self._read_job(args.id))
-            if job["status"] == "deleted" and args.status != "deleted":
-                # a late status update must not resurrect a deleted job
-                return
-            job["status"] = args.status
-            if args.status_details is not None:
-                job["status_details"] = asdict(args.status_details)
-            if args.error is not None:
-                job["error"] = args.error
-            self._write_job(args.id, job)
+            if self._read_job(id)["status"] in ("pending", "running", "cancelling"):
+                self._set(id, status_details=details_to_dict(status_details))
+            return self._convert_job_dict(self._jobs[id])
 
-    def stop_job(self, id: str, auth: str, reason: str | None = None) -> None:
+    def complete_job(self, args: CompleteJobRequest, auth: str) -> bool:
         with self._lock:
-            job = deepcopy(self._read_job(id))
-            job["stop_requested"] = True
-            if job["status"] in ("pending", "queued"):
-                job["status"] = "cancelled"
-            if reason is not None:
-                job["error"] = reason
-            self._write_job(id, job)
+            job = self._read_job(args.id)
+            if args.status not in _COMPLETIONS.get(job["status"], set()):
+                return False
+            changes: dict = {"status": args.status}
+            if args.status_details is not None:
+                changes["status_details"] = details_to_dict(args.status_details)
+            if args.error is not None:
+                changes["error"] = args.error
+            self._set(args.id, **changes)
+            if args.status == "failed":
+                self._cascade(args.id, {"pending", "queued", "running"}, "failed")
+            return True
+
+    def cancel_job(self, id: str, auth: str, reason: str | None = None) -> None:
+        with self._lock:
+            status = self._read_job(id)["status"]
+            changes = {"error": reason} if reason else {}
+            if status in ("pending", "queued"):
+                self._set(id, status="cancelled", **changes)
+            elif status == "running":
+                self._set(id, status="cancelling", **changes)
+            else:
+                return
+            self._cascade(id, {"pending", "queued"}, "cancelled")
+
+    def delete_job(self, id: str, auth: str) -> None:
+        with self._lock:
+            if self._read_job(id)["status"] not in TERMINAL_JOB_STATUSES:
+                raise BadRequestError(f"Job {id} hasn't ended")
+            os.remove(self._job_path(id))
+            del self._jobs[id]

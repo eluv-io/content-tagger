@@ -16,7 +16,7 @@ from src.service.dependency_resolver import DependencyResolver
 from src.service.model import *
 from src.tagging.fabric_tagging.model import TagArgs
 from src.tagging.fabric_tagging.queue.abstract import JobStore
-from src.tagging.fabric_tagging.queue.model import CreateQueueItem, ListJobArgs, QueueItem, ReleaseJobRequest, UpdateJobRequest
+from src.tagging.fabric_tagging.queue.model import CompleteJobRequest, CreateQueueItem, ListJobArgs, QueueItem, ReleaseJobRequest
 from src.service.abstract import TaggerService
 
 logger = logger.bind(name="Queue Service")
@@ -90,7 +90,7 @@ class QueueService(TaggerService):
             for job_id in job_ids:
                 try:
                     if self.jobstore.get_job(job_id).status == "pending":
-                        self.jobstore.update_job(UpdateJobRequest(id=job_id, status="failed", error=str(e)), auth=q.token)
+                        self.jobstore.complete_job(CompleteJobRequest(id=job_id, status="failed", error=str(e)), auth=q.token)
                 except Exception:
                     logger.opt(exception=True).warning("failed to mark pending job as failed", job_id=job_id)
         finally:
@@ -103,12 +103,21 @@ class QueueService(TaggerService):
         deps = self.dependency_resolver.resolve(q, job_ids, args)
         for job_id, arg, dep in zip(job_ids, args, deps):
             if dep.duplicate_of is not None:
-                self.jobstore.stop_job(job_id, auth=q.token, reason=f"Job {dep.duplicate_of} is already running for this model and stream")
+                self.jobstore.cancel_job(job_id, auth=q.token, reason=f"Job {dep.duplicate_of} is already running for this model and stream")
                 continue
-            self.jobstore.release_job(
-                ReleaseJobRequest(id=job_id, params=arg, deps=dep.parents, additional_info={"title": title}),
+            stream = arg.scope.get_stream()
+            released = self.jobstore.release_job(
+                ReleaseJobRequest(
+                    id=job_id, 
+                    params=arg, 
+                    deps=dep.parents, 
+                    additional_info={"title": title}, 
+                    resource=f"{q.qid}/{arg.feature}/{stream}",
+                ),
                 auth=q.token,
             )
+            if not released and self.jobstore.get_job(job_id).status == "pending":
+                self.jobstore.cancel_job(job_id, auth=q.token, reason=f"A job is already active for {arg.feature} on stream {stream}")
 
     @lru_cache(maxsize=1024)
     def _get_display_title(self, q: Content) -> str:
@@ -145,7 +154,7 @@ class QueueService(TaggerService):
         
         results: list[TagStopResult] = []
         for item in items:
-            self.jobstore.stop_job(item.id, auth=item.auth)
+            self.jobstore.cancel_job(item.id, auth=item.auth)
             results.append(TagStopResult(job_id=item.id, message="Stop requested"))
             logger.info("stop requested", job_id=str(item.id))
 

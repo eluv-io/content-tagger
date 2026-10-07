@@ -21,8 +21,14 @@ class JobStore(Protocol):
     def list_jobs(self, args: ListJobArgs, auth: str) -> list[QueueItem]:
         ...
 
-    def update_job(self, args: UpdateJobRequest, auth: str) -> None:
+    def update_progress(self, id: str, status_details: TagDetails, auth: str) -> QueueItem:
         ...
 
-    def stop_job(self, id: str, auth: str, reason: str | None = None) -> None:
+    def complete_job(self, args: CompleteJobRequest, auth: str) -> bool:
+        ...
+
+    def cancel_job(self, id: str, auth: str, reason: str | None = None) -> None:
+        ...
+
+    def delete_job(self, id: str, auth: str) -> None:
         ...

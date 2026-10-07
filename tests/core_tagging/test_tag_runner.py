@@ -125,9 +125,11 @@ def test_stop_runner(queue_client, q, make_tag_args, tag_runner):
     enqueue(queue_client, q, [args])
     time.sleep(0.25)
     tag_runner.stop()
-    # check that job is marked cancelled in jobstore
+    # a running job can't be cancelled by its worker, so a shut down fails it
     jobstore = tag_runner.jobstore
-    assert jobstore.list_jobs(ListJobArgs(status="cancelled"), auth="")
+    failed = jobstore.list_jobs(ListJobArgs(status="failed"), auth="")
+    assert failed
+    assert failed[0].error == "tagger worker service was shut down or restarted"
 
 def test_stop_running_job(queue_client, q, make_tag_args, tag_runner):
     args = make_tag_args(feature="caption", stream="video")

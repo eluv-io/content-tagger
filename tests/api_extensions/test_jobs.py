@@ -5,7 +5,7 @@ import pytest
 from src.api_extensions.jobs import DeleteJobRequest, delete_job
 from src.common.errors import BadRequestError, ForbiddenError, MissingResourceError
 from src.status.get_info import UserInfo
-from src.tagging.fabric_tagging.queue.model import CreateQueueItem, ListJobArgs, UpdateJobRequest
+from src.tagging.fabric_tagging.queue.model import CompleteJobRequest, CreateQueueItem, ListJobArgs
 
 
 def test_delete_job(jobstore, make_tag_args, fake_user_info_resolver):
@@ -18,16 +18,17 @@ def test_delete_job(jobstore, make_tag_args, fake_user_info_resolver):
         delete_job(req, js=jobstore, user_info_resolver=fake_user_info_resolver)
 
     # update job state
-    jobstore.update_job(UpdateJobRequest(id=job.id, status="succeeded"), "token")
+    jobstore.complete_job(CompleteJobRequest(id=job.id, status="succeeded"), "token")
 
     delete_job(req, js=jobstore, user_info_resolver=fake_user_info_resolver)
 
-    assert jobstore.get_job(job.id).status == "deleted"
+    with pytest.raises(MissingResourceError):
+        jobstore.get_job(job.id)
 
     job = jobstore.create_job(CreateQueueItem(qid="iq__test", model=args.feature), auth="token")
 
     # update job state
-    jobstore.update_job(UpdateJobRequest(id=job.id, status="failed"), "token")
+    jobstore.complete_job(CompleteJobRequest(id=job.id, status="failed"), "token")
 
     fake_user_info_resolver.get_user_info = Mock(return_value=UserInfo(
         user_adr="0x456",
@@ -53,16 +54,15 @@ def test_delete_job(jobstore, make_tag_args, fake_user_info_resolver):
 
     delete_job(req, js=jobstore, user_info_resolver=fake_user_info_resolver)
 
-    assert jobstore.get_job(job.id).status == "deleted"
+    with pytest.raises(MissingResourceError):
+        jobstore.get_job(job.id)
 
     # check that no deleted jobs come up in list
-    jobs = jobstore.list_jobs(ListJobArgs(qid="iq__test"), auth="token")
-    for j in jobs:
-        assert j.status != "deleted"
+    assert jobstore.list_jobs(ListJobArgs(qid="iq__test", include_unready=True), auth="token") == []
 
     # check that if user specifies tenant and is not tenant admin, it will still be ok as long as the job belongs to them
     job = jobstore.create_job(CreateQueueItem(qid="iq__test", model=args.feature), auth="token")
-    jobstore.update_job(UpdateJobRequest(id=job.id, status="succeeded"), "token")
+    jobstore.complete_job(CompleteJobRequest(id=job.id, status="succeeded"), "token")
 
     fake_user_info_resolver.get_user_info = Mock(return_value=UserInfo(
         user_adr="0x456",
@@ -74,11 +74,12 @@ def test_delete_job(jobstore, make_tag_args, fake_user_info_resolver):
 
     delete_job(req, js=jobstore, user_info_resolver=fake_user_info_resolver)
 
-    assert jobstore.get_job(job.id).status == "deleted"
+    with pytest.raises(MissingResourceError):
+        jobstore.get_job(job.id)
 
     # check that mismatched tenant id raises ForbiddenError
     job = jobstore.create_job(CreateQueueItem(qid="iq__test", model=args.feature), auth="token")
-    jobstore.update_job(UpdateJobRequest(id=job.id, status="succeeded"), "token")
+    jobstore.complete_job(CompleteJobRequest(id=job.id, status="succeeded"), "token")
 
     fake_user_info_resolver.get_user_info = Mock(return_value=UserInfo(
         user_adr="0x123",

@@ -65,7 +65,7 @@ def app_config(static_dir, tagger_config, content_config, fetcher_config, contai
     return AppConfig(
         root_dir=static_dir,
         content=content_config,
-        jobstore=JobStoreConfig(base_url=os.path.join(static_dir, "jobstore")),
+        jobstore=JobStoreConfig(base_dir=os.path.join(static_dir, "jobstore")),
         tagstore=TagstoreConfig(
             base_dir=os.path.join(static_dir, "tags")
         ),

@@ -6,9 +6,10 @@ import time
 from unittest.mock import Mock
 
 from src.common.errors import BadRequestError, MissingResourceError
+from src.service.dependency_resolver import JobDependencies
 from src.service.impl.queue_based import QueueService
 from src.service.model import StatusArgs
-from src.tagging.fabric_tagging.queue.model import CreateQueueItem, ListJobArgs, UpdateJobRequest
+from src.tagging.fabric_tagging.queue.model import CreateQueueItem, ListJobArgs, CompleteJobRequest
 from src.api.tagging.request_format import JobSpec, StartJobsRequest
 from src.common.content import Content
 from src.fetch.model import LiveScope
@@ -124,8 +125,9 @@ def test_live_error_reported_as_cancelled(queue_service: QueueService, make_tag_
         ListJobArgs(qid=content.qid, include_unready=True), content.token
     )
     for item in items:
-        queue_service.jobstore.update_job(
-            UpdateJobRequest(id=item.id, status="failed", error="404 Client Error"),
+        assert queue_service.jobstore.claim_job(item.id, auth=content.token)
+        queue_service.jobstore.complete_job(
+            CompleteJobRequest(id=item.id, status="failed", error="404 Client Error"),
             auth=content.token,
         )
 
@@ -218,3 +220,20 @@ def test_pending_job_status(queue_service: QueueService):
     assert report.status == "pending"
     assert report.model == "asr"
     assert report.params == {}
+
+
+def test_release_refused_by_queue_cancels_job(queue_service: QueueService, queue_jobstore, fake_qfactory, make_tag_args):
+    """A job active for the same model and stream that local duplicate detection missed, e.g. submitted through
+    another tagger instance, makes the queue refuse the release."""
+    content = Content(qid="test", token="")
+    args = make_tag_args(feature="caption", stream="video")
+    first_id = enqueue(queue_service, content, [args])[0]
+
+    resolver = Mock(resolve=Mock(return_value=[JobDependencies(parents=[], duplicate_of=None)]))
+    other_instance = QueueService(queue_jobstore, resolver, arg_resolver=Mock(), qfactory=fake_qfactory)
+    second_id = enqueue(other_instance, content, [args])[0]
+
+    assert queue_jobstore.get_job(first_id).status == "queued"
+    second = queue_jobstore.get_job(second_id)
+    assert second.status == "cancelled"
+    assert "already active" in second.error

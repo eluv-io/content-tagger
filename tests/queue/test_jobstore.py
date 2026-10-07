@@ -1,13 +1,17 @@
 """Tests for the JobStore interface, exercised via the jobstore fixture."""
 
+import pytest
+
+from src.common.errors import MissingResourceError
 from src.fetch.model import VideoScope
+from src.service.model import TagDetails
 from src.tagging.fabric_tagging.model import TagArgs
 from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tagging.fabric_tagging.queue.model import (
+    CompleteJobRequest,
     CreateQueueItem,
     ListJobArgs,
     ReleaseJobRequest,
-    UpdateJobRequest,
 )
 
 
@@ -29,13 +33,33 @@ def _make_tag_args(feature: str = "test_feature") -> TagArgs:
     )
 
 
-def _create_queued(jobstore, qid: str = "iq__test", feature: str = "test_feature", deps: list = [], additional_info: dict = {}):
+def _create_queued(jobstore, qid: str = "iq__test", feature: str = "test_feature", deps: list = [], additional_info: dict = {}, resource: str | None = None):
     job = jobstore.create_job(CreateQueueItem(qid=qid, model=feature), auth="test-auth")
     jobstore.release_job(
-        ReleaseJobRequest(id=job.id, params=_make_tag_args(feature), deps=deps, additional_info=additional_info),
+        ReleaseJobRequest(id=job.id, params=_make_tag_args(feature), deps=deps, additional_info=additional_info, resource=resource or job.id),
         auth="test-auth",
     )
     return jobstore.get_job(job.id)
+
+
+def _create_running(jobstore, **kwargs):
+    job = _create_queued(jobstore, **kwargs)
+    assert jobstore.claim_job(job.id, auth="test-auth")
+    return job
+
+
+def _details(progress: float = 0.5) -> TagDetails:
+    return TagDetails(
+        tag_status="Tagging content",
+        time_running=1.0,
+        progress=progress,
+        tagging_progress="1/2",
+        tagged_duration=0,
+        total_parts=2,
+        downloaded_parts=2,
+        tagged_parts=1,
+        warnings=None,
+    )
 
 
 def _list_all(jobstore) -> list:
@@ -130,58 +154,85 @@ class TestClaimJob:
         assert jobstore.claim_job(job_id, auth="test-auth") is False
 
 
-class TestUpdateJob:
-    def test_update_status_to_succeeded(self, jobstore):
-        _create_queued(jobstore)
-        job_id = _list_all(jobstore)[0].id
-        jobstore.claim_job(job_id, auth="test-auth")
+class TestCompleteJob:
+    def test_complete_running_job_as_succeeded(self, jobstore):
+        job = _create_running(jobstore)
 
-        jobstore.update_job(
-            UpdateJobRequest(
-                id=job_id,
-                status="succeeded",
-                status_details=None,
-            ),
-            auth="test-auth",
-        )
+        assert jobstore.complete_job(CompleteJobRequest(id=job.id, status="succeeded"), auth="test-auth")
 
         succeeded = jobstore.list_jobs(ListJobArgs(status="succeeded"), auth="test-auth")
         assert len(succeeded) == 1
-        assert succeeded[0].id == job_id
+        assert succeeded[0].id == job.id
 
-    def test_update_status_to_failed_with_error(self, jobstore):
-        _create_queued(jobstore)
-        job_id = _list_all(jobstore)[0].id
+    def test_complete_running_job_as_failed_with_error(self, jobstore):
+        job = _create_running(jobstore)
 
-        jobstore.update_job(
-            UpdateJobRequest(
-                id=job_id,
-                status="failed",
-                error="something went wrong",
-                status_details=None,
-            ),
+        jobstore.complete_job(
+            CompleteJobRequest(id=job.id, status="failed", error="something went wrong", status_details=_details()),
             auth="test-auth",
         )
 
         failed = jobstore.list_jobs(ListJobArgs(status="failed"), auth="test-auth")
         assert len(failed) == 1
         assert failed[0].error == "something went wrong"
+        assert failed[0].status_details == _details()
+
+    def test_running_job_cant_complete_as_cancelled(self, jobstore):
+        job = _create_running(jobstore)
+        assert not jobstore.complete_job(CompleteJobRequest(id=job.id, status="cancelled"), auth="test-auth")
+        assert jobstore.get_job(job.id).status == "running"
+
+    def test_queued_job_cant_complete(self, jobstore):
+        job = _create_queued(jobstore)
+        assert not jobstore.complete_job(CompleteJobRequest(id=job.id, status="succeeded"), auth="test-auth")
+
+    def test_ended_job_cant_complete(self, jobstore):
+        job = _create_running(jobstore)
+        jobstore.complete_job(CompleteJobRequest(id=job.id, status="succeeded"), auth="test-auth")
+        assert not jobstore.complete_job(CompleteJobRequest(id=job.id, status="failed"), auth="test-auth")
+        assert jobstore.get_job(job.id).status == "succeeded"
+
+    def test_failure_cascades_to_dependents(self, jobstore):
+        parent = _create_running(jobstore)
+        child = _create_queued(jobstore, deps=[parent.id])
+        grandchild = _create_queued(jobstore, deps=[child.id])
+
+        jobstore.complete_job(CompleteJobRequest(id=parent.id, status="failed"), auth="test-auth")
+
+        assert jobstore.get_job(child.id).status == "failed"
+        assert jobstore.get_job(grandchild.id).status == "failed"
+
+
+class TestProgress:
+    def test_update_progress_records_details(self, jobstore):
+        job = _create_running(jobstore)
+        job = jobstore.update_progress(job.id, _details(0.25), auth="test-auth")
+        assert job.status == "running"
+        assert job.status_details == _details(0.25)
+
+    def test_update_progress_reports_stop_request(self, jobstore):
+        job = _create_running(jobstore)
+        jobstore.cancel_job(job.id, auth="test-auth")
+        assert jobstore.update_progress(job.id, _details(), auth="test-auth").status == "cancelling"
+
+    def test_update_progress_on_ended_job_returns_status(self, jobstore):
+        job = _create_running(jobstore)
+        jobstore.complete_job(CompleteJobRequest(id=job.id, status="succeeded"), auth="test-auth")
+        assert jobstore.update_progress(job.id, _details(), auth="test-auth").status == "succeeded"
 
 
 class TestStopJob:
-    def test_stop_sets_stop_requested(self, jobstore):
-        _create_queued(jobstore)
-        job_id = _list_all(jobstore)[0].id
+    def test_cancelling_job_completes_as_cancelled(self, jobstore):
+        job = _create_running(jobstore)
+        jobstore.cancel_job(job.id, auth="test-auth")
+        assert jobstore.complete_job(CompleteJobRequest(id=job.id, status="cancelled"), auth="test-auth")
+        assert jobstore.get_job(job.id).status == "cancelled"
 
-        jobstore.stop_job(job_id, auth="test-auth")
-
-        jobs = _list_all(jobstore)
-        assert jobs[0].stop_requested is True
-
-    def test_stop_requested_is_false_before_stop(self, jobstore):
-        _create_queued(jobstore)
-        jobs = _list_all(jobstore)
-        assert jobs[0].stop_requested is False
+    def test_cancelling_job_that_ended_on_its_own_completes_as_succeeded(self, jobstore):
+        job = _create_running(jobstore)
+        jobstore.cancel_job(job.id, auth="test-auth")
+        assert jobstore.complete_job(CompleteJobRequest(id=job.id, status="succeeded"), auth="test-auth")
+        assert jobstore.get_job(job.id).status == "succeeded"
 
 def test_dependency_listing(jobstore: JobStore):
     job = _create_queued(jobstore)
@@ -207,7 +258,7 @@ class TestPendingJobs:
         job = jobstore.create_job(CreateQueueItem(qid="iq__test", model="m"), auth="test-auth")
 
         released = jobstore.release_job(
-            ReleaseJobRequest(id=job.id, params=_make_tag_args("m"), deps=[dep.id], additional_info={"title": "t"}),
+            ReleaseJobRequest(id=job.id, params=_make_tag_args("m"), deps=[dep.id], additional_info={"title": "t"}, resource="r"),
             auth="test-auth",
         )
 
@@ -220,10 +271,10 @@ class TestPendingJobs:
 
     def test_release_fails_if_not_pending(self, jobstore):
         job = jobstore.create_job(CreateQueueItem(qid="iq__test", model="m"), auth="test-auth")
-        jobstore.stop_job(job.id, auth="test-auth")
+        jobstore.cancel_job(job.id, auth="test-auth")
 
         released = jobstore.release_job(
-            ReleaseJobRequest(id=job.id, params=_make_tag_args("m"), deps=[], additional_info={}),
+            ReleaseJobRequest(id=job.id, params=_make_tag_args("m"), deps=[], additional_info={}, resource="r"),
             auth="test-auth",
         )
 
@@ -239,19 +290,76 @@ class TestPendingJobs:
 class TestStopCancels:
     def test_stop_pending_job_cancels(self, jobstore):
         job = jobstore.create_job(CreateQueueItem(qid="iq__test", model="m"), auth="test-auth")
-        jobstore.stop_job(job.id, auth="test-auth")
-        assert jobstore.get_job(job.id).status == "cancelled"
+        jobstore.cancel_job(job.id, auth="test-auth", reason="duplicate")
+        job = jobstore.get_job(job.id)
+        assert job.status == "cancelled"
+        assert job.error == "duplicate"
 
     def test_stop_queued_job_cancels(self, jobstore):
         job = _create_queued(jobstore)
-        jobstore.stop_job(job.id, auth="test-auth")
+        jobstore.cancel_job(job.id, auth="test-auth")
         assert jobstore.get_job(job.id).status == "cancelled"
         assert jobstore.claim_job(job.id, auth="test-auth") is False
 
-    def test_stop_running_job_only_flags_it(self, jobstore):
-        job = _create_queued(jobstore)
-        jobstore.claim_job(job.id, auth="test-auth")
-        jobstore.stop_job(job.id, auth="test-auth")
-        job = jobstore.get_job(job.id)
-        assert job.status == "running"
-        assert job.stop_requested is True
+    def test_stop_running_job_makes_it_cancelling(self, jobstore):
+        job = _create_running(jobstore)
+        jobstore.cancel_job(job.id, auth="test-auth")
+        assert jobstore.get_job(job.id).status == "cancelling"
+
+    def test_cancel_cascades_to_dependents(self, jobstore):
+        parent = _create_running(jobstore)
+        child = _create_queued(jobstore, deps=[parent.id])
+
+        jobstore.cancel_job(parent.id, auth="test-auth")
+
+        child = jobstore.get_job(child.id)
+        assert child.status == "cancelled"
+        assert parent.id in child.error
+
+
+class TestDependencies:
+    def test_child_is_claimable_once_parent_succeeds(self, jobstore):
+        parent = _create_running(jobstore)
+        child = _create_queued(jobstore, deps=[parent.id])
+        assert jobstore.claim_job(child.id, auth="test-auth") is False
+
+        jobstore.complete_job(CompleteJobRequest(id=parent.id, status="succeeded"), auth="test-auth")
+
+        assert [j.id for j in jobstore.list_jobs(ListJobArgs(status="queued"), auth="test-auth")] == [child.id]
+        assert jobstore.claim_job(child.id, auth="test-auth") is True
+
+
+def test_list_limit(jobstore):
+    for _ in range(3):
+        _create_queued(jobstore)
+    assert len(jobstore.list_jobs(ListJobArgs(status="queued", limit=2), auth="test-auth")) == 2
+
+
+def test_delete_ended_job(jobstore):
+    job = _create_running(jobstore)
+    jobstore.complete_job(CompleteJobRequest(id=job.id, status="succeeded"), auth="test-auth")
+
+    jobstore.delete_job(job.id, auth="test-auth")
+
+    with pytest.raises(MissingResourceError):
+        jobstore.get_job(job.id)
+    assert _list_all(jobstore) == []
+
+
+class TestResources:
+    def test_release_refused_while_resource_active(self, jobstore):
+        _create_queued(jobstore, resource="iq__test/m/video")
+        job = jobstore.create_job(CreateQueueItem(qid="iq__test", model="m"), auth="test-auth")
+
+        released = jobstore.release_job(
+            ReleaseJobRequest(id=job.id, params=_make_tag_args("m"), deps=[], additional_info={}, resource="iq__test/m/video"),
+            auth="test-auth",
+        )
+
+        assert released is False
+        assert jobstore.get_job(job.id).status == "pending"
+
+    def test_release_allowed_once_resource_ended(self, jobstore):
+        first = _create_running(jobstore, resource="r")
+        jobstore.complete_job(CompleteJobRequest(id=first.id, status="succeeded"), auth="test-auth")
+        assert _create_queued(jobstore, resource="r").status == "queued"

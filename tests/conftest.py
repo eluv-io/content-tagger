@@ -15,6 +15,7 @@ from src.tags.vectorstore.factory import VectorstoreFactory
 from src.tags.vectorstore.model import VectorstoreConfig
 from src.common.content import Content, ContentConfig, QAPIFactory
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
+from src.tagging.fabric_tagging.queue.qmanager_jobstore import QueueManagerJobStore
 from src.status.get_info import UserInfo, UserInfoResolver
 
 dotenv.load_dotenv()
@@ -159,13 +160,12 @@ def fetcher_config() -> FetcherConfig:
 def jobstore(temp_dir, fake_user_info_resolver) -> JobStore:
     """Create a JobStore for testing.
     
-    If JOBSTORE_URL is set, a remote jobstore would be used — but that is not
-    yet implemented.  If the variable is not set the local FsJobStore backed by
-    a temporary directory is used instead.
+    If JOBSTORE_URL is set, the queue manager at that url is used, authenticated with
+    JOBSTORE_WORKER_SECRET. Otherwise a local FsJobStore backed by a temporary directory is used.
     """
     url = os.getenv("JOBSTORE_URL")
     if url:
-        raise NotImplementedError("Remote jobstore (JOBSTORE_URL) is not yet implemented")
+        return QueueManagerJobStore(url, os.getenv("JOBSTORE_WORKER_SECRET"), timeout=30)
     return FsJobStore(store_dir=os.path.join(temp_dir, "jobstore"), user_info_resolver=fake_user_info_resolver)
 
 @pytest.fixture
