@@ -382,3 +382,12 @@ def test_stop_queued_job_doesnt_free_resources(system_tagger: ContainerScheduler
     # check that resources are fully restored
     final_resources = system_tagger.resource_state.available
     assert final_resources == total_resources, f"Final resources {final_resources} do not match total {total_resources}"
+
+def test_has_room_counts_running_and_waiting_containers(system_tagger: ContainerScheduler):
+    for _ in range(3):
+        system_tagger.start(MockTagContainer(work_duration=1.0))
+
+    # two are running on the gpus and one is waiting for them
+    assert not system_tagger.has_room({"A6000": 1})
+    assert system_tagger.has_room({"cpu_juice": 4})
+    assert not system_tagger.has_room({"cpu_juice": 5})

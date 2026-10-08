@@ -32,7 +32,6 @@ def _job_status_from_report(report: TagStatusResult) -> job_status:
 @dataclass(frozen=True)
 class TagRunnerConfig:
     poll_interval: float
-    max_jobs: int
 
 @dataclass(frozen=True)
 class JobInfo:
@@ -126,27 +125,19 @@ class TagRunner:
             self._shutdown.wait(self.cfg.poll_interval)
 
     def _poll_once(self) -> None:
-        """Claim a handful of queued jobs and start them."""
+        """Claim the queued jobs the system has the resources for and start them."""
         if self._quiescing.is_set():
             return
 
-        free = self.cfg.max_jobs - len(self._running_jobs)
-        if free <= 0:
-            return
-
-        queued = self.jobstore.list_jobs(ListJobArgs(status="queued", limit=free), auth="")
+        queued = self.jobstore.list_jobs(ListJobArgs(status="queued"), auth="")
         for item in queued:
             assert item.params is not None
-            if item.id in self._running_jobs:
+            if item.id in self._running_jobs or not self.tagger.has_room(item.params.feature):
                 continue
             with logger.contextualize(**_item_log_context(item)):
                 self._try_start(item)
 
     def _try_start(self, item: QueueItem) -> None:
-        if len(self._running_jobs) >= self.cfg.max_jobs:
-            # don't pull any more jobs
-            return
-
         claimed = self.jobstore.claim_job(item.id, item.auth)
         if not claimed:
             return

@@ -104,6 +104,14 @@ class TaggerWorker:
         self._submit(request)
         self.actor_thread.join(timeout=5.0)
 
+    def has_room(self, feature: str) -> bool:
+        """Checks if this model is served here and the system has the resources to start tagging with it now."""
+        try:
+            resources = self.cregistry.get_model_config(feature).resources
+        except BadRequestError:
+            return False
+        return self.system_tagger.has_room(resources)
+
     def shutdown_requested(self) -> bool:
         return self.shutdown_signal
     
@@ -239,7 +247,10 @@ class TaggerWorker:
         if jobid in self.jobstore.active_jobs:
             message.response_mailbox.put(Response(data=TagStartResult(job_id=jobid, started=False, message=f"A job with params {jobid} is already running"), error=None))
         else:
+            # the container starts right away so the job holds its resources while it fetches
+            job.state.taghandle = self.system_tagger.start(job.state.container, job.state.tagging_done)
             self.jobstore.active_jobs[jobid] = job
+            self._spawn(self._await_tagging, job)
 
             self._submit_async(EnterFetchingPhase(job_id=jobid))
 
@@ -420,7 +431,7 @@ class TaggerWorker:
 
         job.state.status = "Tagging content"
 
-        if not job.state.taghandle and dl_res.done and not new_sources:
+        if not job.state.media.downloaded and dl_res.done:
             if job.state.media.failed and not job.state.media.downloaded:
                 self._request_job_end(
                     jobid,
@@ -432,14 +443,6 @@ class TaggerWorker:
             logger.info("Fetcher finished with no media, aborting the job.")
             self._submit_async(EnterCompletePhase(job_id=jobid))
             return
-
-        if not job.state.taghandle and (new_sources or not dl_res.done):
-            # schedule tagging even without media if more is coming (e.g. a livestream that hasn't started)
-            uid = self.system_tagger.start(job.state.container, job.state.tagging_done)
-            job.state.taghandle = uid
-
-            # spawn thread to wait for tagging to finish
-            self._spawn(self._await_tagging, job)
 
         if new_sources:
             self._send_media(job.state.container, new_sources)

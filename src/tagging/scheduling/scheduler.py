@@ -84,6 +84,12 @@ class ContainerScheduler:
         self.mailbox.put(message)
         return response_queue.get()
 
+    def has_room(self, required_resources: SystemResources) -> bool:
+        """Checks if a container with these requirements would start now, counting containers waiting to start."""
+        response_queue = queue.Queue()
+        self.mailbox.put(Message(MessageType.HAS_ROOM, {"resources": required_resources}, response_queue))
+        return response_queue.get()
+
     def stop(self, jobid: str) -> ContainerJobStatus | None:
         """Stop a job and return its status. Return None if jobid not found."""
         logger.info("Received request to stop job", extra={"jobid": jobid[:8]})
@@ -188,6 +194,8 @@ class ContainerScheduler:
             self._handle_stop_job(message)
         elif message.type == MessageType.CHECK_CAPACITY:
             self._handle_check_capacity(message)
+        elif message.type == MessageType.HAS_ROOM:
+            self._handle_has_room(message)
         elif message.type == MessageType.GET_STATUS:
             self._handle_get_status(message)
         elif message.type == MessageType.SHUTDOWN:
@@ -278,6 +286,14 @@ class ContainerScheduler:
         can_start = self._can_start(required_resources, self.resource_state.total)
         assert message.response_queue is not None
         message.response_queue.put(can_start)
+
+    def _handle_has_room(self, message: Message):
+        free = dict(self.resource_state.available)
+        for jobid in self.job_queue:
+            for resr, req in self.jobs[jobid].container.required_resources().items():
+                free[resr] = free.get(resr, 0) - req
+        assert message.response_queue is not None
+        message.response_queue.put(self._can_start(message.data["resources"], free))
 
     def _handle_get_status(self, message: Message):
         jobid = message.data["jobid"]

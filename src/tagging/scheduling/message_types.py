@@ -11,6 +11,7 @@ class MessageType(Enum):
     START_JOB = "start_job"
     STOP_JOB = "stop_job"
     CHECK_CAPACITY = "check_capacity"
+    HAS_ROOM = "has_room"
     GET_STATUS = "get_status"
     SHUTDOWN = "shutdown"
     CONTAINER_FINISHED = "container_finished"

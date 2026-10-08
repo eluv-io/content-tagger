@@ -8,7 +8,7 @@ import time
 from unittest.mock import Mock
 import pytest
 
-from src.common.errors import MissingResourceError
+from src.common.errors import BadRequestError, MissingResourceError
 from src.service.impl.queue_based import QueueService
 from src.service.model import *
 from src.tag_containers.containers import TagContainer
@@ -156,8 +156,8 @@ def test_worker_tag_fails(queue_client, q, make_tag_args, tag_runner):
     assert failed_jobs[0].error == "Tagging failed"
 
 
-def test_max_jobs_limits_concurrency(queue_client, q, make_tag_args, tag_runner):
-    """TagRunner should not claim more than max_jobs (=2) jobs concurrently."""
+def test_claims_limited_by_resources(queue_client, q, make_tag_args, tag_runner):
+    """TagRunner should only claim jobs the system has resources for: 2 gpus, each model takes one."""
 
     # Enqueue 3 jobs for distinct models (jobs take ~0.35s to complete)
     for feature in ("caption", "asr", "ocr"):
@@ -170,5 +170,14 @@ def test_max_jobs_limits_concurrency(queue_client, q, make_tag_args, tag_runner)
     running = jobstore.list_jobs(ListJobArgs(qid=q.qid, status="running"), auth="")
     queued = jobstore.list_jobs(ListJobArgs(qid=q.qid, status="queued"), auth="")
 
-    assert len(running) <= 2, f"Expected at most 2 running jobs (max_jobs=2), got {len(running)}"
+    assert len(running) <= 2, f"Expected at most 2 running jobs (2 gpus), got {len(running)}"
     assert len(queued) >= 1, f"Expected at least 1 job still queued, got {len(queued)}"
+
+
+def test_doesnt_claim_model_not_served(queue_client, q, make_tag_args, tag_runner):
+    tag_runner.tagger.cregistry.get_model_config = Mock(side_effect=BadRequestError("Model ocr not found"))
+
+    job_id = enqueue(queue_client, q, [make_tag_args(feature="ocr")])[0]
+    time.sleep(0.3)
+
+    assert tag_runner.jobstore.get_job(job_id).status == "queued"
