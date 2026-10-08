@@ -1,22 +1,21 @@
 from concurrent.futures import ThreadPoolExecutor
 import contextvars
-import threading
-from dataclasses import asdict
+from dataclasses import asdict, replace as dc_replace
 from functools import lru_cache
+import time
 
 from common_ml.utils.metrics import timeit
 
 from src.api.arg_resolver import ArgsResolver
-from src.api.tagging.request_format import StartJobsRequest
+from src.api.tagging.request_format import JobSpec, StartJobsRequest
 from src.common.content import Content, QAPIFactory
-from src.common.errors import BadRequestError, MissingResourceError
+from src.common.errors import BadRequestError, JobConflictError, MissingResourceError
 from src.common.logging import logger
 from src.fetch.model import LiveScope
 from src.service.dependency_resolver import DependencyResolver
 from src.service.model import *
-from src.tagging.fabric_tagging.model import TagArgs
 from src.tagging.fabric_tagging.queue.abstract import JobStore
-from src.tagging.fabric_tagging.queue.model import CreateQueueItem, ListJobArgs, QueueItem, ReleaseJobRequest, UpdateJobRequest
+from src.tagging.fabric_tagging.queue.model import CompleteJobRequest, CreateQueueItem, ListJobArgs, QueueItem, ReleaseJobRequest
 from src.service.abstract import TaggerService
 
 logger = logger.bind(name="Queue Service")
@@ -40,75 +39,63 @@ class QueueService(TaggerService):
         self.arg_resolver = arg_resolver
         self.qfactory = qfactory
         self._executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="job-release")
-        # (qid, model) of requests whose jobs haven't been released yet
-        self._pending: set[tuple[str, str]] = set()
-        self._pending_lock = threading.Lock()
 
     def tag(self, q: Content, req: StartJobsRequest) -> list[TagStartResult]:
-        """Write a pending job per requested job and return right away. The request is resolved in the background,
-        after which the jobs are released to the queue, or failed if resolving raises. The whole request is refused if
-        any of its models already has a pending request on the content."""
+        """Submit jobs to the queue for tagging. 
+        
+        Resolves job dependencies and adds necessary job details to the job in the background before
+        releasing the job to be picked up by a worker. 
+        """
         self.arg_resolver.validate(req)
-        keys = {(q.qid, job.model) for job in req.jobs}
-        with self._pending_lock:
-            overlap = keys & self._pending
-            if overlap:
-                raise BadRequestError(f"Jobs are already pending on {q.qid} for: {', '.join(sorted(m for _, m in overlap))}")
-            self._pending |= keys
+        results: list[TagStartResult] = []
+        created: list[tuple[JobSpec, QueueItem]] = []
+        for job in req.jobs:
+            try:
+                item = self.jobstore.create_job(CreateQueueItem(qid=q.qid, model=job.model), auth=q.token)
+            except JobConflictError as e:
+                results.append(TagStartResult(job_id="", started=False, created_at=time.time(), dependencies=[], message=str(e)))
+                continue
+            except Exception as e:
+                # don't leave the jobs created so far pending, holding their models
+                self._fail_pending(q, [item.id for _, item in created], e)
+                raise
+            created.append((job, item))
+            results.append(TagStartResult(job_id=item.id, started=True, created_at=item.created_at, dependencies=[], message="Job submitted"))
+        if created:
+            job_ids = [item.id for _, item in created]
+            req = dc_replace(req, jobs=[job for job, _ in created])
+            self._executor.submit(contextvars.copy_context().run, self._resolve_and_release, q, job_ids, req)
+        return results
 
-        try:
-            items = [
-                self.jobstore.create_job(CreateQueueItem(qid=q.qid, model=job.model), auth=q.token)
-                for job in req.jobs
-            ]
-        except Exception:
-            self._forget_pending(keys)
-            raise
-        job_ids = [item.id for item in items]
-        self._executor.submit(contextvars.copy_context().run, self._release, q, job_ids, req)
-        return [
-            TagStartResult(job_id=item.id, started=True, created_at=item.created_at, dependencies=[], message="Job submitted")
-            for item in items
-        ]
-
-    def _forget_pending(self, keys: set[tuple[str, str]]) -> None:
-        with self._pending_lock:
-            self._pending -= keys
-
-    def _release(self, q: Content, job_ids: list[str], req: StartJobsRequest) -> None:
+    def _resolve_and_release(self, q: Content, job_ids: list[str], req: StartJobsRequest) -> None:
+        """Resolve job information needed for tagging and releasing the jobs into 'queued' state."""
         try:
             with timeit("resolving tag args"):
                 args = self.arg_resolver.resolve(req, q)
             for arg in args:
                 logger.info("resolved tag args", qid=q.qid, model=arg.feature, args=arg)
-            self.release(q, job_ids, args)
+            title = self._get_display_title(q)
+            parents = self.dependency_resolver.resolve(q, job_ids, args)
+            for job_id, arg, deps in zip(job_ids, args, parents):
+                self.jobstore.release_job(
+                    ReleaseJobRequest(id=job_id, params=arg, deps=deps, additional_info={"title": title}),
+                    auth=q.token,
+                )
         except Exception as e:
             if isinstance(e, BadRequestError):
                 logger.warning(f"failed to release jobs: {e.message}", job_ids=job_ids)
             else:
                 logger.opt(exception=e).error("failed to release jobs", job_ids=job_ids)
-            for job_id in job_ids:
-                try:
-                    if self.jobstore.get_job(job_id).status == "pending":
-                        self.jobstore.update_job(UpdateJobRequest(id=job_id, status="failed", error=str(e)), auth=q.token)
-                except Exception:
-                    logger.opt(exception=True).warning("failed to mark pending job as failed", job_id=job_id)
-        finally:
-            self._forget_pending({(q.qid, job.model) for job in req.jobs})
+            self._fail_pending(q, job_ids, e)
 
-    def release(self, q: Content, job_ids: list[str], args: list[TagArgs]) -> None:
-        """Release pending jobs (job_ids[i] runs args[i]) to the queue with their dependencies. A job duplicating one
-        that is already queued or running is cancelled instead."""
-        title = self._get_display_title(q)
-        deps = self.dependency_resolver.resolve(q, job_ids, args)
-        for job_id, arg, dep in zip(job_ids, args, deps):
-            if dep.duplicate_of is not None:
-                self.jobstore.stop_job(job_id, auth=q.token, reason=f"Job {dep.duplicate_of} is already running for this model and stream")
-                continue
-            self.jobstore.release_job(
-                ReleaseJobRequest(id=job_id, params=arg, deps=dep.parents, additional_info={"title": title}),
-                auth=q.token,
-            )
+    def _fail_pending(self, q: Content, job_ids: list[str], error: Exception) -> None:
+        """Cleanup all jobs in the request in case of an error"""
+        for job_id in job_ids:
+            try:
+                if self.jobstore.get_job(job_id).status == "pending":
+                    self.jobstore.complete_job(CompleteJobRequest(id=job_id, status="failed", error=str(error)), auth=q.token)
+            except Exception:
+                logger.opt(exception=True).warning("failed to mark pending job as failed", job_id=job_id)
 
     @lru_cache(maxsize=1024)
     def _get_display_title(self, q: Content) -> str:
@@ -145,7 +132,7 @@ class QueueService(TaggerService):
         
         results: list[TagStopResult] = []
         for item in items:
-            self.jobstore.stop_job(item.id, auth=item.auth)
+            self.jobstore.cancel_job(item.id, auth=item.auth)
             results.append(TagStopResult(job_id=item.id, message="Stop requested"))
             logger.info("stop requested", job_id=str(item.id))
 
@@ -169,7 +156,6 @@ class QueueService(TaggerService):
                 model=item.model,
                 stream=item.params.scope.get_stream() if item.params else "",
                 params=asdict(item.params) if item.params else {},
-                dependencies=item.deps,
                 tagger_details=item.status_details,
                 tenant=item.tenant,
                 user=item.user,

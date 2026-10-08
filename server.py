@@ -38,7 +38,7 @@ from src.api.tagging.handlers import tagging_blp
 from src.api.content_status.handlers import content_status_blp
 from src.api.tagging.model_param_schemas import MODEL_PARAM_SCHEMAS, model_params_component_name
 from src.api.tagging.scope_schemas import SCOPE_SCHEMAS, ScopeSchema, scope_component_name
-from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
+from src.tagging.fabric_tagging.queue.factory import create_jobstore
 from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tagging.tag_runner import TagRunner
 from src.common.errors import *
@@ -240,7 +240,7 @@ def create_app_queue_based(config: AppConfig) -> Flask:
 
     worker = _build_worker(config)
     user_info_resolver = UserInfoResolver(config.user_info_resolver)
-    job_store: JobStore = FsJobStore(config.jobstore.base_url, user_info_resolver=user_info_resolver)
+    job_store: JobStore = create_jobstore(config.jobstore, user_info_resolver)
     qfactory = QAPIFactory(config.content)
     tenant_defaults = TenantDefaultsResolver(user_info_resolver, qfactory)
     arg_resolver = ArgsResolver(config.model_configs, api_factory=qfactory, tenant_defaults=tenant_defaults)

@@ -19,8 +19,8 @@ from src.service.model import StatusArgs, TagDetails, TagJobStatusResult, TagSta
 from src.status.get_info import UserInfoResolverConfig
 from src.tag_containers.model import ModelConfig, RegistryConfig
 from src.tagging.fabric_tagging.model import TaggerWorkerConfig, JobID, TagArgs, TagStopResult
-from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
 from src.tagging.fabric_tagging.queue.model import JobStoreConfig
+from tests.conftest import TEST_JOB_TYPE
 from src.tagging.scheduling.model import SysConfig
 from src.tagging.tag_runner import TagRunner, TagRunnerConfig
 from src.tags.track_resolver import TrackArgs, LabelResolverConfig
@@ -65,7 +65,13 @@ def app_config(static_dir, tagger_config, content_config, fetcher_config, contai
     return AppConfig(
         root_dir=static_dir,
         content=content_config,
-        jobstore=JobStoreConfig(base_url=os.path.join(static_dir, "jobstore")),
+        # same queue as the jobstore fixture, which the app fixture uses to clear it around each test
+        jobstore=JobStoreConfig(
+            base_url=os.getenv("TEST_JOBSTORE_URL", ""),
+            worker_secret=os.getenv("JOBSTORE_WORKER_SECRET"),
+            base_dir=os.path.join(static_dir, "jobstore"),
+            job_type=TEST_JOB_TYPE,
+        ),
         tagstore=TagstoreConfig(
             base_dir=os.path.join(static_dir, "tags")
         ),
@@ -85,7 +91,7 @@ def app_config(static_dir, tagger_config, content_config, fetcher_config, contai
 
 
 @pytest.fixture()
-def app(static_dir, app_config):
+def app(static_dir, app_config, jobstore):
     shutil.rmtree(static_dir, ignore_errors=True)
     app = create_app_queue_based(app_config)
     app.config["TESTING"] = True
@@ -234,7 +240,6 @@ class MockTaggerService:
                 user=job["user"],
                 title=job["title"],
                 error=job["error"],
-                dependencies=[],
                 tagger_details=details,
             ))
         return results

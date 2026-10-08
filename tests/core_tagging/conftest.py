@@ -1,9 +1,11 @@
+from concurrent.futures import Executor, Future
 import os
 import threading
 import time
 from unittest.mock import Mock
 import pytest
 
+from src.api.tagging.request_format import JobSpec, StartJobsRequest
 from src.common.content import Content
 from src.fetch.model import *
 from src.service.dependency_resolver import DependencyResolver
@@ -12,7 +14,6 @@ from src.tag_containers.model import *
 from src.tagging.fabric_tagging.model import TaggerWorkerConfig, TagArgs
 from src.tagging.fabric_tagging.source_resolver import SourceResolver
 from src.tagging.fabric_tagging.tagger import TaggerWorker
-from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
 from src.tagging.fabric_tagging.queue.model import CreateQueueItem
 from src.tagging.tag_runner import TagRunner, TagRunnerConfig
 from src.service.impl.queue_based import QueueService
@@ -21,11 +22,24 @@ from src.tagging.scheduling.model import SysConfig
 from src.tags.track_resolver import TrackArgs, TrackResolver, LabelResolverConfig
 
 
+class InlineExecutor(Executor):
+    """Runs submitted work immediately so background releases are deterministic in tests."""
+    def submit(self, fn, /, *args, **kwargs):
+        f = Future()
+        try:
+            f.set_result(fn(*args, **kwargs))
+        except Exception as e:
+            f.set_exception(e)
+        return f
+
 def enqueue(queue_service: QueueService, q: Content, args: list[TagArgs]) -> list[str]:
-    """Create pending jobs for already resolved args and release them, as QueueService.tag does. Returns the job ids."""
-    ids = [queue_service.jobstore.create_job(CreateQueueItem(qid=q.qid, model=arg.feature), auth=q.token).id for arg in args]
-    queue_service.release(q, ids, args)
-    return ids
+    """Submit already resolved args through QueueService.tag, with the arg resolver stubbed to return them and the
+    release run inline. Returns the job ids, "" for a job that wasn't started."""
+    by_model = {arg.feature: arg for arg in args}
+    queue_service.arg_resolver.resolve = Mock(side_effect=lambda req, q: [by_model[job.model] for job in req.jobs]) # type: ignore
+    queue_service._executor = InlineExecutor() # type: ignore
+    results = queue_service.tag(q, StartJobsRequest(jobs=[JobSpec(model=arg.feature) for arg in args]))
+    return [r.job_id for r in results]
 
 @pytest.fixture
 def media_dir(temp_dir: str) -> str:
@@ -39,6 +53,7 @@ def model_configs():
     return {
         "caption": Mock(type="video", track_outputs=["object_detection"], track_dependencies=[]),
         "asr": Mock(type="audio", track_outputs=["speech_to_text"], track_dependencies=[]),
+        "ocr": Mock(type="video", track_outputs=["ocr"], track_dependencies=[]),
     }
 
 @pytest.fixture
@@ -404,10 +419,6 @@ def sample_tag_args(make_tag_args):
     ]
 
 @pytest.fixture
-def queue_jobstore(tmp_path, fake_user_info_resolver) -> FsJobStore:
-    return FsJobStore(store_dir=str(tmp_path / "jobstore"), user_info_resolver=fake_user_info_resolver)
-
-@pytest.fixture
 def fake_qapifactory():
     # for the queue client, all we need is to get the display title and add this to the job info
     return Mock(
@@ -421,21 +432,21 @@ def fake_qapifactory():
     )
 
 @pytest.fixture
-def dependency_resolver(queue_jobstore, track_resolver, model_configs) -> DependencyResolver:
-    return DependencyResolver(job_store=queue_jobstore, track_resolver=track_resolver, model_configs=model_configs)
+def dependency_resolver(jobstore, track_resolver, model_configs) -> DependencyResolver:
+    return DependencyResolver(job_store=jobstore, track_resolver=track_resolver, model_configs=model_configs)
 
 
 @pytest.fixture
-def queue_client(queue_jobstore, dependency_resolver, fake_qapifactory) -> QueueService:
-    return QueueService(queue_jobstore, dependency_resolver, arg_resolver=Mock(), qfactory=fake_qapifactory)
+def queue_client(jobstore, dependency_resolver, fake_qapifactory) -> QueueService:
+    return QueueService(jobstore, dependency_resolver, arg_resolver=Mock(), qfactory=fake_qapifactory)
 
 
 @pytest.fixture
-def tag_runner(fabric_tagger, queue_jobstore, qfactory):
-    """A TagRunner wired to the same FsJobStore, polling fast for tests."""
+def tag_runner(fabric_tagger, jobstore, qfactory):
+    """A TagRunner wired to the jobstore fixture, polling fast for tests."""
     runner = TagRunner(
         tagger=fabric_tagger,
-        jobstore=queue_jobstore,
+        jobstore=jobstore,
         cfg=TagRunnerConfig(poll_interval=0.1, max_jobs=2),
     )
     runner.start()

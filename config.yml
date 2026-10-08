@@ -50,7 +50,8 @@ tagger:
   heartbeat_interval: 60
 
 jobstore:
-  base_url: data/jobstore
+  base_url: ""
+  base_dir: data/jobstore
 
 container_registry:
   base_dir: data/containers

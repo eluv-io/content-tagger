@@ -26,6 +26,14 @@ The main class providing a unified interface for running tagging containers.
 (`"vector": [0.1, 0.2, ...]`); both land in the `data` field of a `ModelTag`. A model emitting
 vectors requires the caller to have specified an `index_qid`.
 
+**Environment:** the container receives `ELV_TOKEN` and `ELV_CONTENT` (the content qid), plus
+`ELV_INDEX_QID` when the job specifies an `index_qid`. Service endpoints `ELV_TAGSTORE_URL` and
+`ELV_VECTORSTORE_URL` default to `tagstore.base_url` / `vectorstore.base_url`; `ELV_GROUND_TRUTH_URL`
+and any other extra vars come from `container_registry.env` in config (empty values are dropped);
+the reserved vars above always win. These are server-config only,
+never request-supplied, since the container also holds `ELV_TOKEN`. Containers run with host
+networking, so `localhost` URLs work for test stubs.
+
 ---
 
 ### **LiveTagContainer**

@@ -9,13 +9,19 @@ definitions:
       status_details:
         additionalProperties: true
         type: object
-    required:
-    - status
     type: object
   CreateJobRequest:
     properties:
       additional_info:
         additionalProperties: true
+        type: object
+      auth:
+        additionalProperties: true
+        description: |-
+          Auth is an object, only returned by the /worker API. Whether it may be
+          given depends on the job type's auth_storage: "accept" stores it
+          as-is; "none" and "authorization" refuse it ("authorization" stores
+          {"Authorization": <this request's Authorization header>} instead).
         type: object
       dependencies:
         description: |-
@@ -24,12 +30,44 @@ definitions:
         items:
           type: string
         type: array
+      enforce_resource:
+        description: |-
+          EnforceResource checks resource_hash against other jobs: false (the
+          default) doesn't; "running" refuses (409) if a job with the same
+          resource_hash is running or cancelling; "active" if one hasn't ended
+          (pending/queued/running/cancelling). Checked on submit only - with
+          hold too - not when the job is released.
+        enum:
+        - "false"
+        - running
+        - active
+        type: string
+      hold:
+        description: |-
+          Hold creates the job as "pending" instead of "queued"; the submitting
+          user or a worker releases it later (POST /jobs/{id}/release).
+        type: boolean
       params:
         additionalProperties: true
         type: object
+      priority:
+        description: |-
+          Priority defaults to the configured default_priority. Higher numbers
+          are handed to workers first.
+        type: integer
+      queue:
+        description: Queue defaults to "default".
+        type: string
+      resource_hash:
+        description: |-
+          ResourceHash, if given, names a resource the job uses: two jobs with
+          the same one can't be running (or cancelling) at the same time.
+        type: string
       status_details:
         additionalProperties: true
         type: object
+      subtype:
+        type: string
       type:
         type: string
     required:
@@ -44,6 +82,9 @@ definitions:
     type: object
   JobDependencyResponse:
     properties:
+      archived:
+        description: 'Archived: one of the two jobs was deleted (archived).'
+        type: boolean
       dependency:
         type: string
       dependent:
@@ -56,6 +97,13 @@ definitions:
       additional_info:
         additionalProperties: true
         type: object
+      archived:
+        description: |-
+          Archived: the job was deleted, and this is its archived record
+          (archived_at says when).
+        type: boolean
+      archived_at:
+        type: string
       created_at:
         type: string
       error:
@@ -67,17 +115,23 @@ definitions:
       params:
         additionalProperties: true
         type: object
+      priority:
+        type: integer
       qid:
+        type: string
+      queue:
         type: string
       ready:
         type: boolean
+      resource_hash:
+        type: string
       status:
         $ref: '#/definitions/TagStatus'
       status_details:
         additionalProperties: true
         type: object
-      stop_requested:
-        type: boolean
+      subtype:
+        type: string
       tenant:
         type: string
       type:
@@ -107,30 +161,129 @@ definitions:
       total:
         type: integer
     type: object
-  UpdateJobRequest:
+  ReleaseJobRequest:
     properties:
-      status_details:
+      additional_info:
         additionalProperties: true
         type: object
-    required:
-    - status_details
+      dependencies:
+        description: |-
+          Dependencies replaces the job's whole dependency list ([] removes
+          them all).
+        items:
+          type: string
+        type: array
+      params:
+        additionalProperties: true
+        type: object
     type: object
   TagStatus:
     enum:
+    - pending
     - queued
     - running
+    - cancelling
     - succeeded
     - failed
     - cancelled
-    - deleted
     type: string
     x-enum-varnames:
+    - StatusPending
     - StatusQueued
     - StatusRunning
+    - StatusCancelling
     - StatusSucceeded
     - StatusFailed
     - StatusCancelled
-    - StatusDeleted
+  UpdateJobRequest:
+    properties:
+      additional_info:
+        additionalProperties: true
+        type: object
+      auth:
+        additionalProperties: true
+        description: |-
+          Auth replaces the job's auth object: pending jobs only, and only for
+          job types whose auth_storage is "accept".
+        type: object
+      dependencies:
+        items:
+          type: string
+        type: array
+      params:
+        additionalProperties: true
+        type: object
+      priority:
+        type: integer
+      resource_hash:
+        description: 'ResourceHash replaces the job''s resource_hash: pending jobs
+          only.'
+        type: string
+      status_details:
+        additionalProperties: true
+        type: object
+    type: object
+  WorkerJobResponse:
+    properties:
+      additional_info:
+        additionalProperties: true
+        type: object
+      archived:
+        description: |-
+          Archived: the job was deleted, and this is its archived record
+          (archived_at says when).
+        type: boolean
+      archived_at:
+        type: string
+      auth:
+        additionalProperties: true
+        type: object
+      created_at:
+        type: string
+      error:
+        type: string
+      id:
+        type: string
+      last_heartbeat:
+        type: string
+      params:
+        additionalProperties: true
+        type: object
+      priority:
+        type: integer
+      qid:
+        type: string
+      queue:
+        type: string
+      ready:
+        type: boolean
+      resource_hash:
+        type: string
+      status:
+        $ref: '#/definitions/TagStatus'
+      status_details:
+        additionalProperties: true
+        type: object
+      subtype:
+        type: string
+      tenant:
+        type: string
+      type:
+        type: string
+      updated_at:
+        type: string
+      user:
+        type: string
+    type: object
+  WorkerListJobsResponse:
+    properties:
+      jobs:
+        items:
+          $ref: '#/definitions/WorkerJobResponse'
+        type: array
+      meta:
+        $ref: '#/definitions/Meta'
+    type: object
 host: localhost:8106
 info:
   contact: {}
@@ -140,11 +293,15 @@ info:
 paths:
   /jobs:
     get:
-      description: 'Filters: status, qid, user, tenant, type. Authorization falls
-        back to the caller''s own jobs when the requested scope is not allowed.'
+      description: 'Filters: status, qid, user, tenant, type. With no filter, the
+        caller''s own jobs. A qid filter needs content info access to the qid. A tenant
+        filter needs a tenant/content admin of that tenant; with it, a user filter
+        may name any user (results stay limited to the tenant). Without admin rights
+        a tenant filter falls back to the caller''s own jobs; a user filter for another
+        user is refused. The worker secret may use any filters.'
       parameters:
-      - description: 'filter by status: queued, running, succeeded, failed, cancelled,
-          deleted'
+      - description: 'filter by status: pending, queued, running, cancelling, succeeded,
+          failed, cancelled'
         in: query
         name: status
         type: string
@@ -156,7 +313,8 @@ paths:
         in: query
         name: user
         type: string
-      - description: filter by tenant
+      - description: filter by tenant (iten...); needs a tenant/content admin of it,
+          else falls back to the caller's own jobs
         in: query
         name: tenant
         type: string
@@ -172,9 +330,30 @@ paths:
         in: query
         name: limit
         type: integer
+      - description: comma-separated subtypes to match (requires type)
+        in: query
+        name: subtype
+        type: string
+      - description: comma-separated queues to match
+        in: query
+        name: queue
+        type: string
+      - description: only jobs with priority >= this
+        in: query
+        name: priority_ge
+        type: integer
+      - description: only jobs with priority <= this
+        in: query
+        name: priority_le
+        type: integer
       - description: include jobs blocked on unmet dependencies (default false)
         in: query
         name: include_unready
+        type: boolean
+      - description: list deleted (archived) jobs instead of live ones, most recently
+          archived first (include_unready doesn't apply)
+        in: query
+        name: archived
         type: boolean
       produces:
       - application/json
@@ -183,12 +362,20 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/ListJobsResponse'
+      security:
+      - BearerAuth: []
+      - WorkerSecret: []
       summary: List jobs
       tags:
       - Jobs
   /jobs/{id}:
     delete:
-      description: Hard-deletes the row. For a soft delete, PATCH the job with status="deleted".
+      description: 'Moves an ended (cancelled, succeeded or failed) job, with its
+        dependency edges, to the archive: it leaves the live listing and the worker
+        API, while GET /jobs/{id} (and its dependencies/dependents) still find it,
+        with "archived": true (list archived jobs with GET /jobs?archived=true). Only
+        the user who submitted the job (or a tenant/content admin of its tenant) may
+        delete it. Returns the archived job. 409 if the job hasn''t ended.'
       parameters:
       - description: job id (uuid)
         in: path
@@ -198,17 +385,28 @@ paths:
       produces:
       - application/json
       responses:
-        "204":
-          description: no content
-        "404":
-          description: Not Found
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/JobResponse'
+        "403":
+          description: not the submitting user
           schema:
             additionalProperties: true
             type: object
-      summary: Delete a job by id
+        "409":
+          description: job hasn't ended
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete (archive) a job
       tags:
       - Jobs
     get:
+      description: 'Finds live and deleted jobs: a deleted job is returned from the
+        archive, with "archived": true and archived_at.'
       parameters:
       - description: job id (uuid)
         in: path
@@ -227,24 +425,35 @@ paths:
           schema:
             additionalProperties: true
             type: object
+      security:
+      - BearerAuth: []
+      - WorkerSecret: []
       summary: Get a job by id
       tags:
       - Jobs
     patch:
       consumes:
       - application/json
-      description: Status transitions are not allowed here; use POST /jobs/{id}/complete
-        to move a running job to a terminal state.
+      description: 'Progress: status_details on a pending job (running and cancelling
+        jobs report progress through PATCH /worker/jobs/{id}); an empty body is a
+        heartbeat. Running, cancelling and pending jobs get last_heartbeat set on
+        every call; a running or cancelling job with no heartbeat for heartbeat_timeout
+        (default 4h) is marked failed ("abandoned"). Only the user who submitted the
+        job (or a tenant/content admin of its tenant) may change params, additional_info,
+        dependencies, auth and resource_hash (pending jobs only; dependencies replaces
+        the whole list; auth only for job types whose auth_storage is "accept") or
+        priority (pending or queued jobs). type, subtype, queue and auth can''t be
+        changed. Status transitions are not allowed here. Returns 409 if the job''s
+        state doesn''t allow the change, e.g. it has already ended.'
       parameters:
       - description: job id (uuid)
         in: path
         name: id
         required: true
         type: string
-      - description: update spec
+      - description: progress (optional)
         in: body
         name: body
-        required: true
         schema:
           $ref: '#/definitions/UpdateJobRequest'
       produces:
@@ -254,7 +463,60 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/JobResponse'
-      summary: Update a running job's progress (status_details only)
+        "403":
+          description: not the submitting user
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: job state doesn't allow the change
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      - WorkerSecret: []
+      summary: 'Update a job: progress, or (submitting user only) params, dependencies,
+        priority, additional_info'
+      tags:
+      - Jobs
+  /jobs/{id}/cancel:
+    post:
+      description: 'Only the user who submitted the job (or a tenant/content admin
+        of its tenant) may cancel it. A pending or queued job becomes "cancelled"
+        right away. A running job becomes "cancelling": its worker sees that status
+        in its progress responses (which keep working) and completes it as "cancelled"
+        (or as "succeeded"/"failed" if it got there first); if the worker stops heartbeating
+        it is failed as abandoned, as for running jobs. Every pending or queued job
+        that transitively depends on it becomes "cancelled", with status_details.system_message
+        "parent job <id> cancelled". Returns 409 if the job has already ended or is
+        already cancelling.'
+      parameters:
+      - description: job id (uuid)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/JobResponse'
+        "403":
+          description: not the submitting user
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: job has already ended
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Cancel a job
       tags:
       - Jobs
   /jobs/{id}/claim:
@@ -265,6 +527,11 @@ paths:
         name: id
         required: true
         type: string
+      - description: claim even if another job with the same resource_hash is running
+          or cancelling
+        in: query
+        name: ignore_resource_hash
+        type: boolean
       produces:
       - application/json
       responses:
@@ -277,6 +544,14 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "409":
+          description: another job with the same resource_hash is running
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      - WorkerSecret: []
       summary: Atomically claim a queued job (transition queued -> running)
       tags:
       - Jobs
@@ -284,9 +559,14 @@ paths:
     post:
       consumes:
       - application/json
-      description: status must be one of "succeeded", "failed", "cancelled". On success,
-        dependents are advanced; otherwise the failure cascades to all transitively-dependent
-        queued/running jobs.
+      description: 'A running or pending job can be completed as "succeeded" or "failed";
+        a cancelling job as "cancelled" - or as "succeeded" or "failed", if its worker
+        finished before it saw the cancel, in which case status_details.system_message
+        notes that it was marked to be cancelled but finished instead (its dependents
+        stay cancelled). On success, dependents are advanced; on failure, the failure
+        cascades to all transitively-dependent pending/queued/running jobs. Returns
+        409 if the job''s state doesn''t allow the status. Special case: a body with
+        only status_details records a final status_details on a cancelled job.'
       parameters:
       - description: job id (uuid)
         in: path
@@ -307,15 +587,26 @@ paths:
           schema:
             $ref: '#/definitions/JobResponse'
         "400":
-          description: job not in running state, or invalid status
+          description: invalid status
           schema:
             additionalProperties: true
             type: object
+        "409":
+          description: job not running or pending
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      - WorkerSecret: []
       summary: Move a running job to a terminal state and resolve dependencies
       tags:
       - Jobs
   /jobs/{id}/dependencies:
     get:
+      description: 'Live edges plus archived ones (an edge is archived when either
+        of its jobs is deleted), which have "archived": true. Works for deleted jobs
+        too.'
       parameters:
       - description: job id (uuid)
         in: path
@@ -329,11 +620,17 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/JobDependenciesResponse'
+      security:
+      - BearerAuth: []
+      - WorkerSecret: []
       summary: List a job's dependencies and their satisfied state
       tags:
       - Jobs
-  /jobs/{id}/heartbeat:
-    post:
+  /jobs/{id}/dependents:
+    get:
+      description: 'The reverse of /dependencies: one row per job that lists this
+        job as a dependency, live or archived ("archived": true). Works for deleted
+        jobs too.'
       parameters:
       - description: job id (uuid)
         in: path
@@ -346,19 +643,35 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
-      summary: Renew lease (update last_heartbeat to now)
+            $ref: '#/definitions/JobDependenciesResponse'
+      security:
+      - BearerAuth: []
+      - WorkerSecret: []
+      summary: List the jobs that depend on a job
       tags:
       - Jobs
-  /jobs/{id}/stop:
+  /jobs/{id}/release:
     post:
+      consumes:
+      - application/json
+      description: 'Allowed for the user who submitted the job, a tenant/content admin
+        of its tenant, or a worker (worker secret). params, additional_info and dependencies
+        in the body are changed as by PATCH /jobs/{id} (dependencies replaces the
+        whole list), atomically with the release: if the release fails, nothing is
+        changed. The resource_hash isn''t checked here (enforce_resource is only for
+        submit, and is refused on release); claim still won''t run two jobs with the
+        same resource_hash at once. Returns 409 if the job isn''t pending.'
       parameters:
       - description: job id (uuid)
         in: path
         name: id
         required: true
         type: string
+      - description: params, additional_info, dependencies (all optional)
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/ReleaseJobRequest'
       produces:
       - application/json
       responses:
@@ -366,15 +679,40 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/JobResponse'
-      summary: Request a job to stop (sets stop_requested = true)
+        "400":
+          description: invalid body, or enforce_resource given (it is only for submit)
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: not the submitting user, a tenant admin or a worker
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: job is not pending
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      - WorkerSecret: []
+      summary: Release a pending job (pending -> queued)
       tags:
       - Jobs
   /q/{qid}/jobs:
     post:
       consumes:
       - application/json
-      description: Creates a queued job for the given content id. The user is resolved
-        from the bearer token; the tenant is resolved from the fabric.
+      description: 'Creates a queued job for the given content id ("pending" instead
+        with "hold": true). With a resource_hash, enforce_resource "running" or "active"
+        refuses the submit (409) if another job using it is running/cancelling, or
+        hasn''t ended - with hold too; it is checked on submit only, not on release.
+        The job type must be configured ([job_type.<type>], or [job_type.default]
+        for any type); its auth_storage decides what "auth" may be: "accept" stores
+        the given object, "none" refuses it, and "authorization" refuses it and stores
+        {"Authorization": <this request''s Authorization header>} instead. The user
+        is resolved from the bearer token; the tenant is resolved from the fabric.'
       parameters:
       - description: content id
         in: path
@@ -409,7 +747,225 @@ paths:
           schema:
             additionalProperties: true
             type: object
+      security:
+      - BearerAuth: []
       summary: Submit a new job to the queue
       tags:
       - Jobs
+  /worker/jobs:
+    get:
+      description: 'Same filters as GET /jobs, but ordered the way workers should
+        take jobs: highest priority first, then oldest first; and jobs whose resource_hash
+        is in use by a running or cancelling job are left out (unless ignore_resource_hash).
+        Jobs include auth.'
+      parameters:
+      - description: 'filter by status: pending, queued, running, cancelling, succeeded,
+          failed, cancelled'
+        in: query
+        name: status
+        type: string
+      - description: filter by qid
+        in: query
+        name: qid
+        type: string
+      - description: filter by user address
+        in: query
+        name: user
+        type: string
+      - description: filter by tenant
+        in: query
+        name: tenant
+        type: string
+      - description: filter by job type
+        in: query
+        name: type
+        type: string
+      - description: comma-separated subtypes to match (requires type)
+        in: query
+        name: subtype
+        type: string
+      - description: comma-separated queues to match
+        in: query
+        name: queue
+        type: string
+      - description: only jobs with priority >= this
+        in: query
+        name: priority_ge
+        type: integer
+      - description: only jobs with priority <= this
+        in: query
+        name: priority_le
+        type: integer
+      - description: pagination offset
+        in: query
+        name: start
+        type: integer
+      - description: pagination limit
+        in: query
+        name: limit
+        type: integer
+      - description: include jobs blocked on unmet dependencies (default false)
+        in: query
+        name: include_unready
+        type: boolean
+      - description: include jobs whose resource_hash is in use by a running or cancelling
+          job
+        in: query
+        name: ignore_resource_hash
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/WorkerListJobsResponse'
+      security:
+      - BearerAuth: []
+      - WorkerSecret: []
+      summary: List jobs for workers
+      tags:
+      - Worker
+  /worker/jobs/{id}:
+    patch:
+      consumes:
+      - application/json
+      description: 'Same as PATCH /jobs/{id}, except that params, additional_info
+        and dependencies (pending jobs only) may be changed with the worker secret
+        (other credentials can only report progress), and priority can''t be changed
+        here. A cancelling job keeps accepting progress and heartbeats, with no limit:
+        the returned status ("cancelling") is how the worker learns the job was cancelled,
+        after which it should complete it as "cancelled" (a worker that finished before
+        it saw the cancel may still complete it as "succeeded" or "failed"). The returned
+        job includes auth.'
+      parameters:
+      - description: job id (uuid)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: progress (optional)
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/UpdateJobRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/WorkerJobResponse'
+        "403":
+          description: field changes need the worker secret
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: job state doesn't allow the change
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      - WorkerSecret: []
+      summary: Update a job through the worker API
+      tags:
+      - Worker
+  /worker/jobs/{id}/claim:
+    post:
+      description: Same as POST /jobs/{id}/claim; the returned job includes auth.
+      parameters:
+      - description: job id (uuid)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: claim even if another job with the same resource_hash is running
+          or cancelling
+        in: query
+        name: ignore_resource_hash
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/WorkerJobResponse'
+        "400":
+          description: job not in queued state
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: another job with the same resource_hash is running
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      - WorkerSecret: []
+      summary: Atomically claim a queued job (transition queued -> running)
+      tags:
+      - Worker
+  /worker/jobs/{id}/complete:
+    post:
+      consumes:
+      - application/json
+      description: Same as POST /jobs/{id}/complete; the returned job includes auth.
+      parameters:
+      - description: job id (uuid)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: completion spec
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/CompleteJobRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/WorkerJobResponse'
+        "400":
+          description: invalid status
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: job not running or pending
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      - WorkerSecret: []
+      summary: Move a running job to a terminal state and resolve dependencies
+      tags:
+      - Worker
+securityDefinitions:
+  BearerAuth:
+    description: A fabric token, as "Bearer <token>" (or as the authorization query
+      parameter). The caller must be able to do a content info call on the job's qid.
+      A job's owner (the user who submitted it) or a tenant/content admin of the job's
+      tenant may also cancel, delete, release and change it.
+    in: header
+    name: Authorization
+    type: apiKey
+  WorkerSecret:
+    description: 'The worker secret (or the worker_secret query parameter), whose
+      SHA-256 is configured as qmanager_config.worker_secret. It preempts any token:
+      an invalid secret is a 403 even with a valid token, and a valid one makes the
+      request a worker''s, which may do what workers do (claim, progress, complete,
+      release, and change a pending job''s params, additional_info and dependencies
+      through /worker) but not submit, cancel or delete.'
+    in: header
+    name: X-Worker-Secret
+    type: apiKey
 swagger: "2.0"

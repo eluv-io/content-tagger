@@ -320,7 +320,7 @@ def test_double_run(client, q):
     data = response.get_json()
     assert data["jobs"][0]["started"] is True
     
-    # Try to start another job with replace=False (should be rejected)
+    # Try to start another job with replace=False (should not start)
     response = client.post(
         f"/{q.qid}/tag?authorization={video_auth}", 
         json={
@@ -333,7 +333,8 @@ def test_double_run(client, q):
             ]
         }
     )
-    assert response.status_code == 400
+    assert response.status_code == 200
+    assert response.get_json()["jobs"][0]["started"] is False
 
     # stop the job
     start = time.time()

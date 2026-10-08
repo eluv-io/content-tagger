@@ -49,7 +49,6 @@ class TagJobStatusResult:
     tenant: str
     user: str
     title: str
-    dependencies: list[str]
     error: str | None
     tagger_details: TagDetails | None
 

@@ -1,6 +1,7 @@
 import os
 import shutil
 import tempfile
+from typing import Iterator
 from unittest.mock import Mock
 import pytest
 import dotenv
@@ -8,6 +9,7 @@ import dotenv
 from src.fetch.model import FetcherConfig, VideoScope
 from src.tagging.fabric_tagging.model import TagArgs
 from src.tagging.fabric_tagging.queue.abstract import JobStore
+from src.tagging.fabric_tagging.queue.model import CompleteJobRequest, ListJobArgs
 from src.tags.datastore.abstract import Datastore
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.tags.tagstore.rest_tagstore import RestTagstore
@@ -15,6 +17,7 @@ from src.tags.vectorstore.factory import VectorstoreFactory
 from src.tags.vectorstore.model import VectorstoreConfig
 from src.common.content import Content, ContentConfig, QAPIFactory
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
+from src.tagging.fabric_tagging.queue.qmanager_jobstore import QueueManagerJobStore
 from src.status.get_info import UserInfo, UserInfoResolver
 
 dotenv.load_dotenv()
@@ -155,18 +158,34 @@ def fetcher_config() -> FetcherConfig:
         max_downloads=4
     )
 
+# the tests' jobs on the queue manager are stored under their own job type, so they can be cleared without touching others
+TEST_JOB_TYPE = "test-tag"
+
+def _clear_jobs(js: JobStore) -> None:
+    """Ends and deletes every test job, acting as each job's submitter with the token the queue stored for it."""
+    for job in js.list_jobs(ListJobArgs(include_unready=True), auth=""):
+        if job.status in ("pending", "queued"):
+            js.cancel_job(job.id, auth=job.auth)
+        elif job.status == "running":
+            js.complete_job(CompleteJobRequest(id=job.id, status="failed"), auth="")
+        elif job.status == "cancelling":
+            js.complete_job(CompleteJobRequest(id=job.id, status="cancelled"), auth="")
+    for job in js.list_jobs(ListJobArgs(include_unready=True), auth=""):
+        js.delete_job(job.id, auth=job.auth)
+
 @pytest.fixture
-def jobstore(temp_dir, fake_user_info_resolver) -> JobStore:
-    """Create a JobStore for testing.
-    
-    If JOBSTORE_URL is set, a remote jobstore would be used — but that is not
-    yet implemented.  If the variable is not set the local FsJobStore backed by
-    a temporary directory is used instead.
-    """
-    url = os.getenv("JOBSTORE_URL")
-    if url:
-        raise NotImplementedError("Remote jobstore (JOBSTORE_URL) is not yet implemented")
-    return FsJobStore(store_dir=os.path.join(temp_dir, "jobstore"), user_info_resolver=fake_user_info_resolver)
+def jobstore(temp_dir, fake_user_info_resolver, q) -> Iterator[JobStore]:
+    url = os.getenv("TEST_JOBSTORE_URL")
+    if not url:
+        yield FsJobStore(store_dir=os.path.join(temp_dir, "jobstore"), user_info_resolver=fake_user_info_resolver)
+        return
+    if not q.token:
+        # without auth set we can't use the real qmanager
+        pytest.skip("TEST_AUTH not set in environment")
+    js = QueueManagerJobStore(url, os.getenv("JOBSTORE_WORKER_SECRET"), timeout=30, job_type=TEST_JOB_TYPE)
+    _clear_jobs(js)
+    yield js
+    _clear_jobs(js)
 
 @pytest.fixture
 def make_tag_args():

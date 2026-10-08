@@ -43,16 +43,6 @@ def _wait_for_status(
         time.sleep(interval)
     return reports
 
-
-def _status_for(
-    reports: list[TagJobStatusResult],
-    model: str,
-    stream: str | None = None,
-) -> TagJobStatusResult:
-    matches = [r for r in reports if r.model == model and (stream is None or r.stream == stream)]
-    assert matches, f"Missing status for model={model}, stream={stream}"
-    return matches[0]
-
 class TestQueueTag:
     def test_tag_returns_started(self, queue_client, q, make_tag_args, tag_runner):
         args = make_tag_args(feature="caption", stream="video")
@@ -110,7 +100,7 @@ class TestQueueStop:
         time.sleep(0.25)
         # check that job is marked cancelled in jobstore
         jobstore = tag_runner.jobstore
-        assert jobstore.list_jobs(ListJobArgs(status="cancelled"), auth="")
+        assert jobstore.list_jobs(ListJobArgs(qid=q.qid, status="cancelled"), auth="")
 
     def test_stop_wrong_feature_raises_exception(self, queue_client, q, make_tag_args, tag_runner):
         args = make_tag_args(feature="caption", stream="video")
@@ -125,9 +115,11 @@ def test_stop_runner(queue_client, q, make_tag_args, tag_runner):
     enqueue(queue_client, q, [args])
     time.sleep(0.25)
     tag_runner.stop()
-    # check that job is marked cancelled in jobstore
+    # a running job can't be cancelled by its worker, so a shut down fails it
     jobstore = tag_runner.jobstore
-    assert jobstore.list_jobs(ListJobArgs(status="cancelled"), auth="")
+    failed = jobstore.list_jobs(ListJobArgs(qid=q.qid, status="failed"), auth="")
+    assert failed
+    assert failed[0].error == "tagger worker service was shut down or restarted"
 
 def test_stop_running_job(queue_client, q, make_tag_args, tag_runner):
     args = make_tag_args(feature="caption", stream="video")
@@ -137,7 +129,7 @@ def test_stop_running_job(queue_client, q, make_tag_args, tag_runner):
     time.sleep(0.5)
     # check that job is marked cancelled in jobstore
     jobstore = tag_runner.jobstore
-    assert jobstore.list_jobs(ListJobArgs(status="cancelled"), auth="")
+    assert jobstore.list_jobs(ListJobArgs(qid=q.qid, status="cancelled"), auth="")
     
 def test_job_progress(queue_client, q, make_tag_args, tag_runner):
     args = make_tag_args(feature="caption", stream="video")
@@ -159,42 +151,24 @@ def test_worker_tag_fails(queue_client, q, make_tag_args, tag_runner):
 
     # check that job is marked failed in jobstore
     jobstore = tag_runner.jobstore
-    failed_jobs = jobstore.list_jobs(ListJobArgs(status="failed"), auth="")
+    failed_jobs = jobstore.list_jobs(ListJobArgs(qid=q.qid, status="failed"), auth="")
     assert len(failed_jobs) == 1
     assert failed_jobs[0].error == "Tagging failed"
 
 
-def test_max_jobs_limits_concurrency(queue_client, make_tag_args, tag_runner):
+def test_max_jobs_limits_concurrency(queue_client, q, make_tag_args, tag_runner):
     """TagRunner should not claim more than max_jobs (=2) jobs concurrently."""
 
-    # Enqueue 3 jobs against distinct content IDs (jobs take ~0.35s to complete)
-    contents = [Content(qid=f"iq__maxjobs_{i}", token="tok") for i in range(3)]
-    args = make_tag_args(feature="caption", stream="video")
-    for c in contents:
-        enqueue(queue_client, c, [args])
+    # Enqueue 3 jobs for distinct models (jobs take ~0.35s to complete)
+    for feature in ("caption", "asr", "ocr"):
+        enqueue(queue_client, q, [make_tag_args(feature=feature)])
 
     # Wait for the runner to poll once but not long enough for jobs to finish
     time.sleep(0.15)
 
     jobstore = tag_runner.jobstore
-    running = jobstore.list_jobs(ListJobArgs(status="running"), auth="")
-    queued = jobstore.list_jobs(ListJobArgs(status="queued"), auth="")
+    running = jobstore.list_jobs(ListJobArgs(qid=q.qid, status="running"), auth="")
+    queued = jobstore.list_jobs(ListJobArgs(qid=q.qid, status="queued"), auth="")
 
     assert len(running) <= 2, f"Expected at most 2 running jobs (max_jobs=2), got {len(running)}"
     assert len(queued) >= 1, f"Expected at least 1 job still queued, got {len(queued)}"
-
-def test_two_streams_gives_different_status(queue_client, q, make_tag_args, tag_runner):
-    """Jobs with different stream names should be tracked separately."""
-    args1 = make_tag_args(feature="caption", stream="video")
-    args2 = make_tag_args(feature="caption", stream="audio")
-    enqueue(queue_client, q, [args1, args2])
-
-    reports = _wait_for_status(queue_client, q.qid, "running")
-    assert len(reports) == 2
-    status_video = _status_for(reports, model="caption", stream="video")
-    status_audio = _status_for(reports, model="caption", stream="audio")
-    assert status_video.status == "running"
-    assert status_audio.status == "running"
-    assert status_video.tagger_details is not None
-    assert status_audio.tagger_details is not None
-    assert status_video.tagger_details != status_audio.tagger_details

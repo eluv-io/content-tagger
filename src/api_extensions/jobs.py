@@ -5,7 +5,6 @@ from marshmallow import EXCLUDE, Schema, fields
 from src.common.errors import BadRequestError, ForbiddenError
 from src.status.get_info import UserInfoResolver
 from src.tagging.fabric_tagging.queue.abstract import JobStore
-from src.tagging.fabric_tagging.queue.model import UpdateJobRequest
 
 @dataclass
 class DeleteJobRequest:
@@ -49,6 +48,6 @@ def delete_job(
             f"Tried to delete job for tenant={item.tenant} but specified tenant={req.tenant}."
         )
 
-    js.update_job(UpdateJobRequest(id=req.job_id, status="deleted"), req.authorization)
+    js.delete_job(req.job_id, req.authorization)
 
     logger.info(f"Deleted job {req.job_id} for user {item.user} and tenant {item.tenant}")
