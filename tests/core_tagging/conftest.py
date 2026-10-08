@@ -106,6 +106,7 @@ class FakeTagContainer:
         self.worker_thread = None
         self._tag_cursor = 0
         self._output_vectors = output_vectors
+        self._eof = threading.Event()
 
     def start(self, gpu_idx: int | None = None) -> None:
         """
@@ -117,9 +118,10 @@ class FakeTagContainer:
         
         self.gpu_idx = gpu_idx
 
-        # Simulate work in a background thread
+        # Simulate work in a background thread, like a real container it runs until it gets eof
         def work():
             self.is_started = True
+            self._eof.wait()
             time.sleep(self.work_duration)
             self.is_stopped = True
 
@@ -153,7 +155,7 @@ class FakeTagContainer:
         return None
     
     def send_eof(self) -> None:
-        pass
+        self._eof.set()
 
     def info(self) -> ContainerInfo:
         return ContainerInfo(image_name=f"fake/{self.feature}", annotations={"io.test.fake": "1"})
@@ -243,7 +245,7 @@ class FakeTagContainer:
         return f"FakeContainer-{self.feature}"
     
     def required_resources(self):
-        return {}
+        return {"gpu": 1, "cpu_juice": 5}
     
     def is_content_aligned(self) -> bool:
         return False
@@ -260,19 +262,10 @@ class PartialResultContainer(FakeTagContainer):
             return [t for t in tags if t.source_media != sources[-1]]
 
         return tags
-    
-    def send_eof(self) -> None:
-        pass
 
 class FakeContainerRegistry:
-    def __init__(self):
-        self.containers = {}
-        
     def get(self, req: ContainerRequest) -> FakeTagContainer:
-        container_key = f"{req.model_id}_{req.media_dir}"
-        if container_key not in self.containers:
-            self.containers[container_key] = FakeTagContainer(req.media_dir, req.model_id)
-        return self.containers[container_key]
+        return FakeTagContainer(req.media_dir, req.model_id)
     
     def get_model_config(self, feature: str) -> ModelConfig:
         if feature == "caption":
@@ -447,7 +440,7 @@ def tag_runner(fabric_tagger, jobstore, qfactory):
     runner = TagRunner(
         tagger=fabric_tagger,
         jobstore=jobstore,
-        cfg=TagRunnerConfig(poll_interval=0.1, max_jobs=2),
+        cfg=TagRunnerConfig(poll_interval=0.1),
     )
     runner.start()
     yield runner

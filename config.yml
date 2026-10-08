@@ -15,7 +15,6 @@ vectorstore:
 
 tag_runner:
   poll_interval: 5.0
-  max_jobs: 5
 
 tag_converter:
   name_mapping:
