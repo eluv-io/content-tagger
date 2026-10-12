@@ -62,3 +62,10 @@ class CompleteJobRequest:
     status: job_status
     status_details: TagDetails | None = None
     error: str | None = None
+
+@dataclass
+class FailJobRequest:
+    id: str
+    error: str
+    status_details: TagDetails | None = None
+    retryable: bool = True

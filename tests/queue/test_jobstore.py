@@ -13,6 +13,7 @@ from src.tagging.fabric_tagging.model import TagArgs
 from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tagging.fabric_tagging.queue.model import (
     CompleteJobRequest,
+    FailJobRequest,
     CreateQueueItem,
     ListJobArgs,
     ReleaseJobRequest,
@@ -198,6 +199,38 @@ class TestCompleteJob:
 
         assert jobstore.get_job(child.id).status == "failed"
         assert jobstore.get_job(grandchild.id).status == "failed"
+
+
+# both backends allow one retry
+class TestFailJob:
+    def test_retryable_failure_requeues_until_out_of_retries(self, jobstore, q):
+        parent = _create_running(jobstore, q)
+        child = _create_queued(jobstore, q, deps=[parent.id])
+
+        assert jobstore.fail_job(FailJobRequest(id=parent.id, error="first attempt"), auth=q.token)
+        requeued = jobstore.get_job(parent.id)
+        assert requeued.status == "queued"
+        assert requeued.error == "first attempt"
+        assert jobstore.get_job(child.id).status == "queued"
+
+        assert jobstore.claim_job(parent.id, auth=q.token)
+        assert jobstore.fail_job(FailJobRequest(id=parent.id, error="second attempt"), auth=q.token)
+        assert jobstore.get_job(parent.id).status == "failed"
+        assert jobstore.get_job(child.id).status == "failed"
+
+    def test_non_retryable_failure_fails(self, jobstore, q):
+        job = _create_running(jobstore, q)
+
+        assert jobstore.fail_job(FailJobRequest(id=job.id, error="bad", status_details=_details(), retryable=False), auth=q.token)
+
+        failed = jobstore.get_job(job.id)
+        assert failed.status == "failed"
+        assert failed.error == "bad"
+        assert failed.status_details == _details()
+
+    def test_queued_job_cant_fail(self, jobstore, q):
+        job = _create_queued(jobstore, q)
+        assert not jobstore.fail_job(FailJobRequest(id=job.id, error="bad"), auth=q.token)
 
 
 class TestProgress:

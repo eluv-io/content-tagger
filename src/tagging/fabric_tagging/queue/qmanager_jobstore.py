@@ -148,6 +148,16 @@ class QueueManagerJobStore:
             return False
         return True
 
+    def fail_job(self, args: FailJobRequest, auth: str) -> bool:
+        body: dict = {"error": args.error, "retryable": args.retryable}
+        if args.status_details is not None:
+            body["status_details"] = details_to_dict(args.status_details)
+        try:
+            self._request("POST", f"/worker/jobs/{args.id}/fail", json=body)
+        except _Conflict:
+            return False
+        return True
+
     def cancel_job(self, id: str, auth: str, reason: str | None = None) -> None:
         try:
             job = self._request("POST", f"/jobs/{id}/cancel", as_user=auth)

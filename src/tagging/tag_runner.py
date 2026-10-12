@@ -70,6 +70,8 @@ class TagRunner:
         self.cfg = cfg
 
         self._running_jobs: dict[str, JobInfo] = {}
+
+        self._failed_jobs: set[str] = set()
         self._shutdown = threading.Event()
         self._quiescing = threading.Event()
 
@@ -97,7 +99,7 @@ class TagRunner:
             # Hard stop: end any jobs still tracked
             for job in list(self._running_jobs.values()):
                 try:
-                    self._complete(job, "failed", None, "tagger worker service was shut down or restarted")
+                    self._fail(job.id, job.auth, None, "tagger worker service was shut down or restarted")
                 except Exception as e:
                     logger.opt(exception=e).warning("failed to end job on shutdown", job_id=job.id)
         self._running_jobs.clear()
@@ -132,7 +134,9 @@ class TagRunner:
         queued = self.jobstore.list_jobs(ListJobArgs(status="queued"), auth="")
         for item in queued:
             assert item.params is not None
-            if item.id in self._running_jobs or not self.tagger.has_room(item.params.feature):
+            if item.id in self._running_jobs or item.id in self._failed_jobs:
+                continue
+            if not self.tagger.has_room(item.params.feature):
                 continue
             with logger.contextualize(**_item_log_context(item)):
                 self._try_start(item)
@@ -166,7 +170,7 @@ class TagRunner:
 
     def _error_job(self, item: QueueItem, error: Exception) -> None:
         try:
-            self.jobstore.complete_job(CompleteJobRequest(id=item.id, status="failed", error=str(error)), auth=item.auth)
+            self._fail(item.id, item.auth, None, str(error))
         except Exception as e:
             logger.opt(exception=e).warning("failed to update job with error status")
         finally:
@@ -218,8 +222,11 @@ class TagRunner:
         )
 
         try:
-            if r.status.status in TERMINAL_STATUSES:
-                self._complete(item, _job_status_from_report(r), details, r.status.error)
+            status = _job_status_from_report(r)
+            if status == "failed":
+                self._fail(item.id, item.auth, details, r.status.error or "tagging failed")
+            elif r.status.status in TERMINAL_STATUSES:
+                self._complete(item, status, details, r.status.error)
             else:
                 job = self.jobstore.update_progress(item.id, details, auth=item.auth)
                 if job.status == "cancelling":
@@ -242,6 +249,11 @@ class TagRunner:
         req = CompleteJobRequest(id=item.id, status=status, status_details=details, error=error)
         if not self.jobstore.complete_job(req, auth=item.auth):
             logger.warning("queue refused to complete job", status=status)
+
+    def _fail(self, id: str, auth: str, details: TagDetails | None, error: str) -> None:
+        self._failed_jobs.add(id)
+        if not self.jobstore.fail_job(FailJobRequest(id=id, error=error, status_details=details), auth=auth):
+            logger.warning("queue refused to fail job")
 
     def _finish_job(self, id: str) -> None:
         self._running_jobs.pop(id, None)

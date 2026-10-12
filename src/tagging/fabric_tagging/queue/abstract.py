@@ -27,6 +27,9 @@ class JobStore(Protocol):
     def complete_job(self, args: CompleteJobRequest, auth: str) -> bool:
         ...
 
+    def fail_job(self, args: FailJobRequest, auth: str) -> bool:
+        ...
+
     def cancel_job(self, id: str, auth: str, reason: str | None = None) -> None:
         ...
 

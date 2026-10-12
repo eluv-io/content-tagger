@@ -115,11 +115,10 @@ def test_stop_runner(queue_client, q, make_tag_args, tag_runner):
     enqueue(queue_client, q, [args])
     time.sleep(0.25)
     tag_runner.stop()
-    # a running job can't be cancelled by its worker, so a shut down fails it
-    jobstore = tag_runner.jobstore
-    failed = jobstore.list_jobs(ListJobArgs(qid=q.qid, status="failed"), auth="")
-    assert failed
-    assert failed[0].error == "tagger worker service was shut down or restarted"
+    # a shut down fails the attempt, so the job is requeued for another worker
+    job = tag_runner.jobstore.list_jobs(ListJobArgs(qid=q.qid, include_unready=True), auth="")[0]
+    assert job.status == "queued"
+    assert job.error == "tagger worker service was shut down or restarted"
 
 def test_stop_running_job(queue_client, q, make_tag_args, tag_runner):
     args = make_tag_args(feature="caption", stream="video")
@@ -146,14 +145,14 @@ def test_worker_tag_fails(queue_client, q, make_tag_args, tag_runner):
     tag_runner.tagger.tag = Mock(side_effect=Exception("Tagging failed"))
 
     args = make_tag_args(feature="caption", stream="video")
-    enqueue(queue_client, q, [args])
-    time.sleep(0.25)
+    job_id = enqueue(queue_client, q, [args])[0]
+    time.sleep(0.5)
 
-    # check that job is marked failed in jobstore
-    jobstore = tag_runner.jobstore
-    failed_jobs = jobstore.list_jobs(ListJobArgs(qid=q.qid, status="failed"), auth="")
-    assert len(failed_jobs) == 1
-    assert failed_jobs[0].error == "Tagging failed"
+    # the job is requeued for another worker, and this one doesn't claim it again
+    job = tag_runner.jobstore.get_job(job_id)
+    assert job.status == "queued"
+    assert job.error == "Tagging failed"
+    assert tag_runner.tagger.tag.call_count == 1
 
 
 def test_claims_limited_by_resources(queue_client, q, make_tag_args, tag_runner):

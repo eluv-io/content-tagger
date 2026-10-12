@@ -28,9 +28,11 @@ class FsJobStore:
         self,
         store_dir: str,
         user_info_resolver: UserInfoResolver,
+        max_retries: int = 1,
     ):
         self.store_dir = store_dir
         self.user_info_resolver = user_info_resolver
+        self.max_retries = max_retries
         # serializes read-modify-write on job files: API threads and the TagRunner
         # poll thread mutate the same job concurrently
         self._lock = threading.Lock()
@@ -206,6 +208,23 @@ class FsJobStore:
             self._set(args.id, **changes)
             if args.status == "failed":
                 self._cascade(args.id, {"pending", "queued", "running"}, "failed")
+            return True
+
+    def fail_job(self, args: FailJobRequest, auth: str) -> bool:
+        with self._lock:
+            job = self._read_job(args.id)
+            if job["status"] not in ("running", "cancelling", "pending"):
+                return False
+            details = details_to_dict(args.status_details) if args.status_details is not None else None
+            retries = job.get("retry_count", 0)
+            if args.retryable and job["status"] == "running" and retries < self.max_retries:
+                self._set(args.id, status="queued", error=args.error, status_details=details, retry_count=retries + 1)
+                return True
+            changes: dict = {"status": "failed", "error": args.error}
+            if details is not None:
+                changes["status_details"] = details
+            self._set(args.id, **changes)
+            self._cascade(args.id, {"pending", "queued", "running"}, "failed")
             return True
 
     def cancel_job(self, id: str, auth: str, reason: str | None = None) -> None:
