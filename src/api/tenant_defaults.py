@@ -23,12 +23,21 @@ class TenantDefaultsResolver:
 
     def get(self, q: Content, profile: str = "default") -> dict[str, dict[str, Any]]:
         """Returns model name -> job parameters for the given profile."""
-        tenant_id = self.user_info_resolver.get_tenant(q.qid, q.token)
-        if not tenant_id.startswith("iten"):
-            raise ExternalServiceError(f"Unexpected tenant id format: {tenant_id}")
+        # defaults are best effort: a failed lookup shouldn't fail the job
+        try:
+            tenant_id = self.user_info_resolver.get_tenant(q.qid, q.token)
+            if not tenant_id.startswith("iten"):
+                raise ExternalServiceError(f"Unexpected tenant id format: {tenant_id}")
+            tenant_profiles = _fetch_tenant_profiles(self.api_factory, tenant_id, q.token)
+        except Exception:
+            logger.warning(f"Failed to resolve tenant profiles for {q.qid}, skipping tenant defaults")
+            tenant_profiles = {}
 
-        tenant_profiles = _fetch_tenant_profiles(self.api_factory, tenant_id, q.token)
-        global_profiles = _fetch_profiles(self.api_factory, GLOBAL_PROFILES_QID, q.token)
+        try:
+            global_profiles = _fetch_profiles(self.api_factory, GLOBAL_PROFILES_QID, q.token)
+        except Exception:
+            logger.warning(f"Failed to fetch global profiles from {GLOBAL_PROFILES_QID}, skipping global defaults")
+            global_profiles = {}
 
         res = {}
         for key in set(global_profiles) | set(tenant_profiles):

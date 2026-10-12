@@ -49,8 +49,9 @@ tagger:
   heartbeat_interval: 60
 
 jobstore:
-  base_url: ""
+  base_url: "https://tagging.ai.contentfabric.io/qmanager"
   base_dir: data/jobstore
+  worker_secret:
 
 container_registry:
   base_dir: data/containers

@@ -84,3 +84,17 @@ def test_unreadable_global(resolver, monkeypatch):
     monkeypatch.setattr(tenant_defaults, "GLOBAL_PROFILES_QID", "iq__unreadable")
 
     assert resolver.get(CONTENT) == {"asr": TENANT_PROFILES["model:asr"]["default"]}
+
+def test_tenant_lookup_error_falls_back_to_global(resolver):
+    resolver.user_info_resolver.get_tenant.side_effect = AssertionError("no hash or write token")
+
+    assert resolver.get(CONTENT) == {
+        "asr": GLOBAL_PROFILES["model:asr"]["default"],
+        "music": GLOBAL_PROFILES["model:music"]["default"],
+    }
+
+def test_all_lookups_failing_returns_empty(resolver):
+    resolver.user_info_resolver.get_tenant.side_effect = RuntimeError("boom")
+    resolver.api_factory.create.side_effect = RuntimeError("boom")
+
+    assert resolver.get(CONTENT) == {}
