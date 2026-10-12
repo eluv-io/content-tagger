@@ -11,6 +11,7 @@ from elv_client_py import ElvClient
 
 from src.common.errors import BadRequestError, ExternalServiceError
 from src.common.logging import logger
+from src.common.http import raise_for_status
 
 CONFIG_TTL = 300
 
@@ -127,7 +128,7 @@ class QAPI:
                 for chunk in resp.iter_content(chunk_size=8192):
                     file.write(chunk)
         else:
-            resp.raise_for_status()
+            raise_for_status(resp)
         info = resp.headers.get('X-Content-Fabric-Segment-Info')
         # base64 decode
         if info is None:
@@ -142,7 +143,7 @@ class QAPI:
     def playout_options(self) -> dict[str, Any]:
         url = '/'.join([self._client.fabric_uris[0], 'q', self.qid, 'rep', 'playout', 'options.json'])
         resp = requests.get(url, params={"authorization": self._client.token})
-        resp.raise_for_status()
+        raise_for_status(resp)
         return resp.json()
 
     def is_live(self) -> bool:

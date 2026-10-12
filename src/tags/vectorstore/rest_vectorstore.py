@@ -1,4 +1,3 @@
-import json
 import time
 from typing import cast
 
@@ -6,6 +5,7 @@ import requests
 
 from src.common.content import Content
 from src.common.logging import logger
+from src.common.http import raise_for_status
 from src.tags.datastore.abstract import Datastore
 from src.tags.datastore.model import Batch, Tag, Track, is_vector
 
@@ -35,13 +35,6 @@ class RestVectorstore(Datastore):
     def _get_headers(self, q: Content) -> dict:
         return {'Content-Type': 'application/json', 'Authorization': f"Bearer {q.token}"}
 
-    def _log_response_and_raise(self, response: requests.Response):
-        try:
-            logger.error(f"{json.dumps(response.json())}")
-        except Exception:
-            logger.error(f"HTTP {response.status_code} response (non-JSON): {response.text}")
-        response.raise_for_status()
-
     def _get_vector_size(self, q: Content) -> int:
         """Dimension the index is configured for, read once and cached for the store's life.
         """
@@ -53,7 +46,7 @@ class RestVectorstore(Datastore):
             )
 
             if not response.ok:
-                self._log_response_and_raise(response)
+                raise_for_status(response)
 
             self._vector_size = int(response.json()["vector_size"])
 
@@ -103,7 +96,7 @@ class RestVectorstore(Datastore):
         )
 
         if not response.ok:
-            self._log_response_and_raise(response)
+            raise_for_status(response)
 
         result = response.json()
 
@@ -129,7 +122,7 @@ class RestVectorstore(Datastore):
         )
 
         if not response.ok:
-            self._log_response_and_raise(response)
+            raise_for_status(response)
 
     def upload_tags(self, tags: list[Tag], batch_id: str, track: str, q: Content) -> None:
         if not tags:
@@ -179,7 +172,7 @@ class RestVectorstore(Datastore):
         )
 
         if not response.ok:
-            self._log_response_and_raise(response)
+            raise_for_status(response)
 
     def delete_tags_by_source(self, sources: list[str], model: str, q: Content) -> None:
         if not sources or not model:
@@ -193,7 +186,7 @@ class RestVectorstore(Datastore):
         )
 
         if not response.ok:
-            self._log_response_and_raise(response)
+            raise_for_status(response)
 
     def delete_batch(self, batch_id: str, q: Content) -> None:
         """Delete a batch and every vector written under it."""
@@ -204,7 +197,7 @@ class RestVectorstore(Datastore):
         )
 
         if not response.ok:
-            self._log_response_and_raise(response)
+            raise_for_status(response)
 
     # The vectorstore is write-only from here down: a batch can be written, amended and
     # deleted but never read back, and vectors are only reachable by search. Nothing

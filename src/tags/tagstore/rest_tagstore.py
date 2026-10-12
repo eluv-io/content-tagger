@@ -1,10 +1,10 @@
 import time
-import json
 import requests
 from dateutil import parser
 from src.common.logging import logger
 
 from src.common.content import Content
+from src.common.http import raise_for_status
 from src.tags.datastore.model import Tag, Batch, Track, is_vector
 from src.tags.datastore.abstract import Datastore
 
@@ -22,15 +22,6 @@ class RestTagstore(Datastore):
         headers = {'Content-Type': 'application/json'}
         headers['Authorization'] = f"Bearer {q.token}"
         return headers
-
-    def _log_response_and_raise(self, response: requests.Response):
-        """Log response content before raising HTTPError"""
-        try:
-            response_json = response.json()
-            logger.error(f"{json.dumps(response_json)}")
-        except Exception:
-            logger.error(f"HTTP {response.status_code} response (non-JSON): {response.text}")
-        response.raise_for_status()
 
     def create_track(self,
         name: str,
@@ -60,7 +51,7 @@ class RestTagstore(Datastore):
             return
         
         if not response.ok:
-            self._log_response_and_raise(response)
+            raise_for_status(response)
 
     def get_track(self,
         name: str,
@@ -81,7 +72,7 @@ class RestTagstore(Datastore):
             return None
         
         if not response.ok:
-            self._log_response_and_raise(response)
+            raise_for_status(response)
         
         result = response.json()
         tracks = result.get('tracks', [])
@@ -120,7 +111,7 @@ class RestTagstore(Datastore):
         )
 
         if not response.ok:
-            self._log_response_and_raise(response)
+            raise_for_status(response)
 
         result = response.json()
         batch_id = result["batch_id"]
@@ -179,7 +170,7 @@ class RestTagstore(Datastore):
         )
         
         if not response.ok:
-            self._log_response_and_raise(response)
+            raise_for_status(response)
 
     def delete_tags_by_source(self, sources: list[str], model: str, q: Content) -> None:
         """
@@ -197,7 +188,7 @@ class RestTagstore(Datastore):
         )
 
         if not response.ok:
-            self._log_response_and_raise(response)
+            raise_for_status(response)
 
     def find_tags(self, q: Content, **filters) -> list[Tag]:
         """
@@ -254,7 +245,7 @@ class RestTagstore(Datastore):
         )
         
         if not response.ok:
-            self._log_response_and_raise(response)
+            raise_for_status(response)
         
         result = response.json()
         api_tags = result.get('tags', [])
@@ -321,7 +312,7 @@ class RestTagstore(Datastore):
         )
 
         if not response.ok:
-            self._log_response_and_raise(response)
+            raise_for_status(response)
 
         result = response.json()
         batches = result.get('batches', [])
@@ -361,7 +352,7 @@ class RestTagstore(Datastore):
         )
         
         if not response.ok:
-            self._log_response_and_raise(response)
+            raise_for_status(response)
         
         result = response.json()
         return result.get('meta', {}).get('total', 0)
@@ -391,7 +382,7 @@ class RestTagstore(Datastore):
         )
         
         if not response.ok:
-            self._log_response_and_raise(response)
+            raise_for_status(response)
         
         result = response.json()
         return result.get('meta', {}).get('total', 0)
@@ -425,7 +416,7 @@ class RestTagstore(Datastore):
                 return None
 
             if not response.ok:
-                self._log_response_and_raise(response)
+                raise_for_status(response)
 
             return self._parse_batch(response.json(), qid)
 
@@ -447,7 +438,7 @@ class RestTagstore(Datastore):
         )
         
         if not response.ok:
-            self._log_response_and_raise(response)
+            raise_for_status(response)
 
     def update_batch(self,
         batch_id: str,
@@ -465,4 +456,4 @@ class RestTagstore(Datastore):
         )
 
         if not response.ok:
-            self._log_response_and_raise(response)
+            raise_for_status(response)

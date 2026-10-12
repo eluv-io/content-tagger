@@ -1,10 +1,9 @@
-import json
-
 import requests
 from dateutil import parser
 
 from src.common.errors import BadRequestError, JobConflictError, MissingResourceError
 from src.common.logging import logger
+from src.common.http import raise_for_status
 from src.tagging.fabric_tagging.queue.common import job_uid
 from src.tagging.fabric_tagging.queue.model import *
 from src.tagging.fabric_tagging.queue.serialize import details_from_dict, details_to_dict, params_from_dict, params_to_dict, system_message
@@ -27,15 +26,6 @@ class QueueManagerJobStore:
         self.session = requests.Session()
         self.session.headers.update({'Content-Type': 'application/json'})
 
-    def _log_response_and_raise(self, response: requests.Response):
-        """Log response content before raising HTTPError"""
-        try:
-            response_json = response.json()
-            logger.error(f"{json.dumps(response_json)}")
-        except Exception:
-            logger.error(f"HTTP {response.status_code} response (non-JSON): {response.text}")
-        response.raise_for_status()
-
     def _request(self, method: str, path: str, as_user: str | None = None, **kwargs) -> dict:
         """Make request with the appropriate headers depending on whether it's a worker endpoint or not."""
         if as_user is not None:
@@ -48,7 +38,7 @@ class QueueManagerJobStore:
         if response.status_code == 409:
             raise _Conflict(f"{method} {path}: {response.text}")
         if not response.ok:
-            self._log_response_and_raise(response)
+            raise_for_status(response)
         return response.json()
 
     def _to_item(self, job: dict) -> QueueItem:
