@@ -1,5 +1,5 @@
 content:
-  parts_url: http://192.168.96.203/config?self&qspace=main
+  parts_url: https://host-76-74-29-2.contentfabric.io/config?self&qspace=main
   config_url: https://host-154-14-185-98.contentfabric.io/config?self&qspace=main
   live_media_url: https://host-76-74-29-5.contentfabric.io/config?self&qspace=main
 
@@ -11,7 +11,7 @@ tagstore:
   timeout: 30
   
 vectorstore:
-  base_url: "http://localhost:8108"
+  base_url: "https://ai-04.contentfabric.io/vector_store"
 
 tag_runner:
   poll_interval: 5.0
@@ -51,7 +51,8 @@ tagger:
 jobstore:
   base_url: "https://tagging.ai.contentfabric.io/qmanager"
   base_dir: data/jobstore
-  worker_secret:
+  # sent to the queue manager on claims; defaults to the hostname
+  worker_id: null
 
 container_registry:
   base_dir: data/containers

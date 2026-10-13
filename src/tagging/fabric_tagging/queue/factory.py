@@ -6,6 +6,6 @@ from src.tagging.fabric_tagging.queue.qmanager_jobstore import QueueManagerJobSt
 
 def create_jobstore(cfg: JobStoreConfig, user_info_resolver: UserInfoResolver) -> JobStore:
     if cfg.base_url:
-        return QueueManagerJobStore(cfg.base_url, cfg.worker_secret, cfg.timeout, cfg.job_type)
+        return QueueManagerJobStore(cfg.base_url, cfg.worker_secret, cfg.timeout, cfg.job_type, cfg.worker_id)
     else:
         return FsJobStore(cfg.base_dir, user_info_resolver=user_info_resolver)

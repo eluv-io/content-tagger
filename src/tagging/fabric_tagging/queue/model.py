@@ -13,6 +13,8 @@ class JobStoreConfig:
     base_dir: str = ""
     # sent as X-Worker-Secret
     worker_secret: str | None = None
+    # sent as X-Worker-Id when claiming; defaults to the hostname
+    worker_id: str | None = None
     timeout: int = 30
     # queue manager job type the tagger's jobs are stored as
     job_type: str = "tag"

@@ -1,6 +1,9 @@
+import socket
+
 import requests
 from dateutil import parser
 
+from src.common.buildinfo import build_info
 from src.common.errors import BadRequestError, JobConflictError, MissingResourceError
 from src.common.logging import logger
 from src.common.http import raise_for_status
@@ -18,13 +21,16 @@ class _Conflict(Exception):
 class QueueManagerJobStore:
     """Job store backed by the queue manager service."""
 
-    def __init__(self, base_url: str, worker_secret: str | None, timeout: int, job_type: str = "tag"):
+    def __init__(self, base_url: str, worker_secret: str | None, timeout: int, job_type: str = "tag", worker_id: str | None = None):
         self.base_url = base_url.rstrip('/')
         self.worker_secret = worker_secret
         self.timeout = timeout
         self.job_type = job_type
+        self.worker_id = worker_id or socket.gethostname()
+        # kept by the queue with each claim, for debugging
+        self.worker_info = {**build_info(), "host": socket.gethostname()}
         self.session = requests.Session()
-        self.session.headers.update({'Content-Type': 'application/json'})
+        self.session.headers.update({'Content-Type': 'application/json', 'X-Worker-Id': self.worker_id})
 
     def _request(self, method: str, path: str, as_user: str | None = None, **kwargs) -> dict:
         """Make request with the appropriate headers depending on whether it's a worker endpoint or not."""
@@ -90,7 +96,7 @@ class QueueManagerJobStore:
 
     def claim_job(self, id: str, auth: str) -> bool:
         try:
-            self._request("POST", f"/worker/jobs/{id}/claim")
+            self._request("POST", f"/worker/jobs/{id}/claim", json={"worker_info": self.worker_info})
         except _Conflict:
             # another job with the same resource is running
             return False
