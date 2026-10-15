@@ -697,7 +697,7 @@ def test_model_error_through_status(fabric_tagger, q, make_tag_args):
             return [Error(source_media=self.media_files[0], message="Simulated model error")]
 
         def exit_code(self) -> int | None:
-            return 1
+            return 1 if self.is_stopped else None
 
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
         return ErrorContainer(req.media_dir, req.model_id)
@@ -714,6 +714,27 @@ def test_model_error_through_status(fabric_tagger, q, make_tag_args):
     report = _status_for(status, "caption")
     assert report.status.status == "Failed"
     assert report.status.error == "Simulated model error"
+
+def test_job_fails_when_reading_container_errors_raises(fabric_tagger, q, make_tag_args):
+    """
+    Prior to the change that this test checks, it was possible that a container outputting bad json data would raise
+    an exception and crash the _await_tagging thread.
+    """
+    class BadOutputContainer(FakeTagContainer):
+        def errors(self) -> list[Error]:
+            raise ValueError("Missing source_media in container output message")
+
+        def exit_code(self) -> int | None:
+            return 1 if self.is_stopped else None
+
+    fabric_tagger.cregistry.get = lambda req: BadOutputContainer(req.media_dir, req.model_id)
+
+    fabric_tagger.tag(q, make_tag_args(feature="caption", stream="video"))
+    time.sleep(1)
+
+    report = _status_for(fabric_tagger.status(q.qid), "caption")
+    assert report.status.status == "Failed"
+    assert report.status.error == "Missing source_media in container output message"
 
 def test_part_download_warnings(fabric_tagger, q, make_tag_args):
     """Test that if some parts fail to download but job completes, the failed parts are reported in status"""

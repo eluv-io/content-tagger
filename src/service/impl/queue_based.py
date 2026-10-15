@@ -161,5 +161,6 @@ class QueueService(TaggerService):
                 user=item.user,
                 title=item.additional_info.get("title", ""),
                 error=item.error,
+                num_failed_attempts=item.num_failed_attempts,
             ))
         return reports

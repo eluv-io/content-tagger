@@ -14,6 +14,8 @@ from src.tagging.fabric_tagging.queue.serialize import details_from_dict, detail
 logger = logger.bind(name="Queue Manager")
 
 PAGE_SIZE = 100
+# attempt outcomes that count as a failed attempt
+_FAILED_OUTCOMES = {"retried", "failed", "abandoned"}
 
 class _Conflict(Exception):
     """The job's state doesn't allow the request (409)."""
@@ -67,6 +69,8 @@ class QueueManagerJobStore:
             user=job.get("user", ""),
             tenant=job.get("tenant", ""),
             additional_info=job.get("additional_info") or {},
+            # attempts are only returned with the worker secret
+            num_failed_attempts=sum(1 for a in job.get("attempts") or [] if a.get("outcome") in _FAILED_OUTCOMES),
         )
 
     def create_job(self, args: CreateQueueItem, auth: str) -> QueueItem:
@@ -120,6 +124,8 @@ class QueueManagerJobStore:
             "qid": args.qid,
             "user": args.user,
             "tenant": args.tenant,
+            "priority_ge": args.priority_ge,
+            "priority_le": args.priority_le,
             "include_unready": args.include_unready,
             "ignore_resource_hash": args.include_unready,
         }

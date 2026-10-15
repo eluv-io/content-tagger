@@ -1,7 +1,7 @@
 import os
 import signal
 import threading
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
 import time
 
 from src.common.content import Content
@@ -30,8 +30,18 @@ def _job_status_from_report(report: TagStatusResult) -> job_status:
 
 
 @dataclass(frozen=True)
+class WorkerFilters:
+    """Limits the jobs the worker claims, e.g. to one tenant's."""
+    qid: str | None = None
+    user: str | None = None
+    tenant: str | None = None
+    priority_ge: int | None = None
+    priority_le: int | None = None
+
+@dataclass(frozen=True)
 class TagRunnerConfig:
     poll_interval: float
+    filters: WorkerFilters = field(default_factory=WorkerFilters)
 
 @dataclass(frozen=True)
 class JobInfo:
@@ -131,7 +141,7 @@ class TagRunner:
         if self._quiescing.is_set():
             return
 
-        queued = self.jobstore.list_jobs(ListJobArgs(status="queued"), auth="")
+        queued = self.jobstore.list_jobs(ListJobArgs(status="queued", **asdict(self.cfg.filters)), auth="")
         for item in queued:
             assert item.params is not None
             if item.id in self._running_jobs or item.id in self._failed_jobs:
@@ -252,7 +262,7 @@ class TagRunner:
 
     def _fail(self, id: str, auth: str, details: TagDetails | None, error: str) -> None:
         self._failed_jobs.add(id)
-        if not self.jobstore.fail_job(FailJobRequest(id=id, error=error, status_details=details), auth=auth):
+        if not self.jobstore.fail_job(FailJobRequest(id=id, error=error, status_details=details, retryable=True), auth=auth):
             logger.warning("queue refused to fail job")
 
     def _finish_job(self, id: str) -> None:

@@ -51,6 +51,7 @@ class TagJobStatusResult:
     title: str
     error: str | None
     tagger_details: TagDetails | None
+    num_failed_attempts: int
 
 @dataclass(frozen=True)
 class TagStopResult:

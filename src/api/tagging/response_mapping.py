@@ -66,6 +66,7 @@ def map_job_status_to_response(js: TagJobStatusResult) -> JobStatus:
         tagged_duration=tagged_duration,
         tag_details=js.tagger_details,
         is_live=js.params.get("scope", {}).get("type") == "livestream",
+        num_failed_attempts=js.num_failed_attempts,
     )
 
 def map_stop_results_to_response(stop_results: list[TagStopResult]) -> StopTaggingResponse:

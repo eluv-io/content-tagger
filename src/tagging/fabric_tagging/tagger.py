@@ -460,6 +460,12 @@ class TaggerWorker:
         container.add_media([s.filepath for s in new_media])
 
     def _await_tagging(self, job: TagJob) -> None:
+        try:
+            self.__await_tagging(job)
+        except Exception as e:
+            self._request_job_end(job.get_id(), "Failed", e)
+
+    def __await_tagging(self, job: TagJob) -> None:
         """Waits for tagging to complete, then uploads tags and requests transition to complete phase"""
         jobid = job.get_id()
 

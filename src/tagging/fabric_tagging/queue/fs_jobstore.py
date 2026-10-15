@@ -120,6 +120,7 @@ class FsJobStore:
             user=job["user"],
             tenant=job["tenant"],
             additional_info=job.get("additional_info", {}),
+            num_failed_attempts=job.get("failed_attempts", 0),
         )
 
     def create_job(self, args: CreateQueueItem, auth: str) -> QueueItem:
@@ -184,6 +185,10 @@ class FsJobStore:
                 continue
             if args.status and job["status"] != args.status:
                 continue
+            if args.priority_ge is not None and job.get("priority", 0) < args.priority_ge:
+                continue
+            if args.priority_le is not None and job.get("priority", 0) > args.priority_le:
+                continue
             if job["status"] == "queued" and not args.include_unready and not self._is_claimable(job):
                 continue
             results.append(self._convert_job_dict(job))
@@ -205,6 +210,8 @@ class FsJobStore:
                 changes["status_details"] = details_to_dict(args.status_details)
             if args.error is not None:
                 changes["error"] = args.error
+            if args.status == "failed" and job["status"] in ("running", "cancelling"):
+                changes["failed_attempts"] = job.get("failed_attempts", 0) + 1
             self._set(args.id, **changes)
             if args.status == "failed":
                 self._cascade(args.id, {"pending", "queued", "running"}, "failed")
@@ -216,11 +223,14 @@ class FsJobStore:
             if job["status"] not in ("running", "cancelling", "pending"):
                 return False
             details = details_to_dict(args.status_details) if args.status_details is not None else None
+            # a pending job was never claimed, so it has no attempt to fail
+            failed_attempts = job.get("failed_attempts", 0) + (job["status"] != "pending")
             retries = job.get("retry_count", 0)
             if args.retryable and job["status"] == "running" and retries < self.max_retries:
-                self._set(args.id, status="queued", error=args.error, status_details=details, retry_count=retries + 1)
+                self._set(args.id, status="queued", error=args.error, status_details=details, retry_count=retries + 1,
+                          failed_attempts=failed_attempts)
                 return True
-            changes: dict = {"status": "failed", "error": args.error}
+            changes: dict = {"status": "failed", "error": args.error, "failed_attempts": failed_attempts}
             if details is not None:
                 changes["status_details"] = details
             self._set(args.id, **changes)

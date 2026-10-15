@@ -7,7 +7,7 @@ from unittest.mock import Mock
 from src.common.errors import BadRequestError, MissingResourceError
 from src.service.impl.queue_based import QueueService
 from src.service.model import StatusArgs
-from src.tagging.fabric_tagging.queue.model import CreateQueueItem, ListJobArgs, CompleteJobRequest
+from src.tagging.fabric_tagging.queue.model import CreateQueueItem, FailJobRequest, ListJobArgs, CompleteJobRequest
 from src.api.tagging.request_format import JobSpec, StartJobsRequest
 from src.common.content import Content
 from src.fetch.model import LiveScope
@@ -88,6 +88,17 @@ def test_live_error_reported_as_cancelled(queue_service: QueueService, make_tag_
     assert by_model["caption"].error == "404 Client Error"
     assert by_model["asr"].status == "failed"
 
+
+
+def test_requeued_job_reports_failed_attempt(queue_service: QueueService, make_tag_args, q):
+    job_id = enqueue(queue_service, q, [make_tag_args()])[0]
+    assert queue_service.jobstore.claim_job(job_id, auth=q.token)
+    queue_service.jobstore.fail_job(FailJobRequest(id=job_id, error="attempt failed", status_details=None, retryable=True), auth=q.token)
+
+    report = queue_service.status(StatusArgs(qid=q.qid, user=None, tenant=None, title=None))[0]
+
+    assert report.status == "queued"
+    assert report.num_failed_attempts == 1
 
 def test_tag_releases_pending_jobs(queue_service: QueueService, make_tag_args, q):
     queue_service.arg_resolver.resolve.return_value = [make_tag_args(feature="asr")] # type: ignore

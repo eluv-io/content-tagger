@@ -14,6 +14,7 @@ from src.service.model import *
 from src.tag_containers.containers import TagContainer
 from src.tagging.fabric_tagging.queue.model import ListJobArgs
 from src.common.content import Content
+from src.tagging.tag_runner import TagRunner, TagRunnerConfig, WorkerFilters
 from tests.core_tagging.conftest import FakeTagContainer, enqueue
 
 def _wait_for_status(
@@ -118,7 +119,7 @@ def test_stop_runner(queue_client, q, make_tag_args, tag_runner):
     # a shut down fails the attempt, so the job is requeued for another worker
     job = tag_runner.jobstore.list_jobs(ListJobArgs(qid=q.qid, include_unready=True), auth="")[0]
     assert job.status == "queued"
-    assert job.error == "tagger worker service was shut down or restarted"
+    assert job.num_failed_attempts == 1
 
 def test_stop_running_job(queue_client, q, make_tag_args, tag_runner):
     args = make_tag_args(feature="caption", stream="video")
@@ -151,7 +152,7 @@ def test_worker_tag_fails(queue_client, q, make_tag_args, tag_runner):
     # the job is requeued for another worker, and this one doesn't claim it again
     job = tag_runner.jobstore.get_job(job_id)
     assert job.status == "queued"
-    assert job.error == "Tagging failed"
+    assert job.num_failed_attempts == 1
     assert tag_runner.tagger.tag.call_count == 1
 
 
@@ -180,3 +181,14 @@ def test_doesnt_claim_model_not_served(queue_client, q, make_tag_args, tag_runne
     time.sleep(0.3)
 
     assert tag_runner.jobstore.get_job(job_id).status == "queued"
+
+
+def test_runner_only_claims_jobs_matching_its_filters(queue_client, q, make_tag_args, fabric_tagger, jobstore):
+    runner = TagRunner(fabric_tagger, jobstore, TagRunnerConfig(poll_interval=0.1, filters=WorkerFilters(tenant="iten_other")))
+    runner.start()
+    try:
+        job_id = enqueue(queue_client, q, [make_tag_args()])[0]
+        time.sleep(0.3)
+        assert jobstore.get_job(job_id).status == "queued"
+    finally:
+        runner.stop()

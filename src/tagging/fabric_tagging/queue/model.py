@@ -34,6 +34,7 @@ class QueueItem:
     user: str
     tenant: str
     additional_info: dict
+    num_failed_attempts: int
 
 @dataclass
 class CreateQueueItem:
@@ -53,6 +54,8 @@ class ListJobArgs:
     qid: str | None = None
     user: str | None = None
     tenant: str | None = None
+    priority_ge: int | None = None
+    priority_le: int | None = None
     # include queued jobs that can't be claimed yet: unmet dependencies or their resource in use
     include_unready: bool = False
     limit: int | None = None
@@ -69,5 +72,5 @@ class CompleteJobRequest:
 class FailJobRequest:
     id: str
     error: str
-    status_details: TagDetails | None = None
-    retryable: bool = True
+    status_details: TagDetails | None
+    retryable: bool

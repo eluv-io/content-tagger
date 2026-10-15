@@ -37,6 +37,7 @@ class JobStatus:
     tag_details: TagDetails | None
     # whether the content being tagged is a livestream
     is_live: bool
+    num_failed_attempts: int
 
 @dataclass(frozen=True)
 class StatusMeta:
@@ -227,6 +228,12 @@ class JobStatusSchema(Schema):
             "description": "Error message if the job failed or was cancelled",
             "example": None,
         },
+    )
+    num_failed_attempts = fields.Int(
+        metadata={
+            "description": "Number of attempts at the job that failed; a job with retries left is queued again after a failure",
+            "example": 0,
+        }
     )
     is_live = fields.Bool(
         metadata={

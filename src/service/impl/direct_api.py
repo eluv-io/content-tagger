@@ -61,6 +61,7 @@ class DirectAPI(TaggerService):
                     warnings=get_warning_response(r.status.warnings),
                 ),
                 error=r.status.error,
+                num_failed_attempts=0,
             )
             res.append(tr)
         return res

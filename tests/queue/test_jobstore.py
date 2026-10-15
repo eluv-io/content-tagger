@@ -138,6 +138,11 @@ class TestListFiltering:
         assert len(running) == 1
         assert running[0].id == job.id
 
+    def test_filter_by_priority(self, jobstore, q):
+        job = _create_queued(jobstore, q)
+        assert [j.id for j in _list(jobstore, q, priority_le=10**6)] == [job.id]
+        assert _list(jobstore, q, priority_ge=10**6) == []
+
 
 class TestClaimJob:
     def test_claim_queued_job_returns_true(self, jobstore, q):
@@ -207,15 +212,18 @@ class TestFailJob:
         parent = _create_running(jobstore, q)
         child = _create_queued(jobstore, q, deps=[parent.id])
 
-        assert jobstore.fail_job(FailJobRequest(id=parent.id, error="first attempt"), auth=q.token)
+        assert jobstore.fail_job(FailJobRequest(id=parent.id, error="first attempt", status_details=None, retryable=True), auth=q.token)
         requeued = jobstore.get_job(parent.id)
         assert requeued.status == "queued"
-        assert requeued.error == "first attempt"
+        assert requeued.num_failed_attempts == 1
         assert jobstore.get_job(child.id).status == "queued"
 
         assert jobstore.claim_job(parent.id, auth=q.token)
-        assert jobstore.fail_job(FailJobRequest(id=parent.id, error="second attempt"), auth=q.token)
-        assert jobstore.get_job(parent.id).status == "failed"
+        assert jobstore.fail_job(FailJobRequest(id=parent.id, error="second attempt", status_details=None, retryable=True), auth=q.token)
+        failed = jobstore.get_job(parent.id)
+        assert failed.status == "failed"
+        assert failed.error == "second attempt"
+        assert failed.num_failed_attempts == 2
         assert jobstore.get_job(child.id).status == "failed"
 
     def test_non_retryable_failure_fails(self, jobstore, q):
@@ -230,7 +238,7 @@ class TestFailJob:
 
     def test_queued_job_cant_fail(self, jobstore, q):
         job = _create_queued(jobstore, q)
-        assert not jobstore.fail_job(FailJobRequest(id=job.id, error="bad"), auth=q.token)
+        assert not jobstore.fail_job(FailJobRequest(id=job.id, error="bad", status_details=None, retryable=True), auth=q.token)
 
 
 class TestProgress:

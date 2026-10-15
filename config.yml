@@ -15,6 +15,8 @@ vectorstore:
 
 tag_runner:
   poll_interval: 5.0
+  # only claim jobs matching these (any of qid, user, tenant, priority_ge, priority_le)
+  filters: {}
 
 tag_converter:
   name_mapping:
