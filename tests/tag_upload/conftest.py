@@ -84,7 +84,8 @@ def uploader(track_resolver, mock_q, filesystem_tagstore, vector_store):
         vectorstore=vector_store,
         dest_q=mock_q,
         track_suffix="",
-        do_retry=False
+        max_retries=0,
+        retry_delay=0,
     )
 
 @pytest.fixture
@@ -97,5 +98,6 @@ def tagstore_only_uploader(track_resolver, mock_q, filesystem_tagstore):
         vectorstore=None,
         dest_q=mock_q,
         track_suffix="",
-        do_retry=False
+        max_retries=0,
+        retry_delay=0,
     )

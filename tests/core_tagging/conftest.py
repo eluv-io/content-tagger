@@ -77,6 +77,8 @@ def track_resolver(model_config_store):
 def tagger_config(media_dir) -> TaggerWorkerConfig:
     return TaggerWorkerConfig(
         media_dir=media_dir,
+        upload_retries=2,
+        upload_retry_delay=0.1,
     )
 
 class FakeTagContainer:

@@ -168,7 +168,8 @@ def test_reupload_replaces_vectors_for_a_source(uploader, vector_store, get_vect
         vectorstore=vector_store,
         dest_q=mock_q,
         track_suffix="",
-        do_retry=False,
+        max_retries=0,
+        retry_delay=0,
     )
     second.upload(
         tags=[get_vector_tag(model_track="embedding", data=[3.0], source_media="source1")],
@@ -227,21 +228,61 @@ def test_upload_with_no_tags_still_records_progress(uploader):
     assert set(uploader.get_uploaded_sources()) == {"source1", "source2"}
 
 
-def test_retry_defers_a_failed_upload_to_the_next_tick(uploader, get_tag):
-    uploader.retry = True
+def test_retry_keeps_the_tags_of_a_failed_upload(uploader, get_tag):
+    """The container hands out each tag once, so a retry must resend the failed tags itself."""
+    uploader.max_retries = 1
     ts = uploader.tag_session.datastore
-    tags = [get_tag(model_track="asr", data="hello world", source_media="source1")]
+    q = uploader.dest_q
 
     healthy = ts.upload_tags
     ts.upload_tags = Mock(side_effect=Exception("upload failed"))
 
-    uploader.upload(tags=tags, tagged_sources=["source1"])
+    uploader.upload(tags=[get_tag(model_track="asr", data="hello world", source_media="source1")], tagged_sources=["source1"])
     assert uploader.get_uploaded_sources() == []
 
     ts.upload_tags = healthy
 
-    uploader.upload(tags=tags, tagged_sources=["source1"])
+    uploader.upload(tags=[], tagged_sources=["source1"])
     assert uploader.get_uploaded_sources() == ["source1"]
+    assert [t.data for t in ts.find_tags(q=q)] == ["hello world"]
+
+
+def test_retry_waits_for_the_delay(uploader, get_tag):
+    uploader.max_retries = 1
+    uploader.retry_delay = 60
+    ts = uploader.tag_session.datastore
+    ts.upload_tags = Mock(side_effect=Exception("upload failed"))
+
+    uploader.upload(tags=[get_tag(model_track="asr", data="hello world", source_media="source1")], tagged_sources=["source1"])
+    uploader.upload(tags=[], tagged_sources=["source1"])
+
+    assert ts.upload_tags.call_count == 1
+
+
+def test_final_upload_ignores_the_delay_and_raises(uploader, get_tag):
+    uploader.max_retries = 5
+    uploader.retry_delay = 60
+    ts = uploader.tag_session.datastore
+    ts.upload_tags = Mock(side_effect=Exception("upload failed"))
+
+    uploader.upload(tags=[get_tag(model_track="asr", data="hello world", source_media="source1")], tagged_sources=["source1"])
+    with pytest.raises(Exception, match="upload failed"):
+        uploader.upload(tags=[], tagged_sources=["source1"], final=True)
+
+
+def test_upload_raises_once_retries_are_exhausted(uploader, get_tag):
+    uploader.max_retries = 2
+    ts = uploader.tag_session.datastore
+    ts.upload_tags = Mock(side_effect=Exception("upload failed"))
+
+    tags = [get_tag(model_track="asr", data="hello world", source_media="source1")]
+    uploader.upload(tags=tags, tagged_sources=["source1"])
+    uploader.upload(tags=[], tagged_sources=["source1"])
+    with pytest.raises(Exception, match="upload failed"):
+        uploader.upload(tags=[], tagged_sources=["source1"])
+
+    assert ts.upload_tags.call_count == 3
+    assert uploader.get_uploaded_sources() == []
 
 
 def test_tagstore_rejects_vectors(filesystem_tagstore, q):

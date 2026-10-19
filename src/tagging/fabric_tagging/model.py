@@ -12,6 +12,8 @@ from src.tag_containers.model import ContainerInfo
 class TaggerWorkerConfig:
     media_dir: str
     heartbeat_interval: float = 60.0
+    upload_retries: int = 5
+    upload_retry_delay: float = 10.0
 
 @dataclass
 class TagArgs:
@@ -70,7 +72,6 @@ class JobStatus:
 @dataclass
 class JobArgs(TagArgs):
     q: Content
-    retry_upload: bool
 
 @dataclass
 class JobID:

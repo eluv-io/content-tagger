@@ -49,6 +49,8 @@ fetcher:
 tagger:
   media_dir: data/parts
   heartbeat_interval: 60
+  upload_retries: 5
+  upload_retry_delay: 10
 
 jobstore:
   base_url: "https://tagging.ai.contentfabric.io/qmanager"

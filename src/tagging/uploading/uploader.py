@@ -1,5 +1,6 @@
 
 from dataclasses import asdict
+import time
 
 from src.common.errors import BadRequestError
 from src.common.logging.timing import timeit
@@ -211,12 +212,18 @@ class Uploader:
         vectorstore: Datastore | None,
         track_suffix: str,
         dest_q: Content,
-        do_retry: bool,
+        max_retries: int,
+        retry_delay: float,
         hidden: bool = False,
     ):
         self.feature = feature
         self.dest_q = dest_q
-        self.retry = do_retry
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        # tags handed to upload() that haven't been written yet; the container only hands out each tag once
+        self._pending: list[ModelTag] = []
+        self._failures = 0
+        self._retry_at = 0.0
 
         def session(store: Datastore) -> UploadSession:
             return UploadSession(
@@ -235,32 +242,47 @@ class Uploader:
     def upload(
         self,
         tags: list[ModelTag],
-        tagged_sources: list[str]
+        tagged_sources: list[str],
+        final: bool = False,
     ) -> None:
-        """Dispatch the model's outputs to the tagstore, the vectorstore, or both."""
-        vectors = [t for t in tags if t.is_vector()]
-        texts = [t for t in tags if not t.is_vector()]
+        """Dispatch the model's outputs to the tagstore, the vectorstore, or both.
 
-        if vectors and self.vector_session is None:
+        final makes one last attempt now, ignoring retry_delay, and raises if it fails.
+        """
+        if self.vector_session is None and any(t.is_vector() for t in tags):
             raise BadRequestError(
                 f"model {self.feature} produced vectors but no index_qid was given: "
                 "specify index_qid in the tagger options to choose the vector index to write to"
             )
+
+        self._pending.extend(tags)
+        if not final and time.time() < self._retry_at:
+            return
+
+        vectors = [t for t in self._pending if t.is_vector()]
+        texts = [t for t in self._pending if not t.is_vector()]
 
         try:
             self.tag_session.upload_tags(texts, tagged_sources)
             if self.vector_session is not None:
                 self.vector_session.upload_tags(vectors, tagged_sources)
         except Exception as e:
-            if not self.retry:
+            self._failures += 1
+            if final or self._failures > self.max_retries:
                 raise
-            logger.opt(exception=e).error(
-                "error uploading tags, but retry is set to true, will retry on next upload tick",
+            self._retry_at = time.time() + self.retry_delay
+            logger.opt(exception=e).warning(
+                "error uploading tags, will retry",
+                attempt=self._failures,
+                max_retries=self.max_retries,
+                retry_delay=self.retry_delay,
                 destination_qid=self.dest_q.qid,
                 feature=self.feature,
             )
             return
 
+        self._pending = []
+        self._failures = 0
         self.uploaded_sources.update(tagged_sources)
 
     def upload_report(self, report: TagContentStatusReport) -> None:

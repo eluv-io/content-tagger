@@ -31,7 +31,7 @@ from src.tags.vectorstore.model import VectorstoreConfig
 def tagger_config(static_dir) -> TaggerWorkerConfig:
     media_path = os.path.join(static_dir, "media")
     os.makedirs(media_path, exist_ok=True)
-    return TaggerWorkerConfig(media_dir=media_path)
+    return TaggerWorkerConfig(media_dir=media_path, upload_retries=2, upload_retry_delay=0.1)
 
 @pytest.fixture()
 def model_configs() -> dict[str, ModelConfig]:

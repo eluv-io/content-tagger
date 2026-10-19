@@ -263,7 +263,6 @@ class TaggerWorker:
         Initialize the starting state for a job and important context for its runtime
         """
 
-        # TODO: redundant with the max_fetch_retries, consolidate
         is_live = isinstance(args.scope, LiveScope)
 
         # for user to stop the job
@@ -301,7 +300,8 @@ class TaggerWorker:
             dest_q=dest_q,
             track_resolver=self.track_resolver,
             track_suffix=args.track_suffix,
-            do_retry=is_live,
+            max_retries=self.cfg.upload_retries,
+            retry_delay=self.cfg.upload_retry_delay,
             hidden=model_config.tags.hidden,
         )
 
@@ -329,7 +329,6 @@ class TaggerWorker:
             args=JobArgs(
                 **args.__dict__,
                 q=q,
-                retry_upload=is_live,
             ),
             stop_event=stop_event,
             queue_id=queue_id,
@@ -360,7 +359,7 @@ class TaggerWorker:
         
         Runs in a background thread to avoid blocking the main thread.
 
-        In the case of live jobs, if fetching fails, it will retry after a delay.
+        If fetching fails, it retries after a delay, up to max_fetch_retries consecutive times.
         """
         with timeit("fetching work", min_duration=5.5):
             jobid = job.get_id()
@@ -523,11 +522,10 @@ class TaggerWorker:
 
         logger.info("entering complete phase")
 
-        # catch any remaining tags - this blocks the main thread briefly but it's not called very often
-        # NOTE: this cannot error, so we will not get a stuck job
-        self._run_upload(job)
-
-        self._set_stop_state(job, "Completed", None)
+        # catch remaining tags, and end the job successfully if 
+        # the upload succeeds
+        if self._run_upload(job, final=True):
+            self._set_stop_state(job, "Completed", None)
 
         message.response_mailbox.put(Response(data=None, error=None))
 
@@ -822,17 +820,19 @@ class TaggerWorker:
         )
         return self._submit_async(request)
 
-    def _run_upload(self, job: TagJob) -> None:
-        """Run upload for a job"""
+    def _run_upload(self, job: TagJob, final: bool = False) -> bool:
+        """Run upload for a job, requesting that it fail if the upload does. Returns whether it succeeded."""
 
         # we lock because _handle_enter_complete_phase and a thread spawned by _handle_upload_tick can run concurrently
         with self._upload_lock, logger.contextualize(**job.log_context()):
             try:
-                self.__upload(job)
+                self.__upload(job, final=final)
             except Exception as e:
                 self._request_job_end(job.get_id(), "Failed", e)
+                return False
+        return True
 
-    def __upload(self, job: TagJob) -> None:
+    def __upload(self, job: TagJob, final: bool = False) -> None:
         if not job.state.taghandle:
             return
         with timeit("getting tags from container", min_duration=0.5):
@@ -849,7 +849,7 @@ class TaggerWorker:
         tagged_sources = adjust_progress_sources(statuses, job.state.media.downloaded)
 
         with timeit("uploading tags", min_duration=5):
-            job.state.uploader.upload(aligned_tags, [p.source_media for p in tagged_sources])
+            job.state.uploader.upload(aligned_tags, [p.source_media for p in tagged_sources], final=final)
 
     def _output_dir_from_q(self, q: Content) -> str:
         out = os.path.join(self.cfg.media_dir, q.qid)
