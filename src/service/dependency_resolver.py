@@ -1,5 +1,8 @@
+from typing import Mapping
+
 from src.common.content import Content
-from src.common.model import ModelConfig
+from src.common.errors import BadRequestError
+from src.common.model import ModelConfig, ModelConfigStore
 from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tagging.fabric_tagging.model import TagArgs
 from src.tagging.fabric_tagging.queue.model import ListJobArgs, QueueItem, job_status
@@ -16,7 +19,7 @@ class DependencyResolver:
         self,
         job_store: JobStore,
         track_resolver: TrackResolver,
-        model_configs: dict[str, ModelConfig],
+        model_configs: ModelConfigStore,
     ):
         self.jobstore = job_store
         self.track_resolver = track_resolver
@@ -34,12 +37,16 @@ class DependencyResolver:
                 batch_by_track.setdefault(track.name, []).append(job_id)
 
         existing = self._list_jobs(q, "running") + self._list_jobs(q, "queued") + self._list_jobs(q, "pending")
-        existing_by_track = self._existing_jobs_by_track(existing)
+        model_configs = self.model_configs.snapshot()
+        existing_by_track = self._existing_jobs_by_track(existing, model_configs)
 
         res = []
         for arg in args:
             parents: list[str] = []
-            for t in self.model_configs[arg.feature].track_dependencies:
+            model_cfg = model_configs.get(arg.feature)
+            if model_cfg is None:
+                raise BadRequestError(f"Model {arg.feature} not found.")
+            for t in model_cfg.track_dependencies:
                 if t in batch_by_track:
                     parents.extend(batch_by_track[t])
                 elif t in existing_by_track:
@@ -50,11 +57,11 @@ class DependencyResolver:
     def _list_jobs(self, q: Content, status: job_status) -> list[QueueItem]:
         return self.jobstore.list_jobs(ListJobArgs(qid=q.qid, status=status, include_unready=True), auth=q.token)
 
-    def _existing_jobs_by_track(self, items: list[QueueItem]) -> dict[str, str]:
+    def _existing_jobs_by_track(self, items: list[QueueItem], model_configs: Mapping[str, ModelConfig]) -> dict[str, str]:
         """Returns a map of track name -> id of a job producing it."""
         result: dict[str, str] = {}
         for item in items:
-            if item.model not in self.model_configs:
+            if item.model not in model_configs:
                 continue
             for track in self.track_resolver.resolve(item.model):
                 result.setdefault(track.name, item.id)

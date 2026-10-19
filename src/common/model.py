@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, Mapping
 
 
 SystemResources = dict[str, int]
@@ -26,3 +26,19 @@ class ModelConfig:
     track_outputs: list[str] = field(default_factory=list)
     track_dependencies: list[str] = field(default_factory=list)
     tags: TagsConfig = field(default_factory=TagsConfig)
+
+class ModelConfigStore:
+    """
+    Manager class for the model configs so that we can replace 
+    them at runtime without worrying about race conditions. All downstream
+    code uses snapshot() instead of depending on the configs directly.
+    """
+
+    def __init__(self, configs: dict[str, ModelConfig]):
+        self._configs = dict(configs)
+
+    def snapshot(self) -> Mapping[str, ModelConfig]:
+        return self._configs
+
+    def replace(self, configs: dict[str, ModelConfig]) -> None:
+        self._configs = dict(configs)

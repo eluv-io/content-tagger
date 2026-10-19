@@ -5,10 +5,10 @@ import pytest
 from unittest.mock import Mock, patch
 from flask import Flask
 
+from src.common.model import ModelConfigStore
 from src.api.arg_resolver import ArgsResolver
 from src.api.arg_resolver import ArgsResolver
 from src.fetch.model import AssetScope, LiveScope, TagAlignedScope, TimeRangeScope, VideoScope
-from src.tag_containers.registry import ContainerRegistry
 from marshmallow import ValidationError
 from src.api.tagging.request_format import (
     StartJobsRequest, JobSpec, TaggerOptions, StatusRequest, StatusRequestSchema,
@@ -44,7 +44,7 @@ def mock_qfactory():
 @pytest.fixture
 def resolver(model_configs, mock_qfactory):
     """Import the resolver function for testing."""
-    return ArgsResolver(model_configs, mock_qfactory, Mock(get=Mock(return_value={})))
+    return ArgsResolver(ModelConfigStore(model_configs), mock_qfactory, Mock(get=Mock(return_value={})))
 
 def test_auto_detect_livestream(resolver, mock_content):
     """Test that livestream scope is auto-detected when segment_length is provided."""
@@ -109,7 +109,7 @@ def test_detect_processor_scope(resolver, mock_content):
 def test_with_model_scope(resolver, mock_content):
     """Test that model scope is used when provided."""
     model_scope = {"type": "tag-aligned", "track": "shot_detection"}
-    resolver.model_configs["object_detection"].scope = model_scope
+    resolver.model_configs.snapshot()["object_detection"].scope = model_scope
     
     args = StartJobsRequest(
         options=TaggerOptions(),

@@ -10,6 +10,7 @@ import atexit
 import signal
 import setproctitle
 import sys
+import threading
 from waitress.server import create_server
 import os
 import time
@@ -30,7 +31,7 @@ from src.tags.vectorstore.factory import VectorstoreFactory
 from src.tagging.fabric_tagging.source_resolver import SourceResolver
 from src.fetch.factory import FetchFactory
 from src.common.content import QAPIFactory
-from src.tag_containers.registry import ContainerRegistry
+from src.tag_containers.factory import ContainerFactory
 from src.tags.track_resolver import TrackResolver
 from src.common.logging import logger, configure_logging
 
@@ -42,6 +43,7 @@ from src.tagging.fabric_tagging.queue.factory import create_jobstore
 from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tagging.tag_runner import TagRunner
 from src.common.errors import *
+from src.common.model import ModelConfig, ModelConfigStore
 from app_config import AppConfig
 
 _SMOREST_DEFAULTS = {
@@ -178,16 +180,16 @@ def configure_routes(app: Flask) -> None:
     api.register_blueprint(tagging_blp)
     api.register_blueprint(content_status_blp)
 
-def _build_worker(cfg: AppConfig) -> TaggerWorker:
+def _build_worker(cfg: AppConfig, model_configs: ModelConfigStore) -> TaggerWorker:
     qfactory = QAPIFactory(cfg.content)
     tagstore = create_tagstore(cfg.tagstore)
     vectorstores = VectorstoreFactory(cfg.vectorstore)
-    track_resolver = TrackResolver(cfg.label_resolver, cfg.model_configs)
-    model_configs = cfg.model_configs
+    track_resolver = TrackResolver(cfg.label_resolver, model_configs)
     return TaggerWorker(
         system_tagger=ContainerScheduler(cfg.system),
         fetcher=FetchFactory(cfg.fetcher, create_tagstore(cfg.tagstore), qfactory),
-        cregistry=ContainerRegistry(cfg.container_registry, model_configs),
+        container_factory=ContainerFactory(cfg.container_registry),
+        model_configs=model_configs,
         tagstore=tagstore,
         vectorstores=vectorstores,
         cfg=cfg.tagger,
@@ -203,10 +205,11 @@ def create_app_direct(config: AppConfig) -> Flask:
     Standalone mode: API handlers call TaggerWorker directly."""
     app = Flask(__name__)
 
-    worker = _build_worker(config)
+    model_configs = ModelConfigStore(config.model_configs)
+    worker = _build_worker(config, model_configs)
     qfactory = QAPIFactory(config.content)
     tenant_defaults = TenantDefaultsResolver(UserInfoResolver(config.user_info_resolver), qfactory)
-    arg_resolver = ArgsResolver(config.model_configs, qfactory, tenant_defaults)
+    arg_resolver = ArgsResolver(model_configs, qfactory, tenant_defaults)
     app.config["state"] = {
         "service": DirectAPI(worker, arg_resolver),
         "status_service": TaggingStatusService(
@@ -215,8 +218,8 @@ def create_app_direct(config: AppConfig) -> Flask:
         ),
         "authenticator": Authenticator(config.content.config_url),
         "arg_resolver": arg_resolver,
-        # for listing API
-        "model_configs": config.model_configs,
+        # for listing API and config reload
+        "model_configs": model_configs,
         "track_resolver": worker.track_resolver,
         "worker": worker,  # Expose worker for testing purposes
     }
@@ -238,13 +241,14 @@ def create_app_queue_based(config: AppConfig) -> Flask:
     Queue-based mode: API handlers enqueue via QueueService; TagRunner drives TaggerWorker."""
     app = Flask(__name__)
 
-    worker = _build_worker(config)
+    model_configs = ModelConfigStore(config.model_configs)
+    worker = _build_worker(config, model_configs)
     user_info_resolver = UserInfoResolver(config.user_info_resolver)
     job_store: JobStore = create_jobstore(config.jobstore, user_info_resolver)
     qfactory = QAPIFactory(config.content)
     tenant_defaults = TenantDefaultsResolver(user_info_resolver, qfactory)
-    arg_resolver = ArgsResolver(config.model_configs, api_factory=qfactory, tenant_defaults=tenant_defaults)
-    dependency_resolver = DependencyResolver(job_store, worker.track_resolver, config.model_configs)
+    arg_resolver = ArgsResolver(model_configs, api_factory=qfactory, tenant_defaults=tenant_defaults)
+    dependency_resolver = DependencyResolver(job_store, worker.track_resolver, model_configs)
 
     app.config["state"] = {
         "service": QueueService(job_store, dependency_resolver, arg_resolver, qfactory),
@@ -257,8 +261,8 @@ def create_app_queue_based(config: AppConfig) -> Flask:
         "authenticator": Authenticator(config.content.config_url),
         # for delete jobs endpoint
         "jobstore": job_store,
-        # for listing API
-        "model_configs": config.model_configs,
+        # for listing API and config reload
+        "model_configs": model_configs,
         "track_resolver": worker.track_resolver,
         "worker": worker,  # Expose worker for testing purposes
     }
@@ -276,6 +280,27 @@ def create_app_queue_based(config: AppConfig) -> Flask:
     configure_routes(app)
     CORS(app)
     return app
+
+_reload_lock = threading.Lock()
+
+def reload_model_configs(store: ModelConfigStore, new_configs: dict[str, ModelConfig]) -> None:
+    """Swap in new model configs. Running jobs keep the ModelConfig they started with."""
+    with _reload_lock:
+        old = store.snapshot()
+        added = sorted(new_configs.keys() - old.keys())
+        removed = sorted(old.keys() - new_configs.keys())
+        changed = sorted(m for m in new_configs.keys() & old.keys() if new_configs[m] != old[m])
+        store.replace(new_configs)
+        logger.info("Reloaded model configs", added=added, removed=removed, changed=changed)
+
+def _reload_from_file(store: ModelConfigStore, config_path: str) -> None:
+    try:
+        cfg = AppConfig.from_yaml(config_path)
+    except Exception as e:
+        logger.opt(exception=e).error("Failed to load config, keeping current model configs")
+        return
+    reload_model_configs(store, cfg.model_configs)
+    logger.info("Only model_configs is reloaded; other config changes require a restart")
 
 def main():
     logger.info("Python interpreter version: " + sys.version)
@@ -306,13 +331,21 @@ def main():
 
     if not args.standalone:
         loop = app.config["state"]["loop"]
-        def _handle_sighup(signum, frame):
-            logger.info("Received SIGHUP, entering quiesce mode")
+        def _handle_sigusr1(signum, frame):
+            logger.info("Received SIGUSR1, entering quiesce mode")
             loop.quiesce()
-        signal.signal(signal.SIGHUP, _handle_sighup)
+        signal.signal(signal.SIGUSR1, _handle_sigusr1)
     else:
-        # In standalone mode, SIGHUP behaves like SIGTERM
-        signal.signal(signal.SIGHUP, _handle_exit_signal)
+        # In standalone mode, SIGUSR1 behaves like SIGTERM
+        signal.signal(signal.SIGUSR1, _handle_exit_signal)
+
+    def _handle_sighup(signum, frame):
+        logger.info("Received SIGHUP, reloading model configs")
+        # off the signal handler, so it can't deadlock on a lock the main thread holds
+        threading.Thread(
+            target=_reload_from_file, args=(app.config["state"]["model_configs"], args.config), daemon=True, name="config-reload"
+        ).start()
+    signal.signal(signal.SIGHUP, _handle_sighup)
 
     server.run()
 

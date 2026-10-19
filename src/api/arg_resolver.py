@@ -9,7 +9,7 @@ from common_ml.utils.dictionary import nested_update
 from marshmallow import ValidationError
 
 from src.common.content import Content, QAPIFactory
-from src.common.model import ModelConfig
+from src.common.model import ModelConfigStore
 from src.fetch.model import *
 from src.api.tagging.request_format import *
 from src.tagging.fabric_tagging.model import TagArgs, Scope
@@ -21,7 +21,7 @@ class ArgsResolver:
 
     def __init__(
         self,
-        model_configs: dict[str, ModelConfig],
+        model_configs: ModelConfigStore,
         api_factory: QAPIFactory,
         tenant_defaults: TenantDefaultsResolver
     ):
@@ -34,8 +34,9 @@ class ArgsResolver:
         """Cheap checks which don't need the fabric."""
         if len(args.jobs) == 0:
             raise BadRequestError("Please specify at least one job to run.")
+        model_configs = self.model_configs.snapshot()
         for job in args.jobs:
-            if job.model not in self.model_configs:
+            if job.model not in model_configs:
                 raise BadRequestError(f"Model {job.model} not found.")
 
     def resolve(self, args: StartJobsRequest, q: Content) -> list[TagArgs]:
@@ -59,7 +60,8 @@ class ArgsResolver:
         try:
             if self.is_live_content(q):
                 return
-            if any(self.model_configs[job.model].type == "audio" for job in args.jobs if job.model in self.model_configs):
+            model_configs = self.model_configs.snapshot()
+            if any(model_configs[job.model].type == "audio" for job in args.jobs if job.model in model_configs):
                 self.find_default_audio_stream(q)
         except Exception:
             pass
@@ -148,7 +150,7 @@ class ArgsResolver:
         if max_fetch_retries is None:
             max_fetch_retries = 3
 
-        model_cfg = self.model_configs.get(feature)
+        model_cfg = self.model_configs.snapshot().get(feature)
         if model_cfg is None:
             raise BadRequestError(f"Model {feature} not found.")
         

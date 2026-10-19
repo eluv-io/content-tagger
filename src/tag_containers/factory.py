@@ -1,26 +1,23 @@
 import os
 import uuid
 from datetime import datetime
-from copy import deepcopy
 from podman import PodmanClient
 from loguru import logger
 
-from src.common.errors import MissingResourceError, BadRequestError
 from src.tag_containers.model import RegistryConfig, ContainerSpec
 from src.tag_containers.containers import *
 from src.tag_containers.model import ContainerRequest
 
-logger = logger.bind(name="Container Registry")
+logger = logger.bind(name="Container Factory")
 
-class ContainerRegistry:
+class ContainerFactory:
     """
-    Get runnable containers through identifier
+    Builds runnable containers from requests
     """
 
-    def __init__(self, cfg: RegistryConfig, model_configs: dict[str, ModelConfig]):
+    def __init__(self, cfg: RegistryConfig):
         self.pclient = PodmanClient()
         self.cfg = cfg
-        self.model_configs = model_configs
         os.makedirs(self.cfg.base_dir, exist_ok=True)
         os.makedirs(self.cfg.cache_dir, exist_ok=True)
 
@@ -37,10 +34,6 @@ class ContainerRegistry:
 
         cache_path = self.cfg.cache_dir
 
-        modelcfg = self.model_configs.get(req.model_id)
-        if not modelcfg:
-            raise MissingResourceError(f"Model {req.model_id} not found")
-
         ccfg = ContainerSpec(
             id=jobid,
             media_dir=req.media_dir,
@@ -48,22 +41,10 @@ class ContainerRegistry:
             logs_path=logs_path,
             cache_dir=cache_path,
             output_path=output_path,
-            model_config=modelcfg,
+            model_config=req.model_config,
             q=req.q,
             index_qid=req.index_qid,
             env=self.cfg.env,
         )
 
         return TagContainer(self.pclient, ccfg)
-
-    def get_model_config(self, model: str) -> ModelConfig:
-        if model not in self.model_configs:
-            raise BadRequestError(f"Model {model} not found")
-        return deepcopy(self.model_configs[model])
-
-    def services(self) -> list[str]:
-        """
-        Returns a list of available services
-        """
-        # TODO: check if the image exists
-        return list(self.model_configs.keys())

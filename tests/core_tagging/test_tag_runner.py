@@ -8,7 +8,8 @@ import time
 from unittest.mock import Mock
 import pytest
 
-from src.common.errors import BadRequestError, MissingResourceError
+from src.common.errors import MissingResourceError
+from src.common.model import ModelConfigStore
 from src.service.impl.queue_based import QueueService
 from src.service.model import *
 from src.tag_containers.containers import TagContainer
@@ -136,7 +137,7 @@ def test_job_progress(queue_client, q, make_tag_args, tag_runner):
     #def set_report_progress(container: FakeTagContainer) -> FakeTagContainer:
     #    container.report_progress = True
     #    return container
-    #tag_runner.tagger.cregistry.get = 
+    #tag_runner.tagger.container_factory.get = 
     enqueue(queue_client, q, [args])
     time.sleep(2)
     status = queue_client.status(StatusArgs(q.qid, None, None, None))[0]
@@ -174,8 +175,9 @@ def test_claims_limited_by_resources(queue_client, q, make_tag_args, tag_runner)
     assert len(queued) >= 1, f"Expected at least 1 job still queued, got {len(queued)}"
 
 
-def test_doesnt_claim_model_not_served(queue_client, q, make_tag_args, tag_runner):
-    tag_runner.tagger.cregistry.get_model_config = Mock(side_effect=BadRequestError("Model ocr not found"))
+def test_doesnt_claim_model_not_served(queue_client, q, make_tag_args, tag_runner, model_configs):
+    # the queue knows ocr, but this worker doesn't serve it
+    tag_runner.tagger.model_configs = ModelConfigStore({m: cfg for m, cfg in model_configs.items() if m != "ocr"})
 
     job_id = enqueue(queue_client, q, [make_tag_args(feature="ocr")])[0]
     time.sleep(0.3)

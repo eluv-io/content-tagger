@@ -8,7 +8,7 @@ from flask_smorest import Blueprint
 from src.api.arg_resolver import ArgsResolver
 from src.api_extensions.jobs import DeleteJobQuerySchema, DeleteJobRequest, delete_job
 from src.api_extensions.models import ListingResponse, ListingResponseSchema, list_models
-from src.common.model import ModelConfig
+from src.common.model import ModelConfigStore
 from src.service.abstract import TaggerService
 from src.api.tagging.request_format import (
     StartJobsRequestSchema,
@@ -169,11 +169,11 @@ def handle_stop_content(qid: str) -> StopTaggingResponse:
 @tagging_blp.response(200, ListingResponseSchema)
 def handle_list_models() -> ListingResponse:
     """List available models"""
-    model_configs: dict[str, ModelConfig] = current_app.config["state"]["model_configs"]
+    model_configs: ModelConfigStore = current_app.config["state"]["model_configs"]
 
     params_schemas: dict[str, dict] = current_app.config["state"]["model_params_schemas"]
 
-    return list_models(model_configs, params_schemas)
+    return list_models(model_configs.snapshot(), params_schemas)
 
 @tagging_blp.route("/jobs/<job_id>", methods=["DELETE"])
 @tagging_blp.arguments(DeleteJobQuerySchema, location="query")

@@ -12,10 +12,11 @@ from src.common.logging.timing import timeit
 from src.fetch.model import *
 from src.tag_containers.containers import TagContainer
 from src.tag_containers.model import ContainerRequest, Progress
-from src.tag_containers.registry import ContainerRegistry
+from src.tag_containers.factory import ContainerFactory
 from src.tagging.fabric_tagging.source_resolver import SourceResolver
 from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.common.content import Content
+from src.common.model import ModelConfig, ModelConfigStore
 from src.common.errors import *
 from src.fetch.factory import FetchFactory
 from src.tagging.uploading.align import adjust_progress_sources, align_tags, get_duration_tagged
@@ -57,7 +58,8 @@ class TaggerWorker:
     def __init__(
         self,
         system_tagger: ContainerScheduler,
-        cregistry: ContainerRegistry,
+        container_factory: ContainerFactory,
+        model_configs: ModelConfigStore,
         tagstore: Datastore,
         vectorstores: VectorstoreFactory,
         fetcher: FetchFactory,
@@ -67,7 +69,8 @@ class TaggerWorker:
     ):
 
         self.system_tagger = system_tagger
-        self.cregistry = cregistry
+        self.container_factory = container_factory
+        self.model_configs = model_configs
         self.tagstore = tagstore
         self.vectorstores = vectorstores
         self.fetcher = fetcher
@@ -106,11 +109,10 @@ class TaggerWorker:
 
     def has_room(self, feature: str) -> bool:
         """Checks if this model is served here and the system has the resources to start tagging with it now."""
-        try:
-            resources = self.cregistry.get_model_config(feature).resources
-        except BadRequestError:
+        model_config = self.model_configs.snapshot().get(feature)
+        if model_config is None:
             return False
-        return self.system_tagger.has_room(resources)
+        return self.system_tagger.has_room(model_config.resources)
 
     def shutdown_requested(self) -> bool:
         return self.shutdown_signal
@@ -237,10 +239,10 @@ class TaggerWorker:
         q = request.q
         args = request.args
     
-        self._validate_args(args)
+        model_config = self._validate_args(args)
         logger.info("processing tag request", qid=q.qid)
 
-        job = self._initialize_job(q, args.feature, args, queue_id=request.job_id)
+        job = self._initialize_job(q, args.feature, args, model_config, queue_id=request.job_id)
 
         # human readable id for the job (qid, feature, stream)
         jobid = job.get_id()
@@ -256,7 +258,7 @@ class TaggerWorker:
 
             message.response_mailbox.put(Response(data=TagStartResult(job_id=jobid, started=True, message="Job started successfully"), error=None))
 
-    def _initialize_job(self, q: Content, feature: str, args: TagArgs, queue_id: str | None = None) -> TagJob:
+    def _initialize_job(self, q: Content, feature: str, args: TagArgs, model_config: ModelConfig, queue_id: str | None = None) -> TagJob:
         """
         Initialize the starting state for a job and important context for its runtime
         """
@@ -300,11 +302,12 @@ class TaggerWorker:
             track_resolver=self.track_resolver,
             track_suffix=args.track_suffix,
             do_retry=is_live,
-            hidden=self.cregistry.get_model_config(feature).tags.hidden,
+            hidden=model_config.tags.hidden,
         )
 
-        container = self.cregistry.get(ContainerRequest(
+        container = self.container_factory.get(ContainerRequest(
             model_id=feature,
+            model_config=model_config,
             media_dir=output_dir,
             run_config=args.run_config,
             job_id=q.qid + "-" + datetime.now().strftime("%Y%m%d%H%M") + "-" + str(uuid())[0:6],
@@ -853,15 +856,14 @@ class TaggerWorker:
         os.makedirs(out, exist_ok=True)
         return out
 
-    def _validate_args(self, args: TagArgs) -> None:
-        """Validate args (called from actor thread)"""
-        services = self.cregistry.services()
-        modconfigs = self.cregistry.model_configs
+    def _validate_args(self, args: TagArgs) -> ModelConfig:
+        """Validate args and return the requested model's config (called from actor thread)"""
+        modconfigs = self.model_configs.snapshot()
 
         feature = args.feature
-        if feature not in services:
+        if feature not in modconfigs:
             raise MissingResourceError(
-                f"Invalid feature: {feature}. Available features: {', '.join(services)}"
+                f"Invalid feature: {feature}. Available features: {', '.join(modconfigs)}"
             )
             
         if isinstance(args.scope, AssetScope):
@@ -871,6 +873,8 @@ class TaggerWorker:
                 raise MissingResourceError(
                     f"{feature} is not frame-level"
                 )
+
+        return modconfigs[feature]
             
     def _get_tagged_sources(self, sources: list[Source], statuses: list[Progress]) -> list[str]:
         """Get the list of sources that have generated tags based on container progress messages""" # deduplicate sources just in case, container progress can be noisy and send duplicates

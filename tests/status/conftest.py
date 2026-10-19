@@ -2,6 +2,7 @@
 from unittest.mock import Mock
 import pytest
 
+from src.common.model import ModelConfigStore
 from src.status.service import TaggingStatusService
 from src.tags.datastore.abstract import Datastore
 from src.tags.datastore.model import Batch
@@ -46,7 +47,7 @@ def track_resolver(model_configs) -> TrackResolver:
                 "whisper_track": "Whisper",
             }
         ),
-        model_configs=model_configs
+        model_configs=ModelConfigStore(model_configs)
     )
 
 @pytest.fixture

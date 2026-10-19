@@ -303,7 +303,7 @@ def test_container_tags_method_fails(fabric_tagger, q, make_tag_args):
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
         return BrokenTagsContainer(req.media_dir, req.model_id)
 
-    fabric_tagger.cregistry.get = get_side_effect
+    fabric_tagger.container_factory.get = get_side_effect
 
     args = make_tag_args(feature="caption", stream="video", destination_qid=q.qid)
 
@@ -337,7 +337,7 @@ def test_container_initialization_fails(fabric_tagger, q, make_tag_args):
         def start(self, gpu_idx: int | None=None) -> None:
             raise RuntimeError("Simulated container start failure")
         
-    fabric_tagger.cregistry.get = Mock(return_value=FailContainer("/fake/media/dir", "model_id"))
+    fabric_tagger.container_factory.get = Mock(return_value=FailContainer("/fake/media/dir", "model_id"))
 
     args = make_tag_args(feature="caption", stream="video", destination_qid=q.qid)
 
@@ -375,7 +375,7 @@ def test_container_nonzero_exit_code(fabric_tagger, q, make_tag_args):
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
         return NonZeroExitContainer(req.media_dir, req.model_id)
 
-    fabric_tagger.cregistry.get = get_side_effect
+    fabric_tagger.container_factory.get = get_side_effect
 
     args = make_tag_args(feature="caption", stream="video", destination_qid=q.qid)
 
@@ -449,7 +449,7 @@ def test_uploaded_sources_respects_model_progress(fabric_tagger, q, make_tag_arg
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
         return PartialResultContainer(req.media_dir, req.model_id)
     
-    fabric_tagger.cregistry.get = get_side_effect
+    fabric_tagger.container_factory.get = get_side_effect
     
     args = make_tag_args(feature="caption", stream="video")
     
@@ -480,7 +480,7 @@ def test_track_override_uploads_to_multiple_tracks(fabric_tagger, q, make_tag_ar
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
         return MultiTrackContainer(req.media_dir, req.model_id)
 
-    fabric_tagger.cregistry.get = get_side_effect
+    fabric_tagger.container_factory.get = get_side_effect
 
     args = make_tag_args(feature="asr", stream="audio")
     fabric_tagger.tag(q, args)
@@ -528,7 +528,7 @@ def test_default_defer_to_model_track(fabric_tagger, q, make_tag_args):
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
         return MultiTrackContainer(req.media_dir, req.model_id)
 
-    with patch.object(fabric_tagger.cregistry, "get", side_effect=get_side_effect):
+    with patch.object(fabric_tagger.container_factory, "get", side_effect=get_side_effect):
         args = make_tag_args(feature="asr", stream="audio")
         fabric_tagger.tag(q, args)
         wait_tag(fabric_tagger, q.qid, timeout=5)
@@ -702,7 +702,7 @@ def test_model_error_through_status(fabric_tagger, q, make_tag_args):
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
         return ErrorContainer(req.media_dir, req.model_id)
 
-    fabric_tagger.cregistry.get = get_side_effect
+    fabric_tagger.container_factory.get = get_side_effect
 
     args = make_tag_args(feature="caption", stream="video")
 
@@ -727,7 +727,7 @@ def test_job_fails_when_reading_container_errors_raises(fabric_tagger, q, make_t
         def exit_code(self) -> int | None:
             return 1 if self.is_stopped else None
 
-    fabric_tagger.cregistry.get = lambda req: BadOutputContainer(req.media_dir, req.model_id)
+    fabric_tagger.container_factory.get = lambda req: BadOutputContainer(req.media_dir, req.model_id)
 
     fabric_tagger.tag(q, make_tag_args(feature="caption", stream="video"))
     time.sleep(1)
@@ -841,7 +841,7 @@ def test_content_aligned(fabric_tagger, q, make_tag_args, temp_dir):
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
         return ContentAlignedContainer(req.media_dir, req.model_id)
     
-    fabric_tagger.cregistry.get = get_side_effect
+    fabric_tagger.container_factory.get = get_side_effect
 
     args = make_tag_args(feature="caption", stream="video", max_fetch_retries=0)
 
@@ -880,7 +880,7 @@ def test_no_tags_still_creates_batch(fabric_tagger, q, make_tag_args):
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
         return NoTagsContainer(req.media_dir, req.model_id)
 
-    fabric_tagger.cregistry.get = get_side_effect
+    fabric_tagger.container_factory.get = get_side_effect
 
     args = make_tag_args(feature="caption", stream="video", max_fetch_retries=0)
 
@@ -902,7 +902,7 @@ def test_no_tags_still_creates_batch(fabric_tagger, q, make_tag_args):
     assert len(report["upload_status"]["tagged_sources"]) > 0
 
 def test_vector_tagging(fabric_tagger, q, make_tag_args):
-    fabric_tagger.cregistry.get = lambda req: FakeTagContainer(req.media_dir, req.model_id, output_vectors=True)
+    fabric_tagger.container_factory.get = lambda req: FakeTagContainer(req.media_dir, req.model_id, output_vectors=True)
 
     args = make_tag_args(feature="caption", stream="video", destination_qid=q.qid, index_qid="iq__test")
 
@@ -962,7 +962,7 @@ def test_container_starts_before_media(fabric_tagger, q, make_tag_args):
         containers.append(c)
         return c
     
-    fabric_tagger.cregistry.get = get_side_effect
+    fabric_tagger.container_factory.get = get_side_effect
 
     fabric_tagger.tag(q, make_tag_args(feature="caption", stream="video"))
 

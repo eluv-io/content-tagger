@@ -3,6 +3,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from src.common.model import ModelConfigStore
 from src.common.content import Content
 from src.tag_containers.model import ModelTag
 from src.tagging.uploading.uploader import UploadSession, Uploader
@@ -52,7 +53,7 @@ def track_resolver(model_configs):
             "speech_to_text": "Speech to Text",
             "pretty": "Pretty Speech",
         }),
-        model_configs=model_configs
+        model_configs=ModelConfigStore(model_configs)
     )
 
 @pytest.fixture

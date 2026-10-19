@@ -1,3 +1,4 @@
+from typing import Mapping
 from dataclasses import dataclass
 
 from marshmallow import Schema, fields
@@ -78,7 +79,7 @@ class ListingResponseSchema(Schema):
 
 
 def list_models(
-    model_configs: dict[str, ModelConfig],
+    model_configs: Mapping[str, ModelConfig],
     params_schemas: dict[str, dict],
 ) -> ListingResponse:
     specs = []

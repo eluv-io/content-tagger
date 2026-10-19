@@ -44,6 +44,7 @@ class ContainerRequest:
 
     # e.g: "caption", "asr" (same model handle used in the API)
     model_id: str
+    model_config: ModelConfig
     # directory on host filesystem where media will arrive
     media_dir: str
     # runtime params passed to the model

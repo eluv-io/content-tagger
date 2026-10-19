@@ -5,6 +5,7 @@ import time
 from unittest.mock import Mock
 import pytest
 
+from src.common.model import ModelConfigStore
 from src.api.tagging.request_format import JobSpec, StartJobsRequest
 from src.common.content import Content
 from src.fetch.model import *
@@ -51,13 +52,17 @@ def media_dir(temp_dir: str) -> str:
 @pytest.fixture
 def model_configs():
     return {
-        "caption": Mock(type="video", track_outputs=["object_detection"], track_dependencies=[]),
-        "asr": Mock(type="audio", track_outputs=["speech_to_text"], track_dependencies=[]),
-        "ocr": Mock(type="video", track_outputs=["ocr"], track_dependencies=[]),
+        "caption": Mock(type="video", track_outputs=["object_detection"], track_dependencies=[], resources={"gpu": 1, "cpu_juice": 5}, tags=Mock(hidden=False)),
+        "asr": Mock(type="audio", track_outputs=["speech_to_text"], track_dependencies=[], resources={"gpu": 1, "cpu_juice": 5}, tags=Mock(hidden=True)),
+        "ocr": Mock(type="video", track_outputs=["ocr"], track_dependencies=[], resources={"gpu": 1, "cpu_juice": 5}, tags=Mock(hidden=False)),
     }
 
 @pytest.fixture
-def track_resolver(model_configs):
+def model_config_store(model_configs) -> ModelConfigStore:
+    return ModelConfigStore(model_configs)
+
+@pytest.fixture
+def track_resolver(model_config_store):
     """Create a simple track resolver for testing"""
     return TrackResolver(
         label_configs=LabelResolverConfig(mapping={
@@ -65,7 +70,7 @@ def track_resolver(model_configs):
             "speech_to_text": "Speech to Text",
             "pretty": "Pretty Speech"
         }),
-        model_configs=model_configs
+        model_configs=model_config_store
     )
     
 @pytest.fixture
@@ -263,27 +268,9 @@ class PartialResultContainer(FakeTagContainer):
 
         return tags
 
-class FakeContainerRegistry:
+class FakeContainerFactory:
     def get(self, req: ContainerRequest) -> FakeTagContainer:
         return FakeTagContainer(req.media_dir, req.model_id)
-    
-    def get_model_config(self, feature: str) -> ModelConfig:
-        if feature == "caption":
-            return Mock(resources={"gpu": 1, "cpu_juice": 5}, tags=Mock(hidden=False))
-        elif feature == "asr":
-            return Mock(resources={"gpu": 1, "cpu_juice": 5}, tags=Mock(hidden=True))
-        return Mock(resources={"gpu": 1, "cpu_juice": 5})
-    
-    def services(self) -> list[str]:
-        return ["caption", "asr"]
-    
-    @property
-    def model_configs(self):
-        model_configs = {
-            "caption": Mock(type="video"),
-            "asr": Mock(type="audio"),
-        }
-        return model_configs
 
 class FakeWorker(FetchSession):
     """Fake DownloadWorker that creates test files"""
@@ -376,9 +363,9 @@ def system_tagger():
 
 
 @pytest.fixture
-def fake_container_registry():
-    """Create a fake ContainerRegistry that returns mock containers with fake tags"""
-    return FakeContainerRegistry()
+def fake_container_factory():
+    """Create a fake ContainerFactory that returns mock containers with fake tags"""
+    return FakeContainerFactory()
 
 @pytest.fixture
 def source_resolver(tag_store, track_resolver):
@@ -387,11 +374,12 @@ def source_resolver(tag_store, track_resolver):
 
 
 @pytest.fixture
-def fabric_tagger(system_tagger, fake_container_registry, tag_store, vectorstores, fake_fetcher, track_resolver, tagger_config, source_resolver):
+def fabric_tagger(system_tagger, fake_container_factory, model_config_store, tag_store, vectorstores, fake_fetcher, track_resolver, tagger_config, source_resolver):
     """Create a TaggerWorker instance for testing"""
     tagger = TaggerWorker(
         system_tagger=system_tagger,
-        cregistry=fake_container_registry,
+        container_factory=fake_container_factory,
+        model_configs=model_config_store,
         tagstore=tag_store,
         vectorstores=vectorstores,
         fetcher=fake_fetcher,
@@ -425,8 +413,8 @@ def fake_qapifactory():
     )
 
 @pytest.fixture
-def dependency_resolver(jobstore, track_resolver, model_configs) -> DependencyResolver:
-    return DependencyResolver(job_store=jobstore, track_resolver=track_resolver, model_configs=model_configs)
+def dependency_resolver(jobstore, track_resolver, model_config_store) -> DependencyResolver:
+    return DependencyResolver(job_store=jobstore, track_resolver=track_resolver, model_configs=model_config_store)
 
 
 @pytest.fixture
