@@ -93,7 +93,8 @@ def list_models(
                 description=cfg.description,
                 type=cfg.type,
                 # TODO: might break evie
-                tag_tracks=[TrackOutput(name=output) for output in cfg.track_outputs],
+                # mirrors TrackResolver default: no track_outputs means output to a track named after the model
+                tag_tracks=[TrackOutput(name=output) for output in (cfg.track_outputs or [m])],
                 dependencies=cfg.track_dependencies,
                 category=cfg.category,
                 params_schema=params_schemas.get(m),

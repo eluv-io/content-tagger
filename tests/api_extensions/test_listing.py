@@ -29,6 +29,12 @@ def listed_model_configs() -> dict[str, ModelConfig]:
             track_outputs=["another_model"],
             track_dependencies=["test_model"]
         ),
+        "no_outputs_model": ModelConfig(
+            type="frame",
+            description="Model without track_outputs",
+            resources={"gpu": 1},
+            image="localhost/test_model:latest",
+        ),
         # should be hidden from listing API due to empty description
         "hidden_model": ModelConfig(
             type="processor",
@@ -55,7 +61,8 @@ def test_listing(listed_model_configs):
     res = list_models(listed_model_configs, {"test_model": params_schema})
     models = res.models
 
-    assert len(models) == 2
+    assert len(models) == 3
+    assert [t.name for t in models[2].tag_tracks] == ["no_outputs_model"]
     assert models[0].name == "test_model"
     assert models[0].type == "frame"
     assert models[0].description == "Test model"
