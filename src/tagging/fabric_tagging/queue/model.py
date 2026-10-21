@@ -33,6 +33,7 @@ class QueueItem:
     auth: str
     user: str
     tenant: str
+    tenant_name: str
     additional_info: dict
     num_failed_attempts: int
 

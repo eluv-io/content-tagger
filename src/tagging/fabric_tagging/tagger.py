@@ -90,8 +90,8 @@ class TaggerWorker:
         self._schedule_upload_tick()
         self._schedule_heartbeat()
 
-    def tag(self, q: Content, args: TagArgs, job_id: str | None = None) -> TagStartResult:
-        request = TagRequest(q=q, args=args, job_id=job_id)
+    def tag(self, q: Content, args: TagArgs, log_context: dict = {}) -> TagStartResult:
+        request = TagRequest(q=q, args=args, log_context=log_context)
         return self._submit(request)
 
     def status(self, qid: str) -> list[TagStatusResult]:
@@ -176,10 +176,7 @@ class TaggerWorker:
 
     def _message_log_context(self, req: Request) -> dict:
         if isinstance(req, TagRequest):
-            ctx = {"qid": req.q.qid, "model": req.args.feature}
-            if req.job_id:
-                ctx["job_id"] = req.job_id
-            return ctx
+            return {"qid": req.q.qid, "model": req.args.feature, **req.log_context}
         jobid = getattr(req, "job_id", None)
         if isinstance(jobid, JobID):
             job = self.jobstore.active_jobs.get(jobid) or self.jobstore.inactive_jobs.get(jobid)
@@ -242,7 +239,7 @@ class TaggerWorker:
         model_config = self._validate_args(args)
         logger.info("processing tag request", qid=q.qid)
 
-        job = self._initialize_job(q, args.feature, args, model_config, queue_id=request.job_id)
+        job = self._initialize_job(q, args.feature, args, model_config, log_context=request.log_context)
 
         # human readable id for the job (qid, feature, stream)
         jobid = job.get_id()
@@ -258,7 +255,7 @@ class TaggerWorker:
 
             message.response_mailbox.put(Response(data=TagStartResult(job_id=jobid, started=True, message="Job started successfully"), error=None))
 
-    def _initialize_job(self, q: Content, feature: str, args: TagArgs, model_config: ModelConfig, queue_id: str | None = None) -> TagJob:
+    def _initialize_job(self, q: Content, feature: str, args: TagArgs, model_config: ModelConfig, log_context: dict) -> TagJob:
         """
         Initialize the starting state for a job and important context for its runtime
         """
@@ -331,7 +328,7 @@ class TaggerWorker:
                 q=q,
             ),
             stop_event=stop_event,
-            queue_id=queue_id,
+            extra_log_context=log_context,
         )
 
         return job

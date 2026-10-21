@@ -9,8 +9,7 @@ from src.fetch.model import DownloadResult
 class TagRequest:
     q: Content
     args: TagArgs
-    # id of the queue job driving this request, if any (for log context)
-    job_id: str | None = None
+    log_context: dict
 
     def __str__(self):
         return f"TagRequest(q={self.q}, args={self.args})"

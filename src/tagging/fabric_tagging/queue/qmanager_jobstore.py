@@ -68,6 +68,7 @@ class QueueManagerJobStore:
             auth=(job.get("auth") or {}).get("Authorization", "").removeprefix("Bearer "),
             user=job.get("user", ""),
             tenant=job.get("tenant", ""),
+            tenant_name=job.get("tenant_name", ""),
             additional_info=job.get("additional_info") or {},
             # attempts are only returned with the worker secret
             num_failed_attempts=sum(1 for a in job.get("attempts") or [] if a.get("outcome") in _FAILED_OUTCOMES),

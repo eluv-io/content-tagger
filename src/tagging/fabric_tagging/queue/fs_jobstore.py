@@ -119,6 +119,8 @@ class FsJobStore:
             auth=job["auth"],
             user=job["user"],
             tenant=job["tenant"],
+            # the fs jobstore doesn't resolve tenant names
+            tenant_name="",
             additional_info=job.get("additional_info", {}),
             num_failed_attempts=job.get("failed_attempts", 0),
         )

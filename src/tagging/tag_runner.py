@@ -58,7 +58,7 @@ class JobInfo:
 def _item_log_context(item: QueueItem) -> dict:
     # params should be resolved before reaching 'queued' state
     assert item.params is not None
-    return {"job_id": item.id, "qid": item.qid, "model": item.params.feature}
+    return {"job_id": item.id, "qid": item.qid, "model": item.params.feature, "tenant_name": item.tenant_name}
 
 class TagRunner:
     """The main worker loop - polls from the queue and runs tagging jobs.
@@ -172,7 +172,7 @@ class TagRunner:
         assert item.params is not None
         try:
             content = Content(qid=item.qid, token=item.auth)
-            result = self.tagger.tag(content, item.params, job_id=item.id)
+            result = self.tagger.tag(content, item.params, log_context=_item_log_context(item))
             logger.info("tag started", started=result.started, result=result.message)
         except Exception as e:
             logger.opt(exception=e).error("failed to start tagging job")
