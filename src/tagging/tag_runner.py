@@ -109,7 +109,7 @@ class TagRunner:
             # Hard stop: end any jobs still tracked
             for job in list(self._running_jobs.values()):
                 try:
-                    self._fail(job.id, job.auth, None, "tagger worker service was shut down or restarted")
+                    self._fail(job.id, job.auth, None, "tagger worker service was shut down or restarted", retryable=True)
                 except Exception as e:
                     logger.opt(exception=e).warning("failed to end job on shutdown", job_id=job.id)
         self._running_jobs.clear()
@@ -180,7 +180,7 @@ class TagRunner:
 
     def _error_job(self, item: QueueItem, error: Exception) -> None:
         try:
-            self._fail(item.id, item.auth, None, str(error))
+            self._fail(item.id, item.auth, None, str(error), retryable=True)
         except Exception as e:
             logger.opt(exception=e).warning("failed to update job with error status")
         finally:
@@ -234,7 +234,8 @@ class TagRunner:
         try:
             status = _job_status_from_report(r)
             if status == "failed":
-                self._fail(item.id, item.auth, details, r.status.error or "tagging failed")
+                # jobs that made partial progress aren't retried, e.g. a livestream whose fetches fail once it stops
+                self._fail(item.id, item.auth, details, r.status.error or "tagging failed", retryable=not r.status.uploaded_sources)
             elif r.status.status in TERMINAL_STATUSES:
                 self._complete(item, status, details, r.status.error)
             else:
@@ -260,9 +261,9 @@ class TagRunner:
         if not self.jobstore.complete_job(req, auth=item.auth):
             logger.warning("queue refused to complete job", status=status)
 
-    def _fail(self, id: str, auth: str, details: TagDetails | None, error: str) -> None:
+    def _fail(self, id: str, auth: str, details: TagDetails | None, error: str, retryable: bool) -> None:
         self._failed_jobs.add(id)
-        if not self.jobstore.fail_job(FailJobRequest(id=id, error=error, status_details=details, retryable=True), auth=auth):
+        if not self.jobstore.fail_job(FailJobRequest(id=id, error=error, status_details=details, retryable=retryable), auth=auth):
             logger.warning("queue refused to fail job")
 
     def _finish_job(self, id: str) -> None:

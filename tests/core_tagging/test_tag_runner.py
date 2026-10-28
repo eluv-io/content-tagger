@@ -5,6 +5,7 @@ QueueService and processed asynchronously by the TagRunner.
 """
 
 import time
+from dataclasses import replace
 from unittest.mock import Mock
 import pytest
 
@@ -15,6 +16,7 @@ from src.service.model import *
 from src.tag_containers.containers import TagContainer
 from src.tagging.fabric_tagging.queue.model import ListJobArgs
 from src.common.content import Content
+from src.tagging.fabric_tagging.model import JobStatus, TagStatusResult
 from src.tagging.tag_runner import TagRunner, TagRunnerConfig, WorkerFilters
 from tests.core_tagging.conftest import FakeTagContainer, enqueue
 
@@ -194,3 +196,37 @@ def test_runner_only_claims_jobs_matching_its_filters(queue_client, q, make_tag_
         assert jobstore.get_job(job_id).status == "queued"
     finally:
         runner.stop()
+
+
+def _failed_report(uploaded_sources: list[str]) -> TagStatusResult:
+    status = replace(
+        JobStatus.starting(),
+        status="Failed",
+        time_ended=time.time(),
+        total_sources=["part_0", "part_1"],
+        uploaded_sources=uploaded_sources,
+        error="fetch failed",
+    )
+    return TagStatusResult(status=status, model="caption", stream="video")
+
+def test_failure_without_progress_is_requeued(queue_client, q, make_tag_args, tag_runner):
+    tag_runner.tagger.tag = Mock()
+    tag_runner.tagger.status = Mock(return_value=[_failed_report([])])
+
+    job_id = enqueue(queue_client, q, [make_tag_args(feature="caption", stream="video")])[0]
+    time.sleep(0.5)
+
+    job = tag_runner.jobstore.get_job(job_id)
+    assert job.status == "queued"
+    assert job.num_failed_attempts == 1
+
+def test_failure_after_progress_is_not_retried(queue_client, q, make_tag_args, tag_runner):
+    tag_runner.tagger.tag = Mock()
+    tag_runner.tagger.status = Mock(return_value=[_failed_report(["part_0"])])
+
+    job_id = enqueue(queue_client, q, [make_tag_args(feature="caption", stream="video")])[0]
+    time.sleep(0.5)
+
+    job = tag_runner.jobstore.get_job(job_id)
+    assert job.status == "failed"
+    assert job.num_failed_attempts == 1
