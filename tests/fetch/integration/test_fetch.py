@@ -7,11 +7,9 @@ import os
 from src.fetch.factory import *
 from src.fetch.impl.tag_aligned import TagAlignedFetcher
 from src.fetch.model import *
-from src.tags.reader.impl import TagReaderImpl
-from src.tags.tagstore.filesystem_tagstore import Tag
+from src.tags.datastore.model import Tag
 from src.common.content import Content
 from src.common.errors import MissingResourceError
-from src.tags.tagstore.rest_tagstore import RestTagstore
 
 
 @pytest.mark.parametrize("content_fixture", ["vod_content_with_tags_clean", "legacy_vod_content_with_tags_clean"])
@@ -218,7 +216,7 @@ def test_tag_aligned(fetcher: FetchFactory, q_legacy, temp_dir):
             id='1', 
             start_time=243400, 
             end_time=247320, 
-            text="That's what kitty said chas told her salesmen: make their own wins.", 
+            data="That's what kitty said chas told her salesmen: make their own wins.", 
             additional_info=None, 
             source='', 
             batch_id='', 
@@ -227,7 +225,7 @@ def test_tag_aligned(fetcher: FetchFactory, q_legacy, temp_dir):
             id='2', 
             start_time=248360, 
             end_time=249200, 
-            text='You gotta try harder.', 
+            data='You gotta try harder.', 
             additional_info=None, 
             source='', 
             batch_id='', 
@@ -236,7 +234,7 @@ def test_tag_aligned(fetcher: FetchFactory, q_legacy, temp_dir):
         Tag(id='3', 
             start_time=600000, 
             end_time=600100, 
-            text='TESTING 123.', 
+            data='TESTING 123.', 
             additional_info=None, 
             source='', 
             batch_id='', 
@@ -245,7 +243,7 @@ def test_tag_aligned(fetcher: FetchFactory, q_legacy, temp_dir):
             id='4', 
             start_time=248360, 
             end_time=420000, 
-            text='this is a very long tag', 
+            data='this is a very long tag', 
             additional_info=None, 
             source='', 
             batch_id='', 
@@ -275,3 +273,43 @@ def test_tag_aligned(fetcher: FetchFactory, q_legacy, temp_dir):
     assert len(dl.failed) == 0
     assert len(dl.sources) == 3
     assert set(s.name for s in dl.sources) == {"243400_247320", "248360_249200", "248360_420000"}
+
+def test_tag_aligned_handles_bad_range(black_frame_fetcher):
+    # these are sentence aligned tags - 
+    # can also check temp_dir and listen to the files and make sure they match the audio
+    tags = [
+        Tag(
+            id='1', 
+            start_time=0, 
+            end_time=5000, 
+            data="", 
+            additional_info=None, 
+            source='', 
+            batch_id='', 
+        ), 
+        Tag(
+            id='2', 
+            start_time=12000, 
+            end_time=15000, 
+            data='', 
+            additional_info=None, 
+            source='', 
+            batch_id='', 
+        ),
+    ]
+    fake_tag_reader = Mock(read=Mock(return_value=tags))
+
+    tag_aligned = TagAlignedFetcher(fake_tag_reader, black_frame_fetcher)
+
+    dl = tag_aligned.download()
+    assert len(dl.failed) == 1
+    assert len(dl.sources) == 1
+    assert set(s.name for s in dl.sources) == {"0_5000"}
+
+    # get a new one and run again
+    tag_aligned = TagAlignedFetcher(fake_tag_reader, black_frame_fetcher)
+
+    dl = tag_aligned.download()
+    assert len(dl.failed) == 1
+    assert len(dl.sources) == 1
+    assert set(s.name for s in dl.sources) == {"0_5000"}

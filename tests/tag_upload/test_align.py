@@ -9,7 +9,7 @@ def test_align_tags():
         ModelTag(
             start_time=1000,
             end_time=2000,
-            text="tag1",
+            data="tag1",
             source_media="/path/to/source1.mp4",
             frame_info={"frame_idx": 30},
             model_track="track1",
@@ -17,7 +17,7 @@ def test_align_tags():
         ModelTag(
             start_time=2000,
             end_time=3000,
-            text="tag1",
+            data="tag1",
             source_media="/path/to/source2.mp4",
             frame_info={"frame_idx": 60},
             model_track="track1",

@@ -4,7 +4,7 @@ from dataclasses import replace as dc_replace
 from unittest.mock import Mock, patch
 
 from src.fetch.model import MediaMetadata
-from src.tags.tagstore.model import Track
+from src.tags.datastore.model import Track
 from src.tags.tagstore.rest_tagstore import RestTagstore
 from src.tagging.fabric_tagging.tagger import TaggerWorker
 from src.tagging.fabric_tagging.model import TagStatusResult
@@ -255,6 +255,13 @@ def test_tags_uploaded_during_and_after_job(
     assert 2 in tag_counts
     assert 4 in tag_counts
 
+    # check that we set the asr additional info to hidden
+    assert fabric_tagger.tagstore.get_track(q=q, name="speech_to_text").additional_info is not None
+    assert fabric_tagger.tagstore.get_track(q=q, name="speech_to_text").additional_info["hidden"] is True
+
+    # we set hidden to false
+    assert fabric_tagger.tagstore.get_track(q=q, name="object_detection").additional_info is None
+
 
 def test_tags_uploaded_during_and_after_job_through_status(
     fabric_tagger, 
@@ -296,7 +303,7 @@ def test_container_tags_method_fails(fabric_tagger, q, make_tag_args):
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
         return BrokenTagsContainer(req.media_dir, req.model_id)
 
-    fabric_tagger.cregistry.get = get_side_effect
+    fabric_tagger.container_factory.get = get_side_effect
 
     args = make_tag_args(feature="caption", stream="video", destination_qid=q.qid)
 
@@ -330,7 +337,7 @@ def test_container_initialization_fails(fabric_tagger, q, make_tag_args):
         def start(self, gpu_idx: int | None=None) -> None:
             raise RuntimeError("Simulated container start failure")
         
-    fabric_tagger.cregistry.get = Mock(return_value=FailContainer("/fake/media/dir", "model_id"))
+    fabric_tagger.container_factory.get = Mock(return_value=FailContainer("/fake/media/dir", "model_id"))
 
     args = make_tag_args(feature="caption", stream="video", destination_qid=q.qid)
 
@@ -368,7 +375,7 @@ def test_container_nonzero_exit_code(fabric_tagger, q, make_tag_args):
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
         return NonZeroExitContainer(req.media_dir, req.model_id)
 
-    fabric_tagger.cregistry.get = get_side_effect
+    fabric_tagger.container_factory.get = get_side_effect
 
     args = make_tag_args(feature="caption", stream="video", destination_qid=q.qid)
 
@@ -442,7 +449,7 @@ def test_uploaded_sources_respects_model_progress(fabric_tagger, q, make_tag_arg
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
         return PartialResultContainer(req.media_dir, req.model_id)
     
-    fabric_tagger.cregistry.get = get_side_effect
+    fabric_tagger.container_factory.get = get_side_effect
     
     args = make_tag_args(feature="caption", stream="video")
     
@@ -473,7 +480,7 @@ def test_track_override_uploads_to_multiple_tracks(fabric_tagger, q, make_tag_ar
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
         return MultiTrackContainer(req.media_dir, req.model_id)
 
-    fabric_tagger.cregistry.get = get_side_effect
+    fabric_tagger.container_factory.get = get_side_effect
 
     args = make_tag_args(feature="asr", stream="audio")
     fabric_tagger.tag(q, args)
@@ -512,7 +519,7 @@ def test_default_defer_to_model_track(fabric_tagger, q, make_tag_args):
                 tags.append(ModelTag(
                     start_time=0,
                     end_time=5000,
-                    text=f"default_track_tag_{i}",
+                    data=f"default_track_tag_{i}",
                     source_media=filepath,
                     model_track="random_track"
                 ))
@@ -521,7 +528,7 @@ def test_default_defer_to_model_track(fabric_tagger, q, make_tag_args):
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
         return MultiTrackContainer(req.media_dir, req.model_id)
 
-    with patch.object(fabric_tagger.cregistry, "get", side_effect=get_side_effect):
+    with patch.object(fabric_tagger.container_factory, "get", side_effect=get_side_effect):
         args = make_tag_args(feature="asr", stream="audio")
         fabric_tagger.tag(q, args)
         wait_tag(fabric_tagger, q.qid, timeout=5)
@@ -556,17 +563,20 @@ def test_fetcher_returns_no_sources(fabric_tagger, q, make_tag_args):
     assert tag_count == 0
 
 def test_batch_report_on_success(fabric_tagger, q, make_tag_args):
-    """Batch additional_info should contain a tagger report with Completed status."""
-    args = make_tag_args(feature="caption", stream="video")
+    """Batch additional_info should contain a tagger report with Completed status.
+    
+    Also check suffix while we're at it
+    """
+    args = make_tag_args(feature="caption", stream="video", track_suffix="test suffix")
     result = fabric_tagger.tag(q, args)
     assert result.started
 
     wait_tag(fabric_tagger, q.qid, timeout=5)
 
-    batches = fabric_tagger.tagstore.find_batches(qid=q.qid, q=q)
+    batches = fabric_tagger.tagstore.find_batches(model="caption_test_suffix", q=q)
     assert len(batches) == 1
 
-    batch = fabric_tagger.tagstore.get_batch(batches[0], q=q)
+    batch = batches[0]
     assert batch is not None
 
     report = batch.additional_info.get("tagger")
@@ -588,7 +598,7 @@ def test_replace(
     fabric_tagger.tag(q, args)
     wait_tag(fabric_tagger, q.qid, timeout=5)
 
-    first_batch = fabric_tagger.tagstore.find_batches(q=q, track="object_detection")[0]
+    first_batch = fabric_tagger.tagstore.find_batches(q=q, track="object_detection")[0].id
     tags = fabric_tagger.tagstore.find_tags(q=q, track="object_detection", batch_id=first_batch)
 
     timestamps = tuple(sorted(t.additional_info["timestamp_ms"] for t in tags if t.additional_info is not None))
@@ -597,7 +607,7 @@ def test_replace(
     fabric_tagger.tag(q, args)
     wait_tag(fabric_tagger, q.qid, timeout=5)
 
-    new_batches = fabric_tagger.tagstore.find_batches(q=q, track="object_detection")
+    new_batches = [b.id for b in fabric_tagger.tagstore.find_batches(q=q, track="object_detection")]
     new_batches.remove(first_batch)
     second_batch = new_batches[0]
 
@@ -613,8 +623,8 @@ def test_replace(
     wait_tag(fabric_tagger, q.qid, timeout=5)
 
     # doing this weird stuff for now cause prod tagstore does shadowing and local one doesn't
-    batches = fabric_tagger.tagstore.find_batches(q=q, track="object_detection")
-    
+    batches = [b.id for b in fabric_tagger.tagstore.find_batches(q=q, track="object_detection")]
+
     batches.remove(first_batch)
     batches.remove(second_batch)
 
@@ -687,12 +697,12 @@ def test_model_error_through_status(fabric_tagger, q, make_tag_args):
             return [Error(source_media=self.media_files[0], message="Simulated model error")]
 
         def exit_code(self) -> int | None:
-            return 1
+            return 1 if self.is_stopped else None
 
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
         return ErrorContainer(req.media_dir, req.model_id)
 
-    fabric_tagger.cregistry.get = get_side_effect
+    fabric_tagger.container_factory.get = get_side_effect
 
     args = make_tag_args(feature="caption", stream="video")
 
@@ -704,6 +714,27 @@ def test_model_error_through_status(fabric_tagger, q, make_tag_args):
     report = _status_for(status, "caption")
     assert report.status.status == "Failed"
     assert report.status.error == "Simulated model error"
+
+def test_job_fails_when_reading_container_errors_raises(fabric_tagger, q, make_tag_args):
+    """
+    Prior to the change that this test checks, it was possible that a container outputting bad json data would raise
+    an exception and crash the _await_tagging thread.
+    """
+    class BadOutputContainer(FakeTagContainer):
+        def errors(self) -> list[Error]:
+            raise ValueError("Missing source_media in container output message")
+
+        def exit_code(self) -> int | None:
+            return 1 if self.is_stopped else None
+
+    fabric_tagger.container_factory.get = lambda req: BadOutputContainer(req.media_dir, req.model_id)
+
+    fabric_tagger.tag(q, make_tag_args(feature="caption", stream="video"))
+    time.sleep(1)
+
+    report = _status_for(fabric_tagger.status(q.qid), "caption")
+    assert report.status.status == "Failed"
+    assert report.status.error == "Missing source_media in container output message"
 
 def test_part_download_warnings(fabric_tagger, q, make_tag_args):
     """Test that if some parts fail to download but job completes, the failed parts are reported in status"""
@@ -745,6 +776,34 @@ def test_part_download_warnings(fabric_tagger, q, make_tag_args):
     assert report.status.error is None
     assert len(report.status.warnings) == 1
 
+def test_all_part_downloads_fail(fabric_tagger, q, make_tag_args):
+    """Test that if every part fails to download, the job is marked as failed"""
+
+    class AllFailFetchWorker(FetchSession):
+        def download(self) -> DownloadResult:
+            return DownloadResult(sources=[], failed=["video1", "video2"], done=True)
+
+        def metadata(self) -> MediaMetadata:
+            return MediaMetadata(sources=["video1", "video2"], fps=30.0)
+
+        @property
+        def path(self) -> str:
+            return "/fake/path"
+
+    fabric_tagger.fetcher.get_session = Mock(return_value=AllFailFetchWorker())
+
+    args = make_tag_args(feature="caption", stream="video")
+
+    fabric_tagger.tag(q, args)
+
+    time.sleep(1)
+
+    status = fabric_tagger.status(q.qid)
+    report = _status_for(status, "caption")
+    assert report.status.status == "Failed"
+    assert report.status.error == "All 2 part downloads failed"
+    assert len(report.status.warnings) == 2
+
 def test_unknown_container(fabric_tagger, q, make_tag_args):
     """Test that if container registry returns a container that doesn't match the requested model, job fails gracefully"""
 
@@ -782,13 +841,13 @@ def test_content_aligned(fabric_tagger, q, make_tag_args, temp_dir):
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
         return ContentAlignedContainer(req.media_dir, req.model_id)
     
-    fabric_tagger.cregistry.get = get_side_effect
+    fabric_tagger.container_factory.get = get_side_effect
 
     args = make_tag_args(feature="caption", stream="video", max_fetch_retries=0)
 
     fabric_tagger.tag(q, args)
 
-    time.sleep(0.75)
+    time.sleep(1.5)
 
     job = list(fabric_tagger.jobstore.inactive_jobs.values())[0]
 
@@ -821,7 +880,7 @@ def test_no_tags_still_creates_batch(fabric_tagger, q, make_tag_args):
     def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
         return NoTagsContainer(req.media_dir, req.model_id)
 
-    fabric_tagger.cregistry.get = get_side_effect
+    fabric_tagger.container_factory.get = get_side_effect
 
     args = make_tag_args(feature="caption", stream="video", max_fetch_retries=0)
 
@@ -832,7 +891,7 @@ def test_no_tags_still_creates_batch(fabric_tagger, q, make_tag_args):
     batches = fabric_tagger.tagstore.find_batches(q=q)
     assert len(batches) == 1
 
-    batch = fabric_tagger.tagstore.get_batch(batches[0], q=q)
+    batch = batches[0]
     assert batch is not None
 
     report = batch.additional_info.get("tagger")
@@ -841,3 +900,78 @@ def test_no_tags_still_creates_batch(fabric_tagger, q, make_tag_args):
     assert report["upload_status"] is not None
     # even though we have no tags we still mark the sources tagged
     assert len(report["upload_status"]["tagged_sources"]) > 0
+
+def test_vector_tagging(fabric_tagger, q, make_tag_args):
+    fabric_tagger.container_factory.get = lambda req: FakeTagContainer(req.media_dir, req.model_id, output_vectors=True)
+
+    args = make_tag_args(feature="caption", stream="video", destination_qid=q.qid, index_qid="iq__test")
+
+    result = fabric_tagger.tag(q, args)
+    assert result.started is True
+
+    wait_tag(fabric_tagger, q.qid, timeout=5)
+
+    final_status = fabric_tagger.status(q.qid)
+    job_status = _status_for(final_status, "caption").status
+    assert _status_for(final_status, "caption").status.status == "Completed"
+    assert len(job_status.uploaded_sources) > 0
+
+    vs = fabric_tagger.vectorstores.create("iq__test")
+    vectors = vs.find_tags(q=q, limit=10)
+    assert len(vectors) > 0
+
+    # check that a report was added
+    assert vs.find_batches(q=q, model="caption")[0].additional_info
+
+    # check we get some tags too, cause we configured the fake container to produce both
+    ts = fabric_tagger.tagstore
+    tags = ts.find_tags(q=q, track="object_detection")
+    assert len(tags) > 0
+
+    # tag again and check that no new parts are tagged
+    args = make_tag_args(feature="caption", stream="video", destination_qid=q.qid, index_qid="iq__test", replace=False)
+    result = fabric_tagger.tag(q, args)
+    assert result.started is True
+
+    wait_tag(fabric_tagger, q.qid, timeout=2)
+    final_status = fabric_tagger.status(q.qid)
+    job_status = _status_for(final_status, "caption").status
+    assert job_status.status == "Completed"
+    assert len(job_status.total_sources) == 0
+
+def test_container_starts_before_media(fabric_tagger, q, make_tag_args):
+    """Test that the container is started while the fetcher has no media yet but isn't done (e.g. livestream not started)"""
+
+    class WaitingFetchWorker(FetchSession):
+        def download(self) -> DownloadResult:
+            time.sleep(0.05)
+            return DownloadResult(sources=[], failed=[], done=False)
+
+        def metadata(self) -> MediaMetadata:
+            return MediaMetadata(sources=[], fps=None)
+
+        @property
+        def path(self) -> str:
+            return "/fake/path"
+
+    fabric_tagger.fetcher.get_session = Mock(return_value=WaitingFetchWorker())
+
+    containers = []
+    def get_side_effect(req: ContainerRequest) -> FakeTagContainer:
+        c = FakeTagContainer(req.media_dir, req.model_id, work_duration=10)
+        containers.append(c)
+        return c
+    
+    fabric_tagger.container_factory.get = get_side_effect
+
+    fabric_tagger.tag(q, make_tag_args(feature="caption", stream="video"))
+
+    time.sleep(0.5)
+
+    assert len(containers) == 1
+    assert containers[0].is_started
+    assert containers[0].media_files == []
+    report = _status_for(fabric_tagger.status(q.qid), "caption")
+    assert report.status.status in ("Fetching content", "Tagging content")
+
+    fabric_tagger.stop(q.qid, "caption")

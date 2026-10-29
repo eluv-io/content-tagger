@@ -1,126 +1,197 @@
 import argparse
-from flask import Flask, Response, jsonify, send_from_directory
+from flask import Flask, jsonify, g, request
 from flask_cors import CORS
+from flask_smorest import Api
+from apispec.ext.marshmallow import MarshmallowPlugin
+from werkzeug.exceptions import HTTPException
 import json
 from requests.exceptions import HTTPError
 import atexit
 import signal
 import setproctitle
 import sys
+import threading
 from waitress.server import create_server
 import os
+import time
+import uuid
 
 from src.api.arg_resolver import ArgsResolver
+from src.api.tenant_defaults import TenantDefaultsResolver
 from src.api.auth import Authenticator
 from src.service.impl.direct_api import DirectAPI
 from src.service.impl.queue_based import QueueService
-from src.service.job_poster import JobPoster
+from src.service.dependency_resolver import DependencyResolver
 from src.status.get_info import UserInfoResolver
 from src.status.service import TaggingStatusService
 from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.tagging.fabric_tagging.tagger import TaggerWorker
 from src.tags.tagstore.factory import create_tagstore
+from src.tags.vectorstore.factory import VectorstoreFactory
 from src.tagging.fabric_tagging.source_resolver import SourceResolver
 from src.fetch.factory import FetchFactory
 from src.common.content import QAPIFactory
-from src.tag_containers.registry import ContainerRegistry
+from src.tag_containers.factory import ContainerFactory
 from src.tags.track_resolver import TrackResolver
-from src.common.logging import logger
+from src.common.logging import logger, configure_logging
 
-from src.api.tagging.handlers import handle_tag, handle_status, handle_status_content, handle_stop_model, handle_stop_content
-from src.api.content_status.handlers import handle_content_status, handle_model_status
-from src.api.extension.handlers import handle_list_models, handle_delete_job
-from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
+from src.api.tagging.handlers import tagging_blp
+from src.api.content_status.handlers import content_status_blp
+from src.api.tagging.model_param_schemas import MODEL_PARAM_SCHEMAS, model_params_component_name
+from src.api.tagging.scope_schemas import SCOPE_SCHEMAS, ScopeSchema, scope_component_name
+from src.tagging.fabric_tagging.queue.factory import create_jobstore
 from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tagging.tag_runner import TagRunner
 from src.common.errors import *
+from src.common.model import ModelConfig, ModelConfigStore
 from app_config import AppConfig
 
-def configure_routes(app: Flask) -> None:
-    # Configure the Flask app with the routes defined in this module.
+_SMOREST_DEFAULTS = {
+    "API_TITLE": "Eluvio Tagger API",
+    "API_VERSION": "1.0.0",
+    "OPENAPI_VERSION": "3.2.0",
+    # serve the spec + Swagger UI (replaces the old hand-maintained docs/api/openapi.html)
+    "OPENAPI_URL_PREFIX": "/",
+    "OPENAPI_JSON_PATH": "openapi.json",
+    "OPENAPI_SWAGGER_UI_PATH": "/docs",
+    "OPENAPI_SWAGGER_UI_URL": "https://cdn.jsdelivr.net/npm/swagger-ui-dist/",
+    "API_SPEC_OPTIONS": {
+        "servers": [{"url": "https://ai.contentfabric.io/tagging-live"}],
+    },
+}
+
+
+def _register_error_handlers(app: Flask) -> None:
+    """Map the domain exceptions to HTTP responses.
+
+    flask-smorest handles request-validation errors (422) and other HTTPExceptions
+    itself; these handlers cover the application's own exception types.
+    """
 
     @app.errorhandler(BadRequestError)
     def handle_bad_request(e):
-        logger.opt(exception=e).error("Got bad request error")
+        logger.warning(f"Bad request: {e.message}")
         return jsonify({'error': e.message}), 400
 
     @app.errorhandler(HTTPError)
     def handle_http_error(e):
-        logger.error(f"Got HTTP error: {e}")
         status_code = e.response.status_code
-        error_resp = json.loads(e.response.text)
+        if status_code >= 500:
+            logger.opt(exception=e).error("Upstream HTTP error")
+        else:
+            logger.warning(f"Upstream HTTP error: {e}")
+        try:
+            error_resp = json.loads(e.response.text)
+        except ValueError:
+            error_resp = e.response.text
         return jsonify({'code': status_code, 'error': error_resp}), status_code
 
     @app.errorhandler(MissingResourceError)
     def handle_missing_resource(e):
-        logger.error(f"Missing resource error: {e}")
+        logger.info(f"Missing resource: {e.message}")
         return jsonify({'code': 404, 'message': e.message}), 404
 
     @app.errorhandler(ForbiddenError)
     def handle_forbidden(e):
-        logger.opt(exception=e).error("Forbidden error")
+        logger.warning(f"Forbidden: {e.message}")
         return jsonify({'code': 403, 'message': e.message}), 403
-    
+
     @app.errorhandler(ExternalServiceError)
     def handle_external_service_error(e):
         logger.opt(exception=e).error("External service error")
         return jsonify({'message': "An upstream service failed", 'error': str(e)}), 502
-    
+
     @app.errorhandler(Exception)
     def handle_generic_exception(e):
+        # let flask-smorest / werkzeug handle HTTP errors (validation 422, 404, ...)
+        if isinstance(e, HTTPException):
+            return e.get_response()
         logger.opt(exception=e).error("Unhandled exception in API")
         return jsonify({'message': "An unexpected error occurred", 'error': str(e)}), 500
 
-    @app.route('/<qid>/tag', methods=['POST'])
-    def tag(qid: str) -> Response:
-        return handle_tag(qid)
-    
-    @app.route('/<qid>/job-status', methods=['GET'])
-    def status(qid: str) -> Response:
-        return handle_status_content(qid)
 
-    @app.route('/job-status', methods=['GET'])
-    def status_all() -> Response:
-        return handle_status()
-    
-    @app.route('/<qid>/stop/<feature>', methods=['POST'])
-    def stop_model(qid: str, feature: str) -> Response:
-        return handle_stop_model(qid, feature)
+def _register_request_logging(app: Flask) -> None:
+    """Log one line per request and tag every log line emitted while handling it with a request id."""
 
-    @app.route('/<qid>/stop', methods=['POST'])
-    def stop_content(qid: str) -> Response:
-        return handle_stop_content(qid)
+    @app.before_request
+    def _start_request():
+        g.request_id = (request.headers.get("X-Request-ID") or uuid.uuid4().hex[:12])[:64]
+        g.request_start = time.monotonic()
+        g.log_ctx = logger.contextualize(request_id=g.request_id)
+        g.log_ctx.__enter__()
 
-    @app.route('/<qid>/tag-status', methods=['GET'])
-    def content_status(qid: str) -> Response:
-        return handle_content_status(qid)
+    @app.after_request
+    def _log_request(response):
+        if "request_start" not in g:
+            return response
+        duration_ms = round((time.monotonic() - g.request_start) * 1000)
 
-    @app.route('/<qid>/tag-status/<model>', methods=['GET'])
-    def model_status(qid: str, model: str) -> Response:
-        return handle_model_status(qid, model)
+        response.headers["X-Request-ID"] = g.request_id
 
-    @app.route('/models', methods=['GET'])
-    def list_models_route() -> Response:
-        return handle_list_models()
+        quiet = request.method == "GET" and response.status_code < 400
 
-    @app.route('/jobs/<job_id>', methods=['DELETE'])
-    def delete_job_route(job_id: str) -> Response:
-        return handle_delete_job(job_id)
+        body = request.get_json(silent=True) if request.method != "GET" else None
 
-    @app.route('/docs', strict_slashes=False)
-    def docs_route():
-        return send_from_directory('docs/api', 'openapi.html')
+        logger.log(
+            "DEBUG" if quiet else "INFO",
+            "{} {} {} {}ms", request.method, request.path, response.status_code, duration_ms,
+            remote_addr=request.headers.get("X-Forwarded-For", request.remote_addr),
+            **({"body": body} if body is not None else {}),
+        )
+        return response
 
-def _build_worker(cfg: AppConfig) -> TaggerWorker:
+    @app.teardown_request
+    def _end_request(_exc):
+        ctx = g.pop("log_ctx", None)
+        if ctx is not None:
+            ctx.__exit__(None, None, None)
+
+
+def configure_routes(app: Flask) -> None:
+    # Configure the Flask app: error handlers, the flask-smorest Api, and the blueprints.
+    for key, value in _SMOREST_DEFAULTS.items():
+        app.config.setdefault(key, value)
+
+    _register_error_handlers(app)
+    _register_request_logging(app)
+
+    api = Api(app)
+
+    assert api.spec is not None
+
+    # register the polymorphic scope variants as OpenAPI components so the `scope` field's
+    # oneOf refs (see scope_oneof_metadata) resolve.
+    api.spec.components.schema("Scope", schema=ScopeSchema)
+    for scope_type, scope_schema in SCOPE_SCHEMAS.items():
+        api.spec.components.schema(scope_component_name(scope_type), schema=scope_schema)
+
+    # register the per-model params variants so the `model_params` oneOf refs
+    # (see model_params_oneof_metadata) resolve.
+    for model_name, params_schema in MODEL_PARAM_SCHEMAS.items():
+        api.spec.components.schema(model_params_component_name(model_name), schema=params_schema)
+
+    # same schemas, rendered inline for the /models listing
+    converter = next(p for p in api.spec.plugins if isinstance(p, MarshmallowPlugin)).converter
+    app.config["state"]["model_params_schemas"] = {
+        model_name: converter.schema2jsonschema(params_schema)
+        for model_name, params_schema in MODEL_PARAM_SCHEMAS.items()
+    }
+
+    api.register_blueprint(tagging_blp)
+    api.register_blueprint(content_status_blp)
+
+def _build_worker(cfg: AppConfig, model_configs: ModelConfigStore) -> TaggerWorker:
     qfactory = QAPIFactory(cfg.content)
     tagstore = create_tagstore(cfg.tagstore)
-    track_resolver = TrackResolver(cfg.label_resolver, cfg.model_configs)
-    model_configs = cfg.model_configs
+    vectorstores = VectorstoreFactory(cfg.vectorstore)
+    track_resolver = TrackResolver(cfg.label_resolver, model_configs)
     return TaggerWorker(
         system_tagger=ContainerScheduler(cfg.system),
         fetcher=FetchFactory(cfg.fetcher, create_tagstore(cfg.tagstore), qfactory),
-        cregistry=ContainerRegistry(cfg.container_registry, model_configs),
+        container_factory=ContainerFactory(cfg.container_registry),
+        model_configs=model_configs,
         tagstore=tagstore,
+        vectorstores=vectorstores,
         cfg=cfg.tagger,
         track_resolver=track_resolver,
         source_resolver=SourceResolver(create_tagstore(cfg.tagstore), track_resolver=track_resolver)
@@ -134,18 +205,21 @@ def create_app_direct(config: AppConfig) -> Flask:
     Standalone mode: API handlers call TaggerWorker directly."""
     app = Flask(__name__)
 
-    worker = _build_worker(config)
-    arg_resolver = ArgsResolver(config.model_configs, QAPIFactory(config.content))
+    model_configs = ModelConfigStore(config.model_configs)
+    worker = _build_worker(config, model_configs)
+    qfactory = QAPIFactory(config.content)
+    tenant_defaults = TenantDefaultsResolver(UserInfoResolver(config.user_info_resolver), qfactory)
+    arg_resolver = ArgsResolver(model_configs, qfactory, tenant_defaults)
     app.config["state"] = {
-        "service": DirectAPI(worker),
+        "service": DirectAPI(worker, arg_resolver),
         "status_service": TaggingStatusService(
             tagstore=worker.tagstore, 
             track_resolver=worker.track_resolver
         ),
         "authenticator": Authenticator(config.content.config_url),
         "arg_resolver": arg_resolver,
-        # for listing API
-        "model_configs": config.model_configs,
+        # for listing API and config reload
+        "model_configs": model_configs,
         "track_resolver": worker.track_resolver,
         "worker": worker,  # Expose worker for testing purposes
     }
@@ -167,15 +241,17 @@ def create_app_queue_based(config: AppConfig) -> Flask:
     Queue-based mode: API handlers enqueue via QueueService; TagRunner drives TaggerWorker."""
     app = Flask(__name__)
 
-    worker = _build_worker(config)
+    model_configs = ModelConfigStore(config.model_configs)
+    worker = _build_worker(config, model_configs)
     user_info_resolver = UserInfoResolver(config.user_info_resolver)
-    job_store: JobStore = FsJobStore(config.jobstore.base_url, user_info_resolver=user_info_resolver)
+    job_store: JobStore = create_jobstore(config.jobstore, user_info_resolver)
     qfactory = QAPIFactory(config.content)
-    arg_resolver = ArgsResolver(config.model_configs, api_factory=qfactory)
-    job_poster = JobPoster(job_store, worker.track_resolver, config.model_configs, qfactory)
+    tenant_defaults = TenantDefaultsResolver(user_info_resolver, qfactory)
+    arg_resolver = ArgsResolver(model_configs, api_factory=qfactory, tenant_defaults=tenant_defaults)
+    dependency_resolver = DependencyResolver(job_store, worker.track_resolver, model_configs)
 
     app.config["state"] = {
-        "service": QueueService(job_poster=job_poster),
+        "service": QueueService(job_store, dependency_resolver, arg_resolver, qfactory),
         "status_service": TaggingStatusService(
             tagstore=worker.tagstore, 
             track_resolver=worker.track_resolver
@@ -185,8 +261,8 @@ def create_app_queue_based(config: AppConfig) -> Flask:
         "authenticator": Authenticator(config.content.config_url),
         # for delete jobs endpoint
         "jobstore": job_store,
-        # for listing API
-        "model_configs": config.model_configs,
+        # for listing API and config reload
+        "model_configs": model_configs,
         "track_resolver": worker.track_resolver,
         "worker": worker,  # Expose worker for testing purposes
     }
@@ -205,6 +281,27 @@ def create_app_queue_based(config: AppConfig) -> Flask:
     CORS(app)
     return app
 
+_reload_lock = threading.Lock()
+
+def reload_model_configs(store: ModelConfigStore, new_configs: dict[str, ModelConfig]) -> None:
+    """Swap in new model configs. Running jobs keep the ModelConfig they started with."""
+    with _reload_lock:
+        old = store.snapshot()
+        added = sorted(new_configs.keys() - old.keys())
+        removed = sorted(old.keys() - new_configs.keys())
+        changed = sorted(m for m in new_configs.keys() & old.keys() if new_configs[m] != old[m])
+        store.replace(new_configs)
+        logger.info("Reloaded model configs", added=added, removed=removed, changed=changed)
+
+def _reload_from_file(store: ModelConfigStore, config_path: str) -> None:
+    try:
+        cfg = AppConfig.from_yaml(config_path)
+    except Exception as e:
+        logger.opt(exception=e).error("Failed to load config, keeping current model configs")
+        return
+    reload_model_configs(store, cfg.model_configs)
+    logger.info("Only model_configs is reloaded; other config changes require a restart")
+
 def main():
     logger.info("Python interpreter version: " + sys.version)
 
@@ -213,6 +310,7 @@ def main():
         logger.info(f"changed directory to {args.directory}")
 
     cfg = AppConfig.from_yaml(args.config)
+    configure_logging(cfg.logging)
 
     if args.standalone:
         logger.info("starting in standalone mode")
@@ -233,13 +331,21 @@ def main():
 
     if not args.standalone:
         loop = app.config["state"]["loop"]
-        def _handle_sighup(signum, frame):
-            logger.info("Received SIGHUP, entering quiesce mode")
+        def _handle_sigusr1(signum, frame):
+            logger.info("Received SIGUSR1, entering quiesce mode")
             loop.quiesce()
-        signal.signal(signal.SIGHUP, _handle_sighup)
+        signal.signal(signal.SIGUSR1, _handle_sigusr1)
     else:
-        # In standalone mode, SIGHUP behaves like SIGTERM
-        signal.signal(signal.SIGHUP, _handle_exit_signal)
+        # In standalone mode, SIGUSR1 behaves like SIGTERM
+        signal.signal(signal.SIGUSR1, _handle_exit_signal)
+
+    def _handle_sighup(signum, frame):
+        logger.info("Received SIGHUP, reloading model configs")
+        # off the signal handler, so it can't deadlock on a lock the main thread holds
+        threading.Thread(
+            target=_reload_from_file, args=(app.config["state"]["model_configs"], args.config), daemon=True, name="config-reload"
+        ).start()
+    signal.signal(signal.SIGHUP, _handle_sighup)
 
     server.run()
 

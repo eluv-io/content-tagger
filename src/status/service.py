@@ -5,37 +5,36 @@ from datetime import datetime, timezone
 from src.common.content import Content
 from src.common.content import Content
 from src.common.errors import BadRequestError, MissingResourceError
-from src.tags.tagstore.abstract import Tagstore
-from src.tags.tagstore.model import Batch
+from src.tags.datastore.abstract import Datastore
+from src.tags.datastore.model import Batch
 from src.tags.track_resolver import TrackResolver
 from src.status.format import *
 
 class TaggingStatusService:
     def __init__(self,
-        tagstore: Tagstore,
+        tagstore: Datastore,
         track_resolver: TrackResolver,
     ):
         self.tagstore = tagstore
         self.track_resolver = track_resolver
 
     def get_content_summary(self, q: Content) -> ContentStatusResponse:
-        batch_ids = self.tagstore.find_batches(q=q, qid=q.qid, author="tagger")
+        batches = self.tagstore.find_batches(q=q, qid=q.qid, author="tagger")
 
-        # Collect all batches and group by track
-        batches_by_track: dict[str, list[Batch]] = defaultdict(list)
-        for batch_id in batch_ids:
-            batch = self.tagstore.get_batch(batch_id, q=q)
-            if batch is None or "tagger" not in batch.additional_info:
+        # Group by model
+        batches_by_model: dict[str, list[Batch]] = defaultdict(list)
+        for batch in batches:
+            if "tagger" not in batch.additional_info:
                 continue
-            batches_by_track[batch.track].append(batch)
+            batches_by_model[batch.model].append(batch)
 
-        # Build a summary per track, collating across all batches
+        # Build a summary per model, collating across all batches
         model_summaries: list[ModelStatus] = []
-        for track_name, batches in batches_by_track.items():
+        for model_name, batches in batches_by_model.items():
             latest_batch = max(batches, key=lambda b: b.timestamp)
 
-            # TODO: not ideal if multiple models write to same track
-            model_name = self.track_resolver.reverse_resolve(track_name)[0]
+            # the model's primary output track, for display
+            track_name = self.track_resolver.resolve(model_name)[0].name
 
             all_sources: set[str] = set()
             tagged_sources: set[str] = set()
@@ -71,13 +70,12 @@ class TaggingStatusService:
     ) -> ModelStatusResponse:
         track_name = self.track_resolver.resolve(model)[0].name
 
-        batch_ids = self.tagstore.find_batches(q=q, qid=q.qid, author="tagger")
+        found_batches = self.tagstore.find_batches(q=q, qid=q.qid, author="tagger", model=model)
 
-        batches: list[Batch] = []
-        for batch_id in batch_ids:
-            batch = self.tagstore.get_batch(batch_id, q=q)
-            if batch is not None and batch.track == track_name and "tagger" in batch.additional_info:
-                batches.append(batch)
+        batches: list[Batch] = [
+            batch for batch in found_batches
+            if batch.model == model and "tagger" in batch.additional_info
+        ]
 
         if not batches:
             raise MissingResourceError(f"No jobs found for model '{model}' on content '{q.qid}'")
@@ -108,7 +106,8 @@ class TaggingStatusService:
                         num_tagged_parts=num_tagged,
                     )
 
-                params = TagArgs(**tagger_info["params"])
+                # reports written before a field existed simply omit it
+                params = TagArgs(**{"index_qid": "", **tagger_info["params"]})
                 job_status = JobRunStatus(**tagger_info["job_status"])
 
                 jobs.append(

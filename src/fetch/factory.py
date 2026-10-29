@@ -1,6 +1,7 @@
 
 from requests.exceptions import HTTPError
 from fractions import Fraction
+import os
 import threading
 
 from src.common.logging import logger
@@ -17,14 +18,14 @@ from src.fetch.cache import cache_by_qhash
 from src.fetch.rate_limit import FetchRateLimiter
 from src.tags.reader.abstract import TagReader
 from src.tags.reader.impl import INTERVAL_TRACK_PATTERN, IntervalTagReader, TagReaderImpl
-from src.tags.tagstore.abstract import Tagstore
+from src.tags.datastore.abstract import Datastore
 
 class FetchFactory:
     def __init__(
         self,
         config: FetcherConfig,
         # we need this dependency for the tag-aligned fetcher
-        ts: Tagstore,
+        ts: Datastore,
         qfactory: QAPIFactory
     ):
         self.config = config
@@ -65,8 +66,8 @@ class FetchFactory:
                 exit=exit
             )
         elif isinstance(req.scope, LiveScope):
-            # TODO: fix fps
-            meta = MediaMetadata(sources=[], fps=50)
+            # fps is filled in from the first segment, since the stream may not have started yet
+            meta = MediaMetadata(sources=[], fps=None)
             return LiveWorker(
                 qapi=qapi,
                 scope=req.scope,

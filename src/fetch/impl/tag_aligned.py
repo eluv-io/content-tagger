@@ -9,7 +9,7 @@ from loguru import logger
 from src.fetch.impl.vod import VodWorker
 from src.fetch.model import DownloadResult, FetchSession, MediaMetadata, Source
 from src.tags.reader.abstract import TagReader
-from src.tags.tagstore.model import Tag
+from src.tags.datastore.model import Tag
 
 logger = logger.bind(module="fetch tag_aligned")
 
@@ -23,6 +23,7 @@ class TagAlignedFetcher(FetchSession):
         self.tr = tr
         self.fetcher = vod
         self._completed_tag_ids: set[str] = set()
+        self.all_sources: list[Source] = []
 
     @property
     def path(self) -> str:
@@ -46,8 +47,10 @@ class TagAlignedFetcher(FetchSession):
                 done=vod_result.done,
             )
 
+        self.all_sources += vod_result.sources
+
         # Build a time-sorted list of available media segments
-        segments = sorted(vod_result.sources, key=lambda s: s.offset)
+        segments = sorted(self.all_sources, key=lambda s: s.offset)
 
         tags = self._get_tags()
         output_dir = os.path.join(self.fetcher.path, "tag_aligned")
@@ -207,8 +210,6 @@ class TagAlignedFetcher(FetchSession):
         Use ffmpeg to concatenate and trim the overlapping segments to produce
         a media file that exactly covers [start_ms, end_ms).
         """
-        if os.path.exists(output_path):
-            return
 
         seg_offset = segments[0].offset
         ss = (start_ms - seg_offset) / 1000.0
@@ -238,3 +239,26 @@ class TagAlignedFetcher(FetchSession):
                 check=True,
                 capture_output=True,
             )
+            
+            # check that output is valid
+            probe = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v", "error",
+                    "-show_entries", "format=duration",
+                    "-of", "default=noprint_wrappers=1:nokey=1",
+                    output_path,
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            actual_duration = float(probe.stdout.strip())
+
+            if actual_duration <= 0:
+                os.remove(output_path)
+                raise RuntimeError(
+                    f"ffmpeg produced empty output for range "
+                    f"[{start_ms}, {end_ms}) from segments starting at {seg_offset}"
+                )

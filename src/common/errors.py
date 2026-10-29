@@ -45,3 +45,9 @@ class ForbiddenError(Exception):
 
     def __init__(self, message):
         self.message = message
+
+class JobConflictError(Exception):
+    """Exception raised when a job can't be created because another job for its model is active on the content."""
+
+    def __init__(self, message):
+        self.message = message

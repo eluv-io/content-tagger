@@ -52,7 +52,7 @@ class SkipWorker(FetchSession):
     def metadata(self) -> MediaMetadata:
         return MediaMetadata(
             sources=[name for _, _, name in self._intervals()],
-            fps=None
+            fps=self.meta.fps
         )
     
     def download(self) -> DownloadResult:

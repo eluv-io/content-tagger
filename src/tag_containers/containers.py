@@ -1,3 +1,4 @@
+from collections import deque
 from podman import PodmanClient
 from src.common.logging import logger
 import json
@@ -102,6 +103,11 @@ class TagContainer:
         with self._lock:
             return self._name()
 
+    def log_tail(self, n: int = 50) -> list[str]:
+        """Last n lines of the container's stdout/stderr"""
+        with self._lock:
+            return self._log_tail(n)
+
     def required_resources(self) -> SystemResources:
         with self._lock:
             return self._required_resources()
@@ -145,6 +151,14 @@ class TagContainer:
 
         cmd = self._get_args(output_filename)
 
+        env = {
+            **self.cfg.env,
+            "ELV_TOKEN": self.cfg.q.token,
+            "ELV_CONTENT": self.cfg.q.qid
+        }
+        if self.cfg.index_qid:
+            env["ELV_INDEX_QID"] = self.cfg.index_qid
+
         kwargs = {
             "image": self.cfg.model_config.image,
             "command": cmd,
@@ -155,10 +169,7 @@ class TagContainer:
             "ulimits": [{"Name": "nproc", "Soft": 65535, "Hard": 65535}],
             "stdin_open": True,
             "tty": False,
-            "environment": {
-                "ELV_TOKEN": self.cfg.q.token,
-                "ELV_CONTENT": self.cfg.q.qid
-            },
+            "environment": env,
             "log_config": {
                 "Type": "k8s-file",
                 "Config": {
@@ -172,7 +183,7 @@ class TagContainer:
 
         container = self.pclient.containers.create(**kwargs)
 
-        logger.debug("starting container:", args=kwargs)
+        logger.info("starting container", args=kwargs)
         container.start()
         self.container = container
 
@@ -280,6 +291,12 @@ class TagContainer:
         """A human friendly name for the container, useful for logging"""
         return f"{self.cfg.id}_{self.cfg.model_config.image}"
 
+    def _log_tail(self, n: int) -> list[str]:
+        if not os.path.exists(self.cfg.logs_path):
+            return []
+        with open(self.cfg.logs_path, errors="replace") as f:
+            return [line.rstrip("\n") for line in deque(f, maxlen=n)]
+
     def _required_resources(self) -> SystemResources:
         """Returns the system resources required by this container to run."""
         return copy(self.cfg.model_config.resources)
@@ -339,11 +356,13 @@ class TagContainer:
 
                 if msg_type == "tag":
                     # placate type checker
-                    assert local_media_path is not None                   
+                    assert local_media_path is not None
+                    # a model emits either text ("tag") or an embedding ("vector")
+                    vector = data.get("vector")
                     self._cached_tags.append(ModelTag(
                         start_time=data.get("start_time", 0),
                         end_time=data.get("end_time", 0),
-                        text=data.get("tag", ""),
+                        data=vector if vector is not None else data.get("tag", ""),
                         source_media=local_media_path,
                         model_track=data.get("track", ""),
                         frame_info=data.get("frame_info"),
@@ -376,7 +395,7 @@ class TagContainer:
                 raise ValueError(f"{f} is not in media directory {self.media_dir}")
             
             rel_path = os.path.relpath(f, self.media_dir)
-            relative_paths.append(f"media/{rel_path}")
+            relative_paths.append(f"/elv/media/{rel_path}")
         return relative_paths
     
     def _get_args(self, output_filename: str) -> list[str]:

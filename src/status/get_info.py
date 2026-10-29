@@ -2,11 +2,10 @@
 from dataclasses import dataclass
 
 import requests
-from loguru import logger
 from functools import lru_cache
 
 from src.common.errors import ExternalServiceError
-from src.tags.tagstore.abstract import Tagstore
+from src.common.http import raise_for_status
 
 @dataclass(frozen=True)
 class UserInfo: 
@@ -30,9 +29,9 @@ class UserInfoResolver:
     @lru_cache(maxsize=128)
     def get_tenant(self, qid: str, token: str) -> str:
         """Resolve the tenant ID for a given content object ID using the fabric profile endpoint."""
-        resp = requests.get(
-            f"{self.fabric_url}/q/{qid}?profile&authorization={token}"
-        ).json()
+        resp = requests.get(f"{self.fabric_url}/q/{qid}?profile&authorization={token}")
+        raise_for_status(resp)
+        resp = resp.json()
         if "content_profile" not in resp or "tenant_id" not in resp["content_profile"]:
             raise ExternalServiceError("Failed to get tenant ID from fabric profile endpoint")
         return resp["content_profile"]["tenant_id"]
@@ -41,7 +40,7 @@ class UserInfoResolver:
     def get_user_info(self, auth: str, tenant_id: str | None) -> UserInfo:
         """Get user info for a given tenant ID using the user info endpoint."""
         resp = requests.get(self.user_info_url, params={"tenant": tenant_id, "authorization": auth})
-        resp.raise_for_status()
+        raise_for_status(resp)
         data = resp.json()
 
         is_content_admin, is_tenant_admin = False, False

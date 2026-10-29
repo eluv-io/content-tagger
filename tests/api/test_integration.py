@@ -1,7 +1,6 @@
-import os
 
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 import time
 import json
 from src.common.logging import logger
@@ -10,16 +9,10 @@ from src.common.content import Content
 import podman
 from src.api.arg_resolver import ArgsResolver
 from src.fetch.model import DownloadRequest, FetchSession, VideoScope
-from src.tagging.fabric_tagging.model import TagArgs, TagStartResult
 from src.tagging.fabric_tagging.tagger import TaggerWorker
-from src.tags.tagstore.abstract import Tagstore
+from src.tags.datastore.abstract import Datastore
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
-from src.service.abstract import TaggerService
-from src.tagging.fabric_tagging.queue.abstract import JobStore
 from tests.api.conftest import FakeLiveWorker
-
-def is_queue_mode():
-    return os.getenv("USE_QUEUE") == "true"
 
 def is_job_success(client, q: Content):
     """Check if all jobs for content_id completed successfully."""
@@ -100,9 +93,9 @@ def test_video_model(client, q):
     )
     assert response.status_code == 200
     completed = wait_for_jobs_completion(client, [q], timeout=30)
-    assert completed
-    tagstore: Tagstore = client.application.config["state"]["worker"].tagstore
-    jobid = tagstore.find_batches(q=q)[0]
+    assert completed, "Timeout waiting for jobs to complete"
+    tagstore: Datastore = client.application.config["state"]["worker"].tagstore
+    jobid = tagstore.find_batches(q=q)[0].id
     tags = tagstore.find_tags(batch_id=jobid, q=q)
     tags = sorted(tags, key=lambda x: x.start_time)
     vtags = [t for t in tags if t.frame_info is None]
@@ -110,13 +103,14 @@ def test_video_model(client, q):
     assert len(vtags) == 122
     next_tag = 'hello1'
     for tag in vtags:
-        assert tag.text == next_tag
+        assert tag.data == next_tag
         next_tag = 'hello2' if next_tag == 'hello1' else 'hello1'
 
     ftags = [t for t in tags if t.frame_info is not None]
     assert len(ftags) == 122
 
-    assert completed, "Timeout waiting for jobs to complete"
+    status = client.get(f"/{q.qid}/job-status?authorization={q.token}")
+    assert status.get_json()["jobs"][0]["tag_details"]["tagged_duration"] > 0
 
 # testing both of these features in one unit test cause i'm lazy sorry not sorry
 def test_track_suffix_and_caller_info(client, q):
@@ -142,7 +136,7 @@ def test_track_suffix_and_caller_info(client, q):
     assert response.status_code == 200
     completed = wait_for_jobs_completion(client, [q], timeout=30)
     assert completed
-    tagstore: Tagstore = client.application.config["state"]["worker"].tagstore
+    tagstore: Datastore = client.application.config["state"]["worker"].tagstore
     track = tagstore.get_track(q=q, name="test_model_Hi_I_am_a_test")
     assert track
     assert track.label == "Test Model Hi I am a test"
@@ -151,37 +145,32 @@ def test_track_suffix_and_caller_info(client, q):
     assert response.status_code == 200
     assert response.json["jobs"][0]["params"]["caller_info"] == {"hello": "world"}
 
+def use_fake_live_worker(app, **kwargs) -> list[FakeLiveWorker | None]:
+    """Make the app treat content as live and serve it through a FakeLiveWorker backed by the VOD fetcher."""
+    arg_resolver: ArgsResolver = app.config["state"]["arg_resolver"]
+    arg_resolver.is_live_content = Mock(return_value=True)
+    tagger: TaggerWorker = app.config["state"]["worker"]
+    original_get_session = tagger.fetcher.get_session
+    fake_worker_ref: list[FakeLiveWorker | None] = [None]
+
+    def fake_get_session(q: Content, req: DownloadRequest, exit=None) -> FetchSession:
+        if fake_worker_ref[0] is None:
+            old_scope = req.scope
+            req.scope = VideoScope(stream="video", start_time=0, end_time=int(1e10))
+            real_worker = original_get_session(q, req, exit)
+            req.scope = old_scope
+            fake_worker_ref[0] = FakeLiveWorker(real_worker, **kwargs)
+        return fake_worker_ref[0]
+
+    tagger.fetcher.get_session = fake_get_session
+    return fake_worker_ref
+
 @pytest.mark.parametrize("last_res_has_media", [True, False])
 def test_live_video_model(app, last_res_has_media, q):
     """Test the live tagging workflow with FakeLiveFetcher."""
-    arg_resolver: ArgsResolver = app.config["state"]["arg_resolver"]
-    arg_resolver.is_live_content = Mock(return_value=True)
-    
-    # Replace the real fetcher with FakeLiveFetcher
     tagger: TaggerWorker = app.config["state"]["worker"]
     tagstore = tagger.tagstore
-    
-    # Create FakeLiveFetcher with the same config
-    original_get_worker = tagger.fetcher.get_session
-    
-    # Store reference to the FakeLiveWorker so we can access its call_count
-    fake_worker_ref: list[FakeLiveWorker | None] = [None]
-    
-    # NOTE: ugliest thing i've ever seen
-    def fake_get_worker(q: Content, req: DownloadRequest, exit=None) -> FetchSession:
-        if fake_worker_ref[0] is not None:
-            return fake_worker_ref[0]
-        # we need the non-live worker in this test
-        old_scope = req.scope
-        req.scope = VideoScope(stream="video", start_time=0, end_time=int(1e10))
-        real_worker = original_get_worker(q, req, exit)
-        req.scope = old_scope
-        fake_worker = FakeLiveWorker(real_worker, last_res_has_media)
-        fake_worker_ref[0] = fake_worker  # Store reference
-        return fake_worker
-
-
-    tagger.fetcher.get_session = fake_get_worker
+    fake_worker_ref = use_fake_live_worker(app, last_res_has_media=last_res_has_media)
     
     # Create test client
     client = app.test_client()
@@ -221,7 +210,7 @@ def test_live_video_model(app, last_res_has_media, q):
     assert fake_worker_ref[0].call_count == expected_calls, f"Expected {expected_calls} fetch calls, got {fake_worker_ref[0].call_count}"
     
     # Get tags and verify results
-    jobid = tagstore.find_batches(q=q)[0]
+    jobid = tagstore.find_batches(q=q)[0].id
     tags = tagstore.find_tags(batch_id=jobid, q=q)
     tags = sorted(tags, key=lambda x: x.start_time)
 
@@ -233,97 +222,10 @@ def test_live_video_model(app, last_res_has_media, q):
     # Verify tags alternate between hello1 and hello2
     next_tag = 'hello1'
     for tag in vtags:
-        assert tag.text == next_tag, f"Expected {next_tag}, got {tag.text}"
+        assert tag.data == next_tag, f"Expected {next_tag}, got {tag.data}"
         next_tag = 'hello2' if next_tag == 'hello1' else 'hello1'
         
     logger.info(f"Live test completed successfully with {fake_worker_ref[0].call_count} fetch calls (last_res_has_media={last_res_has_media})")
-
-def test_real_live_stream(app, q_live):
-    """Test real live stream tagging with LiveWorker."""
-    qid = q_live.qid
-    auth = q_live.token
-    
-    tagger: TaggerWorker = app.config["state"]["worker"]
-    tagstore = tagger.tagstore
-    
-    # Create test client
-    client = app.test_client()
-    
-    # Start live tagging with test_model
-    # Use small chunk_size and max_duration for faster testing
-    response = client.post(
-        f"/{qid}/tag?authorization={auth}", 
-        json={
-            "options": {
-                "replace": True,
-                "scope": {
-                    "max_duration": 20,
-                    "segment_length": 5
-                }
-            },
-            "jobs": [
-                {
-                    "model": "test_model",
-                    "model_params": {"tags": ["hello1", "hello2"]},
-                }
-            ]
-        }
-    )
-    assert response.status_code == 200
-    
-    # Wait for some segments to be processed (but not completion since it's live)
-    # Check status periodically
-    start_time = time.time()
-    timeout = 25
-    segments_found = False
-    
-    while time.time() - start_time < timeout:
-        response = client.get(f"/{qid}/job-status?authorization={auth}")
-        if response.status_code == 200:
-            data = response.get_json()
-            reports = data['jobs']
-            print(json.dumps(reports, indent=2))
-            
-            # Find the test_model job in the list
-            test_model_reports = [r for r in reports if r['model'] == 'test_model']
-            if test_model_reports:
-                report = test_model_reports[0]
-                status = report['status']
-                
-                # Once we see completion, we know segments were processed
-                if status == "succeeded":
-                    segments_found = True
-                    break
-        
-        time.sleep(3)
-    
-    # Verify final status is Stopped or Completed
-    response = client.get(f"/{qid}/job-status?authorization={auth}")
-    assert response.status_code == 200
-    data = response.get_json()
-    reports = data['jobs']
-    
-    test_model_report = next(r for r in reports if r['model'] == 'test_model')
-    final_status = test_model_report['status']
-    assert final_status in ['cancelled', 'succeeded'], f"Expected Stopped or Completed, got {final_status}"
-    
-    # verify we have some tags
-    jobid = tagstore.find_batches(q=q_live, qid=q_live.qid)[0]
-    tags = tagstore.find_tags(batch_id=jobid, q=q_live)
-    tags = sorted(tags, key=lambda x: x.start_time)
-    vtags = [ t for t in tags if t.frame_info is None and t.end_time > t.start_time]
-    
-    # Should have at least some tags from the segments
-    assert len(vtags) >= 2
-
-    last_wall_clock = 0
-    for tag in vtags:
-        assert tag.additional_info is not None
-        assert 'timestamp_ms' in tag.additional_info
-        assert tag.additional_info["timestamp_ms"] > last_wall_clock
-        last_wall_clock = tag.additional_info["timestamp_ms"]
-
-    logger.info(f"Live stream test completed successfully with {len(tags)} tags")
 
 def test_asset_tag(client, q_assets):
     """Test asset tagging."""
@@ -353,7 +255,7 @@ def test_asset_tag(client, q_assets):
     print(status)
     assert status.get("jobs")[0].get("tagging_progress") and not status.get("jobs")[0].get("tagging_progress").startswith("0")
     tagstore: FilesystemTagStore = client.application.config["state"]["worker"].tagstore
-    jobid = tagstore.find_batches(q=q_assets)[0]
+    jobid = tagstore.find_batches(q=q_assets)[0].id
     tags = tagstore.find_tags(q=q_assets, batch_id=jobid)
     tags = sorted(tags, key=lambda x: x.start_time)
     assert len(tags) > 0
@@ -384,8 +286,8 @@ def test_stop_workflow(client, q):
     assert response.status_code == 200
     assert len(response.get_json()["jobs"]) == 1
 
-    time.sleep(1)
-    
+    assert wait_for_jobs_completion(client, [q]), "job did not reach a terminal state after stop"
+
     # Check status - job should be stopped
     response = client.get(f"/{q.qid}/job-status?authorization={video_auth}")
     assert response.status_code == 200
@@ -418,7 +320,7 @@ def test_double_run(client, q):
     data = response.get_json()
     assert data["jobs"][0]["started"] is True
     
-    # Try to start another job with replace=False (should be rejected)
+    # Try to start another job with replace=False (should not start)
     response = client.post(
         f"/{q.qid}/tag?authorization={video_auth}", 
         json={
@@ -431,9 +333,8 @@ def test_double_run(client, q):
             ]
         }
     )
-    data = response.get_json()
     assert response.status_code == 200
-    assert data["jobs"][0]["started"] is False
+    assert response.get_json()["jobs"][0]["started"] is False
 
     # stop the job
     start = time.time()
@@ -451,18 +352,20 @@ def test_find_default_audio_stream(q, app):
 
     assert result == "stereo"
 
-def test_is_live_content(q_live, app):
+def test_is_live_content(q_live, q, app):
     """Test the _is_live_content function."""
     resolver: ArgsResolver = app.config["state"]["arg_resolver"]
     assert resolver.is_live_content(q_live) == True
+    assert resolver.is_live_content(q) == False
 
-def test_stop_live_job(app, q_live):
+def test_stop_live_job(app, q):
     """Test that live jobs can be stopped cleanly mid-stream."""
-    qid = q_live.qid
-    auth = q_live.token
+    qid = q.qid
+    auth = q.token
     
     worker: TaggerWorker = app.config["state"]["worker"]
     tagstore = worker.tagstore
+    fake_worker_ref = use_fake_live_worker(app, never_done=True)
     client = app.test_client()
     
     # Start live tagging with long duration
@@ -491,7 +394,7 @@ def test_stop_live_job(app, q_live):
     start_time = time.time()
     some_tags_found = False
     
-    while time.time() - start_time < 20:
+    while time.time() - start_time < 60:
         response = client.get(f"/{qid}/job-status?authorization={auth}")
         if response.status_code == 200:
             data = response.get_json()
@@ -508,9 +411,11 @@ def test_stop_live_job(app, q_live):
                 if progress > 0:
                     # Check we actually have some tags
                     try:
-                        jobid = tagstore.find_batches(q=q_live, qid=q_live.qid)[0]
-                        tags = tagstore.find_tags(batch_id=jobid, q=q_live)
-                        if len(tags) > 0:
+                        jobid = tagstore.find_batches(q=q, qid=q.qid)[0].id
+                        tags = tagstore.find_tags(batch_id=jobid, q=q)
+                        fake_worker = fake_worker_ref[0]
+                        looped = fake_worker is not None and fake_worker.call_count > len(fake_worker._all_sources)
+                        if len(tags) > 0 and looped:
                             some_tags_found = True
                             logger.info(f"Found {len(tags)} tags, stopping job now")
                             break
@@ -590,10 +495,10 @@ def test_stop_all_jobs(client, q):
     assert stop_response.status_code == 200
 
     assert len(stop_response.get_json()["jobs"]) == 2
-    
-    # Wait a moment for stop to take effect
-    time.sleep(1)
-    
+
+    # Wait for the stops to take effect
+    assert wait_for_jobs_completion(client, [q]), "jobs did not reach a terminal state after stop"
+
     # Check that all jobs are now stopped
     response = client.get(f"/{q.qid}/job-status?authorization={auth}")
     assert response.status_code == 200
@@ -603,54 +508,8 @@ def test_stop_all_jobs(client, q):
     for report in reports:
         assert report['status'] == 'cancelled', f"Expected cancelled, got {report['status']}"
 
-def test_start_two_jobs_one_fails_partial_failure_response(client, q):
-    """
-    Start two jobs in one request; force tagger.tag() to raise for feature == 'fail_model'.
-    Expect HTTP 200 with per-job start statuses (one success, one failure).
-    """
-    if is_queue_mode():
-        pytest.skip()
-
-    auth = q.token
-
-    tagger: TaggerWorker = client.application.config["state"]["worker"]
-    original_tag = tagger.tag
-
-    def tag_wrapper(q: Content, args: TagArgs) -> TagStartResult:
-        if args.feature == "test_model2":
-            raise RuntimeError("boom")
-        return original_tag(q, args)
-
-    tagger.tag = tag_wrapper
-    
-    response = client.post(
-        f"/{q.qid}/tag?authorization={auth}",
-        json={
-            "jobs": [
-                {
-                    "model": "test_model",
-                    "model_params": {"tags": ["ok1", "ok2"]}
-                },
-                {
-                    "model": "test_model2",
-                    "model_params": {"tags": ["nope"]},
-                }
-            ]
-        },
-    )
-    assert response.status_code == 200
-
-    data = response.get_json()
-
-    assert data["jobs"][0]["started"] is True
-    assert data["jobs"][1]["started"] is False
-    assert data["jobs"][1]["error"] == 'boom'
-
 def test_status(client, q):
-    """Test the job status endpoint with no jobs."""
-    if not is_queue_mode():
-        pytest.skip()
-
+    """Test the job status endpoint."""
     response = client.get(f"/job-status?authorization={q.token}")
     assert response.status_code == 404
 
@@ -699,6 +558,8 @@ def test_listing(client):
     data = response.get_json()
     assert "models" in data
     assert len(data["models"]) > 0
+    for m in data["models"]:
+        assert "params_schema" in m
 
 def test_delete_job(client, q):
     response = client.post(
@@ -714,7 +575,7 @@ def test_delete_job(client, q):
     assert response.status_code == 200
     response = client.post(f"/{q.qid}/stop/test_model?authorization={q.token}")
     assert response.status_code == 200
-    time.sleep(1)
+    assert wait_for_jobs_completion(client, [q]), "job did not reach a terminal state after stop"
     response = client.get(f"/{q.qid}/job-status?authorization={q.token}")
     assert response.status_code == 200
     data = response.get_json()

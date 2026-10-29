@@ -1,26 +1,46 @@
+from concurrent.futures import Executor, Future
 import os
 import threading
 import time
 from unittest.mock import Mock
 import pytest
 
+from src.common.model import ModelConfigStore
+from src.api.tagging.request_format import JobSpec, StartJobsRequest
 from src.common.content import Content
-from src.fetch.model import DownloadRequest, DownloadResult, FetchSession, MediaMetadata, Source, VideoMetadata, VideoScope
-from src.fetch.model import VideoScope
-from src.service.job_poster import JobPoster
+from src.fetch.model import *
+from src.service.dependency_resolver import DependencyResolver
 from src.service.model import StatusArgs
-from src.status.get_info import UserInfo
 from src.tag_containers.model import *
 from src.tagging.fabric_tagging.model import TaggerWorkerConfig, TagArgs
 from src.tagging.fabric_tagging.source_resolver import SourceResolver
 from src.tagging.fabric_tagging.tagger import TaggerWorker
-from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
+from src.tagging.fabric_tagging.queue.model import CreateQueueItem
 from src.tagging.tag_runner import TagRunner, TagRunnerConfig
 from src.service.impl.queue_based import QueueService
 from src.tagging.scheduling.scheduler import ContainerScheduler
 from src.tagging.scheduling.model import SysConfig
 from src.tags.track_resolver import TrackArgs, TrackResolver, LabelResolverConfig
 
+
+class InlineExecutor(Executor):
+    """Runs submitted work immediately so background releases are deterministic in tests."""
+    def submit(self, fn, /, *args, **kwargs):
+        f = Future()
+        try:
+            f.set_result(fn(*args, **kwargs))
+        except Exception as e:
+            f.set_exception(e)
+        return f
+
+def enqueue(queue_service: QueueService, q: Content, args: list[TagArgs]) -> list[str]:
+    """Submit already resolved args through QueueService.tag, with the arg resolver stubbed to return them and the
+    release run inline. Returns the job ids, "" for a job that wasn't started."""
+    by_model = {arg.feature: arg for arg in args}
+    queue_service.arg_resolver.resolve = Mock(side_effect=lambda req, q: [by_model[job.model] for job in req.jobs]) # type: ignore
+    queue_service._executor = InlineExecutor() # type: ignore
+    results = queue_service.tag(q, StartJobsRequest(jobs=[JobSpec(model=arg.feature) for arg in args]))
+    return [r.job_id for r in results]
 
 @pytest.fixture
 def media_dir(temp_dir: str) -> str:
@@ -32,12 +52,17 @@ def media_dir(temp_dir: str) -> str:
 @pytest.fixture
 def model_configs():
     return {
-        "caption": Mock(type="video", track_outputs=["object_detection"], track_dependencies=[]),
-        "asr": Mock(type="audio", track_outputs=["speech_to_text"], track_dependencies=[]),
+        "caption": Mock(type="video", track_outputs=["object_detection"], track_dependencies=[], resources={"gpu": 1, "cpu_juice": 5}, tags=Mock(hidden=False)),
+        "asr": Mock(type="audio", track_outputs=["speech_to_text"], track_dependencies=[], resources={"gpu": 1, "cpu_juice": 5}, tags=Mock(hidden=True)),
+        "ocr": Mock(type="video", track_outputs=["ocr"], track_dependencies=[], resources={"gpu": 1, "cpu_juice": 5}, tags=Mock(hidden=False)),
     }
 
 @pytest.fixture
-def track_resolver(model_configs):
+def model_config_store(model_configs) -> ModelConfigStore:
+    return ModelConfigStore(model_configs)
+
+@pytest.fixture
+def track_resolver(model_config_store):
     """Create a simple track resolver for testing"""
     return TrackResolver(
         label_configs=LabelResolverConfig(mapping={
@@ -45,19 +70,28 @@ def track_resolver(model_configs):
             "speech_to_text": "Speech to Text",
             "pretty": "Pretty Speech"
         }),
-        model_configs=model_configs
+        model_configs=model_config_store
     )
     
 @pytest.fixture
 def tagger_config(media_dir) -> TaggerWorkerConfig:
     return TaggerWorkerConfig(
         media_dir=media_dir,
+        upload_retries=2,
+        upload_retry_delay=0.1,
     )
 
 class FakeTagContainer:
     """Fake TagContainer that simulates work and asynchronous behavior."""
     
-    def __init__(self, media_dir: str, feature, work_duration: float = 0.25, report_progress: bool = True):
+    def __init__(
+        self, 
+        media_dir: str, 
+        feature, 
+        work_duration: float = 0.5, 
+        report_progress: bool = True,
+        output_vectors: bool = False
+    ):
         """
         Initialize the FakeTagContainer.
     
@@ -78,6 +112,8 @@ class FakeTagContainer:
         self.media_files = []
         self.worker_thread = None
         self._tag_cursor = 0
+        self._output_vectors = output_vectors
+        self._eof = threading.Event()
 
     def start(self, gpu_idx: int | None = None) -> None:
         """
@@ -89,9 +125,10 @@ class FakeTagContainer:
         
         self.gpu_idx = gpu_idx
 
-        # Simulate work in a background thread
+        # Simulate work in a background thread, like a real container it runs until it gets eof
         def work():
             self.is_started = True
+            self._eof.wait()
             time.sleep(self.work_duration)
             self.is_stopped = True
 
@@ -125,7 +162,7 @@ class FakeTagContainer:
         return None
     
     def send_eof(self) -> None:
-        pass
+        self._eof.set()
 
     def info(self) -> ContainerInfo:
         return ContainerInfo(image_name=f"fake/{self.feature}", annotations={"io.test.fake": "1"})
@@ -156,22 +193,41 @@ class FakeTagContainer:
 
         for i, filepath in enumerate(finished_files):
             # Create fake tags based on the feature
+            if not self._output_vectors:
+                data1 = f"{self.feature}_tag_{i}"
+                data2 = f"{self.feature}_tag_{i}_2"
+            else:
+                data1 = [i, i + 0.1, i + 0.2]
+                data2 = [i + 0.3, i + 0.4, i + 0.5]
+
             fake_tags = [
                 ModelTag(
                     start_time=0,
                     end_time=5000,  # 5 seconds in ms
-                    text=f"{self.feature}_tag_{i}",
+                    data=data1,
                     source_media=filepath,
                     model_track=""
                 ),
                 ModelTag(
                     start_time=5000,
                     end_time=10000,  # 5-10 seconds in ms
-                    text=f"{self.feature}_tag_{i}_2",
+                    data=data2,
                     source_media=filepath,
                     model_track=""
                 )
             ]
+
+            if self._output_vectors:
+                # Add a regular tag too for fun
+                fake_tags.append(
+                    ModelTag(
+                        start_time=10000,
+                        end_time=15000,  # 10-15 seconds in ms
+                        data=f"{self.feature}_tag_{i}_3",
+                        source_media=filepath,
+                        model_track=""
+                    )
+                )
 
             tags.extend(fake_tags)
 
@@ -196,7 +252,7 @@ class FakeTagContainer:
         return f"FakeContainer-{self.feature}"
     
     def required_resources(self):
-        return {}
+        return {"gpu": 1, "cpu_juice": 5}
     
     def is_content_aligned(self) -> bool:
         return False
@@ -213,33 +269,10 @@ class PartialResultContainer(FakeTagContainer):
             return [t for t in tags if t.source_media != sources[-1]]
 
         return tags
-    
-    def send_eof(self) -> None:
-        pass
 
-class FakeContainerRegistry:
-    def __init__(self):
-        self.containers = {}
-        
+class FakeContainerFactory:
     def get(self, req: ContainerRequest) -> FakeTagContainer:
-        container_key = f"{req.model_id}_{req.media_dir}"
-        if container_key not in self.containers:
-            self.containers[container_key] = FakeTagContainer(req.media_dir, req.model_id)
-        return self.containers[container_key]
-    
-    def get_model_config(self, feature: str) -> ModelConfig:
-        return Mock(resources={"gpu": 1, "cpu_juice": 5})
-    
-    def services(self) -> list[str]:
-        return ["caption", "asr"]
-    
-    @property
-    def model_configs(self):
-        model_configs = {
-            "caption": Mock(type="video"),
-            "asr": Mock(type="audio"),
-        }
-        return model_configs
+        return FakeTagContainer(req.media_dir, req.model_id)
 
 class FakeWorker(FetchSession):
     """Fake DownloadWorker that creates test files"""
@@ -332,9 +365,9 @@ def system_tagger():
 
 
 @pytest.fixture
-def fake_container_registry():
-    """Create a fake ContainerRegistry that returns mock containers with fake tags"""
-    return FakeContainerRegistry()
+def fake_container_factory():
+    """Create a fake ContainerFactory that returns mock containers with fake tags"""
+    return FakeContainerFactory()
 
 @pytest.fixture
 def source_resolver(tag_store, track_resolver):
@@ -343,12 +376,14 @@ def source_resolver(tag_store, track_resolver):
 
 
 @pytest.fixture
-def fabric_tagger(system_tagger, fake_container_registry, tag_store, fake_fetcher, track_resolver, tagger_config, source_resolver):
+def fabric_tagger(system_tagger, fake_container_factory, model_config_store, tag_store, vectorstores, fake_fetcher, track_resolver, tagger_config, source_resolver):
     """Create a TaggerWorker instance for testing"""
     tagger = TaggerWorker(
         system_tagger=system_tagger,
-        cregistry=fake_container_registry,
+        container_factory=fake_container_factory,
+        model_configs=model_config_store,
         tagstore=tag_store,
+        vectorstores=vectorstores,
         fetcher=fake_fetcher,
         track_resolver=track_resolver,
         cfg=tagger_config,
@@ -367,20 +402,6 @@ def sample_tag_args(make_tag_args):
     ]
 
 @pytest.fixture
-def queue_jobstore(tmp_path, fake_user_info_resolver) -> FsJobStore:
-    return FsJobStore(store_dir=str(tmp_path / "jobstore"), user_info_resolver=fake_user_info_resolver)
-
-@pytest.fixture
-def simple_job_poster(queue_jobstore, track_resolver, model_configs, fake_qapifactory) -> JobPoster:
-    """Create a simple JobPoster for testing."""
-    return JobPoster(
-        job_store=queue_jobstore,
-        track_resolver=track_resolver,
-        model_configs=model_configs,
-        qfactory=fake_qapifactory
-    )
-
-@pytest.fixture
 def fake_qapifactory():
     # for the queue client, all we need is to get the display title and add this to the job info
     return Mock(
@@ -394,28 +415,22 @@ def fake_qapifactory():
     )
 
 @pytest.fixture
-def job_poster(queue_jobstore, track_resolver, fake_qapifactory, model_configs) -> JobPoster:
-    """Create a JobPoster for testing, using the queue_jobstore and other dependencies."""
-    return JobPoster(
-        job_store=queue_jobstore,
-        track_resolver=track_resolver,
-        model_configs=model_configs,
-        qfactory=fake_qapifactory
-    )
+def dependency_resolver(jobstore, track_resolver, model_config_store) -> DependencyResolver:
+    return DependencyResolver(job_store=jobstore, track_resolver=track_resolver, model_configs=model_config_store)
 
 
 @pytest.fixture
-def queue_client(job_poster) -> QueueService:
-    return QueueService(job_poster=job_poster)
+def queue_client(jobstore, dependency_resolver, fake_qapifactory) -> QueueService:
+    return QueueService(jobstore, dependency_resolver, arg_resolver=Mock(), qfactory=fake_qapifactory)
 
 
 @pytest.fixture
-def tag_runner(fabric_tagger, queue_jobstore, qfactory):
-    """A TagRunner wired to the same FsJobStore, polling fast for tests."""
+def tag_runner(fabric_tagger, jobstore, qfactory):
+    """A TagRunner wired to the jobstore fixture, polling fast for tests."""
     runner = TagRunner(
         tagger=fabric_tagger,
-        jobstore=queue_jobstore,
-        cfg=TagRunnerConfig(poll_interval=0.1, max_jobs=2),
+        jobstore=jobstore,
+        cfg=TagRunnerConfig(poll_interval=0.1),
     )
     runner.start()
     yield runner

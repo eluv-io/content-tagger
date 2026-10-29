@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from src.tagging.fabric_tagging.model import *
 from src.tag_containers.containers import TagContainer
 from src.fetch.model import *
-from src.tagging.uploading.uploader import UploadSession
+from src.tagging.uploading.uploader import Uploader
 from src.tagging.fabric_tagging.media_state import MediaState
 
 @dataclass
@@ -14,7 +14,7 @@ class JobState:
     # internal handle used in the ContainerScheduler to identify the job
     taghandle: str
     media: MediaState
-    upload_session: UploadSession
+    uploader: Uploader
     container: TagContainer
     # callers can pass an event to be notified when tagging is done
     tagging_done: threading.Event
@@ -27,7 +27,7 @@ class JobState:
     @staticmethod
     def starting(
         media: MediaState,
-        upload_session: UploadSession,
+        uploader: Uploader,
         container: TagContainer,
     ) -> "JobState":
         """Create a JobState in starting state."""
@@ -35,7 +35,7 @@ class JobState:
             status="Queued",
             taghandle="",
             media=media,
-            upload_session=upload_session,
+            uploader=uploader,
             time_started=time.time(),
             time_ended=None,
             tagging_done=threading.Event(),
@@ -52,10 +52,15 @@ class TagJob:
     state: JobState
     # asynchronous stop event to signal the job to stop
     stop_event: threading.Event
+    # extra fields for the job's log lines, e.g. queue job id and tenant
+    extra_log_context: dict
 
     def get_id(self) -> JobID:
         """Get a human-readable identifier for the job (qid, feature, stream)."""
         return JobID(qid=self.args.q.qid, feature=self.args.feature, stream=self.args.scope.get_stream())
+
+    def log_context(self) -> dict:
+        return {"qid": self.args.q.qid, "model": self.args.feature, **self.extra_log_context}
 
 @dataclass
 class JobStore:

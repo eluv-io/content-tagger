@@ -1,8 +1,7 @@
-from dataclasses import dataclass, field
-from typing_extensions import Literal
+from dataclasses import dataclass
 
 from src.common.content import Content
-from src.tags.tagstore.model import Tag
+from src.tags.datastore.model import TagData, is_vector
 from src.common.model import ModelConfig
 
 MediaInput = list[str] | str
@@ -32,6 +31,10 @@ class ContainerSpec:
     q: Content
     # static attributes of the container to run
     model_config: ModelConfig
+    # extra env vars from config (e.g. service URLs); reserved ELV_* vars take precedence
+    env: dict[str, str]
+    # vector index content, passed to the container if specified
+    index_qid: str | None = None
 
 @dataclass
 class ContainerRequest:
@@ -41,6 +44,7 @@ class ContainerRequest:
 
     # e.g: "caption", "asr" (same model handle used in the API)
     model_id: str
+    model_config: ModelConfig
     # directory on host filesystem where media will arrive
     media_dir: str
     # runtime params passed to the model
@@ -49,11 +53,15 @@ class ContainerRequest:
     q: Content
     # handle passed to the container for tracking
     job_id: str | None
+    # vector index content, passed to the container if specified
+    index_qid: str | None = None
 
 @dataclass
 class RegistryConfig:
     base_dir: str
     cache_dir: str
+    # env vars passed to every container, e.g. ELV_GROUND_TRUTH_URL
+    env: dict[str, str]
 
 @dataclass(frozen=True)
 class Progress:
@@ -74,25 +82,30 @@ def make_hashable(obj):
 @dataclass(frozen=True)
 class ModelTag:
     """
-    Represents a tag produced at the model level
+    Represents a tag produced at the model level.
+
+    `data` is the model's output for the time range: either text or an embedding.
     """
     start_time: int
     end_time: int
-    text: str
+    data: TagData
     source_media: str
     model_track: str
     frame_info: dict | None = None
     additional_info: dict | None = None
 
+    def is_vector(self) -> bool:
+        return is_vector(self.data)
+
     def __hash__(self) -> int:
-        return hash((self.start_time, self.end_time, self.text, self.source_media, self.model_track, make_hashable(self.frame_info), make_hashable(self.additional_info)))
-    
+        return hash((self.start_time, self.end_time, make_hashable(self.data), self.source_media, self.model_track, make_hashable(self.frame_info), make_hashable(self.additional_info)))
+
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, ModelTag):
             return False
-        
-        return (self.start_time, self.end_time, self.text, self.source_media, self.model_track, self.frame_info, self.additional_info) == (other.start_time, other.end_time, other.text, other.source_media, other.model_track, other.frame_info, other.additional_info)
-    
+
+        return (self.start_time, self.end_time, self.data, self.source_media, self.model_track, self.frame_info, self.additional_info) == (other.start_time, other.end_time, other.data, other.source_media, other.model_track, other.frame_info, other.additional_info)
+
 @dataclass(frozen=True)
 class ContainerOutput:
     tags: list[ModelTag]

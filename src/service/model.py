@@ -29,6 +29,7 @@ class TagDetails:
     progress: float
     # legacy
     tagging_progress: str
+    tagged_duration: float
 
     # extra detail
     total_parts: int
@@ -48,9 +49,9 @@ class TagJobStatusResult:
     tenant: str
     user: str
     title: str
-    dependencies: list[str]
     error: str | None
     tagger_details: TagDetails | None
+    num_failed_attempts: int
 
 @dataclass(frozen=True)
 class TagStopResult:

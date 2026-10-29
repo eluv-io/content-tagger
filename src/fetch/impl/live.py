@@ -2,6 +2,9 @@
 from copy import deepcopy
 import os
 import threading
+import time
+
+from common_ml.video_processing import get_fps
 
 from src.common.content import QAPI
 from src.fetch.model import DownloadResult, FetchSession, LiveScope, Source, MediaMetadata
@@ -10,6 +13,8 @@ from src.fetch.video_process import center_segment
 from src.common.logging import logger
 
 logger = logger.bind(module="live fetching")
+
+STREAM_POLL_INTERVAL = 5
 
 def _get_live_source_name(chunk_size: int, stream_name: str, idx: int) -> str:
     return f"{stream_name}:segment_{chunk_size}_{idx}"
@@ -33,6 +38,8 @@ class LiveWorker(FetchSession):
         self.exit = exit
         self.next_idx = 0
         self.ignore_sources = set(ignore_sources)
+        self._stream_started = False
+        self._created_at = time.time()
     
     def metadata(self) -> MediaMetadata:
         return deepcopy(self.meta)
@@ -42,8 +49,34 @@ class LiveWorker(FetchSession):
         return self.output_dir
     
     def download(self) -> DownloadResult:
+        if not self._wait_for_stream():
+            return DownloadResult(sources=[], failed=[], done=False)
         with self.rl.permit((self.qapi.id(), str(self.scope.stream))):
             return self._download()
+
+    def _wait_for_stream(self) -> bool:
+        """Returns True once the stream is running, otherwise sleeps for a poll interval and returns False.
+
+        Lets a job (and its container) start before the livestream does.
+        """
+        if self._stream_started:
+            return True
+
+        if self.qapi.is_live_running():
+            logger.info(f"Livestream {self.qapi.id()} is running")
+            self._stream_started = True
+            return True
+
+        waited = time.time() - self._created_at
+        if waited > self.scope.start_timeout:
+            raise TimeoutError(f"Livestream {self.qapi.id()} did not start within {self.scope.start_timeout} seconds")
+
+        logger.debug(f"Waiting for livestream {self.qapi.id()} to start", waited_sec=int(waited))
+        if self.exit:
+            self.exit.wait(STREAM_POLL_INTERVAL)
+        else:
+            time.sleep(STREAM_POLL_INTERVAL)
+        return False
     
     def _download(self) -> DownloadResult:
         """
@@ -86,6 +119,8 @@ class LiveWorker(FetchSession):
         if self.scope.stream == "video":
             # ideally we can do this in the API just in case we have a different stream name for video
             center_segment(save_path)
+            if self.meta.fps is None:
+                self.meta.fps = get_fps(save_path)
 
         seg_offset = segment_info.seg_offset_millis
         seg_idx = segment_info.seg_num

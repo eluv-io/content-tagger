@@ -1,19 +1,20 @@
 from unittest import result
+from dataclasses import MISSING, fields, is_dataclass
 
 import pytest
 from unittest.mock import Mock, patch
 from flask import Flask
 
+from src.common.model import ModelConfigStore
 from src.api.arg_resolver import ArgsResolver
 from src.api.arg_resolver import ArgsResolver
 from src.fetch.model import AssetScope, LiveScope, TagAlignedScope, TimeRangeScope, VideoScope
-from src.tag_containers.registry import ContainerRegistry
+from marshmallow import ValidationError
 from src.api.tagging.request_format import (
-    StartJobsRequest, JobSpec, TaggerOptions, StatusRequest,
+    StartJobsRequest, JobSpec, TaggerOptions, StatusRequest, StatusRequestSchema,
 )
 from src.common.errors import BadRequestError
 from src.tagging.fabric_tagging.model import TagArgs
-from src.api.tagging.handlers import _parse_status_request
 
 @pytest.fixture
 def model_configs():
@@ -43,7 +44,7 @@ def mock_qfactory():
 @pytest.fixture
 def resolver(model_configs, mock_qfactory):
     """Import the resolver function for testing."""
-    return ArgsResolver(model_configs, mock_qfactory)
+    return ArgsResolver(ModelConfigStore(model_configs), mock_qfactory, Mock(get=Mock(return_value={})))
 
 def test_auto_detect_livestream(resolver, mock_content):
     """Test that livestream scope is auto-detected when segment_length is provided."""
@@ -108,7 +109,7 @@ def test_detect_processor_scope(resolver, mock_content):
 def test_with_model_scope(resolver, mock_content):
     """Test that model scope is used when provided."""
     model_scope = {"type": "tag-aligned", "track": "shot_detection"}
-    resolver.model_configs["object_detection"].scope = model_scope
+    resolver.model_configs.snapshot()["object_detection"].scope = model_scope
     
     args = StartJobsRequest(
         options=TaggerOptions(),
@@ -653,34 +654,123 @@ def test_set_defaults_complex_scope_override(resolver, mock_content):
     assert result.scope.stream == "override_stream"  # From override
 
 
-def test_parse_status_request():
-    app = Flask(__name__)
-
-    def parse(qs=""):
-        with app.test_request_context(f"/status{qs}"):
-            return _parse_status_request()
+def test_status_request_schema():
+    schema = StatusRequestSchema()
 
     # Defaults
-    assert parse() == StatusRequest()
+    assert schema.load({}) == StatusRequest()
 
-    # Int coercion from query string
-    req = parse("?start=10&limit=5")
+    # Int coercion from query string values
+    req = schema.load({"start": "10", "limit": "5"})
     assert req.start == 10 and req.limit == 5
 
     # All fields together
-    req = parse("?start=2&limit=20&status=done&tenant=fox&user=bob")
+    req = schema.load({"start": "2", "limit": "20", "status": "done", "tenant": "fox", "user": "bob"})
     assert req == StatusRequest(start=2, limit=20, status="done", tenant="fox", user="bob")
 
-    # 'authorization' param is silently stripped
-    assert parse("?limit=3&authorization=secret_token").limit == 3
+    # 'authorization' and other non-filter params are ignored (unknown = EXCLUDE)
+    assert schema.load({"limit": "3", "authorization": "secret_token"}).limit == 3
+    assert schema.load({"bogus_field": "xyz"}) == StatusRequest()
 
-    # Unknown field raises (strict mode)
-    with pytest.raises(BadRequestError):
-        parse("?bogus_field=xyz")
+    # Non-numeric value for int field raises a validation error
+    with pytest.raises(ValidationError):
+        schema.load({"limit": "abc"})
 
-    # Non-numeric value for int field raises
-    with pytest.raises(BadRequestError):
-        parse("?limit=abc")
-
-    req = parse("?start=2&status=done&tenant=fox&user=bob")
+    req = schema.load({"start": "2", "status": "done", "tenant": "fox", "user": "bob"})
     assert req == StatusRequest(start=2, limit=None, status="done", tenant="fox", user="bob")
+
+def test_index_qid_defaults_empty(resolver, mock_content):
+    """index_qid comes from the request-level options and can be overridden per job."""
+    args = StartJobsRequest(
+        options=TaggerOptions(),
+        jobs=[
+            JobSpec(model="object_detection")
+        ],
+    )
+
+    resolver.is_live_content = Mock(return_value=False)
+    result = resolver.resolve(args, mock_content)
+
+    assert result[0].index_qid == ""
+
+def test_index_qid_from_request_options(resolver, mock_content):
+    """index_qid comes from the request-level options and can be overridden per job."""
+    args = StartJobsRequest(
+        options=TaggerOptions(index_qid="iq__index"),
+        jobs=[
+            JobSpec(model="object_detection"),
+            JobSpec(model="feature1", overrides=TaggerOptions(index_qid="iq__other_index")),
+        ],
+    )
+
+    resolver.is_live_content = Mock(return_value=False)
+    result = resolver.resolve(args, mock_content)
+
+    assert result[0].index_qid == "iq__index"
+    assert result[1].index_qid == "iq__other_index"
+
+def test_tenant_defaults(resolver, mock_content):
+    resolver.is_live_content = Mock(return_value=False)
+    resolver.tenant_defaults.get.return_value = {
+        "object_detection": {
+            "model_params": {"fps": 2, "nested": {"a": 1, "b": 2}},
+            "track_suffix": "tenant",
+            "caller_info": {"source": "tenant"},
+            "overrides": {
+                "replace": True,
+                "destination_qid": "iq__tenant_dest",
+                "index_qid": "iq__tenant_index",
+                "max_fetch_retries": 7,
+                "scope": {"start_time": 10, "end_time": 100},
+            },
+        }
+    }
+    args = StartJobsRequest(
+        options=TaggerOptions(replace=False, scope={"start_time": 20}),
+        jobs=[
+            JobSpec(model="object_detection"),
+            JobSpec(
+                model="object_detection",
+                model_params={"nested": {"a": 5}},
+                track_suffix="",
+                overrides=TaggerOptions(destination_qid="iq__job_dest"),
+            ),
+            JobSpec(model="feature1"),
+        ],
+    )
+
+    tenant_only, explicit, no_tenant = resolver.resolve(args, mock_content)
+
+    # tenant defaults fill anything not set in the request
+    assert tenant_only.run_config == {"fps": 2, "nested": {"a": 1, "b": 2}}
+    assert tenant_only.track_suffix == "tenant"
+    assert tenant_only.destination_qid == "iq__tenant_dest"
+    assert tenant_only.index_qid == "iq__tenant_index"
+    assert tenant_only.max_fetch_retries == 7
+    assert tenant_only.scope.end_time == 100
+    # tenant can't set caller_info
+    assert tenant_only.caller_info == {}
+    # request-level options beat tenant job-level overrides
+    assert tenant_only.replace is False
+    assert tenant_only.scope.start_time == 20
+
+    # explicit job values beat tenant defaults, and merge into nested params
+    assert explicit.run_config == {"fps": 2, "nested": {"a": 5, "b": 2}}
+    assert explicit.track_suffix == ""
+    assert explicit.destination_qid == "iq__job_dest"
+    assert explicit.index_qid == "iq__tenant_index"
+
+    # models without tenant defaults are unaffected
+    assert no_tenant.run_config == {}
+    assert no_tenant.track_suffix == ""
+    assert no_tenant.destination_qid == ""
+    assert no_tenant.max_fetch_retries == 3
+    assert no_tenant.replace is False
+
+def test_invalid_tenant_defaults(resolver, mock_content):
+    resolver.is_live_content = Mock(return_value=False)
+    resolver.tenant_defaults.get.return_value = {"object_detection": {"overrides": {"replace": "nope"}}}
+    args = StartJobsRequest(jobs=[JobSpec(model="object_detection")])
+
+    with pytest.raises(BadRequestError):
+        resolver.resolve(args, mock_content)

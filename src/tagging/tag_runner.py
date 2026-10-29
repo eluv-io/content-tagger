@@ -1,7 +1,7 @@
 import os
 import signal
 import threading
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
 import time
 
 from src.common.content import Content
@@ -17,6 +17,7 @@ logger = logger.bind(name="Tag Runner")
 TERMINAL_STATUSES: set[JobStateDescription] = {"Completed", "Failed", "Stopped"}
 
 def _job_status_from_report(report: TagStatusResult) -> job_status:
+    """Convert the tagger worker state into a valid job queue state"""
     mapping: dict[str, job_status] = {
         "Fetching content": "running",
         "Tagging content": "running",
@@ -29,24 +30,43 @@ def _job_status_from_report(report: TagStatusResult) -> job_status:
 
 
 @dataclass(frozen=True)
+class WorkerFilters:
+    """Limits the jobs the worker claims, e.g. to one tenant's."""
+    qid: str | None = None
+    user: str | None = None
+    tenant: str | None = None
+    priority_ge: int | None = None
+    priority_le: int | None = None
+
+@dataclass(frozen=True)
 class TagRunnerConfig:
     poll_interval: float
-    max_jobs: int
+    filters: WorkerFilters = field(default_factory=WorkerFilters)
 
 @dataclass(frozen=True)
 class JobInfo:
+    """Tagger job bookeeping struct"""
     id: str
     qid: str
     feature: str
     stream: str
     auth: str
 
-class TagRunner:
-    """Bridges the job queue and TaggerWorker.
+    def log_context(self) -> dict:
+        return {"job_id": self.id, "qid": self.qid, "model": self.feature}
 
-    Periodically polls the JobStore for queued jobs, claims them, and runs them
-    through TaggerWorker.  While jobs are running it polls for status updates
-    and forwards them back to the queue, and checks for stop requests.
+def _item_log_context(item: QueueItem) -> dict:
+    # params should be resolved before reaching 'queued' state
+    assert item.params is not None
+    return {"job_id": item.id, "qid": item.qid, "model": item.params.feature, "tenant_name": item.tenant_name}
+
+class TagRunner:
+    """The main worker loop - polls from the queue and runs tagging jobs.
+
+    While jobs are running it polls for status updates and posts the status info 
+    to the queue. It also handles user submitted stop requests and transitioning finished jobs to a terminal state.
+
+    The quiesce feature allows the runner to stop gracefully: finishing all currently running jobs before shutting down.
     """
 
     def __init__(
@@ -60,6 +80,8 @@ class TagRunner:
         self.cfg = cfg
 
         self._running_jobs: dict[str, JobInfo] = {}
+
+        self._failed_jobs: set[str] = set()
         self._shutdown = threading.Event()
         self._quiescing = threading.Event()
 
@@ -80,23 +102,16 @@ class TagRunner:
         self._quiescing.set()
 
     def stop(self) -> None:
-        """Signal both loops to stop and wait for them to finish."""
+        """Hard shutdown."""
         self._shutdown.set()
         self._poll_thread.join()
         if not self._quiescing.is_set():
-            # Hard stop: cancel any jobs still tracked
+            # Hard stop: end any jobs still tracked
             for job in list(self._running_jobs.values()):
                 try:
-                    self.jobstore.update_job(
-                        UpdateJobRequest(
-                            id=job.id, 
-                            status="cancelled",
-                            error="tagger worker service was shut down or restarted"
-                        ),
-                        auth=job.auth,
-                    )
+                    self._fail(job.id, job.auth, None, "tagger worker service was shut down or restarted", retryable=True)
                 except Exception as e:
-                    logger.opt(exception=e).warning("failed to cancel job on shutdown", job_id=job.id)
+                    logger.opt(exception=e).warning("failed to end job on shutdown", job_id=job.id)
         self._running_jobs.clear()
         self.tagger.cleanup()
 
@@ -122,80 +137,52 @@ class TagRunner:
             self._shutdown.wait(self.cfg.poll_interval)
 
     def _poll_once(self) -> None:
-        """Check for queued jobs and start them. Also checks for stop requests on running jobs."""
-
+        """Claim the queued jobs the system has the resources for and start them."""
         if self._quiescing.is_set():
-            # In quiesce mode only service stop requests — don't claim new work
-            self._check_stop_requests()
             return
 
-        # start queued jobs
-        queued = self.jobstore.list_jobs(ListJobArgs(status="queued"), auth="")
+        queued = self.jobstore.list_jobs(ListJobArgs(status="queued", **asdict(self.cfg.filters)), auth="")
         for item in queued:
-            if item.id in self._running_jobs:
+            assert item.params is not None
+            if item.id in self._running_jobs or item.id in self._failed_jobs:
                 continue
-
-            if item.stop_requested:
-                logger.info("skipping job with stop requested", job_id=item.id)
-                self._set_stopped(item)
+            if not self.tagger.has_room(item.params.feature):
                 continue
+            with logger.contextualize(**_item_log_context(item)):
+                self._try_start(item)
 
-            if len(self._running_jobs) >= self.cfg.max_jobs:
-                # don't pull any more jobs
-                continue
+    def _try_start(self, item: QueueItem) -> None:
+        claimed = self.jobstore.claim_job(item.id, item.auth)
+        if not claimed:
+            return
 
-            claimed = self.jobstore.claim_job(item.id, item.auth)
-            if not claimed:
-                continue
+        logger.info("claimed job")
 
-            logger.info("claimed job", job_id=item.id, qid=item.qid)
+        # params should be resolved before reaching 'queued' state
+        assert item.params is not None
 
-            feature = item.params.feature
-            stream = item.params.scope.get_stream()
-            self._running_jobs[item.id] = JobInfo(id=item.id, qid=item.qid, feature=feature, stream=stream, auth=item.auth)
+        feature = item.params.feature
+        stream = item.params.scope.get_stream()
+        self._running_jobs[item.id] = JobInfo(id=item.id, qid=item.qid, feature=feature, stream=stream, auth=item.auth)
 
-            self._run_job(item)
-
-        self._check_stop_requests()
-
-    def _check_stop_requests(self) -> None:
-        """Check for stop requests on running jobs."""
-        stop_requested = self.jobstore.list_jobs(ListJobArgs(status="running"), auth="")
-        for item in stop_requested:
-            if not item.stop_requested:
-                continue
-
-            if item.id not in self._running_jobs:
-                continue
-
-            logger.info("stop requested for job", job_id=item.id)
-            try:
-                self.tagger.stop(item.qid, item.params.feature)
-            except Exception as e:
-                logger.opt(exception=e).warning("failed to stop job", job_id=item.id)
+        self._run_job(item)
 
     def _run_job(self, item: QueueItem) -> None:
-        log = logger.bind(job_id=item.id, qid=item.qid)
+        # params should be resolved before reaching 'queued' state
+        assert item.params is not None
         try:
             content = Content(qid=item.qid, token=item.auth)
-            result = self.tagger.tag(content, item.params)
-            log.info("tag started", extra={"started": result.started, "message": result.message})
+            result = self.tagger.tag(content, item.params, log_context=_item_log_context(item))
+            logger.info("tag started", started=result.started, result=result.message)
         except Exception as e:
-            log.opt(exception=e).error("failed to start tagging job")
+            logger.opt(exception=e).error("failed to start tagging job")
             self._error_job(item, e)
 
     def _error_job(self, item: QueueItem, error: Exception) -> None:
         try:
-            self.jobstore.update_job(
-                UpdateJobRequest(
-                    id=item.id,
-                    status="failed",
-                    error=str(error),
-                ),
-                auth=item.auth,
-            )
+            self._fail(item.id, item.auth, None, str(error), retryable=True)
         except Exception as e:
-            logger.opt(exception=e).warning("failed to update job with error status", job_id=item.id)
+            logger.opt(exception=e).warning("failed to update job with error status")
         finally:
             self._finish_job(item.id)
 
@@ -217,62 +204,67 @@ class TagRunner:
             reports_by_model_stream: dict[tuple[str, str], TagStatusResult] = {(r.model, r.stream) : r for r in reports}
 
             for item in job_items:
-                r = reports_by_model_stream.get((item.feature, item.stream))
-                if r is None:
-                    continue
+                with logger.contextualize(**item.log_context()):
+                    self._report_status(item, reports_by_model_stream.get((item.feature, item.stream)))
 
-                # push updated status back to the queue
-                queue_status = _job_status_from_report(r)
+    def _report_status(self, item: JobInfo, r: TagStatusResult | None) -> None:
+        if r is None:
+            return
 
-                error = r.status.error
+        fetch_progress = len(r.status.downloaded_sources) / len(r.status.total_sources) if r.status.total_sources else 0
+        
+        if r.status.container_progress_ratio is None:
+            # approximate with tagged parts
+            tag_progress = len(r.status.uploaded_sources) / len(r.status.total_sources) if r.status.total_sources else 0
+        else:
+            tag_progress = r.status.container_progress_ratio
 
-                fetch_progress = len(r.status.downloaded_sources) / len(r.status.total_sources) if r.status.total_sources else 1.0
-                
-                if r.status.container_progress_ratio is None:
-                    # approximate with tagged parts
-                    tag_progress = len(r.status.uploaded_sources) / len(r.status.total_sources) if r.status.total_sources else 1.0
-                else:
-                    tag_progress = r.status.container_progress_ratio
+        details=TagDetails(
+            tag_status=r.status.status,
+            time_running=r.status.time_ended - r.status.time_started if r.status.time_ended else time.time() - r.status.time_started,
+            progress=0.3 * fetch_progress + 0.7 * tag_progress,
+            tagging_progress=f"{len(r.status.uploaded_sources)}/{len(r.status.total_sources)}",
+            tagged_duration=r.status.tagged_duration,
+            total_parts=len(r.status.total_sources),
+            downloaded_parts=len(r.status.downloaded_sources),
+            tagged_parts=len(r.status.tagged_sources),
+            warnings=get_warning_response(r.status.warnings) if r.status.warnings else None,
+        )
 
-                details=TagDetails(
-                    tag_status=r.status.status,
-                    time_running=r.status.time_ended - r.status.time_started if r.status.time_ended else time.time() - r.status.time_started,
-                    progress=0.3 * fetch_progress + 0.7 * tag_progress,
-                    tagging_progress=f"{len(r.status.uploaded_sources)}/{len(r.status.total_sources)}",
-                    total_parts=len(r.status.total_sources),
-                    downloaded_parts=len(r.status.downloaded_sources),
-                    tagged_parts=len(r.status.tagged_sources),
-                    warnings=get_warning_response(r.status.warnings) if r.status.warnings else None,
-                )
+        try:
+            status = _job_status_from_report(r)
+            if status == "failed":
+                # jobs that made partial progress aren't retried, e.g. a livestream whose fetches fail once it stops
+                self._fail(item.id, item.auth, details, r.status.error or "tagging failed", retryable=not r.status.uploaded_sources)
+            elif r.status.status in TERMINAL_STATUSES:
+                self._complete(item, status, details, r.status.error)
+            else:
+                job = self.jobstore.update_progress(item.id, details, auth=item.auth)
+                if job.status == "cancelling":
+                    self._stop(item)
+        except Exception as e:
+            logger.opt(exception=e).warning("failed to update job")
 
-                try:
-                    self.jobstore.update_job(
-                        UpdateJobRequest(
-                            id=item.id, 
-                            status=queue_status, 
-                            status_details=details,
-                            error=error,
-                        ),
-                        auth=item.auth,
-                    )
-                except Exception as e:
-                    logger.opt(exception=e).warning("failed to update job", job_id=item.id)
+        # if the job reached a terminal state, clean it up
+        if r.status.status in TERMINAL_STATUSES:
+            self._finish_job(item.id)
 
-                # if the job reached a terminal state, clean it up
-                if r.status.status in TERMINAL_STATUSES:
-                    self._finish_job(item.id)
+    def _stop(self, item: JobInfo) -> None:
+        logger.info("stop requested for job")
+        try:
+            self.tagger.stop(item.qid, item.feature)
+        except Exception as e:
+            logger.opt(exception=e).warning("failed to stop job")
+
+    def _complete(self, item: JobInfo, status: job_status, details: TagDetails | None, error: str | None) -> None:
+        req = CompleteJobRequest(id=item.id, status=status, status_details=details, error=error)
+        if not self.jobstore.complete_job(req, auth=item.auth):
+            logger.warning("queue refused to complete job", status=status)
+
+    def _fail(self, id: str, auth: str, details: TagDetails | None, error: str, retryable: bool) -> None:
+        self._failed_jobs.add(id)
+        if not self.jobstore.fail_job(FailJobRequest(id=id, error=error, status_details=details, retryable=retryable), auth=auth):
+            logger.warning("queue refused to fail job")
 
     def _finish_job(self, id: str) -> None:
         self._running_jobs.pop(id, None)
-
-    def _set_stopped(self, item: QueueItem) -> None:
-        try:
-            self.jobstore.update_job(
-                UpdateJobRequest(
-                    id=item.id, 
-                    status="cancelled",
-                ),
-                auth=item.auth,
-            )
-        except Exception as e:
-            logger.opt(exception=e).warning("failed to update job with stopped status", job_id=item.id)

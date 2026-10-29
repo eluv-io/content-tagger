@@ -5,8 +5,9 @@ setup(
     version='0.1',
     packages=find_packages(),
     install_requires=[
-        'marshmallow==3.26.1',
+        'marshmallow>=3.24,<5',
         'flask',
+        'flask-smorest>=0.44',
         'flask_cors',
         'loguru',
         'podman',
@@ -16,6 +17,7 @@ setup(
         'psutil',
         'dacite',
         'dateutils',
+        'cachetools>=5',
         'elv-client-py @ git+https://github.com/eluv-io/elv-client-py.git#egg=elv-client-py',
         'common_ml @ git+https://github.com/eluv-io/common-ml.git#egg=common_ml',
     ]

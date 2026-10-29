@@ -1,859 +1,1025 @@
-openapi: 3.0.3
-info:
-  title: Eluvio Tagger API
-  x-logo:
-    url: /docs/logo.png
-  version: 1.0.0
-  description: |
-    API for running ML inference on Fabric content objects
 paths:
-  /models:
-    get:
-      tags:
-        - Discover models
-      summary: List available models
-      description: |
-        Returns the list of models available on this tagger instance, including
-        each model's type and the tag track it writes to.
+  /{qid}/tag:
+    post:
       responses:
+        '422':
+          $ref: '#/components/responses/UNPROCESSABLE_ENTITY'
         '200':
-          description: List of available models
+          description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ModelsResponse'
-
-  /jobs/{job_id}:
-    delete:
-      tags:
-        - Operate tagging
-      summary: Delete a job
-      description: |
-        Soft-deletes a job by id. Deleted jobs are excluded from all list and status responses.
-      parameters:
-        - name: job_id
-          in: path
-          required: true
-          schema:
-            type: string
-          description: ID of the job to delete
-        - name: tenant
-          in: query
-          schema:
-            type: string
-          description: Tenant id. If the provided token has admin authority for the tenant than this allows you to delete jobs from other users.
-        - name: authorization
-          in: query
-          required: true
-          schema:
-            type: string
-      responses:
-        '204':
-          description: Job deleted successfully
-        '400':
-          description: Bad Request
-        '403':
-          description: Unauthorized
-        '404':
-          description: Job not found
-
-  /{qid}/tag:
-    post:
-      tags:
-        - Operate tagging
-      summary:
-        Tag content
-      parameters:
-        - name: qid
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Source content to tag.
-        - name: authorization
-          in: query
-          required: true
-          schema:
-            type: string
+                $ref: '#/components/schemas/StartTaggingResponse'
+        default:
+          $ref: '#/components/responses/DEFAULT_ERROR'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/StartJobsRequest'
-        description: Tagging options
-      responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StartTaggingResponse'
-        '400':
-          description: Bad Request
-        '502':
-          description: Bad Gateway
-
-  /job-status:
-    get:
       tags:
-        - Operate tagging
-      summary:
-        Query job statuses
-      description: |
-        Returns jobs matching the given filters. If no tenant or user filter is provided,
-        the endpoint automatically scopes results to the authenticated user.
-        Querying by tenant requires tenant admin privileges.
-      parameters:
-        - name: authorization
-          in: query
-          required: true
-          schema:
-            type: string
-        - name: qid
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Filter by content id.
-        - name: status
-          in: query
-          required: false
-          schema:
-            type: string
-            enum: [queued, running, completed, failed, stopped]
-          description: Filter by job status.
-        - name: tenant
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Filter by tenant. Requires tenant admin privileges.
-        - name: user
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Filter by user address. Must match the authenticated user unless querying as tenant admin.
-        - name: model
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Filter by model name (e.g. "asr", "celeb").
-        - name: title
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Filter by content title (case-insensitive substring match).
-        - name: start
-          in: query
-          required: false
-          schema:
-            type: integer
-            default: 0
-          description: Pagination offset.
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: integer
-            nullable: true
-          description: Maximum number of jobs to return. Null for no limit.
-      responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusResponse'
-        '403':
-          description: Forbidden — insufficient privileges for the requested filter
-
+      - tagging
+    parameters:
+    - in: path
+      name: qid
+      required: true
+      schema:
+        type: string
+        minLength: 1
   /{qid}/job-status:
     get:
-      tags:
-        - Operate tagging
-      summary:
-        Query job statuses for a single content
       parameters:
-        - name: authorization
-          in: query
-          required: true
-          schema:
-            type: string
+      - in: query
+        name: start
+        description: Pagination offset.
+        schema:
+          type: integer
+          default: 0
+        required: false
+      - in: query
+        name: limit
+        description: Maximum number of jobs to return. Null for no limit.
+        schema:
+          type: integer
+          default: null
+          nullable: true
+        required: false
+      - in: query
+        name: qid
+        description: Filter by content id.
+        schema:
+          type: string
+          default: null
+          nullable: true
+        required: false
+      - in: query
+        name: status
+        description: Filter by job status.
+        schema:
+          type: string
+          default: null
+          nullable: true
+        required: false
+      - in: query
+        name: tenant
+        description: Filter by tenant. Requires tenant admin privileges.
+        schema:
+          type: string
+          default: null
+          nullable: true
+        required: false
+      - in: query
+        name: user
+        description: Filter by user address. Provided authorization must match the
+          authenticated user unless querying as tenant admin.
+        schema:
+          type: string
+          default: null
+          nullable: true
+        required: false
+      - in: query
+        name: model
+        description: Filter by model name (e.g. "asr", "celeb").
+        schema:
+          type: string
+          default: null
+          nullable: true
+        required: false
+      - in: query
+        name: title
+        description: Filter by content title (case-insensitive substring match).
+        schema:
+          type: string
+          default: null
+          nullable: true
+        required: false
       responses:
+        '422':
+          $ref: '#/components/responses/UNPROCESSABLE_ENTITY'
         '200':
-          description: Success
+          description: OK
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/StatusResponse'
-        '404':
-          description: No jobs found
-
-  /{qid}/tag-status:
-    get:
+        default:
+          $ref: '#/components/responses/DEFAULT_ERROR'
       tags:
-        - Operate tagging
-      summary: Get tagging history across models
-      description: |
-        Returns an overview of each model that has been run against the given content,
-        including the track it writes to, the last time it was run, and its percent completion.
+      - tagging
+    parameters:
+    - in: path
+      name: qid
+      required: true
+      schema:
+        type: string
+        minLength: 1
+  /job-status:
+    get:
       parameters:
-        - in: path
-          name: qid
-          required: true
-          schema:
-            type: string
-          description: Content object id to check status for
-        - in: query
-          name: authorization
-          required: false
-          schema:
-            type: string
-          description: Fabric authorization token
+      - in: query
+        name: start
+        description: Pagination offset.
+        schema:
+          type: integer
+          default: 0
+        required: false
+      - in: query
+        name: limit
+        description: Maximum number of jobs to return. Null for no limit.
+        schema:
+          type: integer
+          default: null
+          nullable: true
+        required: false
+      - in: query
+        name: qid
+        description: Filter by content id.
+        schema:
+          type: string
+          default: null
+          nullable: true
+        required: false
+      - in: query
+        name: status
+        description: Filter by job status.
+        schema:
+          type: string
+          default: null
+          nullable: true
+        required: false
+      - in: query
+        name: tenant
+        description: Filter by tenant. Requires tenant admin privileges.
+        schema:
+          type: string
+          default: null
+          nullable: true
+        required: false
+      - in: query
+        name: user
+        description: Filter by user address. Provided authorization must match the
+          authenticated user unless querying as tenant admin.
+        schema:
+          type: string
+          default: null
+          nullable: true
+        required: false
+      - in: query
+        name: model
+        description: Filter by model name (e.g. "asr", "celeb").
+        schema:
+          type: string
+          default: null
+          nullable: true
+        required: false
+      - in: query
+        name: title
+        description: Filter by content title (case-insensitive substring match).
+        schema:
+          type: string
+          default: null
+          nullable: true
+        required: false
+      responses:
+        '422':
+          $ref: '#/components/responses/UNPROCESSABLE_ENTITY'
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        default:
+          $ref: '#/components/responses/DEFAULT_ERROR'
+      summary: Global job-status endpoint. Requires ?tenant= filter.
+      description: 'Authentication: the caller''s auth token is verified by picking
+        the first
+
+        returned job''s qid and confirming get_tenant(qid, auth) matches the
+
+        requested tenant.'
+      tags:
+      - tagging
+  /{qid}/stop/{feature}:
+    post:
       responses:
         '200':
-          description: Tagging status summary for every model that has been run on the content
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StopTaggingResponse'
+        default:
+          $ref: '#/components/responses/DEFAULT_ERROR'
+      tags:
+      - tagging
+    parameters:
+    - in: path
+      name: qid
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    - in: path
+      name: feature
+      required: true
+      schema:
+        type: string
+        minLength: 1
+  /{qid}/stop:
+    post:
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StopTaggingResponse'
+        default:
+          $ref: '#/components/responses/DEFAULT_ERROR'
+      tags:
+      - tagging
+    parameters:
+    - in: path
+      name: qid
+      required: true
+      schema:
+        type: string
+        minLength: 1
+  /{qid}/tag-status:
+    get:
+      responses:
+        '200':
+          description: OK
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ContentStatusResponse'
+        default:
+          $ref: '#/components/responses/DEFAULT_ERROR'
+      tags:
+      - content_status
+    parameters:
+    - in: path
+      name: qid
+      required: true
+      schema:
+        type: string
+        minLength: 1
   /{qid}/tag-status/{model}:
     get:
-      tags:
-        - Operate tagging
-      summary: Get detailed job history for a model
-      description: |
-        Returns a detailed breakdown of a single model's tagging history on the given content,
-        including a high-level summary and a list of every job that has been run.
-      parameters:
-        - in: path
-          name: qid
-          required: true
-          schema:
-            type: string
-          description: Content object id to check status for
-        - in: path
-          name: model
-          required: true
-          schema:
-            type: string
-          description: Model identifier (e.g. "celeb", "asr")
-        - in: query
-          name: authorization
-          required: false
-          schema:
-            type: string
-          description: Fabric authorization token
       responses:
         '200':
-          description: Detailed model tagging status including job history
+          description: OK
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ModelStatusResponse'
-
-  /{qid}/stop:
-    post:
+        default:
+          $ref: '#/components/responses/DEFAULT_ERROR'
       tags:
-        - Operate tagging
-      summary:
-        Stop tagging jobs by content
-      parameters:
-        - name: qid
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Stop all jobs against this content.
-        - name: authorization
-          in: query
-          required: true
-          schema:
-            type: string
+      - content_status
+    parameters:
+    - in: path
+      name: qid
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    - in: path
+      name: model
+      required: true
+      schema:
+        type: string
+        minLength: 1
+  /models:
+    get:
       responses:
         '200':
-          description: Success
+          description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StopTaggingResponse'
-
-  /{qid}/stop/{model}:
-    post:
+                $ref: '#/components/schemas/ListingResponse'
+        default:
+          $ref: '#/components/responses/DEFAULT_ERROR'
       tags:
-        - Operate tagging
-      summary:
-        Stop tagging jobs by model
+      - extension
+  /jobs/{job_id}:
+    delete:
       parameters:
-        - name: qid
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Content object id
-        - name: model
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Model name
-        - name: authorization
-          in: query
-          required: true
-          schema:
-            type: string
+      - in: query
+        name: tenant
+        schema:
+          type: string
+          default: null
+          nullable: true
+        required: false
       responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StopTaggingResponse'
-
+        '422':
+          $ref: '#/components/responses/UNPROCESSABLE_ENTITY'
+        '204':
+          description: No Content
+        default:
+          $ref: '#/components/responses/DEFAULT_ERROR'
+      tags:
+      - extension
+    parameters:
+    - in: path
+      name: job_id
+      required: true
+      schema:
+        type: string
+        minLength: 1
+info:
+  title: Eluvio Tagger API
+  version: 1.0.0
+tags:
+- name: tagging
+  description: Start, query and stop tagging jobs.
+- name: content_status
+  description: Per-content tagging status summaries.
+- name: extension
+  description: Model listing and job management.
+openapi: 3.0.2
 components:
   schemas:
-    StartJobsRequest:
+    Error:
       type: object
       properties:
-        options:
-          $ref: '#/components/schemas/TaggerOptions'
-          description: Knobs that apply to all tagger jobs in the request.
-        jobs:
+        code:
+          type: integer
+          description: Error code
+        status:
+          type: string
+          description: Error name
+        message:
+          type: string
+          description: Error message
+        errors:
+          type: object
+          description: Errors
+          additionalProperties: {}
+      additionalProperties: false
+    PaginationMetadata:
+      type: object
+      properties:
+        total:
+          type: integer
+          description: Total number of items.
+        total_pages:
+          type: integer
+          description: Total number of pages.
+        first_page:
+          type: integer
+          description: First available page number.
+        last_page:
+          type: integer
+          description: Last available page number.
+        page:
+          type: integer
+          description: Current page number.
+        previous_page:
+          type: integer
+          description: Previous page number.
+        next_page:
+          type: integer
+          description: Next page number.
+      additionalProperties: false
+    Scope:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+          - video
+          - processor
+          - assets
+          - livestream
+          - tag-aligned
+          description: Discriminator selecting the scope variant.
+      additionalProperties: false
+    VideoScope:
+      type: object
+      properties:
+        type:
+          default: video
+          readOnly: true
+          description: Scope identifier to remove ambiguity
+        stream:
+          type: string
+          description: Audio or video stream to tag. If this value is not set, it's
+            value will be automatically set depending on the model and the content.
+          example: audio_1
+        start_time:
+          type: integer
+          description: Start tagging at this point in the media stream (in seconds)
+        end_time:
+          type: integer
+          description: End tagging at this point in the media stream (in seconds)
+          example: 600
+      additionalProperties: false
+    ProcessorScope:
+      type: object
+      properties:
+        type:
+          default: processor
+          readOnly: true
+          description: Scope identifier to remove ambiguity
+        start_time:
+          type: integer
+          description: Start tagging at this point in the media stream (in seconds)
+          nullable: true
+        end_time:
+          type: integer
+          description: End tagging at this point in the media stream (in seconds)
+          example: 600
+          nullable: true
+        chunk_size:
+          type: integer
+          description: Processor will be fed intervals of this size to tag
+        stream:
+          type: string
+          description: Media stream
+      additionalProperties: false
+    AssetsScope:
+      type: object
+      properties:
+        type:
+          default: assets
+          readOnly: true
+          description: Scope identifier to remove ambiguity
+        assets:
           type: array
+          description: List of asset paths to tag
+          example:
+          - assets/hello1.jpg
+          - assets/hello2.jpg
           items:
-            $ref: '#/components/schemas/JobSpec'
-          description: List of individual job parameters.
+            type: string
+          nullable: true
+      additionalProperties: false
+    LivestreamScope:
+      type: object
+      properties:
+        type:
+          default: livestream
+          readOnly: true
+          description: Scope identifier to remove ambiguity
+        stream:
+          type: string
+          description: Media stream
+        segment_length:
+          type: integer
+          description: Tagging interval size (in seconds)
+        max_duration:
+          type: integer
+          description: Maximum amount of content from livestream to tag (in seconds)
+          nullable: true
+      additionalProperties: false
+    TagAlignedScope:
+      type: object
+      properties:
+        type:
+          default: tag-aligned
+          readOnly: true
+          description: Scope identifier to remove ambiguity
+        stream:
+          type: string
+          description: Media stream
+        start_time:
+          type: integer
+          description: Start tagging at this point in the media stream (in seconds)
+        end_time:
+          type: integer
+          description: End tagging at this point in the media stream (in seconds)
+          example: 600
+        track:
+          type: string
+          description: Tag track whose intervals tagging is aligned to. Alternatively,
+            we can set track to "1s", "5s", "Ns" to align tagging to fixed intervals
+            of N seconds.
+      additionalProperties: false
+    ModelParamsAsr:
+      type: object
+      properties:
+        word_level:
+          type: boolean
+          default: true
+          description: Whether to output word level tags or collapse into longer tags.
+        prettify:
+          type: boolean
+          default: true
+          description: Punctuation/capitalization postprocessing.
+        pretty_trail:
+          type: boolean
+          default: true
+          description: If running at word level, output a second track "auto_captions"
+            which processes bigger blocks of audio in a single pass for better output
+            quality and returns sentence level tags. This can be particularly useful
+            for live tagging so you can have a "pretty" track alongside a live-edge
+            track.
+        pretty_trail_buffer:
+          type: integer
+          default: 30
+          description: (when pretty_trail=true) how many seconds worth of audio do
+            we wait for before we output a batch of auto_captions tags.
+      additionalProperties: false
+    ModelParamsEuroAsr:
+      type: object
+      properties:
+        word_level:
+          type: boolean
+          default: true
+          description: Whether to output word level tags or collapse into longer tags.
+        prettify:
+          type: boolean
+          default: true
+          description: Punctuation/capitalization postprocessing.
+        pretty_trail:
+          type: boolean
+          default: true
+          description: If running at word level, output a second track "auto_captions"
+            which processes bigger blocks of audio in a single pass for better output
+            quality and returns sentence level tags. This can be particularly useful
+            for live tagging so you can have a "pretty" track alongside a live-edge
+            track.
+        pretty_trail_buffer:
+          type: integer
+          default: 30
+          description: (when pretty_trail=true) how many seconds worth of audio do
+            we wait for before we output a batch of auto_captions tags.
+      additionalProperties: false
+    ModelParamsLlava:
+      type: object
+      properties:
+        fps:
+          type: integer
+          description: Frequency to generate frame level tags.
+          example: 1
+        model:
+          type: string
+          description: Ollama model to run.
+          example: llava
+        temperature:
+          type: number
+          description: Sampling temperature for generation.
+          example: 0.2
+        prompt:
+          type: string
+          description: Prompt used to generate the frame description.
+          example: Describe this frame.
       required:
-        - jobs
-
+      - fps
+      - model
+      - prompt
+      - temperature
+      additionalProperties: false
+    ModelParamsCeleb:
+      type: object
+      properties:
+        fps:
+          type: number
+          default: 4.0
+          description: Frames per second to sample for face detection.
+        thres:
+          type: number
+          default: 0.4
+          description: Minimum confidence threshold.
+        min_box_size:
+          type: number
+          default: 0.0
+          description: Minimum face bounding box size to consider. Value is a ratio
+            of the area of the full frame.
+        allow_single_frame:
+          type: boolean
+          default: false
+          description: Whether to generate a video tag if we only detect a celebrity
+            in a single frame. Setting to true helps to avoid false positives for
+            erroneous single-frame detections.
+        ground_truth:
+          type: string
+          description: Content id of ground truth pool to use for celebrity detection.
+        content_type:
+          type: string
+          default: video
+          description: '"image" or "video". Image mode optimizes the accuracy for
+            static images.'
+          enum:
+          - image
+          - video
+      additionalProperties: false
+    ModelParamsOcr:
+      type: object
+      properties:
+        fps:
+          type: integer
+          description: Frames per second to sample for text detection.
+          example: 1
+        allow_single_frame:
+          type: boolean
+          default: false
+          description: Whether to generate a video tag from a single-frame detection
+            (same as celeb).
+        w_thres:
+          type: number
+          description: Word-level confidence threshold.
+          example: 0.5
+        l_thres:
+          type: boolean
+          description: Line-level threshold.
+          example: true
+      required:
+      - fps
+      - l_thres
+      - w_thres
+      additionalProperties: false
+    ModelParamsLogo:
+      type: object
+      properties:
+        fps:
+          type: integer
+          description: Frames per second to sample for logo detection.
+          example: 1
+      required:
+      - fps
+      additionalProperties: false
+    ModelParamsCaption:
+      type: object
+      properties:
+        fps:
+          type: integer
+          description: Frames per second to sample for captioning.
+          example: 1
+      required:
+      - fps
+      additionalProperties: false
+    ModelParamsSceneDescription:
+      type: object
+      properties:
+        num_frames:
+          type: integer
+          default: 5
+          description: 'How many frames to sample for each input video chunk. NOTE:
+            often it''s most sensible to run scene description alongside the "tag-aligned"
+            scope.'
+        prompt:
+          type: string
+          default: Describe this scene.
+          description: Prompt used to describe the scene.
+        model:
+          type: string
+          default: Qwen/Qwen3-VL-8B-Instruct
+          description: Model name to run. Currently this is limited to huggingface
+            model ids in the Qwen3-VL family.
+        rescale_width:
+          type: integer
+          default: 320
+          description: Rescale the video to this width before processing. Lowering
+            this value can improve inference performance, potentially at the cost
+            of model accuracy.
+        rescale_height:
+          type: integer
+          default: 240
+          description: Rescale the video to this height before processing.
+      additionalProperties: false
     TaggerOptions:
       type: object
       properties:
         destination_qid:
           type: string
-          default: ""
-          description: Content where tags should be written to. Empty string indicates that they should be written to the same content that we are tagging.
+          default: null
+          description: Content where tags should be written to. Leaving empty will
+            write to the same content the model is running on.
+          nullable: true
         replace:
           type: boolean
-          default: false
-          description:
-            Replace already existing tagstore tags. Set to true to retag, set to false to enbable diff-based tagging.
+          default: null
+          description: Replace already existing tagstore tags. Set to true to retag,
+            set to false to enable diff-based tagging.
+          nullable: true
         max_fetch_retries:
           type: integer
-          default: 3
-          description:
-            If a fetch operation fails, we can retry this many times before the job is marked as failed.
+          default: null
+          description: If a fetch operation fails, we can retry this many times before
+            the job is marked as failed.
+          nullable: true
         scope:
           type: object
-          additionalProperties: true
-          example:
-            {"type": "video", "start_time": 100, "end_time": 200}
-          description: Scope of tagging. The format should match one of the Scope schemas. The type of scope provided as well as the parameters affets what media will get tagged.
-
+          description: 'Polymorphic tagging scope, discriminated by `type`. May be
+            partial: omitted fields are filled in server-side based on the content
+            (live vs. static, default audio stream).'
+          oneOf:
+          - $ref: '#/components/schemas/VideoScope'
+          - $ref: '#/components/schemas/ProcessorScope'
+          - $ref: '#/components/schemas/AssetsScope'
+          - $ref: '#/components/schemas/LivestreamScope'
+          - $ref: '#/components/schemas/TagAlignedScope'
+          additionalProperties: {}
+      additionalProperties: false
     JobSpec:
       type: object
       properties:
         model:
           type: string
-          example: asr
           description: Name of model to run
+          example: asr
         model_params:
           type: object
-          additionalProperties: true
-          description: Model level parameters
-          example: {"fps": 1.5}
+          description: Model-specific parameters, selected by the sibling `model`
+            field. The shape is one of the per-model variants below; models without
+            documented parameters accept an empty object.
+          oneOf:
+          - $ref: '#/components/schemas/ModelParamsAsr'
+          - $ref: '#/components/schemas/ModelParamsEuroAsr'
+          - $ref: '#/components/schemas/ModelParamsLlava'
+          - $ref: '#/components/schemas/ModelParamsCeleb'
+          - $ref: '#/components/schemas/ModelParamsOcr'
+          - $ref: '#/components/schemas/ModelParamsLogo'
+          - $ref: '#/components/schemas/ModelParamsCaption'
+          - $ref: '#/components/schemas/ModelParamsSceneDescription'
+          additionalProperties: {}
         track_suffix:
           type: string
-          default: ""
-          description: If set this will be appended to the track id & label that the model writes to. This allows you to write to different tracks with the same model by specifying different suffixes.
-        caller_job_info:
+          default: ''
+          description: If set this will be appended to the track name that the tagger
+            writes to. This allows you to write to different tracks with the same
+            model by specifying different suffixes.
+          example: test run
+        caller_info:
           type: object
-          additionalProperties: true
-          description: Arbitrary key-value pairs that will be stored with the job for later reference.
-          example: {"user_note": "This is a note about the job"}
-        overrides:
-          $ref: '#/components/schemas/TaggerOptions'
-      required:
-        - model
-
-    ScopeVideo:
-      type: object
-      properties:
-        type:
-          type: string
-          enum: [video]
-          default: video
-          description: Scope identifier to remove ambiguity
-        start_time:
-          type: integer
-          default: 0
-          description: Start tagging at this point in the media stream (in seconds)
-        end_time:
-          type: integer
-          default: 10000000000000000
-          example: 600
-          description: End tagging at this point in the media stream (in seconds)
-        stream:
-          type: string
-          example: "audio_1"
-          description: Audio or video stream to tag. If this value is not set, it's value will be automatically set depending on the model and the content.
-      required:
-        - type
-
-    ScopeProcessor:
-      type: object
-      properties:
-        type:
-          type: string
-          enum: [processor]
-          description: Scope identifier to remove ambiguity
-        start_time:
-          type: integer
-          default: 0
-          description: Start tagging at this point in the media stream (in seconds)
-        end_time:
-          type: integer
-          default: 10000000000000000
-          example: 600
-          description: End tagging at this point in the media stream (in seconds)
-        chunk_size:
-          type: integer
-          default: 600
-          description: Processor will be fed intervals of this size to tag
-        stream:
-          type: string
-          default: "video"
-          description: Media stream
-      required:
-        - type
-
-    ScopeAssets:
-      type: object
-      properties:
-        type:
-          type: string
-          enum: [assets]
-          description: Scope identifier to remove ambiguity
-        assets:
-          type: array
-          items:
+          description: Arbitrary key-value pairs that will be stored with the job
+            for later reference.
+          example:
+            user_note: This is a note about the job
+          additionalProperties:
             type: string
-          description: List of asset paths to tag
-          example: ["assets/hello1.jpg", "assets/hello2.jpg"]
+        overrides:
+          description: Per-job options that override the request-level options.
+          example:
+            scope:
+              stream: spanish_audio_5_1
+          allOf:
+          - $ref: '#/components/schemas/TaggerOptions'
       required:
-        - type
-
-    ScopeLivestream:
+      - model
+      additionalProperties: false
+    StartJobsRequest:
       type: object
       properties:
-        type:
-          type: string
-          enum: [livestream]
-          description: Scope identifier to remove ambiguity
-        stream:
-          type: string
-          default: "video"
-          description: Media stream
-        segment_length:
-          type: integer
-          default: 4
-          description: Tagging interval size (in seconds)
-        max_duration:
-          type: integer
-          nullable: true
-          description: Maximum amount of content from livestream to tag (in seconds)
-      required:
-        - type
-
-    StartTaggingResponse:
-      type: object
-      properties:
+        options:
+          description: Knobs that apply to all tagger jobs in the request.
+          allOf:
+          - $ref: '#/components/schemas/TaggerOptions'
         jobs:
           type: array
+          description: List of individual job parameters.
           items:
-            $ref: '#/components/schemas/StartStatus'
-          description: Start status for each job in the request
-      required:
-        - jobs
-
+            $ref: '#/components/schemas/JobSpec'
+      additionalProperties: false
     StartStatus:
       type: object
       properties:
         job_id:
           type: string
-          example: "1234"
           description: Job id
+          example: '1234'
         model:
           type: string
-          example: "asr"
           description: Model name
-        stream:
-          type: string
-          example: "audio_1"
-          description: Stream name
+          example: asr
         started:
           type: boolean
-          example: true
           description: Did the job start yes or no
+          example: true
         message:
           type: string
-          example: "successfully started"
           description: Additional information or words of positive affirmation
+          example: successfully started
+        dependencies:
+          type: array
+          description: Job ids that this job depends on. The job will not start until
+            these have completed.
+          items:
+            type: string
         error:
           type: string
-          nullable: true
-          example: null
           description: Error message if the job failed
-      required:
-        - job_id
-        - model
-        - stream
-        - started
-        - message
-
-    StatusResponse:
+          example: null
+          nullable: true
+      additionalProperties: false
+    StartTaggingResponse:
       type: object
       properties:
         jobs:
           type: array
+          description: Start status for each job in the request
           items:
-            $ref: '#/components/schemas/JobStatus'
-          description: Individual job statuses
-        meta:
-          $ref: '#/components/schemas/PaginationMeta'
-      required:
-        - jobs
-        - meta
-
+            $ref: '#/components/schemas/StartStatus'
+      additionalProperties: false
+    WarningResponse:
+      type: object
+      properties:
+        num_warnings:
+          type: integer
+          description: Total number of warnings
+          example: 25
+        last_warning:
+          type: string
+          description: Most recent warning message
+          example: Failed to download part hqpe2EChvsWa6KNqFBqzn5yit7Z8NFLZ6DdxbcykW673Musy6JL4Vj
+      additionalProperties: false
+    TagDetails:
+      type: object
+      properties:
+        tag_status:
+          type: string
+          description: Human-readable description of what the job is currently doing
+          example: Fetching content
+        time_running:
+          type: number
+          description: How long the job has been running (in seconds)
+          example: 70.05
+        progress:
+          type: number
+          description: Overall job progress as a ratio from 0.0 to 1.0
+          example: 0.56
+        tagging_progress:
+          type: string
+          description: Ratio of tagged parts to total parts (deprecated)
+          example: 120/214
+        total_parts:
+          type: integer
+          description: Total number of parts in scope for the tag request
+          example: 214
+        downloaded_parts:
+          type: integer
+          description: Number of parts that have been downloaded
+          example: 150
+        tagged_parts:
+          type: integer
+          description: Number of parts that have been tagged
+          example: 120
+        warnings:
+          description: Warning summary, or null if there are no warnings
+          anyOf:
+          - $ref: '#/components/schemas/WarningResponse'
+          - type: object
+            nullable: true
+      additionalProperties: false
     JobStatus:
       type: object
       properties:
         qid:
           type: string
-          example: "iq__3Bs4xdLS9obhmQVWHNJvJ457ZL2X"
           description: Content object id that is being tagged
+          example: iq__3Bs4xdLS9obhmQVWHNJvJ457ZL2X
         job_id:
           type: string
-          example: "efd8e379-9256-40bc-9aa6-1fab74234f85"
           description: Job id
+          example: efd8e379-9256-40bc-9aa6-1fab74234f85
         status:
           type: string
-          enum: [queued, running, cancelled, failed, succeeded]
-          example: "running"
           description: Current state of the job
+          example: running
         model:
           type: string
-          example: "asr"
           description: Name of model
+          example: asr
         stream:
           type: string
-          example: "video"
           description: Stream name
+          example: video
         created_at:
           type: string
-          format: date-time
-          example: "2026-03-25T03:33:38.746127"
           description: ISO 8601 timestamp of when the job was created
+          example: '2026-03-25T03:33:38.746127'
         params:
-          $ref: '#/components/schemas/TagArgs'
+          type: object
+          description: Parameters that were used to run the tagging job.
+          additionalProperties: {}
         tenant:
           type: string
-          example: "iten2fY3bSh8Q7zY1t6vGZ8mUNFLHAWM"
           description: Tenant identifier
+          example: iten2fY3bSh8Q7zY1t6vGZ8mUNFLHAWM
         user:
           type: string
-          example: "0x9d7186b18ecbb5751719795415e9b8146e1bed2b"
           description: Address of the user who submitted the job
+          example: '0x9d7186b18ecbb5751719795415e9b8146e1bed2b'
         title:
           type: string
-          example: "Casablanca"
           description: Title of the content being tagged
+          example: Casablanca
+        tagging_progress:
+          type: string
+          description: 'Deprecated: ratio of tagged_parts to total_parts. Use progress
+            instead.'
+          example: 120/214
+          deprecated: true
+        progress:
+          type: number
+          description: Overall job progress as a fraction (0.0 – 1.0)
+          example: 0.56
         error:
           type: string
-          nullable: true
-          example: null
           description: Error message if the job failed or was cancelled
-        progress:
-          type: number
-          format: float
-          example: 0.56
-          description: Overall job progress as a fraction (0.0 – 1.0)
-        tagging_progress:
-          type: string
-          example: "120/214"
-          deprecated: true
-          description: "Deprecated: ratio of tagged_parts to total_parts. Use progress instead."
+          example: null
+          nullable: true
         tag_details:
-          nullable: true
-          description: Detailed progress information for the tagging job. Null if the job is still on the queue.
-          allOf:
-            - $ref: '#/components/schemas/TagDetails'
-      required:
-        - qid
-        - job_id
-        - status
-        - model
-        - stream
-        - created_at
-        - params
-        - tenant
-        - user
-        - title
-        - progress
-
-    TagDetails:
+          description: Detailed progress information for the tagging job. Null if
+            the job is still on the queue.
+          anyOf:
+          - $ref: '#/components/schemas/TagDetails'
+          - type: object
+            nullable: true
+      additionalProperties: false
+    StatusMeta:
       type: object
-      description: Detailed progress information for the tagging job.
-      properties:
-        tag_status:
-          type: string
-          example: "Fetching content"
-          description: Human-readable description of what the job is currently doing
-        time_running:
-          type: number
-          example: 70.05
-          description: How long the job has been running (in seconds)
-        progress:
-          type: number
-          format: float
-          example: 0.56
-          description: Overall job progress as a fraction (0.0 – 1.0)
-        tagging_progress:
-          type: string
-          example: "120/214"
-          description: Ratio of tagged parts to total parts (deprecated)
-        total_parts:
-          type: integer
-          example: 214
-          description: Total number of parts in scope for the tag request
-        downloaded_parts:
-          type: integer
-          example: 150
-          description: Number of parts that have been downloaded
-        tagged_parts:
-          type: integer
-          example: 120
-          description: Number of parts that have been tagged
-        warnings:
-          nullable: true
-          description: Warning summary, or null if there are no warnings
-          allOf:
-            - $ref: '#/components/schemas/TagWarnings'
-      required:
-        - tag_status
-        - time_running
-        - progress
-        - tagging_progress
-        - total_parts
-        - downloaded_parts
-        - tagged_parts
-
-    TagWarnings:
-      type: object
-      description: Summary of warnings encountered during tagging.
-      properties:
-        num_warnings:
-          type: integer
-          example: 25
-          description: Total number of warnings
-        last_warning:
-          type: string
-          example: "Failed to download part hqpe2EChvsWa6KNqFBqzn5yit7Z8NFLZ6DdxbcykW673Musy6JL4Vj"
-          description: Most recent warning message
-      required:
-        - num_warnings
-        - last_warning
-
-    PaginationMeta:
-      type: object
-      description: Pagination metadata for list responses.
       properties:
         total:
           type: integer
-          example: 8
           description: Total number of matching items
+          example: 8
         start:
           type: integer
-          example: 0
           description: Offset of the first item returned
+          example: 0
         limit:
           type: integer
-          nullable: true
-          example: null
           description: Maximum number of items requested, or null for no limit
+          example: null
+          nullable: true
         count:
           type: integer
-          example: 8
           description: Number of items returned in this response
-      required:
-        - total
-        - start
-        - count
-
-    ModelsResponse:
-      type: object
-      properties:
-        models:
-          type: array
-          items:
-            $ref: '#/components/schemas/ModelSpec'
-          description: List of available models
-      required:
-        - models
-
-    ModelSpec:
-      type: object
-      properties:
-        name:
-          type: string
-          example: celeb
-          description: Model identifier
-        description:
-          type: string
-          example: Celebrity Identification
-          description: Human readable description of what the model does
-        type:
-          type: string
-          example: frame
-          description: Model type
-        tag_tracks:
-          type: array
-          items:
-            $ref: '#/components/schemas/TrackInfo'
-          description: Tag tracks this model writes to
-      required:
-        - name
-        - type
-        - tag_tracks
-
-    TrackInfo:
-      type: object
-      properties:
-        name:
-          type: string
-          example: celebrity_detection
-          description: Track name as stored in the tag store
-        label:
-          type: string
-          example: Celebrity Detection
-          description: Human-readable label for the track
-      required:
-        - name
-        - label
-
-    StopTaggingResponse:
+          example: 8
+      additionalProperties: false
+    StatusResponse:
       type: object
       properties:
         jobs:
           type: array
+          description: Individual job statuses
           items:
-            $ref: '#/components/schemas/StopStatus'
-          description: Stop statuses of individual jobs
-        message:
-          type: string
-          description: Top level message
-      required:
-        - jobs
-        - message
-
+            $ref: '#/components/schemas/JobStatus'
+        meta:
+          $ref: '#/components/schemas/StatusMeta'
+      additionalProperties: false
     StopStatus:
       type: object
       properties:
         job_id:
           type: string
-          example: "1234"
           description: Job ID
+          example: '1234'
         message:
           type: string
           description: Message
-      required:
-        - job_id
-        - message
-
+      additionalProperties: false
+    StopTaggingResponse:
+      type: object
+      properties:
+        jobs:
+          type: array
+          description: Stop statuses of individual jobs
+          items:
+            $ref: '#/components/schemas/StopStatus'
+        message:
+          type: string
+          description: Top level message
+      additionalProperties: false
+    ModelStatus:
+      type: object
+      properties:
+        model:
+          type: string
+          description: Model identifier
+          example: celeb
+        track:
+          type: string
+          description: Track the model writes its tags to
+          example: celebrity_detection
+        last_run:
+          type: string
+          description: ISO 8601 timestamp of the most recent job run
+          example: '2026-02-25T18:30:00Z'
+        percent_completion:
+          type: number
+          description: Ratio of content parts that have been tagged (0.0 – 1.0)
+          example: 0.85
+      additionalProperties: false
     ContentStatusResponse:
       type: object
-      description: Summary of tagging status across all models for a content object.
       properties:
         models:
           type: array
           description: List of per-model status summaries
           items:
-            $ref: '#/components/schemas/ContentModelStatusSummary'
-      example:
-        models:
-          - model: celeb
-            track: celebrity_detection
-            last_run: "2026-02-25T18:30:00Z"
-            percent_completion: 0.85
-          - model: asr
-            track: speech_to_text
-            last_run: "2026-02-24T12:00:00Z"
-            percent_completion: 1.0
-    ContentModelStatusSummary:
-      type: object
-      description: High-level tagging status for one model on the content.
-      properties:
-        model:
-          type: string
-          description: Model identifier
-          example: celeb
-        track:
-          type: string
-          description: Track the model writes its tags to
-          example: celebrity_detection
-        last_run:
-          type: string
-          description: ISO 8601 timestamp of the most recent job run
-          example: "2026-02-25T18:30:00Z"
-        percent_completion:
-          type: number
-          format: float
-          description: Fraction of content parts that have been tagged (0.0 – 1.0)
-          example: 0.85
-    ModelStatusResponse:
-      type: object
-      description: Detailed status for a single model on a content object.
-      properties:
-        summary:
-          $ref: '#/components/schemas/ModelStatusSummary'
-        jobs:
-          type: array
-          description: Chronological list of every job that has been run for this model
-          items:
-            $ref: '#/components/schemas/JobDetail'
-      example:
-        summary:
-          model: celeb
-          track: celebrity_detection
-          last_run: "2026-02-25T18:30:00Z"
-          tagging_progress: 0.85
-          num_content_parts: 120
-        jobs:
-          - time_ran: "1h 0m 0s"
-            source_qid: iq__3C58dDYxsn5KKSWGYrfYr44ykJRm
-            params:
-              feature: celeb
-              run_config:
-                fps: 2
-              scope:
-                start_time: 0
-                end_time: 300
-              replace: false
-              destination_qid: iq__3C58dDYxsn5KKSWGYrfYr44ykJRm
-              max_fetch_retries: 3
-            job_status:
-              status: Completed
-              time_ran: "1h 0m 0s"
-            upload_status:
-              num_job_parts: 60
-              num_tagged_parts: 60
+            $ref: '#/components/schemas/ModelStatus'
+      additionalProperties: false
     ModelStatusSummary:
       type: object
-      description: Aggregate summary for a model's tagging progress on a content object.
       properties:
         model:
           type: string
@@ -866,71 +1032,18 @@ components:
         last_run:
           type: string
           description: ISO 8601 timestamp of the most recent job run
-          example: "2026-02-25T18:30:00Z"
+          example: '2026-02-25T18:30:00Z'
         tagging_progress:
           type: number
-          format: float
           description: Fraction of content parts that have been tagged (0.0 – 1.0)
           example: 0.85
         num_content_parts:
           type: integer
           description: Total number of parts in the content
           example: 120
-    JobDetail:
-      type: object
-      description: Details of a single tagging job run.
-      properties:
-        time_ran:
-          type: string
-          description: Duration that the job ran before stopping
-          example: "1h 0m 0s"
-        source_qid:
-          type: string
-          description: Content object id that was tagged
-          example: iq__3C58dDYxsn5KKSWGYrfYr44ykJRm
-        params:
-          $ref: '#/components/schemas/TagArgs'
-        job_status:
-          $ref: '#/components/schemas/JobRunStatus'
-        upload_status:
-          nullable: true
-          description: Upload progress for this job. Null if the job did not reach the upload phase.
-          allOf:
-            - $ref: '#/components/schemas/JobUploadStatusSummary'
-    TagArgs:
-      type: object
-      description: Parameters that were used to run the tagging job.
-      properties:
-        feature:
-          type: string
-          description: Model identifier
-          example: celeb
-        run_config:
-          type: object
-          description: Arbitrary runtime parameters passed to the model container
-          example:
-            fps: 2
-        scope:
-          type: object
-          description: Scope of the tagging job with respect to the content (e.g. time range or asset list)
-          example:
-            start_time: 0
-            end_time: 300
-        replace:
-          type: boolean
-          description: Whether already-tagged parts were retagged
-          example: false
-        destination_qid:
-          type: string
-          description: Content object id that tags were written to
-          example: iq__3C58dDYxsn5KKSWGYrfYr44ykJRm
-        max_fetch_retries:
-          type: integer
-          description: Maximum number of fetch retries that were allowed
-          example: 3
+      additionalProperties: false
     JobRunStatus:
       type: object
-      description: Status of a completed job run.
       properties:
         status:
           type: string
@@ -939,10 +1052,10 @@ components:
         time_ran:
           type: string
           description: Duration the job ran before stopping
-          example: "1h 0m 0s"
+          example: 1h 0m 0s
+      additionalProperties: false
     JobUploadStatusSummary:
       type: object
-      description: Summary of how many parts were uploaded for a job.
       properties:
         num_job_parts:
           type: integer
@@ -952,52 +1065,96 @@ components:
           type: integer
           description: Number of parts that were successfully tagged and uploaded
           example: 60
-
-  securitySchemes:
-    TokenAuth: # <-- arbitrary name for the security scheme
-      type: http
-      scheme: bearer
-      bearerFormat: |
-        Base64 encoded JSON element of the following form: `{ "qspace_id": "...", "addr":"...", "txid":"..." }`
-      description: |
-        <p/>
-        <div class="auth">
-
-        Access to content fabric objects and resources is governed by an Ethereum-compatible blockchain.  Each API resource (for example a library, content type or content object) is governed by a blockchain 'smart-contract'.  All content fabric API operations require authentication using the "Bearer" token scheme.  This scheme encompasses both "authentication" (identifying the caller) and "authorization" (specification of the operations that the caller has access to).  The "Bearer" token is obtained by executing specific 'smart-contract' blockchain transactions for the API resources being accessed.
-
-        Private fabric nodes or development environments can also be configured for alternative authentication schemes.  Currently this includes "Basic" authentication and, for development environments, no authentication.
-
-        The "Bearer" token can be specified as follows:
-
-        <ol>
-          <li>
-            as an HTTP header
-            <code>Authorization: Bearer TOKEN</code>
-          </li>
-          <li>
-            as a query parameter
-            <code>?authorization=TOKEN</code>
-          </li>
-        </ol>
-
-        Bearer token general format: <code>PAYLOAD.SIGNATURE</code>
-
-        Where <code>PAYLOAD</code> is a base64 encoding of the JSON object:
-        <pre class="description">
-          {
-            "qspace_id":  "SPACE-ID",
-            "qlib_id": "LIBRARY-ID",
-            "addr": "BLOCKCHAIN-ADDRESS",
-            "tx_id" : "BLOCKCHAIN-TRANSACTION-ID"
-          }
-        </pre>
-
-        <code>SIGNATURE</code> is a base64 encoding of the Ethereum signature, calculated as specified by the Ethereum protocol: https://github.com/ethereum/wiki/wiki/JSON-RPC#eth_sign
-
-        Creating, modifying and accessing content fabric objects require either "access" or "update" transaction IDs.  These operations can only be executed by full blockchain user accounts, which must be funded in order to execute transactions.  Once the transaction is executed by the blockchain, its ID will be specified in the token field "tx_id".
-
-        Consumer operations don't require funded blockchain accounts, and they are restricted to "viewer" operations, which are only available on content objects that have been specifically published for consumer access.  The token is generated by executing a state channel transaction - the state channel allows for low latency response to the user (not requiring waiting for the execution of a blockchain transaction) and mass scalability by posting aggregated transactions to the blockchain in large batches.
-        </div>
-
-security:
-  - TokenAuth: []
+      additionalProperties: false
+    JobDetail:
+      type: object
+      properties:
+        time_ran:
+          type: string
+          description: Duration that the job ran before stopping
+          example: 1h 0m 0s
+        source_qid:
+          type: string
+          description: Content object id that was tagged
+          example: iq__3C58dDYxsn5KKSWGYrfYr44ykJRm
+        params:
+          readOnly: true
+          description: Parameters that were used to run the tagging job.
+        job_status:
+          $ref: '#/components/schemas/JobRunStatus'
+        upload_status:
+          description: Upload progress for this job. Null if the job did not reach
+            the upload phase.
+          anyOf:
+          - $ref: '#/components/schemas/JobUploadStatusSummary'
+          - type: object
+            nullable: true
+      additionalProperties: false
+    ModelStatusResponse:
+      type: object
+      properties:
+        summary:
+          $ref: '#/components/schemas/ModelStatusSummary'
+        jobs:
+          type: array
+          description: Chronological list of every job that has been run for this
+            model
+          items:
+            $ref: '#/components/schemas/JobDetail'
+      additionalProperties: false
+    TrackOutput:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Track name as stored in the tag store
+          example: celebrity_detection
+      additionalProperties: false
+    ModelSpec:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Model identifier
+          example: celeb
+        description:
+          type: string
+          description: Human readable description of what the model does
+          example: Celebrity Identification
+        type:
+          type: string
+          description: Model type
+          example: frame
+        tag_tracks:
+          type: array
+          description: Tag tracks this model writes to
+          items:
+            $ref: '#/components/schemas/TrackOutput'
+        dependencies:
+          type: array
+          description: Tag tracks that must exist before this model can be run
+          items:
+            type: string
+      additionalProperties: false
+    ListingResponse:
+      type: object
+      properties:
+        models:
+          type: array
+          description: List of available models
+          items:
+            $ref: '#/components/schemas/ModelSpec'
+      additionalProperties: false
+  responses:
+    UNPROCESSABLE_ENTITY:
+      description: Unprocessable Entity
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    DEFAULT_ERROR:
+      description: Default error response
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

@@ -2,18 +2,18 @@
 from unittest.mock import Mock
 import pytest
 
-from src.common.model import ModelConfig
+from src.common.model import ModelConfigStore
 from src.status.service import TaggingStatusService
-from src.tags.tagstore.abstract import Tagstore
-from src.tags.tagstore.model import Batch
-from src.tags.track_resolver import TrackResolver, LabelResolverConfig, TrackArgs
+from src.tags.datastore.abstract import Datastore
+from src.tags.datastore.model import Batch
+from src.tags.track_resolver import TrackResolver, LabelResolverConfig
 
 
 @pytest.fixture
 def mock_tagstore():
-    def _mock_tagstore(batches: list[Batch]) -> Tagstore:
-        tagstore = Mock(spec=Tagstore)
-        tagstore.find_batches.return_value = [b.id for b in batches]
+    def _mock_tagstore(batches: list[Batch]) -> Datastore:
+        tagstore = Mock(spec=Datastore)
+        tagstore.find_batches.return_value = batches
         def get_batch_side_effect(batch_id: str, q=None):
             for b in batches:
                 if b.id == batch_id:
@@ -47,7 +47,7 @@ def track_resolver(model_configs) -> TrackResolver:
                 "whisper_track": "Whisper",
             }
         ),
-        model_configs=model_configs
+        model_configs=ModelConfigStore(model_configs)
     )
 
 @pytest.fixture

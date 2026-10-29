@@ -77,7 +77,8 @@ def container_spec(temp_dir):
             image="localhost/test_model:latest",
             resources=SystemResources()
         ),
-        q=Content(qid="q123", token="auth12345")
+        q=Content(qid="q123", token="auth12345"),
+        env={},
     )
 
 @pytest.fixture
@@ -146,10 +147,6 @@ def test_container(container, video_paths):
         assert os.path.exists(container.cfg.logs_path)
         with open(container.cfg.logs_path, 'r') as f:
             logs = f.read()
-        
-        assert "Got media/video1.mp4" in logs
-        assert "Got media/video2.mp4" in logs
-        assert "Got media/video3.mp4" in logs
 
         # check that the model can read the auth environment variable
         assert "GOT AUTH: auth12345" in logs

@@ -10,7 +10,6 @@ from common_ml.utils.dictionary import nested_update
 from src.api.tagging.request_format import *
 from src.fetch.model import *
 from src.service.model import StatusArgs
-from src.tag_containers.registry import ContainerRegistry
 from src.tagging.fabric_tagging.model import TagArgs
 from src.common.content import Content
 from src.common.errors import BadRequestError, MissingResourceError

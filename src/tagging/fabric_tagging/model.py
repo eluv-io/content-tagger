@@ -11,6 +11,9 @@ from src.tag_containers.model import ContainerInfo
 @dataclass
 class TaggerWorkerConfig:
     media_dir: str
+    heartbeat_interval: float = 60.0
+    upload_retries: int = 5
+    upload_retry_delay: float = 10.0
 
 @dataclass
 class TagArgs:
@@ -24,6 +27,8 @@ class TagArgs:
     destination_qid: str
     max_fetch_retries: int
     caller_info: dict[str, str]
+    # vector index to write embeddings to, required of models which output vectors
+    index_qid: str
 
 JobStateDescription = Literal[
     "Queued",
@@ -44,6 +49,7 @@ class JobStatus:
     tagged_sources: list[str]
     uploaded_sources: list[str]
     container_progress_ratio: float | None
+    tagged_duration: float
     warnings: list[str]
     error: str | None
 
@@ -58,6 +64,7 @@ class JobStatus:
             downloaded_sources=[],
             uploaded_sources=[],
             container_progress_ratio=None,
+            tagged_duration=0,
             warnings=[],
             error=None,
         )
@@ -65,7 +72,6 @@ class JobStatus:
 @dataclass
 class JobArgs(TagArgs):
     q: Content
-    retry_upload: bool
 
 @dataclass
 class JobID:

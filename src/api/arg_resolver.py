@@ -1,37 +1,88 @@
 
+from concurrent.futures import ThreadPoolExecutor
+import contextvars
 from functools import lru_cache
 from copy import deepcopy
+import dataclasses
 
 from common_ml.utils.dictionary import nested_update
-from requests import HTTPError
+from marshmallow import ValidationError
 
-from src.common.content import QAPI, Content, QAPIFactory
-from src.common.model import ModelConfig
+from src.common.content import Content, QAPIFactory
+from src.common.model import ModelConfigStore
 from src.fetch.model import *
-from src.tag_containers.registry import ContainerRegistry
 from src.api.tagging.request_format import *
 from src.tagging.fabric_tagging.model import TagArgs, Scope
 from src.common.errors import BadRequestError, MissingResourceError
+from src.api.tenant_defaults import TenantDefaultsResolver
 
 class ArgsResolver:
     """Class to resolve arguments for tagging features."""
 
-    def __init__(self, model_configs: dict[str, ModelConfig], api_factory: QAPIFactory):
+    def __init__(
+        self,
+        model_configs: ModelConfigStore,
+        api_factory: QAPIFactory,
+        tenant_defaults: TenantDefaultsResolver
+    ):
         self.model_configs = model_configs
         self.api_factory = api_factory
+        self.tenant_defaults = tenant_defaults
+        self._pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="args-prefetch")
+
+    def validate(self, args: StartJobsRequest) -> None:
+        """Cheap checks which don't need the fabric."""
+        if len(args.jobs) == 0:
+            raise BadRequestError("Please specify at least one job to run.")
+        model_configs = self.model_configs.snapshot()
+        for job in args.jobs:
+            if job.model not in model_configs:
+                raise BadRequestError(f"Model {job.model} not found.")
 
     def resolve(self, args: StartJobsRequest, q: Content) -> list[TagArgs]:
         """
         Resolve API arguments to internal TagArgs structures.
         """
-        defaults = args.options
-        if len(args.jobs) == 0:
-            raise BadRequestError("Please specify at least one job to run.")
+        self.validate(args)
+        # tenant defaults and the content lookups are independent fabric round trips, so run them concurrently
+        prefetch = self._pool.submit(contextvars.copy_context().run, self._prefetch_content_info, q, args)
+        tenant_defaults = self.tenant_defaults.get(q)
+        prefetch.result()
         res = []
         for job in args.jobs:
-            tag_arg = self._set_defaults(q, defaults, job)
+            job = self._apply_tenant_defaults(job, args.options, tenant_defaults.get(job.model, {}))
+            tag_arg = self._set_defaults(q, TaggerOptions(), job)
             res.append(tag_arg)
         return res
+
+    def _prefetch_content_info(self, q: Content, args: StartJobsRequest) -> None:
+        """Warm the is_live_content and find_default_audio_stream caches. Errors are left for the real call to raise."""
+        try:
+            if self.is_live_content(q):
+                return
+            model_configs = self.model_configs.snapshot()
+            if any(model_configs[job.model].type == "audio" for job in args.jobs if job.model in model_configs):
+                self.find_default_audio_stream(q)
+        except Exception:
+            pass
+
+    def _apply_tenant_defaults(
+        self,
+        job: JobSpec,
+        options: TaggerOptions,
+        tenant_job: dict[str, Any]
+    ) -> JobSpec:
+        TENANT_EXCLUDED_FIELDS = {"model", "caller_info"}
+
+        tenant_job = {k: v for k, v in tenant_job.items() if k not in TENANT_EXCLUDED_FIELDS}
+        merged = nested_update(tenant_job, {"overrides": _explicit(options)})
+        merged = nested_update(merged, _explicit(job))
+
+        try:
+            res: JobSpec = JobSpecSchema().load(merged)  # type: ignore
+            return res
+        except ValidationError as e:
+            raise BadRequestError(f"Invalid job parameters for {job.model} after applying tenant defaults: {e.messages}") from e
     
     @lru_cache(maxsize=1024)
     def find_default_audio_stream(self, q: Content) -> str:
@@ -68,16 +119,7 @@ class ArgsResolver:
 
     @lru_cache(maxsize=1024)
     def is_live_content(self, q: Content) -> bool:
-        qapi = self.api_factory.create(q)
-        try:
-            edge_write_token = qapi.content_object_metadata(
-                metadata_subtree="live_recording/status/edge_write_token",
-                resolve_links=False,
-            )
-        except HTTPError:
-            return False
-
-        return isinstance(edge_write_token, str) and edge_write_token.startswith("tqw__")
+        return self.api_factory.create(q).is_live()
 
     def _set_defaults(
         self,
@@ -91,6 +133,8 @@ class ArgsResolver:
 
         destination_qid = overrides.destination_qid if overrides.destination_qid \
             is not None else defaults.destination_qid
+        index_qid = overrides.index_qid if overrides.index_qid \
+            is not None else defaults.index_qid
         replace = overrides.replace if overrides.replace \
             is not None else defaults.replace
         max_fetch_retries = overrides.max_fetch_retries if overrides.max_fetch_retries \
@@ -99,12 +143,14 @@ class ArgsResolver:
         # set defaults for options that are not provided in request
         if destination_qid is None:
             destination_qid = ""
+        if index_qid is None:
+            index_qid = ""
         if replace is None:
             replace = False
         if max_fetch_retries is None:
             max_fetch_retries = 3
 
-        model_cfg = self.model_configs.get(feature)
+        model_cfg = self.model_configs.snapshot().get(feature)
         if model_cfg is None:
             raise BadRequestError(f"Model {feature} not found.")
         
@@ -127,8 +173,9 @@ class ArgsResolver:
             run_config=run_config,
             scope=scope,
             replace=replace,
-            track_suffix=job.track_suffix,
+            track_suffix=job.track_suffix or "",
             destination_qid=destination_qid,
+            index_qid=index_qid,
             max_fetch_retries=max_fetch_retries,
             caller_info=job.caller_info
         )
@@ -173,3 +220,14 @@ class ArgsResolver:
                 res["stream"] = "video"
 
         return res
+
+def _explicit(obj: Any) -> dict[str, Any]:
+    """Fields of a request dataclass which were explicitly set (i.e. not None). Recurses into
+    nested request dataclasses but leaves plain dict values (e.g. model_params) untouched."""
+    res = {}
+    for f in dataclasses.fields(obj):
+        value = getattr(obj, f.name)
+        if value is None:
+            continue
+        res[f.name] = _explicit(value) if dataclasses.is_dataclass(value) else deepcopy(value)
+    return res

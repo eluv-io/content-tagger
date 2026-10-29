@@ -1,6 +1,7 @@
 import os
 import shutil
 import tempfile
+from typing import Iterator
 from unittest.mock import Mock
 import pytest
 import dotenv
@@ -8,11 +9,15 @@ import dotenv
 from src.fetch.model import FetcherConfig, VideoScope
 from src.tagging.fabric_tagging.model import TagArgs
 from src.tagging.fabric_tagging.queue.abstract import JobStore
-from src.tags.tagstore.abstract import Tagstore
+from src.tagging.fabric_tagging.queue.model import CompleteJobRequest, ListJobArgs
+from src.tags.datastore.abstract import Datastore
 from src.tags.tagstore.filesystem_tagstore import FilesystemTagStore
 from src.tags.tagstore.rest_tagstore import RestTagstore
+from src.tags.vectorstore.factory import VectorstoreFactory
+from src.tags.vectorstore.model import VectorstoreConfig
 from src.common.content import Content, ContentConfig, QAPIFactory
 from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
+from src.tagging.fabric_tagging.queue.qmanager_jobstore import QueueManagerJobStore
 from src.status.get_info import UserInfo, UserInfoResolver
 
 dotenv.load_dotenv()
@@ -23,7 +28,7 @@ dotenv.load_dotenv()
 def content_config() -> ContentConfig:
     return ContentConfig(
         config_url="https://host-76-74-29-5.contentfabric.io/config?self&qspace=main", 
-        parts_url="http://192.168.96.203/config?self&qspace=main",
+        parts_url="https://host-76-74-29-2.contentfabric.io/config?self&qspace=main",
         live_media_url="https://host-76-74-29-5.contentfabric.io/config?self&qspace=main"
     )
 
@@ -56,7 +61,7 @@ def q_legacy(qid_legacy):
 
 @pytest.fixture
 def qid_live():
-    return "iq__3A3bGWiJfAd2N9v4LLooinK1WZMm"
+    return "iq__4ENkNifgv9sHqUr448aB1S4B3vma"
 
 @pytest.fixture
 def q_live(qid_live):
@@ -101,9 +106,13 @@ def rest_tagstore(q: Content) -> RestTagstore:
     ts = RestTagstore(base_url=host, timeout=10)
 
     if host:
-        jobids = ts.find_batches(q=q, limit=1000)
-        for jobid in jobids:
-            ts.delete_batch(jobid, q=q)
+        headers = {**ts._get_headers(q), "X-Confirm-Delete": q.qid}
+        ts.session.delete(f"{host}/{q.qid}/content", headers=headers, timeout=10).raise_for_status()
+        # deleted content is re-synced from the fabric, so clear the batches it brings back
+        batches = ts.find_batches(q=q, limit=1000)
+        for batch in batches:
+            ts.delete_batch(batch.id, q=q)
+        print(f"Cleared content and {len(batches)} batches from RestTagstore at {host}")
 
     return ts
 
@@ -115,13 +124,29 @@ def filesystem_tagstore(temp_dir: str) -> FilesystemTagStore:
     return store
 
 @pytest.fixture
-def tag_store(rest_tagstore: RestTagstore, filesystem_tagstore: FilesystemTagStore) -> Tagstore:
+def tag_store(rest_tagstore: RestTagstore, filesystem_tagstore: FilesystemTagStore) -> Datastore:
     """Create appropriate tagstore based on TEST_TAGSTORE_HOST environment variable"""
     if os.getenv("TEST_TAGSTORE_HOST"):
         return rest_tagstore
     else:
         return filesystem_tagstore
-    
+
+"""Vectorstore Fixtures"""
+
+@pytest.fixture
+def index_qid() -> str:
+    return "iq__testvectorindex"
+
+@pytest.fixture
+def vectorstores() -> VectorstoreFactory:
+    """A factory backed by in-memory mock vectorstores"""
+    return VectorstoreFactory(VectorstoreConfig())
+
+@pytest.fixture
+def vector_store(vectorstores: VectorstoreFactory, index_qid: str) -> Datastore:
+    return vectorstores.create(index_qid)
+
+
 """Fetcher Fixtures"""
 
 @pytest.fixture
@@ -133,18 +158,34 @@ def fetcher_config() -> FetcherConfig:
         max_downloads=4
     )
 
+# the tests' jobs on the queue manager are stored under their own job type, so they can be cleared without touching others
+TEST_JOB_TYPE = "test-tag"
+
+def _clear_jobs(js: JobStore) -> None:
+    """Ends and deletes every test job, acting as each job's submitter with the token the queue stored for it."""
+    for job in js.list_jobs(ListJobArgs(include_unready=True), auth=""):
+        if job.status in ("pending", "queued"):
+            js.cancel_job(job.id, auth=job.auth)
+        elif job.status == "running":
+            js.complete_job(CompleteJobRequest(id=job.id, status="failed"), auth="")
+        elif job.status == "cancelling":
+            js.complete_job(CompleteJobRequest(id=job.id, status="cancelled"), auth="")
+    for job in js.list_jobs(ListJobArgs(include_unready=True), auth=""):
+        js.delete_job(job.id, auth=job.auth)
+
 @pytest.fixture
-def jobstore(temp_dir, fake_user_info_resolver) -> JobStore:
-    """Create a JobStore for testing.
-    
-    If JOBSTORE_URL is set, a remote jobstore would be used — but that is not
-    yet implemented.  If the variable is not set the local FsJobStore backed by
-    a temporary directory is used instead.
-    """
-    url = os.getenv("JOBSTORE_URL")
-    if url:
-        raise NotImplementedError("Remote jobstore (JOBSTORE_URL) is not yet implemented")
-    return FsJobStore(store_dir=os.path.join(temp_dir, "jobstore"), user_info_resolver=fake_user_info_resolver)
+def jobstore(temp_dir, fake_user_info_resolver, q) -> Iterator[JobStore]:
+    url = os.getenv("TEST_JOBSTORE_URL")
+    if not url:
+        yield FsJobStore(store_dir=os.path.join(temp_dir, "jobstore"), user_info_resolver=fake_user_info_resolver)
+        return
+    if not q.token:
+        # without auth set we can't use the real qmanager
+        pytest.skip("TEST_AUTH not set in environment")
+    js = QueueManagerJobStore(url, os.getenv("JOBSTORE_WORKER_SECRET"), timeout=30, job_type=TEST_JOB_TYPE)
+    _clear_jobs(js)
+    yield js
+    _clear_jobs(js)
 
 @pytest.fixture
 def make_tag_args():
@@ -153,12 +194,14 @@ def make_tag_args():
         feature: str = "caption",
         stream: str | None = None,
         destination_qid: str = "",
+        index_qid: str = "",
         # default to true for testing, but in real prod it's false
         replace: bool = True,
         run_config: dict | None = None,
         start_time: int = 0,
         end_time: int = 30,
-        max_fetch_retries: int = 3
+        max_fetch_retries: int = 3,
+        track_suffix: str = ""
     ) -> TagArgs:
         if stream is None:
             stream = "audio" if feature == "asr" else "video"
@@ -167,8 +210,9 @@ def make_tag_args():
             run_config=run_config or {},
             scope=VideoScope(stream=stream, start_time=start_time, end_time=end_time),
             replace=replace,
-            track_suffix="",
+            track_suffix=track_suffix,
             destination_qid=destination_qid,
+            index_qid=index_qid,
             caller_info={},
             max_fetch_retries=max_fetch_retries
         )

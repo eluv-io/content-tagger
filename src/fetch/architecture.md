@@ -12,6 +12,7 @@ This module is responsible for everything regarding downloading media from the c
     - It's useful for carrying all the state associated with downloading media from a content object when running a tag job.
     - Implementing it this way allows us to support starting tagging before downloading the entire media which is especially critical for live tagging.
     - implements a `download` method which downloads a single batch and a flag indicating whether more is coming or not.
+    - A batch may be empty with `done=False` (e.g. `LiveWorker` before the stream starts — it polls every few seconds up to `start_timeout`). The tagger still starts the container in that case so it's warm when media arrives.
 - `FetchFactory`
     - Factory for the `DownloadWorker`s
     - Currently it depends on the `Tagstore` so that it can query for already tagged sources, might deprecate this cause arguable the factory is doing too much. 

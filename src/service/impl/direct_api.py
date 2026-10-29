@@ -1,5 +1,7 @@
 import time
 
+from src.api.arg_resolver import ArgsResolver
+from src.api.tagging.request_format import StartJobsRequest
 from src.common.content import Content
 from src.common.errors import BadRequestError
 from src.service.common import get_warning_response
@@ -10,12 +12,13 @@ from src.service.abstract import TaggerService
 
 class DirectAPI(TaggerService):
     """Service implementation that sits on top of the tagger worker and directly calls the tagger functions with no job queue"""
-    def __init__(self, tagger: TaggerWorker):
+    def __init__(self, tagger: TaggerWorker, arg_resolver: ArgsResolver):
         self.tagger = tagger
+        self.arg_resolver = arg_resolver
 
-    def tag(self, q: Content, args: list[TagArgs]) -> list[TagStartResult]:
+    def tag(self, q: Content, req: StartJobsRequest) -> list[TagStartResult]:
         results = []
-        for arg in args:
+        for arg in self.arg_resolver.resolve(req, q):
             res = self.tagger.tag(q, arg)
             results.append(
                 TagStartResult(
@@ -32,9 +35,9 @@ class DirectAPI(TaggerService):
         if not req.qid:
             raise BadRequestError("qid parameter must be specified for direct api")
         
-        worker_statuis = self.tagger.status(req.qid)
+        worker_status = self.tagger.status(req.qid)
         res = []
-        for r in worker_statuis:
+        for r in worker_status:
             tr = TagJobStatusResult(
                 qid=req.qid,
                 job_id=f"<{req.qid}, {r.model}, {r.stream}>",
@@ -46,18 +49,19 @@ class DirectAPI(TaggerService):
                 tenant="",
                 user="",
                 title="",
-                dependencies=[],
                 tagger_details=TagDetails(
                     tag_status=r.status.status,
                     time_running=r.status.time_ended - r.status.time_started if r.status.time_ended else time.time() - r.status.time_started,
-                    progress=(0.3 * len(r.status.downloaded_sources) + 0.7 * len(r.status.uploaded_sources)) / len(r.status.total_sources) if r.status.total_sources else 1.0,
+                    progress=(0.3 * len(r.status.downloaded_sources) + 0.7 * len(r.status.uploaded_sources)) / len(r.status.total_sources) if r.status.total_sources else 0,
                     tagging_progress=f"{len(r.status.uploaded_sources)}/{len(r.status.total_sources)}",
+                    tagged_duration=r.status.tagged_duration or 0,
                     total_parts=len(r.status.total_sources),
                     downloaded_parts=len(r.status.downloaded_sources),
                     tagged_parts=len(r.status.tagged_sources),
                     warnings=get_warning_response(r.status.warnings),
                 ),
                 error=r.status.error,
+                num_failed_attempts=0,
             )
             res.append(tr)
         return res

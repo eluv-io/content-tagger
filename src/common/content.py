@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any
 import base64
@@ -6,15 +6,25 @@ import dacite
 import json
 import requests
 
+from cachetools.func import ttl_cache
 from elv_client_py import ElvClient
 
 from src.common.errors import BadRequestError, ExternalServiceError
 from src.common.logging import logger
+from src.common.http import raise_for_status
+
+CONFIG_TTL = 300
+
+@ttl_cache(maxsize=1024, ttl=CONFIG_TTL)
+def create_client(config_url: str, token: str) -> ElvClient:
+    """Same as ElvClient.from_configuration_url, but cached for CONFIG_TTL seconds so the fabric config isn't refetched."""
+    return ElvClient.from_configuration_url(config_url, static_token=token)
 
 @dataclass(frozen=True)
 class Content:
     qid: str
-    token: str
+    # avoid logging
+    token: str = field(repr=False)
 
 @dataclass
 class ContentConfig:
@@ -38,21 +48,18 @@ class QAPI:
         cfg: ContentConfig
     ):
         try:
-            client = ElvClient.from_configuration_url(
-                cfg.config_url, static_token=q.token)
+            client = create_client(cfg.config_url, q.token)
         except Exception as e:
             raise ExternalServiceError("Failed to create content client") from e
         
         try:
-            parts_client = ElvClient.from_configuration_url(
-                cfg.parts_url, static_token=q.token)
+            parts_client = create_client(cfg.parts_url, q.token)
         except Exception as e:
             logger.opt(exception=e).error("Failed to create parts client")
             parts_client = None
         
         try:
-            live_client = ElvClient.from_configuration_url(
-                cfg.live_media_url, static_token=q.token)
+            live_client = create_client(cfg.live_media_url, q.token)
         except Exception as e:
             logger.opt(exception=e).error("Failed to create live media client")
             live_client = None
@@ -121,7 +128,7 @@ class QAPI:
                 for chunk in resp.iter_content(chunk_size=8192):
                     file.write(chunk)
         else:
-            resp.raise_for_status()
+            raise_for_status(resp)
         info = resp.headers.get('X-Content-Fabric-Segment-Info')
         # base64 decode
         if info is None:
@@ -133,6 +140,31 @@ class QAPI:
         )
         return segment_info
 
+    def playout_options(self) -> dict[str, Any]:
+        url = '/'.join([self._client.fabric_uris[0], 'q', self.qid, 'rep', 'playout', 'options.json'])
+        resp = requests.get(url, params={"authorization": self._client.token})
+        raise_for_status(resp)
+        return resp.json()
+
+    def is_live(self) -> bool:
+        """True if the content is a livestream object, whether or not the stream is currently running."""
+        try:
+            options = self.playout_options()
+        except (requests.HTTPError, ValueError):
+            return False
+        return any(o.get("properties", {}).get("live", False) for o in options.values() if isinstance(o, dict))
+
+    def is_live_running(self) -> bool:
+        """True if the livestream is currently running (has an edge write token)."""
+        try:
+            edge_write_token = self.content_object_metadata(
+                metadata_subtree="live_recording/status/edge_write_token",
+                resolve_links=False,
+            )
+        except requests.HTTPError:
+            return False
+        return isinstance(edge_write_token, str) and edge_write_token.startswith("tqw__")
+
     def __getattr__(self, name):
         attr = getattr(self._client, name)
         if not callable(attr):
@@ -143,7 +175,7 @@ class QAPI:
                 if self.qwt:
                     kwargs["write_token"] = self.qwt
                 else:
-                    kwargs["version_hash"] = self.qhash
+                    kwargs["object_id"] = self.qid
                 return attr(*args, library_id=self.qlib, **kwargs)
             return wrapper
         return attr

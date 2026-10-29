@@ -1,10 +1,10 @@
 from dataclasses import dataclass
 from loguru import logger
+from marshmallow import EXCLUDE, Schema, fields
 
 from src.common.errors import BadRequestError, ForbiddenError
 from src.status.get_info import UserInfoResolver
 from src.tagging.fabric_tagging.queue.abstract import JobStore
-from src.tagging.fabric_tagging.queue.model import UpdateJobRequest
 
 @dataclass
 class DeleteJobRequest:
@@ -13,11 +13,21 @@ class DeleteJobRequest:
     authorization: str
 
 
+class DeleteJobQuerySchema(Schema):
+    """Query parameters for DELETE /jobs/<job_id>."""
+    class Meta:
+        # the request also carries ?authorization=...; ignore it here
+        unknown = EXCLUDE
+
+    tenant = fields.Str(load_default=None, allow_none=True)
+
+
 def delete_job(
     req: DeleteJobRequest,
     user_info_resolver: UserInfoResolver,
     js: JobStore
 ) -> None:
+    """Delete an inactive job"""
     user_info = user_info_resolver.get_user_info(
         auth=req.authorization,
         tenant_id=req.tenant
@@ -38,6 +48,6 @@ def delete_job(
             f"Tried to delete job for tenant={item.tenant} but specified tenant={req.tenant}."
         )
 
-    js.update_job(UpdateJobRequest(id=req.job_id, status="deleted"), req.authorization)
+    js.delete_job(req.job_id, req.authorization)
 
     logger.info(f"Deleted job {req.job_id} for user {item.user} and tenant {item.tenant}")

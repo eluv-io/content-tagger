@@ -18,4 +18,4 @@ class timeit:
         self.end = time.time()
         self.interval = self.end - self.start
         if self.interval >= self.min_duration:
-            logger.debug(f'Finished {self.message}... Elapsed time: {self.interval:.4f} seconds')
+            logger.info(f'Finished {self.message}... Elapsed time: {self.interval:.4f} seconds')

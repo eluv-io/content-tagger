@@ -10,3 +10,5 @@ class MediaState:
     # used to get media
     worker: FetchSession
     output_dir: str
+    # parts that failed to download, used to fail the job if nothing succeeded
+    failed: list[str]

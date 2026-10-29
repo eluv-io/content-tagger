@@ -18,8 +18,6 @@ def map_all_jobs_status_to_response(
     if req.model is not None:
         filtered = [j for j in filtered if j.model == req.model]
 
-    logger.debug(f"Filtered jobs status from {len(all_jobs_status)} to {len(filtered)} based on query parameters", feature="status_filtering", total=len(all_jobs_status), filtered=len(filtered), status=req.status, tenant=req.tenant, user=req.user)
-
     # sort
     filtered.sort(key=lambda j: j.created_at, reverse=True)
 
@@ -50,6 +48,7 @@ def map_job_status_to_response(js: TagJobStatusResult) -> JobStatus:
     progress = js.tagger_details.progress if js.tagger_details else 0
     # legacy compatibility
     tagging_progress = js.tagger_details.tagging_progress if js.tagger_details else "0/0"
+    tagged_duration = js.tagger_details.tagged_duration if js.tagger_details else 0
     return JobStatus(
         qid=js.qid,
         job_id=str(js.job_id),
@@ -64,7 +63,10 @@ def map_job_status_to_response(js: TagJobStatusResult) -> JobStatus:
         error=js.error,
         progress=progress,
         tagging_progress=tagging_progress,
+        tagged_duration=tagged_duration,
         tag_details=js.tagger_details,
+        is_live=js.params.get("scope", {}).get("type") == "livestream",
+        num_failed_attempts=js.num_failed_attempts,
     )
 
 def map_stop_results_to_response(stop_results: list[TagStopResult]) -> StopTaggingResponse:

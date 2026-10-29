@@ -33,13 +33,33 @@ This module is used to orchestrate the flow from downloading source media, runni
     - No synchronization needed between background tagstore uploader and the main job thread which uploads when done.
     - Status responses will never be in an inconsistent state. (arguably not that important)
 
-## Tagstore uploading
+## Datastore uploading
 - A `source` is a concept which represents some piece of a content: likely a part or an asset. (See `src/fetch/model.py:Source`)
     - It contains the source name (i.e asset path or part hash)
     - The associated local file path
     - Optionally an `offset` in the case of video parts which informs the uploader how to adjust the timestamps
 - The `TagContainer` returns a `ModelOutput` type (through it's `tags` method) which contains the local file path and it's associated tags (which are timestamped with respect the media chunk not the content object, since the `TagContainer` doesn't care about the fabric)
 - The tagger keeps a mapping from the source media path to the `Source` object returned by the `Fetcher`. This way, it can take the tags from the container and align their timestamps with the content object using the offset. So tags uplaoded to the tagstore contain the global timestamp not the local one. 
+
+### Uploader
+- A `ModelTag`'s payload is its `data` field, which is either text or an embedding.
+- Each job owns an `Uploader`, which routes those outputs to the store that can hold them:
+  text to the tagstore and vectors to the vectorstore given by the job's `index_qid`.
+- Each store gets its own `UploadSession`, and therefore its own batch. An `UploadSession` only
+  knows how to write tags to one store under one batch; it does not retry and does not track
+  progress.
+- A model that emits a vector on a job with no `index_qid` fails the job with an error naming the
+  missing option.
+- The tagstore is the system of record for a run's report: every run reports there, so the
+  `SourceResolver` and the status API only ever have to look in one place. The index gets a copy of
+  the report when it holds vectors from the run, which means a vector-only run leaves a batch in
+  the tagstore carrying the report but no tags.
+- Retry (live jobs) and progress are job-level, so they live on the `Uploader`, not the sessions.
+  A source is only recorded as uploaded once every store in play has taken the run's output, so a
+  partial failure cannot let a diff-based re-run skip it.
+- A failure in one store skips the other store's write for that tick. Nothing is re-posted on the
+  next tick: a session's dedup and deletion state is only advanced after a successful write, and
+  the container hands over each tag exactly once.
 
 
 ## Files

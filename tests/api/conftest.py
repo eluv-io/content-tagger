@@ -1,4 +1,5 @@
 
+from dataclasses import replace
 import os
 import shutil
 import time
@@ -9,28 +10,28 @@ from flask import Flask
 import pytest
 
 from app_config import AppConfig
-from server import configure_routes, create_app_direct, create_app_queue_based
+from server import configure_routes, create_app_queue_based
 from src.api.auth import Authenticator
 from src.api.tagging.request_format import StartJobsRequest
 from src.common.content import Content
-from src.fetch.model import DownloadResult, FetchSession, MediaMetadata, VideoScope
+from src.fetch.model import DownloadResult, FetchSession, MediaMetadata, Source, VideoScope
 from src.service.model import StatusArgs, TagDetails, TagJobStatusResult, TagStartResult
 from src.status.get_info import UserInfoResolverConfig
 from src.tag_containers.model import ModelConfig, RegistryConfig
 from src.tagging.fabric_tagging.model import TaggerWorkerConfig, JobID, TagArgs, TagStopResult
-from src.tagging.fabric_tagging.queue.fs_jobstore import FsJobStore
 from src.tagging.fabric_tagging.queue.model import JobStoreConfig
-from src.tagging.fabric_tagging.tagger import TaggerWorker
+from tests.conftest import TEST_JOB_TYPE
 from src.tagging.scheduling.model import SysConfig
 from src.tagging.tag_runner import TagRunner, TagRunnerConfig
 from src.tags.track_resolver import TrackArgs, LabelResolverConfig
 from src.tags.tagstore.model import TagstoreConfig
+from src.tags.vectorstore.model import VectorstoreConfig
 
 @pytest.fixture()
 def tagger_config(static_dir) -> TaggerWorkerConfig:
     media_path = os.path.join(static_dir, "media")
     os.makedirs(media_path, exist_ok=True)
-    return TaggerWorkerConfig(media_dir=media_path)
+    return TaggerWorkerConfig(media_dir=media_path, upload_retries=2, upload_retry_delay=0.1)
 
 @pytest.fixture()
 def model_configs() -> dict[str, ModelConfig]:
@@ -55,6 +56,7 @@ def container_registry_config(static_dir) -> RegistryConfig:
     return RegistryConfig(
             base_dir=os.path.join(static_dir, "stuff"),
             cache_dir=os.path.join(static_dir, "cache"),
+            env={},
         )
 
 @pytest.fixture()
@@ -63,17 +65,24 @@ def app_config(static_dir, tagger_config, content_config, fetcher_config, contai
     return AppConfig(
         root_dir=static_dir,
         content=content_config,
-        jobstore=JobStoreConfig(base_url=os.path.join(static_dir, "jobstore")),
+        # same queue as the jobstore fixture, which the app fixture uses to clear it around each test
+        jobstore=JobStoreConfig(
+            base_url=os.getenv("TEST_JOBSTORE_URL", ""),
+            worker_secret=os.getenv("JOBSTORE_WORKER_SECRET"),
+            base_dir=os.path.join(static_dir, "jobstore"),
+            job_type=TEST_JOB_TYPE,
+        ),
         tagstore=TagstoreConfig(
             base_dir=os.path.join(static_dir, "tags")
         ),
+        vectorstore=VectorstoreConfig(),
         system=SysConfig(gpus=["gpu", "disabled", "gpu"], resources={"cpu_juice": 16}),
         fetcher=fetcher_config,
         container_registry=container_registry_config,
         model_configs=model_configs,
         tagger=tagger_config,
         label_resolver=LabelResolverConfig(mapping={"test_model": "TEST MODEL"}),
-        tag_runner=TagRunnerConfig(poll_interval=0.1, max_jobs=2),
+        tag_runner=TagRunnerConfig(poll_interval=0.1),
         user_info_resolver=UserInfoResolverConfig(
             fabric_url="https://main.net955305.contentfabric.io",
             user_info_url="https://ai.contentfabric.io/ml/token_info"
@@ -82,21 +91,12 @@ def app_config(static_dir, tagger_config, content_config, fetcher_config, contai
 
 
 @pytest.fixture()
-def app(static_dir, app_config):
+def app(static_dir, app_config, jobstore):
     shutil.rmtree(static_dir, ignore_errors=True)
-    if os.getenv("USE_QUEUE") == "true":
-        app = create_app_queue_based(app_config)
-    else:
-        app = create_app_direct(app_config)
+    app = create_app_queue_based(app_config)
     app.config["TESTING"] = True
     yield app
-    state = app.config["state"]
-    if "loop" in state:
-        state["loop"].stop()
-        return
-    tagger: TaggerWorker = state["worker"]
-    if not tagger.shutdown_requested:
-        tagger.cleanup()
+    app.config["state"]["loop"].stop()
 
 @pytest.fixture
 def authenticator(app_config):
@@ -109,11 +109,12 @@ def client(app):
 class FakeLiveWorker(FetchSession):
     """Fake DownloadWorker that simulates live streaming by returning one source at a time"""
     
-    def __init__(self, real_worker: FetchSession, last_res_has_media: bool=False):
+    def __init__(self, real_worker: FetchSession, last_res_has_media: bool=False, never_done: bool=False):
         self.real_worker = real_worker
         self.call_count = 0
         self._all_sources = None
         self.last_res_has_media = last_res_has_media
+        self.never_done = never_done
     
     def metadata(self) -> MediaMetadata:
         return self.real_worker.metadata()
@@ -135,6 +136,9 @@ class FakeLiveWorker(FetchSession):
         self.call_count += 1
 
         idx = self.call_count - 1
+
+        if self.never_done:
+            return DownloadResult(sources=[self._looped_source(idx)], failed=[], done=False)
         
         # Return one source at a time
         if idx < len(self._all_sources):
@@ -160,6 +164,12 @@ class FakeLiveWorker(FetchSession):
                 failed=self._failed,
                 done=True
             )
+
+    def _looped_source(self, idx: int) -> Source:
+        """Replays the sources forever under fresh names"""
+        loop, i = divmod(idx, len(self._all_sources))
+        src = self._all_sources[i]
+        return replace(src, name=f"{src.name}_loop{loop}") if loop else src
         
 class MockTaggerService:
     """In-memory mock implementation of TaggerService for use in tests."""
@@ -168,10 +178,10 @@ class MockTaggerService:
         # job_id -> dict with job info
         self._jobs: dict[str, dict] = {}
 
-    def tag(self, q: Content, args: list[TagArgs]) -> list[TagStartResult]:
+    def tag(self, q: Content, req: StartJobsRequest) -> list[TagStartResult]:
         job_id = str(uuid.uuid4())
         res = []
-        for i, arg in enumerate(args):
+        for i, arg in enumerate(MockArgsResolver().resolve(req, q)):
             self._jobs[job_id] = {
                 "job_id": job_id,
                 "qid": q.qid,
@@ -215,6 +225,7 @@ class MockTaggerService:
                 total_parts=1,
                 downloaded_parts=1,
                 tagged_parts=1 if job["status"] == "Completed" else 0,
+                tagged_duration=0,
                 warnings=None,
             )
             results.append(TagJobStatusResult(
@@ -229,8 +240,8 @@ class MockTaggerService:
                 user=job["user"],
                 title=job["title"],
                 error=job["error"],
-                dependencies=[],
                 tagger_details=details,
+                num_failed_attempts=0,
             ))
         return results
 
@@ -268,8 +279,9 @@ class MockArgsResolver:
                 run_config=job.model_params,
                 scope=VideoScope(stream="video", start_time=0, end_time=10**16),
                 replace=False,
-                track_suffix=job.track_suffix,
+                track_suffix=job.track_suffix or "",
                 destination_qid="",
+                index_qid=job.overrides.index_qid or "",
                 caller_info=job.caller_info,
                 max_fetch_retries=3,
             ))
