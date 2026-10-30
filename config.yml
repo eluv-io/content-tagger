@@ -183,6 +183,8 @@ model_configs:
     resources: {
       "cpu_juice": 0
     }
+    scope:
+      start_at_live_edge: true
     tags:
       hidden: true
   vertical_video:

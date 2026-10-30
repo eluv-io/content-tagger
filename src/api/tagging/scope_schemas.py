@@ -83,6 +83,11 @@ class LiveScopeSchema(Schema):
             "description": "If the livestream has not started yet, wait up to this long (in seconds) for it to start before failing. The tagging container is started immediately so it is ready when the stream begins."
         }
     )
+    start_at_live_edge = fields.Bool(
+        metadata={
+            "description": "Start tagging from the current live edge instead of the beginning of the recording. max_duration is still measured from the start of the stream."
+        }
+    )
 
 
 class TagAlignedScopeSchema(Schema):

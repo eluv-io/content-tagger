@@ -15,6 +15,8 @@ from src.common.logging import logger
 logger = logger.bind(module="live fetching")
 
 STREAM_POLL_INTERVAL = 5
+# duration of a finalized live part (in seconds)
+LIVE_PART_DURATION = 30.03
 
 def _get_live_source_name(chunk_size: int, stream_name: str, idx: int) -> str:
     return f"{stream_name}:segment_{chunk_size}_{idx}"
@@ -68,6 +70,8 @@ class LiveWorker(FetchSession):
 
         if self.qapi.is_live_running():
             logger.info(f"Livestream {self.qapi.id()} is running")
+            if self.scope.start_at_live_edge:
+                self.next_idx = self._live_edge_idx()
             self._stream_started = True
             return True
 
@@ -94,6 +98,15 @@ class LiveWorker(FetchSession):
             return None
         logger.info(f"Livestream {self.qapi.id()} period start pts", start_pts=pts)
         return pts
+
+    def _live_edge_idx(self) -> int:
+        """Index of the segment at the current live edge."""
+        status = self.qapi.live_status()
+        finalized_parts = status["custom"]["status"][self.scope.stream]["finalized_parts"]
+        edge_sec = finalized_parts * LIVE_PART_DURATION
+        idx = int(edge_sec // self.scope.segment_length)
+        logger.info(f"Starting livestream {self.qapi.id()} at live edge", edge_sec=edge_sec, segment_idx=idx)
+        return idx
 
     def _download(self) -> DownloadResult:
         """

@@ -20,13 +20,13 @@ def fake_segment(object_id, dest_path, segment_idx, segment_length, stream):
 def no_center_segment(monkeypatch):
     monkeypatch.setattr("src.fetch.impl.live.center_segment", lambda path: None)
 
-def make_worker(temp_dir: str, ignore_sources: list[str] = [], segment_length: int = 4, max_duration: int = 20) -> LiveWorker:
+def make_worker(temp_dir: str, ignore_sources: list[str] = [], segment_length: int = 4, max_duration: int | None = 20, start_at_live_edge: bool = False) -> LiveWorker:
     qapi = MagicMock()
     qapi.id.return_value = "iq__fake"
     qapi.live_media_segment.side_effect = fake_segment
     return LiveWorker(
         qapi=qapi,
-        scope=LiveScope(stream="video", segment_length=segment_length, max_duration=max_duration),
+        scope=LiveScope(stream="video", segment_length=segment_length, max_duration=max_duration, start_at_live_edge=start_at_live_edge),
         rate_limiter=FetchRateLimiter(max_concurrent=1),
         meta=MediaMetadata(sources=[], fps=30),
         ignore_sources=ignore_sources,
@@ -87,3 +87,15 @@ def test_live_worker_fps_from_first_segment(temp_dir: str, monkeypatch):
     assert worker.metadata().fps is None
     worker.download()
     assert worker.metadata().fps == 25.0
+
+def make_edge_worker(temp_dir: str, max_duration: int | None = None) -> LiveWorker:
+    worker = make_worker(temp_dir, start_at_live_edge=True, max_duration=max_duration)
+    worker.qapi.live_status.return_value = {"custom": {"status": {"video": {"first_key_frame_pts": 0, "finalized_parts": 10}}}}
+    return worker
+
+def test_live_worker_starts_at_live_edge(temp_dir: str):
+    worker = make_edge_worker(temp_dir)
+
+    # 10 finalized parts * 30.03s = 300.3s -> segment 75
+    assert [s.name for s in worker.download().sources] == ["video:segment_4_75"]
+    assert [s.name for s in worker.download().sources] == ["video:segment_4_76"]
