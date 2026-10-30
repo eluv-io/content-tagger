@@ -7,6 +7,7 @@ from typing import Any
 from datetime import datetime
 from uuid import uuid4 as uuid
 import os
+import json
 from src.common.logging.timing import timeit
 
 from src.fetch.model import *
@@ -456,7 +457,20 @@ class TaggerWorker:
         """
         Send the new media to the container for tagging via stdin
         """
+        for s in new_media:
+            self._write_source_metadata(s)
         container.add_media([s.filepath for s in new_media])
+
+    def _write_source_metadata(self, source: Source) -> None:
+        """Write a <filepath>.meta.json sidecar so the container can see where the source sits in the content."""
+        path = source.filepath + ".meta.json"
+        tmp = path + ".tmp"
+        try:
+            with open(tmp, "w") as f:
+                json.dump({"offset_ms": source.offset, "abs_pts": source.pts}, f)
+            os.replace(tmp, path)
+        except OSError as e:
+            logger.opt(exception=e).warning("failed to write source metadata", source=source.name, path=path)
 
     def _await_tagging(self, job: TagJob) -> None:
         try:

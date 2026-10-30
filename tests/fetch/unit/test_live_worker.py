@@ -37,13 +37,14 @@ def test_live_worker_incremental_segments(temp_dir: str):
     worker = make_worker(temp_dir)
 
     sources = []
+    result = None
     for _ in range(10):
         result = worker.download()
         assert len(result.sources) <= 1
         sources.extend(result.sources)
         if result.done:
             break
-
+    assert result
     assert result.done
     assert [s.name for s in sources] == [f"video:segment_4_{i}" for i in range(5)]
     assert all(s.offset < 20 * 1000 for s in sources)

@@ -40,6 +40,8 @@ class LiveWorker(FetchSession):
         self.ignore_sources = set(ignore_sources)
         self._stream_started = False
         self._created_at = time.time()
+        # absolute pts of the recording period start
+        self._start_pts: int | None = None
     
     def metadata(self) -> MediaMetadata:
         return deepcopy(self.meta)
@@ -51,6 +53,8 @@ class LiveWorker(FetchSession):
     def download(self) -> DownloadResult:
         if not self._wait_for_stream():
             return DownloadResult(sources=[], failed=[], done=False)
+        if self._start_pts is None:
+            self._start_pts = self._fetch_start_pts()
         with self.rl.permit((self.qapi.id(), str(self.scope.stream))):
             return self._download()
 
@@ -78,6 +82,19 @@ class LiveWorker(FetchSession):
             time.sleep(STREAM_POLL_INTERVAL)
         return False
     
+    def _fetch_start_pts(self) -> int | None:
+        """Absolute pts of the current recording period start, or None if not yet known."""
+        try:
+            status = self.qapi.live_status()
+            pts = status["custom"]["status"]["video"]["first_key_frame_pts"]
+        except Exception as e:
+            logger.opt(exception=e).warning(f"Failed to get period start pts for {self.qapi.id()}")
+            return None
+        if not isinstance(pts, int) or pts == 0:
+            return None
+        logger.info(f"Livestream {self.qapi.id()} period start pts", start_pts=pts)
+        return pts
+
     def _download(self) -> DownloadResult:
         """
         Downloads a single segment from a live stream.
@@ -126,17 +143,21 @@ class LiveWorker(FetchSession):
         seg_idx = segment_info.seg_num
         seg_size = segment_info.actual_duration * 1000
         wall_clock = segment_info.seg_time_epoch_millis
+        pts = None
+        if self._start_pts is not None and segment_info.seg_offset_ts is not None:
+            pts = self._start_pts + segment_info.seg_offset_ts
 
         source = Source(
             name=source_name,
             filepath=save_path,
             offset=seg_offset,
-            wall_clock=wall_clock
+            wall_clock=wall_clock,
+            pts=pts
         )
 
         logger.info(
             f"Downloaded live segment {seg_idx} for {self.qapi.id()}",
-            segment_idx=seg_idx, offset_sec=seg_offset / 1000, seg_size_sec=seg_size / 1000, wall_clock=wall_clock / 1000
+            segment_idx=seg_idx, offset_sec=seg_offset / 1000, seg_size_sec=seg_size / 1000, wall_clock=wall_clock / 1000, pts=pts
         )
 
         self.next_idx = seg_idx + 1

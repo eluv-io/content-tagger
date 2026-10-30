@@ -14,6 +14,8 @@ class Source:
     offset: int
     # absolute unix time (in ms)
     wall_clock: int | None
+    # absolute stream pts of the source start (live only)
+    pts: int | None = None
 
 class Scope:
     def get_stream(self) -> str:

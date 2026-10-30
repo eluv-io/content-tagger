@@ -1,4 +1,6 @@
 import pytest
+import json
+import os
 import time
 from dataclasses import replace as dc_replace
 from unittest.mock import Mock, patch
@@ -441,6 +443,23 @@ def test_tags_have_timestamp_ms_field(fabric_tagger: TaggerWorker, q: Content, s
         assert "timestamp_ms" in tag.additional_info
         assert isinstance(tag.additional_info["timestamp_ms"], int)
         assert tag.additional_info["timestamp_ms"] > 0
+
+
+def test_source_metadata_sidecar_written(fabric_tagger: TaggerWorker, q: Content, sample_tag_args):
+    """Each source sent to the container gets a <filepath>.meta.json with its offset and pts"""
+    fabric_tagger.tag(q, sample_tag_args[0])
+    wait_tag(fabric_tagger, q.qid, timeout=5)
+
+    media_dir = fabric_tagger._output_dir_from_q(q)
+    metas = {}
+    for name in ["video1.mp4", "video2.mp4"]:
+        with open(os.path.join(media_dir, name + ".meta.json")) as f:
+            metas[name] = json.load(f)
+
+    assert metas == {
+        "video1.mp4": {"offset_ms": 0, "pts": None},
+        "video2.mp4": {"offset_ms": 10000, "pts": None},
+    }
 
 
 def test_uploaded_sources_respects_model_progress(fabric_tagger, q, make_tag_args):
