@@ -32,6 +32,11 @@ class ContentConfig:
     parts_url: str
     live_media_url: str
 
+@dataclass
+class LiveMediaSegment(ElvClient.LiveMediaSegment):
+    # segment start pts relative to the period start
+    seg_offset_ts: int | None
+
 class QAPI:
     """Content object representation and API wrapper.
 
@@ -108,7 +113,7 @@ class QAPI:
         segment_idx: int | None = None, 
         segment_length: int = 4,
         stream: str = ""
-    ) -> ElvClient.LiveMediaSegment:
+    ) -> LiveMediaSegment:
         if self._live_client is None:
             raise RuntimeError("Live media client is not initialized")
         url = self._live_client.fabric_uris[0]
@@ -135,10 +140,16 @@ class QAPI:
             raise ValueError("No segment info in response")
         info = base64.b64decode(info).decode('utf-8')
         segment_info = dacite.from_dict(
-            data_class=ElvClient.LiveMediaSegment,
+            data_class=LiveMediaSegment,
             data=json.loads(info)
         )
         return segment_info
+
+    def live_status(self) -> dict[str, Any]:
+        url = '/'.join([self._client.fabric_uris[0], 'q', self.qid, 'call', 'live', 'status'])
+        resp = requests.get(url, params={"authorization": self._client.token})
+        raise_for_status(resp)
+        return resp.json()
 
     def playout_options(self) -> dict[str, Any]:
         url = '/'.join([self._client.fabric_uris[0], 'q', self.qid, 'rep', 'playout', 'options.json'])

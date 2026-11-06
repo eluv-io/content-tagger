@@ -14,6 +14,8 @@ class Source:
     offset: int
     # absolute unix time (in ms)
     wall_clock: int | None
+    # absolute stream pts of the source start (live only)
+    pts: int | None = None
 
 class Scope:
     def get_stream(self) -> str:
@@ -52,6 +54,8 @@ class LiveScope(Scope):
     max_duration: int | None = None
     # seconds to wait for the stream to start before failing
     start_timeout: int = 3600
+    # start from the current live edge instead of the beginning of the recording
+    start_at_live_edge: bool = False
     type: str = "livestream"
 
 @dataclass
