@@ -1,7 +1,6 @@
 
 from requests.exceptions import HTTPError
 from fractions import Fraction
-import os
 import threading
 
 from src.common.logging import logger
@@ -66,8 +65,7 @@ class FetchFactory:
                 exit=exit
             )
         elif isinstance(req.scope, LiveScope):
-            # fps is filled in from the first segment, since the stream may not have started yet
-            meta = MediaMetadata(sources=[], fps=None)
+            meta = MediaMetadata(sources=[], fps=self._fetch_live_video_fps(qapi))
             return LiveWorker(
                 qapi=qapi,
                 scope=req.scope,
@@ -145,9 +143,6 @@ class FetchFactory:
     @cache_by_qhash
     def _fetch_stream_metadata(self, qapi: QAPI, stream_name: str) -> VideoMetadata:
         """Fetches metadata for a stream based on content type."""
-        if self._is_live(qapi):
-            return self._fetch_livestream_metadata(qapi, stream_name)
-
         if self._is_legacy_vod(qapi):
             return self._fetch_legacy_vod_metadata(qapi, stream_name)
         else:
@@ -270,123 +265,21 @@ class FetchFactory:
 
     # TODO: may need to have this thing take in a livestream qid instead and then forward to the qwt
     @cache_by_qhash
-    def _fetch_livestream_metadata(
-        self, qapi: QAPI, stream_name: str
-    ) -> VideoMetadata:
-        """Fetches metadata for livestream content."""
-        try:
-            periods = qapi.content_object_metadata(
-                metadata_subtree="live_recording/recordings/live_offering",
-                resolve_links=False,
-            )
-        except HTTPError as e:
-            raise HTTPError(
-                f"Failed to retrieve periods for live recording {qapi.id()}"
-            ) from e
+    def _fetch_live_video_fps(self, qapi: QAPI) -> float:
+        """Video frame rate from the live recording's stream probe."""
 
-        assert isinstance(periods, list)
-
-        if len(periods) == 0:
-            raise MissingResourceError(f"Live recording {qapi.id()} is empty")
-
-        stream = (
-            periods[0]
-            .get("sources", {})
-            .get(stream_name, {})
-            .get("parts", [])
-        )
-        if len(stream) == 0:
-            raise MissingResourceError(
-                f"Stream {stream_name} was found in live recording, but no parts were found."
-            )
-
-        if stream_name == "video":
-            codec_type = "video"
-        elif stream_name.startswith("audio"):
-            codec_type = "audio"
-        else:
-            raise BadRequestError(
-                f"Invalid stream name for live: {stream_name}. Must be 'video' or start with prefix 'audio'."
-            )
-
-        try:
-            xc_params = qapi.content_object_metadata(
-                metadata_subtree="live_recording/recording_config/recording_params/xc_params",
-                resolve_links=False,
-            )
-        except HTTPError as e:
-            raise HTTPError(
-                f"Failed to retrieve live stream metadata from {qapi.id()}"
-            ) from e
-
-        fps = None
-        if codec_type == "video":
-            try:
-                live_stream_info = qapi.content_object_metadata(
-                    metadata_subtree="live_recording_config/probe_info/streams",
-                    resolve_links=False,
-                )
-            except HTTPError as e:
-                raise HTTPError(
-                    f"Failed to retrieve live stream metadata from {qapi.id()}"
-                ) from e
-            
-            assert isinstance(live_stream_info, list)
-
-            video_stream_info = None
-            for stream_info in live_stream_info:
-                if stream_info["codec_type"] == "video":
-                    video_stream_info = stream_info
-                    break
-
-            if video_stream_info is None:
-                raise MissingResourceError(
-                    "Video stream not found in live stream metadata"
-                )
-
-            fps = self._parse_fps(video_stream_info["frame_rate"])
-            assert isinstance(xc_params, dict)
-            part_duration = xc_params.get("seg_duration", None)
-
-            if part_duration is None:
-                raise MissingResourceError(
-                    "Part duration not found in live stream metadata"
-                )
-            part_duration = float(part_duration)
-        else:
-            assert isinstance(xc_params, dict)
-            sr = xc_params.get("sample_rate", None)
-            ts = xc_params.get("audio_seg_duration_ts", None)
-
-            if sr is None or ts is None:
-                raise MissingResourceError(
-                    "Sample rate or audio segment duration not found in live stream metadata"
-                )
-
-            part_duration = int(ts) / int(sr)
-
-        # Filter out parts with finalization_time == 0, meaning the part is still live.
-        parts = [
-            part["hash"]
-            for part in stream
-            if part["finalization_time"] != 0 and part["size"] > 0
-        ]
-
-        return VideoMetadata(
-            parts=parts, part_duration=part_duration, fps=fps, codec_type=codec_type
+        streams = qapi.content_object_metadata(
+            metadata_subtree="live_recording_config/probe_info/streams",
+            resolve_links=False,
         )
 
-    @cache_by_qhash
-    def _is_live(self, qapi: QAPI) -> bool:
-        """Check if content is a live stream."""
-        if not qapi.id().startswith("tqw__"):
-            return False
-        try:
-            # TODO: make sure works for write token
-            qapi.content_object_metadata(metadata_subtree="live_recording")
-        except HTTPError:
-            return False
-        return True
+        assert isinstance(streams, list), f"Expected list of streams under live_recording_config/probe_info/streams, got {type(streams)}"
+
+        for stream_info in streams:
+            if stream_info["codec_type"] == "video":
+                return self._parse_fps(stream_info["frame_rate"])
+
+        raise MissingResourceError("Video stream not found in live stream metadata")
 
     @cache_by_qhash
     def _is_legacy_vod(self, qapi: QAPI) -> bool:

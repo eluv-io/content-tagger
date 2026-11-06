@@ -4,8 +4,6 @@ import os
 import threading
 import time
 
-from common_ml.video_processing import get_fps
-
 from src.common.content import QAPI
 from src.fetch.model import DownloadResult, FetchSession, LiveScope, Source, MediaMetadata
 from src.fetch.rate_limit import FetchRateLimiter
@@ -15,8 +13,6 @@ from src.common.logging import logger
 logger = logger.bind(module="live fetching")
 
 STREAM_POLL_INTERVAL = 5
-# duration of a finalized live part (in seconds)
-LIVE_PART_DURATION = 30.03
 
 def _get_live_source_name(chunk_size: int, stream_name: str, idx: int) -> str:
     return f"{stream_name}:segment_{chunk_size}_{idx}"
@@ -100,10 +96,11 @@ class LiveWorker(FetchSession):
         return pts
 
     def _live_edge_idx(self) -> int:
-        """Index of the segment at the current live edge."""
+        """Index of the segment at the current live edge, from the video frames written so far."""
         status = self.qapi.live_status()
-        finalized_parts = status["custom"]["status"][self.scope.stream]["finalized_parts"]
-        edge_sec = finalized_parts * LIVE_PART_DURATION
+        frames_written = status["custom"]["status"]["video"]["frames_written"]["total_frames_written"]
+        assert self.meta.fps is not None
+        edge_sec = frames_written / self.meta.fps
         idx = int(edge_sec // self.scope.segment_length)
         logger.info(f"Starting livestream {self.qapi.id()} at live edge", edge_sec=edge_sec, segment_idx=idx)
         return idx
@@ -149,8 +146,6 @@ class LiveWorker(FetchSession):
         if self.scope.stream == "video":
             # ideally we can do this in the API just in case we have a different stream name for video
             center_segment(save_path)
-            if self.meta.fps is None:
-                self.meta.fps = get_fps(save_path)
 
         seg_offset = segment_info.seg_offset_millis
         seg_idx = segment_info.seg_num

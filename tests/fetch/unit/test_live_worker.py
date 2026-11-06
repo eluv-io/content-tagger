@@ -79,23 +79,14 @@ def test_live_worker_exit(temp_dir: str):
     assert result.sources == []
     assert result.done is True
 
-def test_live_worker_fps_from_first_segment(temp_dir: str, monkeypatch):
-    monkeypatch.setattr("src.fetch.impl.live.get_fps", lambda path: 25.0)
-    worker = make_worker(temp_dir)
-    worker.meta.fps = None
-
-    assert worker.metadata().fps is None
-    worker.download()
-    assert worker.metadata().fps == 25.0
-
 def make_edge_worker(temp_dir: str, max_duration: int | None = None) -> LiveWorker:
     worker = make_worker(temp_dir, start_at_live_edge=True, max_duration=max_duration)
-    worker.qapi.live_status.return_value = {"custom": {"status": {"video": {"first_key_frame_pts": 0, "finalized_parts": 10}}}}
+    worker.qapi.live_status.return_value = {"custom": {"status": {"video": {"first_key_frame_pts": 0, "frames_written": {"total_frames_written": 9015}}}}}
     return worker
 
 def test_live_worker_starts_at_live_edge(temp_dir: str):
     worker = make_edge_worker(temp_dir)
 
-    # 10 finalized parts * 30.03s = 300.3s -> segment 75
+    # 9015 frames / 30fps = 300.5s -> segment 75
     assert [s.name for s in worker.download().sources] == ["video:segment_4_75"]
     assert [s.name for s in worker.download().sources] == ["video:segment_4_76"]
