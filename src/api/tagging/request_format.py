@@ -13,6 +13,8 @@ class TaggerOptions:
     index_qid: str | None = None
     replace: bool | None = None
     max_fetch_retries: int | None = None
+    # queue priority of the job; higher numbers are claimed by workers first. None uses the queue's default
+    priority: int | None = None
     # unstructured dict to allow for flexible scope definitions - will be parsed into a ScopeDTO
     scope: dict[str, Any] = field(default_factory=dict)
 
@@ -84,6 +86,17 @@ class TaggerOptionsSchema(Schema):
                 "If a fetch operation fails, we can retry this many times before the job "
                 "is marked as failed."
             )
+        },
+    )
+    priority = fields.Int(
+        load_default=None,
+        allow_none=True,
+        metadata={
+            "description": (
+                "Queue priority of the job. Jobs with higher numbers are handed to workers "
+                "first. Leaving empty uses the queue's default priority."
+            ),
+            "example": 10,
         },
     )
     # Dict (validates the value is an object) + oneOf metadata so the OpenAPI spec points

@@ -144,6 +144,7 @@ class FsJobStore:
             "additional_info": {},
             "deps": [],
             "uid": job_uid(args.qid, args.model),
+            "priority": args.priority if args.priority is not None else 0,
         }
         with self._lock:
             if self._uid_in_use(job, {"pending", "queued", "running", "cancelling"}):

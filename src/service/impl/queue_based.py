@@ -51,7 +51,8 @@ class QueueService(TaggerService):
         created: list[tuple[JobSpec, QueueItem]] = []
         for job in req.jobs:
             try:
-                item = self.jobstore.create_job(CreateQueueItem(qid=q.qid, model=job.model), auth=q.token)
+                priority = job.overrides.priority if job.overrides.priority is not None else req.options.priority
+                item = self.jobstore.create_job(CreateQueueItem(qid=q.qid, model=job.model, priority=priority), auth=q.token)
             except JobConflictError as e:
                 results.append(TagStartResult(job_id="", started=False, created_at=time.time(), dependencies=[], message=str(e)))
                 continue
