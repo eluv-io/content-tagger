@@ -1,9 +1,12 @@
 import os
 import uuid
 from datetime import datetime
+from cachetools.func import ttl_cache
 from podman import PodmanClient
 from loguru import logger
+import requests
 
+from src.common.http import raise_for_status
 from src.tag_containers.model import RegistryConfig, ContainerSpec
 from src.tag_containers.containers import *
 from src.tag_containers.model import ContainerRequest
@@ -44,7 +47,27 @@ class ContainerFactory:
             model_config=req.model_config,
             q=req.q,
             index_qid=req.index_qid,
-            env=self.cfg.env,
+            env=self._env(),
         )
 
         return TagContainer(self.pclient, ccfg)
+
+    def _env(self) -> dict[str, str]:
+        env = dict(self.cfg.env)
+        if "VERTICALIZE_URL" not in env:
+            try:
+                env["VERTICALIZE_URL"] = _discover_verticalize_service()
+            except Exception as e:
+                logger.opt(exception=e).warning("Failed to discover verticalize service")
+        return env
+
+@ttl_cache(maxsize=1, ttl=20)
+def _discover_verticalize_service() -> str:
+    """First vertical service node in the main net config, cached for 5 minutes."""
+    NETWORK_CONFIG_URL = "https://main.net955305.contentfabric.io/config"
+    resp = requests.get(NETWORK_CONFIG_URL, timeout=10)
+    raise_for_status(resp)
+    urls = resp.json()["network"]["services"].get("vertical")
+    if not urls:
+        raise ValueError(f"No vertical service nodes in {NETWORK_CONFIG_URL}")
+    return urls[0]
