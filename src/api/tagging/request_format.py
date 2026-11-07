@@ -4,6 +4,7 @@ from typing import Any, Literal, Optional, TypeAlias
 
 from marshmallow import EXCLUDE, Schema, fields, post_load
 
+from src.api.openapi_hidden import DOC_HIDDEN
 from src.api.tagging.model_param_schemas import model_params_oneof_metadata
 from src.api.tagging.scope_schemas import scope_oneof_metadata
 
@@ -88,16 +89,12 @@ class TaggerOptionsSchema(Schema):
             )
         },
     )
+    # Queue priority of the job: higher numbers are handed to workers first, empty uses the
+    # queue's default. Accepted but deliberately left out of the OpenAPI docs.
     priority = fields.Int(
         load_default=None,
         allow_none=True,
-        metadata={
-            "description": (
-                "Queue priority of the job. Jobs with higher numbers are handed to workers "
-                "first. Leaving empty uses the queue's default priority."
-            ),
-            "example": 10,
-        },
+        metadata={DOC_HIDDEN: True},
     )
     # Dict (validates the value is an object) + oneOf metadata so the OpenAPI spec points
     # explicitly at the per-type scope schemas. Stays a plain dict at runtime so
