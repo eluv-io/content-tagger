@@ -123,6 +123,7 @@ class FsJobStore:
             tenant_name="",
             additional_info=job.get("additional_info", {}),
             num_failed_attempts=job.get("failed_attempts", 0),
+            previous_attempts=[JobAttempt(**a) for a in job.get("previous_attempts", [])],
         )
 
     def create_job(self, args: CreateQueueItem, auth: str) -> QueueItem:
@@ -230,7 +231,7 @@ class FsJobStore:
             retries = job.get("retry_count", 0)
             if args.retryable and job["status"] == "running" and retries < self.max_retries:
                 self._set(args.id, status="queued", error=args.error, status_details=details, retry_count=retries + 1,
-                          failed_attempts=failed_attempts)
+                          failed_attempts=failed_attempts, previous_attempts=[*job.get("previous_attempts", []), {"error": args.error}])
                 return True
             changes: dict = {"status": "failed", "error": args.error, "failed_attempts": failed_attempts}
             if details is not None:

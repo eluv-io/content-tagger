@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Literal
 
-from src.service.model import TagDetails
+from src.service.model import JobAttempt, TagDetails
 from src.tagging.fabric_tagging.model import TagArgs
 
 job_status = Literal["pending", "queued", "running", "cancelling", "succeeded", "failed", "cancelled"]
@@ -36,6 +36,7 @@ class QueueItem:
     tenant_name: str
     additional_info: dict
     num_failed_attempts: int
+    previous_attempts: list[JobAttempt]
 
 @dataclass
 class CreateQueueItem:

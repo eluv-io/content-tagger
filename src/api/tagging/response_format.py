@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from marshmallow import Schema, fields
 
-from src.service.model import TagDetails
+from src.service.model import JobAttempt, TagDetails
 
 @dataclass(frozen=True)
 class StartStatus:
@@ -38,6 +38,7 @@ class JobStatus:
     # whether the content being tagged is a livestream
     is_live: bool
     num_failed_attempts: int
+    previous_attempts: list[JobAttempt]
 
 @dataclass(frozen=True)
 class StatusMeta:
@@ -108,6 +109,13 @@ class WarningResponseSchema(Schema):
                 "hqpe2EChvsWa6KNqFBqzn5yit7Z8NFLZ6DdxbcykW673Musy6JL4Vj"
             ),
         }
+    )
+
+
+class JobAttemptSchema(Schema):
+    error = fields.Str(
+        allow_none=True,
+        metadata={"description": "Error the attempt failed with", "example": "Container exited with code 1"},
     )
 
 
@@ -234,6 +242,10 @@ class JobStatusSchema(Schema):
             "description": "Number of attempts at the job that failed; a job with retries left is queued again after a failure",
             "example": 0,
         }
+    )
+    previous_attempts = fields.List(
+        fields.Nested(JobAttemptSchema),
+        metadata={"description": "Attempts at the job that failed and were retried, first to last. The final attempt's error is in error."},
     )
     is_live = fields.Bool(
         metadata={

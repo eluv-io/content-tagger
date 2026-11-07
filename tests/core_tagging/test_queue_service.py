@@ -99,6 +99,7 @@ def test_requeued_job_reports_failed_attempt(queue_service: QueueService, make_t
 
     assert report.status == "queued"
     assert report.num_failed_attempts == 1
+    assert [a.error for a in report.previous_attempts] == ["attempt failed"]
 
 def test_tag_releases_pending_jobs(queue_service: QueueService, make_tag_args, q):
     queue_service.arg_resolver.resolve.return_value = [make_tag_args(feature="asr")] # type: ignore

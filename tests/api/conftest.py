@@ -242,6 +242,7 @@ class MockTaggerService:
                 error=job["error"],
                 tagger_details=details,
                 num_failed_attempts=0,
+                previous_attempts=[],
             ))
         return results
 

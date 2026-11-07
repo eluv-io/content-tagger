@@ -54,6 +54,8 @@ class QueueManagerJobStore:
         details = job.get("status_details")
         # a job completed while cancelling also gets a system_message, which isn't an error
         error = job.get("error") or (system_message(details) if job["status"] == "cancelled" else None)
+        # attempts are only returned with the worker secret
+        attempts = job.get("attempts") or []
         return QueueItem(
             id=job["id"],
             qid=job["qid"],
@@ -70,8 +72,8 @@ class QueueManagerJobStore:
             tenant=job.get("tenant", ""),
             tenant_name=job.get("tenant_name", ""),
             additional_info=job.get("additional_info") or {},
-            # attempts are only returned with the worker secret
-            num_failed_attempts=sum(1 for a in job.get("attempts") or [] if a.get("outcome") in _FAILED_OUTCOMES),
+            num_failed_attempts=sum(1 for a in attempts if a.get("outcome") in _FAILED_OUTCOMES),
+            previous_attempts=[JobAttempt(error=a.get("error") or None) for a in attempts if a.get("outcome") == "retried"],
         )
 
     def create_job(self, args: CreateQueueItem, auth: str) -> QueueItem:

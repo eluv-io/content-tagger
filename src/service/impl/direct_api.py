@@ -62,6 +62,7 @@ class DirectAPI(TaggerService):
                 ),
                 error=r.status.error,
                 num_failed_attempts=0,
+                previous_attempts=[],
             )
             res.append(tr)
         return res

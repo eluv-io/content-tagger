@@ -22,6 +22,10 @@ class WarningResponse:
     last_warning: str
 
 @dataclass(frozen=True)
+class JobAttempt:
+    error: str | None
+
+@dataclass(frozen=True)
 class TagDetails:
     tag_status: str
     time_running: float
@@ -52,6 +56,7 @@ class TagJobStatusResult:
     error: str | None
     tagger_details: TagDetails | None
     num_failed_attempts: int
+    previous_attempts: list[JobAttempt]
 
 @dataclass(frozen=True)
 class TagStopResult:

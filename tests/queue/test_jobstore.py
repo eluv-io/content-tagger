@@ -8,7 +8,7 @@ import pytest
 from src.common.content import Content
 from src.common.errors import JobConflictError, MissingResourceError
 from src.fetch.model import VideoScope
-from src.service.model import TagDetails
+from src.service.model import JobAttempt, TagDetails
 from src.tagging.fabric_tagging.model import TagArgs
 from src.tagging.fabric_tagging.queue.abstract import JobStore
 from src.tagging.fabric_tagging.queue.model import (
@@ -216,6 +216,7 @@ class TestFailJob:
         requeued = jobstore.get_job(parent.id)
         assert requeued.status == "queued"
         assert requeued.num_failed_attempts == 1
+        assert requeued.previous_attempts == [JobAttempt(error="first attempt")]
         assert jobstore.get_job(child.id).status == "queued"
 
         assert jobstore.claim_job(parent.id, auth=q.token)
@@ -224,6 +225,7 @@ class TestFailJob:
         assert failed.status == "failed"
         assert failed.error == "second attempt"
         assert failed.num_failed_attempts == 2
+        assert failed.previous_attempts == [JobAttempt(error="first attempt")]
         assert jobstore.get_job(child.id).status == "failed"
 
     def test_non_retryable_failure_fails(self, jobstore, q):
