@@ -4,6 +4,7 @@ from typing import Any, Literal, Optional, TypeAlias
 
 from marshmallow import EXCLUDE, Schema, fields, post_load
 
+from src.api.openapi_hidden import DOC_HIDDEN
 from src.api.tagging.model_param_schemas import model_params_oneof_metadata
 from src.api.tagging.scope_schemas import scope_oneof_metadata
 
@@ -13,6 +14,8 @@ class TaggerOptions:
     index_qid: str | None = None
     replace: bool | None = None
     max_fetch_retries: int | None = None
+    # queue priority of the job; higher numbers are claimed by workers first. None uses the queue's default
+    priority: int | None = None
     # unstructured dict to allow for flexible scope definitions - will be parsed into a ScopeDTO
     scope: dict[str, Any] = field(default_factory=dict)
 
@@ -85,6 +88,13 @@ class TaggerOptionsSchema(Schema):
                 "is marked as failed."
             )
         },
+    )
+    # Queue priority of the job: higher numbers are handed to workers first, empty uses the
+    # queue's default. Accepted but deliberately left out of the OpenAPI docs.
+    priority = fields.Int(
+        load_default=None,
+        allow_none=True,
+        metadata={DOC_HIDDEN: True},
     )
     # Dict (validates the value is an object) + oneOf metadata so the OpenAPI spec points
     # explicitly at the per-type scope schemas. Stays a plain dict at runtime so

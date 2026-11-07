@@ -38,6 +38,7 @@ from src.common.logging import logger, configure_logging
 from src.api.tagging.handlers import tagging_blp
 from src.api.content_status.handlers import content_status_blp
 from src.api.tagging.model_param_schemas import MODEL_PARAM_SCHEMAS, model_params_component_name
+from src.api.openapi_hidden import HiddenFieldsMarshmallowPlugin
 from src.api.tagging.scope_schemas import SCOPE_SCHEMAS, ScopeSchema, scope_component_name
 from src.tagging.fabric_tagging.queue.factory import create_jobstore
 from src.tagging.fabric_tagging.queue.abstract import JobStore
@@ -155,7 +156,8 @@ def configure_routes(app: Flask) -> None:
     _register_error_handlers(app)
     _register_request_logging(app)
 
-    api = Api(app)
+    # the custom plugin leaves fields marked DOC_HIDDEN out of the spec
+    api = Api(app, spec_kwargs={"marshmallow_plugin": HiddenFieldsMarshmallowPlugin()})
 
     assert api.spec is not None
 

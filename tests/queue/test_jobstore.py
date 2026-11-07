@@ -143,6 +143,16 @@ class TestListFiltering:
         assert [j.id for j in _list(jobstore, q, priority_le=10**6)] == [job.id]
         assert _list(jobstore, q, priority_ge=10**6) == []
 
+    def test_filter_by_explicit_priority(self, jobstore, q):
+        model = _unique_model()
+        job = jobstore.create_job(CreateQueueItem(qid=q.qid, model=model, priority=10**6 + 5), auth=q.token)
+        jobstore.release_job(
+            ReleaseJobRequest(id=job.id, params=_make_tag_args(model), deps=[], additional_info={}),
+            auth=q.token,
+        )
+        assert [j.id for j in _list(jobstore, q, priority_ge=10**6)] == [job.id]
+        assert job.id not in [j.id for j in _list(jobstore, q, priority_le=10**6)]
+
 
 class TestClaimJob:
     def test_claim_queued_job_returns_true(self, jobstore, q):

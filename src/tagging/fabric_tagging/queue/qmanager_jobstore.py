@@ -78,13 +78,16 @@ class QueueManagerJobStore:
 
     def create_job(self, args: CreateQueueItem, auth: str) -> QueueItem:
         try:
-            job = self._request("POST", f"/q/{args.qid}/jobs", as_user=auth, json={
+            body = {
                 "type": self.job_type,
                 "subtype": args.model,
                 "hold": True,
                 "resource_hash": job_uid(args.qid, args.model),
                 "enforce_resource": "active",
-            })
+            }
+            if args.priority is not None:
+                body["priority"] = args.priority
+            job = self._request("POST", f"/q/{args.qid}/jobs", as_user=auth, json=body)
         except _Conflict:
             raise JobConflictError(f"A job is already active for {args.model} on {args.qid}")
         return self._to_item(job)
