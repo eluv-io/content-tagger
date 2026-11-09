@@ -42,6 +42,8 @@ class QueueItem:
 class CreateQueueItem:
     qid: str
     model: str
+    # None uses the jobstore's default priority
+    priority: int | None = None
 
 @dataclass
 class ReleaseJobRequest:

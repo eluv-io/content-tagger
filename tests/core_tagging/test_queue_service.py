@@ -8,7 +8,7 @@ from src.common.errors import BadRequestError, MissingResourceError
 from src.service.impl.queue_based import QueueService
 from src.service.model import StatusArgs
 from src.tagging.fabric_tagging.queue.model import CreateQueueItem, FailJobRequest, ListJobArgs, CompleteJobRequest
-from src.api.tagging.request_format import JobSpec, StartJobsRequest
+from src.api.tagging.request_format import JobSpec, StartJobsRequest, TaggerOptions
 from src.common.content import Content
 from src.fetch.model import LiveScope
 from tests.core_tagging.conftest import InlineExecutor, enqueue
@@ -185,3 +185,27 @@ def test_pending_job_status(queue_service: QueueService, q):
     assert report.model == "asr"
     assert report.params == {}
 
+
+
+def test_priority_from_options_and_overrides(queue_service: QueueService, q):
+    created = []
+    real_create = queue_service.jobstore.create_job
+    def spy(args, auth):
+        created.append(args)
+        return real_create(args, auth)
+    queue_service.jobstore.create_job = spy  # type: ignore
+    queue_service._executor = Mock()  # type: ignore  # don't resolve/release
+
+    req = StartJobsRequest(
+        options=TaggerOptions(priority=5),
+        jobs=[
+            JobSpec(model="asr"),
+            JobSpec(model="caption", overrides=TaggerOptions(priority=50)),
+        ],
+    )
+    queue_service.tag(q, req)
+    assert {c.model: c.priority for c in created} == {"asr": 5, "caption": 50}
+
+    created.clear()
+    queue_service.tag(q, StartJobsRequest(jobs=[JobSpec(model="celeb")]))
+    assert created[0].priority is None
