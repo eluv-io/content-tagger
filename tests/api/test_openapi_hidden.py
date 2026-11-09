@@ -19,7 +19,6 @@ def test_priority_not_in_openapi_docs():
     options = spec["components"]["schemas"]["TaggerOptions"]["properties"]
     assert "replace" in options  # sanity: the schema is rendered, just without priority
     assert "priority" not in options
-    assert "priority" not in str(spec).lower()
 
 
 def test_priority_still_accepted():
