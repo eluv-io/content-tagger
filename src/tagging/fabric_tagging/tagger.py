@@ -445,7 +445,7 @@ class TaggerWorker:
             return
 
         if new_sources:
-            self._send_media(job.state.container, new_sources)
+            self._send_media(job, new_sources)
 
         if dl_res.done:
             # signal to the container to stop accepting new media and shut down when done
@@ -453,21 +453,24 @@ class TaggerWorker:
         else:
             self._submit_async(EnterFetchingPhase(job_id=jobid))
 
-    def _send_media(self, container: TagContainer, new_media: list[Source]) -> None:
+    def _send_media(self, job: TagJob, new_media: list[Source]) -> None:
         """
         Send the new media to the container for tagging via stdin
         """
+        fps = job.state.media.worker.metadata().fps
         for s in new_media:
-            self._write_source_metadata(s)
-        container.add_media([s.filepath for s in new_media])
+            # write the sidecar json file with the media's medatata
+            self._write_source_metadata(s, fps)
+        job.state.container.add_media([s.filepath for s in new_media])
 
-    def _write_source_metadata(self, source: Source) -> None:
+    def _write_source_metadata(self, source: Source, fps: float | None) -> None:
         """Write a <filepath>.meta.json sidecar so the container can see where the source sits in the content."""
         path = source.filepath + ".meta.json"
         tmp = path + ".tmp"
         try:
             with open(tmp, "w") as f:
-                json.dump({"offset_ms": source.offset, "abs_pts": source.pts}, f)
+                frame_offset = round(source.offset * fps / 1000) if fps else None
+                json.dump({"offset_ms": source.offset, "frame_offset": frame_offset, "abs_pts": source.pts}, f)
             os.replace(tmp, path)
         except OSError as e:
             logger.opt(exception=e).warning("failed to write source metadata", source=source.name, path=path)

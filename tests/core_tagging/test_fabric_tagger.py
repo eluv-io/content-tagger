@@ -457,8 +457,8 @@ def test_source_metadata_sidecar_written(fabric_tagger: TaggerWorker, q: Content
             metas[name] = json.load(f)
 
     assert metas == {
-        "video1.mp4": {"offset_ms": 0, "pts": None},
-        "video2.mp4": {"offset_ms": 10000, "pts": None},
+        "video1.mp4": {"offset_ms": 0, "frame_offset": 0, "abs_pts": None},
+        "video2.mp4": {"offset_ms": 10000, "frame_offset": 300, "abs_pts": None},
     }
 
 
