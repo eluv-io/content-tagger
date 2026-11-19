@@ -100,7 +100,7 @@ class QueueService(TaggerService):
     @lru_cache(maxsize=1024)
     def _get_display_title(self, q: Content) -> str:
         qapi = self.qfactory.create(q)
-        title = qapi.content_object_metadata(metadata_subtree="/public/name")
+        title = qapi.content_object_metadata(metadata_subtree="public/name")
         if not isinstance(title, str):
             return ""
         return title
