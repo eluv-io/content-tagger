@@ -69,6 +69,8 @@ class TagAlignedFetcher(FetchSession):
             # Find segments that overlap with the tag's time range
             overlapping = self._find_overlapping_segments(segments, tag_start_ms, tag_end_ms)
             if not overlapping:
+                if vod_result.done:
+                    logger.warning(f"No media segments overlap tag {tag.id} [{tag_start_ms}, {tag_end_ms})")
                 continue
 
             # Check if we have full coverage for this tag
@@ -131,8 +133,8 @@ class TagAlignedFetcher(FetchSession):
                 if i > 0:
                     seg_end = seg.offset + (seg.offset - segments[i - 1].offset)
                 else:
-                    # Single segment, can't estimate duration well; include it
-                    seg_end = seg.offset + (end_ms - start_ms)
+                    # Single segment, can't estimate duration; treat it as unbounded
+                    seg_end = float("inf")
 
             if seg_start < end_ms and seg_end > start_ms:
                 result.append(seg)
