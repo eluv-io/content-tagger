@@ -55,7 +55,7 @@ class ListJobArgs:
     status: job_status | None = None
     qid: str | None = None
     user: str | None = None
-    tenant: str | None = None
+    tenants: list[str] | None = None
     priority_ge: int | None = None
     priority_le: int | None = None
     # include queued jobs that can't be claimed yet: unmet dependencies or their resource in use

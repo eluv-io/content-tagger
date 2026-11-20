@@ -1,7 +1,7 @@
 import os
 import signal
 import threading
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 import time
 
 from src.common.content import Content
@@ -37,6 +37,23 @@ class WorkerFilters:
     tenant: str | None = None
     priority_ge: int | None = None
     priority_le: int | None = None
+    # claim from any of these tenants
+    tenants: list[str] | None = None
+
+    def __post_init__(self):
+        if self.tenant is not None and self.tenants is not None:
+            raise ValueError("set only one of tenant and tenants")
+
+    def list_args(self) -> ListJobArgs:
+        tenants = [self.tenant] if self.tenant is not None else self.tenants
+        return ListJobArgs(
+            status="queued",
+            qid=self.qid,
+            user=self.user,
+            tenants=tenants,
+            priority_ge=self.priority_ge,
+            priority_le=self.priority_le,
+        )
 
 @dataclass(frozen=True)
 class TagRunnerConfig:
@@ -141,7 +158,7 @@ class TagRunner:
         if self._quiescing.is_set():
             return
 
-        queued = self.jobstore.list_jobs(ListJobArgs(status="queued", **asdict(self.cfg.filters)), auth="")
+        queued = self.jobstore.list_jobs(self.cfg.filters.list_args(), auth="")
         for item in queued:
             assert item.params is not None
             if item.id in self._running_jobs or item.id in self._failed_jobs:

@@ -184,7 +184,7 @@ class FsJobStore:
                 continue
             if args.user and job["user"] != args.user:
                 continue
-            if args.tenant and job["tenant"] != args.tenant:
+            if args.tenants is not None and job["tenant"] not in args.tenants:
                 continue
             if args.status and job["status"] != args.status:
                 continue

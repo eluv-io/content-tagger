@@ -198,6 +198,23 @@ def test_runner_only_claims_jobs_matching_its_filters(queue_client, q, make_tag_
         runner.stop()
 
 
+
+def test_runner_claims_jobs_from_any_of_its_tenants(queue_client, q, make_tag_args, fabric_tagger, jobstore):
+    job_id = enqueue(queue_client, q, [make_tag_args()])[0]
+    tenant = jobstore.get_job(job_id).tenant
+    runner = TagRunner(fabric_tagger, jobstore, TagRunnerConfig(poll_interval=0.1, filters=WorkerFilters(tenants=["iten_other", tenant])))
+    runner.start()
+    try:
+        time.sleep(0.3)
+        assert jobstore.get_job(job_id).status != "queued"
+    finally:
+        runner.stop()
+
+
+def test_worker_filters_reject_tenant_and_tenants():
+    with pytest.raises(ValueError):
+        WorkerFilters(tenant="a", tenants=["b"])
+
 def _failed_report(uploaded_sources: list[str]) -> TagStatusResult:
     status = replace(
         JobStatus.starting(),

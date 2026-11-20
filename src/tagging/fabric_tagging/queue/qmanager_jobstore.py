@@ -126,16 +126,23 @@ class QueueManagerJobStore:
             "status": args.status,
             "qid": args.qid,
             "user": args.user,
-            "tenant": args.tenant,
             "priority_ge": args.priority_ge,
             "priority_le": args.priority_le,
             "include_unready": args.include_unready,
             "ignore_resource_hash": args.include_unready,
         }
         query = {k: v for k, v in query.items() if v is not None}
+        if args.tenants is None:
+            return self._list_pages(query, args.limit)
+        # the queue manager filters on one tenant, so list each separately
+        items = [item for tenant in args.tenants for item in self._list_pages({**query, "tenant": tenant}, None)]
+        items.sort(key=lambda i: i.created_at)
+        return items[:args.limit]
+
+    def _list_pages(self, query: dict, max_items: int | None) -> list[QueueItem]:
         items: list[QueueItem] = []
-        while args.limit is None or len(items) < args.limit:
-            limit = PAGE_SIZE if args.limit is None else min(PAGE_SIZE, args.limit - len(items))
+        while max_items is None or len(items) < max_items:
+            limit = PAGE_SIZE if max_items is None else min(PAGE_SIZE, max_items - len(items))
             page = self._request("GET", "/worker/jobs", params={**query, "start": len(items), "limit": limit})
             jobs = page.get("jobs") or []
             items.extend(self._to_item(job) for job in jobs)

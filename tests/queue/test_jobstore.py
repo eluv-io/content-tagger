@@ -126,6 +126,12 @@ class TestListFiltering:
         _create_queued(jobstore, q)
         assert jobstore.list_jobs(ListJobArgs(qid="iq__nojobs"), auth=q.token) == []
 
+    def test_filter_by_tenants(self, jobstore, q):
+        job = _create_queued(jobstore, q)
+        assert [j.id for j in _list(jobstore, q, tenants=["iten_other", job.tenant])] == [job.id]
+        assert _list(jobstore, q, tenants=["iten_other"]) == []
+        assert _list(jobstore, q, tenants=[]) == []
+
     def test_filter_by_status_returns_empty_when_no_match(self, jobstore, q):
         _create_queued(jobstore, q)
         assert _list(jobstore, q, status="running") == []
