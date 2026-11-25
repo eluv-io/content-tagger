@@ -1,5 +1,7 @@
 
 from copy import deepcopy
+from fractions import Fraction
+import math
 import os
 import threading
 import time
@@ -24,6 +26,7 @@ class LiveWorker(FetchSession):
         scope: LiveScope,
         rate_limiter: FetchRateLimiter,
         meta: MediaMetadata,
+        keyint: int | None,
         ignore_sources: list[str],
         output_dir: str,
         exit: threading.Event | None = None
@@ -32,6 +35,8 @@ class LiveWorker(FetchSession):
         self.scope = scope
         self.rl = rate_limiter
         self.meta = meta
+        # recording's forced keyframe interval in frames; the fabric snaps segments up to a multiple of it
+        self.keyint = keyint
         self.output_dir = output_dir
         self.exit = exit
         self.next_idx = 0
@@ -96,13 +101,24 @@ class LiveWorker(FetchSession):
         return pts
 
     def _live_edge_idx(self) -> int:
-        """Index of the segment at the current live edge, from the video frames written so far."""
+        """Index of the segment at the current live edge, from the video frames written so far.
+        """
         status = self.qapi.live_status()
         frames_written = status["custom"]["status"]["video"]["frames_written"]["total_frames_written"]
         assert self.meta.fps is not None
-        edge_sec = frames_written / self.meta.fps
-        idx = int(edge_sec // self.scope.segment_length)
-        logger.info(f"Starting livestream {self.qapi.id()} at live edge", edge_sec=edge_sec, segment_idx=idx)
+        fps = Fraction(self.meta.fps).limit_denominator(10000)
+        keyint = self.keyint or 1
+        # the live download API returns segments that are a multiple of the keyint, 
+        # not necessarily the exact segment length requested, so we need to round up to the next multiple of keyint
+        frames_per_seg = math.ceil(self.scope.segment_length * fps / keyint) * keyint
+        idx = frames_written // frames_per_seg
+        if self.keyint is None:
+            logger.warning(f"No keyint for livestream {self.qapi.id()}, backing off live edge by 2 segments")
+            idx = max(0, idx - 2)
+        logger.info(
+            f"Starting livestream {self.qapi.id()} at live edge",
+            frames_written=frames_written, frames_per_seg=frames_per_seg, keyint=self.keyint, segment_idx=idx
+        )
         return idx
 
     def _download(self) -> DownloadResult:

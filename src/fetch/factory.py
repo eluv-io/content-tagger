@@ -71,6 +71,7 @@ class FetchFactory:
                 scope=req.scope,
                 rate_limiter=self.rl,
                 meta=meta,
+                keyint=self._fetch_live_keyint(qapi),
                 output_dir=req.output_dir,
                 ignore_sources=req.ignore_sources,
                 exit=exit
@@ -280,6 +281,21 @@ class FetchFactory:
                 return self._parse_fps(stream_info["frame_rate"])
 
         raise MissingResourceError("Video stream not found in live stream metadata")
+
+    @cache_by_qhash
+    def _fetch_live_keyint(self, qapi: QAPI) -> int | None:
+        """Forced keyframe interval (in frames) of the live recording, or None if not configured."""
+        try:
+            keyint = qapi.content_object_metadata(
+                metadata_subtree="live_recording/recording_config/recording_params/xc_params/force_keyint",
+                resolve_links=False,
+            )
+        except HTTPError:
+            keyint = None
+        if not isinstance(keyint, int) or keyint <= 0:
+            logger.warning(f"No force_keyint found for livestream {qapi.id()}, live edge will be approximate")
+            return None
+        return keyint
 
     @cache_by_qhash
     def _is_legacy_vod(self, qapi: QAPI) -> bool:
